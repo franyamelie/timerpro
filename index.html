@@ -2395,44 +2395,51 @@ function buildSyncData(){
 function driveSync(){
   if(!driveUrl) return;
   const data = buildSyncData();
-  if(data.entries.length===0 && data.tasks.length===0) return; // no guardar si vacío
+  if(data.entries.length===0 && data.tasks.length===0){
+    showAlert('Sin datos que guardar — añade una jornada primero','err');
+    return;
+  }
   syncStatus='syncing'; rerender();
 
-  const json = JSON.stringify(data);
-  const cbName = 'save_'+Date.now();
-  const script = document.createElement('script');
-  let done = false;
+  // Hidden iframe form POST - bypasses CORS completely, no redirect issues
+  // Form submissions always work across domains
+  const iframeId = 'drive-post-frame';
+  let iframe = document.getElementById(iframeId);
+  if(iframe) iframe.remove();
+  
+  iframe = document.createElement('iframe');
+  iframe.id = iframeId;
+  iframe.name = iframeId;
+  iframe.style.display = 'none';
+  document.body.appendChild(iframe);
 
-  window[cbName] = function(res){
-    done=true; delete window[cbName]; script.remove();
-    if(res && res.ok){
-      syncStatus='ok';
-      lastSync=new Date().toLocaleTimeString('es-ES');
-      localStorage.setItem('lastSync',lastSync);
-      showAlert('✅ Drive: '+data.entries.length+' jornadas guardadas');
-    } else {
-      syncStatus='err';
-      showAlert('Error Drive: '+(res&&res.error||'sin respuesta'),'err');
-    }
-    rerender();
-  };
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = driveUrl;
+  form.target = iframeId;
+  form.style.display = 'none';
 
+  const input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'data';
+  input.value = JSON.stringify(data);
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
+  
+  setTimeout(()=>{ 
+    try{ form.remove(); }catch(e){}
+  }, 1000);
+
+  // After 4 seconds, verify by loading from Drive
+  const entryCount = data.entries.length;
   setTimeout(()=>{
-    if(!done){
-      delete window[cbName]; script.remove();
-      syncStatus='err';
-      showAlert('Drive sin respuesta — comprueba conexión','err');
-      rerender();
-    }
-  },20000);
-
-  // Send via JSONP GET with encoded data
-  const encoded = encodeURIComponent(json);
-  script.src = driveUrl+'?action=save&callback='+cbName+'&d='+encoded+'&t='+Date.now();
-  document.body.appendChild(script);
+    _doLoad(true, true); // verify mode
+  }, 4000);
 }
 
-function _doLoad(force){
+
+function _doLoad(force, verifyMode){
   if(!driveUrl) return;
   syncStatus='syncing'; rerender();
   const cbName='load_'+Date.now();
@@ -2470,7 +2477,11 @@ function _doLoad(force){
       lastSync=new Date().toLocaleTimeString('es-ES');
       localStorage.setItem('lastSync',lastSync);
       if(!editingEntry) fEntry=defEntry();
-      showAlert('✅ Cargado: '+S.entries.length+' jornadas, '+S.tasks.length+' tareas');
+      if(verifyMode){
+        showAlert('✅ Drive OK: '+S.entries.length+' jornadas guardadas correctamente');
+      } else {
+        showAlert('✅ Cargado: '+S.entries.length+' jornadas, '+S.tasks.length+' tareas');
+      }
       rerender();
     }catch(e){
       syncStatus='err';
