@@ -2375,6 +2375,41 @@ async function saveDriveUrl(){
 
 // ── DRIVE SYNC ────────────────────────────────────────
 
+function testSave(){
+  const url = 'https://script.google.com/macros/s/AKfycbz90y0SDev3NZwfIFJe4XBgCZlLF2j5xMKzwAljoqsygRxPAvgvZ85ZyAAsUd5UaiRzSA/exec';
+  const testData = {version:2, exportedAt:new Date().toISOString(), entries:S.entries, tasks:S.tasks, sites:S.sites, workorders:S.workorders, vehicles:S.vehicles, workers:workers, companies:companies, activeWorkerId, activeCompanyId, worker:fWorker, company:fCompany};
+  
+  if(testData.entries.length===0){ showAlert('No hay jornadas que guardar. Añade una primero.','err'); return; }
+  
+  showAlert('Enviando '+testData.entries.length+' jornadas a Drive...');
+  
+  const cbName='test_'+Date.now();
+  const s=document.createElement('script');
+  let done=false;
+  
+  window[cbName]=function(res){
+    done=true; delete window[cbName]; s.remove();
+    if(res&&res.ok){
+      syncStatus='ok';
+      lastSync=new Date().toLocaleTimeString('es-ES');
+      localStorage.setItem('lastSync',lastSync);
+      showAlert('✅ GUARDADO: '+res.entries+' jornadas en Drive');
+    } else {
+      showAlert('❌ Error: '+(res&&res.error||JSON.stringify(res)),'err');
+    }
+    rerender();
+  };
+  
+  setTimeout(()=>{
+    if(!done){ delete window[cbName]; s.remove(); showAlert('⏱ Sin respuesta del script tras 20s','err'); }
+  },20000);
+  
+  const mini=JSON.stringify(testData,(k,v)=>(v===0||v===''||v===null||v===false||(Array.isArray(v)&&v.length===0))?undefined:v);
+  console.log('Enviando datos, tamaño:', mini.length, 'chars');
+  s.src=url+'?action=save&callback='+cbName+'&d='+encodeURIComponent(mini)+'&t='+Date.now();
+  document.body.appendChild(s);
+}
+
 function buildSyncData(){
   return {
     version:2,
