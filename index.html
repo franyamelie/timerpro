@@ -1776,7 +1776,7 @@ async function deleteEntry(id){
 // Schedule auto-sync to Drive after local save
 function scheduleSync(){
   if(syncTimer) clearTimeout(syncTimer);
-  syncTimer = setTimeout(()=>{ if(driveUrl) driveSync(); }, 5000);
+  syncTimer = setTimeout(()=>{ if(driveUrl && S.entries.length>0) driveSync(); }, 5000);
 }
 
 async function saveTask(){
@@ -2374,57 +2374,66 @@ async function saveDriveUrl(){
 }
 
 // ── DRIVE SYNC ────────────────────────────────────────
-function driveSync(){
-  if(!driveUrl){ showAlert('Drive no configurado','err'); return; }
-  syncStatus='syncing'; rerender();
 
-  const data={
+function buildSyncData(){
+  return {
     version:2,
     exportedAt:new Date().toISOString(),
     entries:S.entries,
-    tasks:S.tasks.map(t=>({...t,fotos:[]})), // sin fotos para reducir tamaño
-    sites:S.sites, workorders:S.workorders, vehicles:S.vehicles,
+    tasks:S.tasks.map(t=>({...t,fotos:[]})),
+    sites:S.sites,
+    workorders:S.workorders,
+    vehicles:S.vehicles,
     workers:workers.map(w=>({...w,foto:'',firma:''})),
     companies:companies.map(c=>({...c,logo:''})),
     activeWorkerId, activeCompanyId,
     worker:{...fWorker,foto:'',firma:''},
     company:{...fCompany,logo:''}
   };
-
-  // POST con no-cors: evita CORS y no hay límite de URL
-  fetch(driveUrl, {
-    method:'POST',
-    mode:'no-cors',
-    headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body:JSON.stringify(data)
-  }).then(()=>{
-    syncStatus='ok';
-    lastSync=new Date().toLocaleTimeString('es-ES');
-    localStorage.setItem('lastSync',lastSync);
-    showAlert('✅ Guardado en Drive ('+S.entries.length+' jornadas)');
-    rerender();
-  }).catch(e=>{
-    // no-cors siempre lanza error de opaque response - lo ignoramos
-    syncStatus='ok';
-    lastSync=new Date().toLocaleTimeString('es-ES');
-    localStorage.setItem('lastSync',lastSync);
-    showAlert('✅ Enviado a Drive');
-    rerender();
-  });
 }
 
-function driveLinkLoad(forced){
-  if(!driveUrl){showAlert('Drive no configurado','err');return;}
-  if(!forced && !confirm('¿Cargar datos desde Drive? Se reemplazarán los datos actuales.'))return;
-  _doLoad(forced);
-}
+function driveSync(){
+  if(!driveUrl) return;
+  const data = buildSyncData();
+  if(data.entries.length===0 && data.tasks.length===0) return; // no guardar si vacío
+  syncStatus='syncing'; rerender();
 
-function driveAutoLoad(force){
-  if(!driveUrl)return;
-  _doLoad(force);
+  const json = JSON.stringify(data);
+  const cbName = 'save_'+Date.now();
+  const script = document.createElement('script');
+  let done = false;
+
+  window[cbName] = function(res){
+    done=true; delete window[cbName]; script.remove();
+    if(res && res.ok){
+      syncStatus='ok';
+      lastSync=new Date().toLocaleTimeString('es-ES');
+      localStorage.setItem('lastSync',lastSync);
+      showAlert('✅ Drive: '+data.entries.length+' jornadas guardadas');
+    } else {
+      syncStatus='err';
+      showAlert('Error Drive: '+(res&&res.error||'sin respuesta'),'err');
+    }
+    rerender();
+  };
+
+  setTimeout(()=>{
+    if(!done){
+      delete window[cbName]; script.remove();
+      syncStatus='err';
+      showAlert('Drive sin respuesta — comprueba conexión','err');
+      rerender();
+    }
+  },20000);
+
+  // Send via JSONP GET with encoded data
+  const encoded = encodeURIComponent(json);
+  script.src = driveUrl+'?action=save&callback='+cbName+'&d='+encoded+'&t='+Date.now();
+  document.body.appendChild(script);
 }
 
 function _doLoad(force){
+  if(!driveUrl) return;
   syncStatus='syncing'; rerender();
   const cbName='load_'+Date.now();
   const script=document.createElement('script');
@@ -2434,38 +2443,38 @@ function _doLoad(force){
     done=true; delete window[cbName]; script.remove();
     if(!result||!result.ok){
       syncStatus='err';
-      showAlert('Error cargando: '+(result&&result.error||'sin datos'),'err');
+      showAlert('Error cargando Drive: '+(result&&result.error||'sin datos'),'err');
       rerender(); return;
     }
     const d=result.data;
     if(!d||!d.entries||d.entries.length===0){
       syncStatus='ok';
-      showAlert('Drive vacío - guarda primero desde el PC','err');
+      showAlert('⚠️ Drive vacío. Guarda algo primero desde el PC.','err');
       rerender(); return;
     }
     try{
       await Promise.all(Object.values(ST).map(s=>dbClear(s)));
-      for(const e of(d.entries||[]))await dbPut(ST.entries,e);
-      for(const t of(d.tasks||[]))await dbPut(ST.tasks,t);
-      for(const s of(d.sites||[]))await dbPut(ST.sites,s);
+      for(const e of(d.entries||[]))  await dbPut(ST.entries,e);
+      for(const t of(d.tasks||[]))    await dbPut(ST.tasks,t);
+      for(const s of(d.sites||[]))    await dbPut(ST.sites,s);
       for(const w of(d.workorders||[]))await dbPut(ST.workorders,w);
-      for(const v of(d.vehicles||[]))await dbPut(ST.vehicles,v);
-      for(const w of(d.workers||[]))await dbPut(ST.workers,w);
+      for(const v of(d.vehicles||[])) await dbPut(ST.vehicles,v);
+      for(const w of(d.workers||[]))  await dbPut(ST.workers,w);
       for(const c of(d.companies||[]))await dbPut(ST.companies,c);
-      if(d.worker)fWorker={...defWorker,...d.worker};
-      if(d.company)fCompany={...defCompany,...d.company};
+      if(d.worker)  fWorker={...defWorker,...d.worker};
+      if(d.company) fCompany={...defCompany,...d.company};
       activeWorkerId=d.activeWorkerId||null;
       activeCompanyId=d.activeCompanyId||null;
       await loadData();
       syncStatus='ok';
       lastSync=new Date().toLocaleTimeString('es-ES');
       localStorage.setItem('lastSync',lastSync);
-      if(!editingEntry)fEntry=defEntry();
+      if(!editingEntry) fEntry=defEntry();
       showAlert('✅ Cargado: '+S.entries.length+' jornadas, '+S.tasks.length+' tareas');
       rerender();
     }catch(e){
       syncStatus='err';
-      showAlert('Error importando datos: '+e.message,'err');
+      showAlert('Error importando: '+e.message,'err');
       rerender();
     }
   };
@@ -2474,105 +2483,24 @@ function _doLoad(force){
     if(!done){
       delete window[cbName]; script.remove();
       syncStatus='err';
-      showAlert('Sin respuesta de Drive. Comprueba tu conexión.','err');
+      showAlert('Sin respuesta de Drive. Comprueba conexión.','err');
       rerender();
     }
-  },15000);
+  },20000);
 
   script.src=driveUrl+'?action=load&callback='+cbName+'&t='+Date.now();
   document.body.appendChild(script);
 }
 
+function driveAutoLoad(force){ _doLoad(force); }
+function driveLinkLoad(force){ _doLoad(true); }
 
 function scheduleFbSync(){
-  // Auto-sync 3 seconds after a save action
-  if(syncTimer)clearTimeout(syncTimer);
-  syncTimer=setTimeout(()=>{ if(fbUser)fbSync(); },3000);
+  if(syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(()=>{ if(driveUrl && S.entries.length>0) driveSync(); },5000);
 }
 
-// ── GOOGLE DRIVE SYNC ─────────────────────────────────────
-async function saveDriveUrl(){
-  const url=(document.getElementById('drive-url-input')?.value||'').trim();
-  if(!url||!url.includes('script.google.com')){
-    showAlert('URL no válida. Debe ser de script.google.com','err');
-    return;
-  }
-  driveUrl=url;
-  localStorage.setItem('driveUrl',url);
-  // Also save to IndexedDB for persistence
-  try{
-    const s=(await dbAll(ST.settings))[0]||{};
-    await dbPut(ST.settings,{...s,id:1,driveUrl:url});
-  }catch(e){}
-  S.modal=null; rerender();
-  driveSync();
-}
-
-// ── DRIVE SYNC (reliable version) ─────────────────────
-function drivePing(callback){
-  const cb='ping_'+Date.now();
-  const s=document.createElement('script');
-  let ok=false;
-  window[cb]=r=>{ok=true;delete window[cb];s.remove();callback(true,r);};
-  setTimeout(()=>{if(!ok){delete window[cb];s.remove();callback(false,null);}},8000);
-  s.src=driveUrl+'?action=ping&callback='+cb;
-  document.body.appendChild(s);
-}
-
-function driveSync(){
-  if(!driveUrl){showAlert('Conecta Drive primero','err');return;}
-  syncStatus='syncing';rerender();
-  // First test connection
-  drivePing((ok,r)=>{
-    if(!ok){
-      syncStatus='err';
-      showAlert('No se puede conectar. Verifica que redeployaste el script v4 con acceso "Cualquier usuario".','err');
-      rerender();return;
-    }
-    // Connection OK, now save data in small chunks via JSONP
-    const data={
-      version:2,
-      exportedAt:new Date().toISOString(),
-      // Exclude photos/signatures to keep size manageable
-      entries:S.entries.map(e=>({...e})),
-      tasks:S.tasks.map(t=>({...t,fotos:[]})),
-      sites:S.sites, workorders:S.workorders, vehicles:S.vehicles,
-      workers:workers.map(w=>({...w,foto:'',firma:''})),
-      companies:companies.map(c=>({...c,logo:''})),
-      activeWorkerId, activeCompanyId,
-      worker:{...fWorker,foto:'',firma:''},
-      company:{...fCompany,logo:''}
-    };
-    const json=JSON.stringify(data);
-    const cb='save_'+Date.now();
-    const s=document.createElement('script');
-    let done=false;
-    window[cb]=res=>{
-      done=true;delete window[cb];s.remove();
-      if(res&&res.ok){
-        syncStatus='ok';
-        lastSync=new Date().toLocaleTimeString('es-ES');
-        localStorage.setItem('lastSync',lastSync);
-        showAlert('✅ Sincronizado en Google Drive');
-      }else{
-        syncStatus='err';
-        showAlert('Error guardando: '+(res&&res.error||'sin respuesta'),'err');
-      }
-      rerender();
-    };
-    setTimeout(()=>{if(!done){delete window[cb];s.remove();syncStatus='err';showAlert('Tiempo agotado guardando datos','err');rerender();}},15000);
-    // Encode and send
-    const encoded=encodeURIComponent(json);
-    s.src=driveUrl+'?action=save&callback='+cb+'&d='+encoded;
-    document.body.appendChild(s);
-  });
-}
-
-function scheduleFbSync(){
-  if(syncTimer)clearTimeout(syncTimer);
-  syncTimer=setTimeout(()=>{ driveSync(); },4000);
-}
-
+// ── CARGA INICIAL ─────────────────────────────────────────
 // ── CARGA INICIAL ─────────────────────────────────────────
 async function loadData(){
   [S.entries,S.tasks,S.sites,S.workorders,S.vehicles,workers,companies]=await Promise.all([
@@ -2630,10 +2558,8 @@ function startClock(){
     // Restore draft if exists for today
     const todayDraft = S.entries.find(e=>e.fecha===today()&&e._draft);
     if(todayDraft){ fEntry={...todayDraft}; editingEntry=true; }
-    // Always load from Drive on startup
-    if(driveUrl){
-      setTimeout(()=>driveAutoLoad(true),1000); // force=true always loads
-    }
+    // Show sync bar but don't auto-load (user decides when to load)
+    if(driveUrl) syncStatus='ok';
     // Load Firebase config if saved
     const savedCfg=localStorage.getItem('fbConfig');
     if(savedCfg){ try{ fbConfig=JSON.parse(savedCfg); await initFirebase(); }catch(e){} }
