@@ -1,0 +1,2478 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="TimerPro"/>
+<meta name="theme-color" content="#0a0a0a"/>
+<title>TimerPro — Control Horario</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0a0a0a;--bg2:#141414;--bg3:#1e1e1e;--surf:#1a1a1a;--surf2:#222;--surf3:#2a2a2a;
+  --ink:#f0f0f0;--ink2:#999;--ink3:#555;
+  --acc:#22c55e;--acc2:#16a34a;--acc-lt:rgba(34,197,94,.12);
+  --red:#ef4444;--red-lt:rgba(239,68,68,.12);
+  --blu:#3b82f6;--blu-lt:rgba(59,130,246,.12);
+  --yel:#eab308;--yel-lt:rgba(234,179,8,.12);
+  --pur:#a855f7;--pur-lt:rgba(168,85,247,.12);
+  --brd:rgba(255,255,255,.08);
+  --r:10px;--r2:6px;--sh:0 2px 12px rgba(0,0,0,.4);
+  --font:'Inter',system-ui,sans-serif;
+}
+.light{
+  --bg:#f5f5f5;--bg2:#ececec;--bg3:#e2e2e2;--surf:#fff;--surf2:#f8f8f8;--surf3:#eee;
+  --ink:#111;--ink2:#555;--ink3:#aaa;--brd:rgba(0,0,0,.1);
+}
+html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px}
+#app{display:flex;flex-direction:column;height:100dvh;max-width:900px;margin:0 auto}
+#app-inner{display:flex;flex-direction:column;height:100%;width:100%;overflow:hidden}
+
+/* NAV */
+nav{display:flex;align-items:center;justify-content:space-between;padding:.6rem 1rem;background:var(--surf);border-bottom:1px solid var(--brd);flex-shrink:0;gap:.5rem}
+.nav-brand{font-size:1.1rem;font-weight:800;letter-spacing:-.02em;color:var(--ink)}
+.nav-brand em{color:var(--acc);font-style:normal}
+.nav-clock{font-size:.8rem;color:var(--ink2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.nav-btns{display:flex;gap:.4rem}
+.nav-btn{background:none;border:none;cursor:pointer;font-size:1.1rem;padding:.2rem .3rem;border-radius:var(--r2);color:var(--ink2)}
+.nav-btn:hover{color:var(--ink);background:var(--surf3)}
+.sync-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
+.sync-dot.ok{background:var(--acc)}.sync-dot.syncing{background:var(--yel);animation:pulse 1s infinite}
+.sync-dot.err{background:var(--red)}.sync-dot.off{background:var(--ink3)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.user-pill{display:flex;align-items:center;gap:.4rem;background:var(--surf3);border-radius:20px;padding:.2rem .6rem;font-size:.72rem;cursor:pointer}
+.user-pill img{width:20px;height:20px;border-radius:50%}
+
+/* TABS */
+.tabs{display:flex;overflow-x:auto;background:var(--surf);border-bottom:1px solid var(--brd);flex-shrink:0;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{display:flex;flex-direction:column;align-items:center;gap:.1rem;padding:.5rem .7rem;border:none;background:none;cursor:pointer;color:var(--ink2);font-size:.62rem;white-space:nowrap;border-bottom:2px solid transparent;transition:all .15s;flex-shrink:0}
+.tab .tab-icon{font-size:1.1rem}
+.tab.active{color:var(--acc);border-bottom-color:var(--acc)}
+.tab:hover:not(.active){color:var(--ink);background:var(--surf2)}
+
+/* MAIN */
+main{flex:1;overflow-y:auto;padding:1rem}
+
+/* CARDS & SECTIONS */
+.card{background:var(--surf);border:1px solid var(--brd);border-radius:var(--r);padding:1rem;margin-bottom:.8rem}
+.sec-title{font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);margin-bottom:.8rem}
+.empty{text-align:center;padding:2rem;color:var(--ink3);font-size:.85rem}
+
+/* FIELDS */
+.field{display:flex;flex-direction:column;gap:.3rem;margin-bottom:.7rem}
+.field label{font-size:.72rem;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em}
+.field input,.field select,.field textarea{background:var(--surf2);border:1px solid var(--brd);border-radius:var(--r2);padding:.5rem .7rem;color:var(--ink);font-size:.9rem;font-family:var(--font);width:100%;transition:border .15s}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--acc)}
+.field textarea{resize:vertical;min-height:80px}
+.field select option{background:var(--surf2)}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:.7rem}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.7rem}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:.4rem;padding:.5rem .9rem;border:none;border-radius:var(--r2);cursor:pointer;font-size:.8rem;font-weight:600;font-family:var(--font);transition:all .15s;white-space:nowrap}
+.btn-g{background:var(--acc);color:#000}
+.btn-g:hover{background:var(--acc2)}
+.btn-r{background:var(--red);color:#fff}
+.btn-r:hover{background:#dc2626}
+.btn-b{background:var(--blu);color:#fff}
+.btn-b:hover{background:#2563eb}
+.btn-y{background:var(--yel);color:#000}
+.btn-y:hover{background:#ca8a04}
+.btn-p{background:var(--pur);color:#fff}
+.btn-p:hover{background:#9333ea}
+.btn-gh{background:var(--surf3);color:var(--ink)}
+.btn-gh:hover{background:var(--surf2)}
+.btn-sm{padding:.35rem .6rem;font-size:.75rem}
+.btn-lg{padding:.7rem 1.2rem;font-size:.9rem}
+.btn-full{width:100%;justify-content:center}
+.btn-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem}
+
+/* BADGE */
+.badge{display:inline-block;padding:.1rem .45rem;border-radius:20px;font-size:.65rem;font-weight:700}
+.badge-g{background:var(--acc-lt);color:var(--acc)}
+.badge-r{background:var(--red-lt);color:var(--red)}
+.badge-b{background:var(--blu-lt);color:var(--blu)}
+.badge-y{background:var(--yel-lt);color:var(--yel)}
+.badge-p{background:var(--pur-lt);color:var(--pur)}
+
+/* FICHAJE */
+.fich-row{display:flex;align-items:center;gap:.5rem;padding:.5rem;background:var(--surf2);border-radius:var(--r2);margin-bottom:.4rem}
+.fich-time{font-size:.85rem;font-variant-numeric:tabular-nums;flex:1}
+.fich-time input{background:transparent;border:none;color:var(--ink);font-size:.85rem;width:80px;padding:0}
+.fich-time input:focus{outline:none;border-bottom:1px solid var(--acc)}
+
+/* TASK CARD */
+.task-card{background:var(--surf2);border:1px solid var(--brd);border-radius:var(--r);padding:.8rem;margin-bottom:.6rem}
+.task-head{display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem}
+.task-title{font-weight:700;font-size:.9rem;flex:1}
+.task-meta{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem}
+.task-meta span{font-size:.72rem;color:var(--ink2)}
+
+/* IMPORTE FIELD */
+.imp-wrap{display:flex;gap:.4rem;align-items:center}
+.imp-wrap select,.imp-wrap input{flex:1}
+
+/* JOURNEY CARD */
+.journey-card{background:var(--surf3);border-radius:var(--r2);padding:.7rem;margin-bottom:.4rem}
+
+/* CALENDAR */
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.cal-dn{text-align:center;font-size:.65rem;color:var(--ink2);font-weight:700;padding:.3rem 0}
+.cal-day{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:var(--r2);cursor:pointer;font-size:.8rem;position:relative;background:var(--surf2);transition:background .15s}
+.cal-day:hover{background:var(--surf3)}
+.cal-day.today{background:var(--acc-lt);color:var(--acc);font-weight:700}
+.cal-day.selected{background:var(--acc);color:#000;font-weight:700}
+.cal-day.has-e::after{content:'';position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--acc)}
+.cal-day.other-month{opacity:.3}
+.cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem}
+.cal-nav button{background:none;border:none;cursor:pointer;color:var(--ink);font-size:1.2rem;padding:.3rem}
+.cal-nav span{font-weight:700}
+
+/* FIRMA */
+.firma-canvas{border:2px dashed var(--brd);border-radius:var(--r);touch-action:none;display:block;background:var(--surf2);cursor:crosshair}
+
+/* ALERT */
+.alert-box{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);padding:.6rem 1.2rem;border-radius:20px;font-size:.85rem;font-weight:600;z-index:999;animation:slideUp .2s ease;box-shadow:var(--sh);white-space:nowrap}
+.alert-ok{background:var(--acc);color:#000}
+.alert-err{background:var(--red);color:#fff}
+@keyframes slideUp{from{opacity:0;transform:translateX(-50%) translateY(1rem)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+
+/* MODAL */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;display:flex;align-items:flex-end;justify-content:center}
+.modal-box{background:var(--surf);border-radius:var(--r) var(--r) 0 0;padding:1.2rem;width:100%;max-width:600px;max-height:90dvh;overflow-y:auto;animation:slideUp .2s ease}
+.modal-title{font-size:1rem;font-weight:800;margin-bottom:1rem}
+
+/* TOGGLE */
+.toggle-row{display:flex;align-items:center;gap:.8rem;padding:.4rem 0}
+.toggle-row span{flex:1;font-size:.85rem}
+.toggle{width:40px;height:22px;background:var(--surf3);border-radius:11px;border:none;cursor:pointer;position:relative;transition:background .2s;flex-shrink:0}
+.toggle::after{content:'';position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--ink2);transition:all .2s}
+.toggle.on{background:var(--acc)}
+.toggle.on::after{left:calc(100% - 19px);background:#000}
+
+/* SUMMARY */
+.sum-row{display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid var(--brd)}
+.sum-row:last-child{border:none}
+.sum-label{font-size:.82rem;color:var(--ink2)}
+.sum-val{font-weight:700;font-size:.9rem}
+.sum-total{font-size:1rem;font-weight:800;color:var(--acc)}
+
+/* PHOTOS */
+.photo-grid{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem}
+.photo-thumb{width:70px;height:70px;border-radius:var(--r2);object-fit:cover;border:1px solid var(--brd)}
+.photo-del{position:relative;cursor:pointer}
+.photo-del::after{content:'✕';position:absolute;top:2px;right:2px;background:rgba(0,0,0,.7);color:#fff;font-size:.55rem;width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;line-height:14px;text-align:center}
+
+/* QR */
+.qr-wrap{text-align:center;padding:1rem}
+.qr-wrap img{max-width:200px;border-radius:var(--r);border:4px solid #fff}
+
+/* SCROLL */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--surf3);border-radius:2px}
+
+/* ENTRADA LOCKED */
+.locked-badge{display:inline-flex;align-items:center;gap:.3rem;background:var(--acc-lt);color:var(--acc);padding:.2rem .6rem;border-radius:20px;font-size:.72rem;font-weight:700}
+
+/* SEPARADOR */
+.sep{height:1px;background:var(--brd);margin:.8rem 0}
+
+@media(min-width:720px){
+  main{padding:1.2rem 1.5rem}
+  .grid-2{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+</head>
+<body>
+<div id="app"></div>
+<script>
+'use strict';
+// ═══════════════════════════════════════════════════════
+// TIMERPRO - Control Horario Laboral
+// Vanilla JS, sin frameworks, sin compilación
+// ═══════════════════════════════════════════════════════
+
+// ── UTILIDADES ──────────────────────────────────────────
+const pad = n => String(n).padStart(2,'0');
+const today = () => { const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
+const nowTime = () => { const d=new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const fmtTime = t => t||'—';
+const calcH = (a,b) => { if(!a||!b)return 0; const [ah,am]=a.split(':').map(Number),[bh,bm]=b.split(':').map(Number); let d=(bh*60+bm)-(ah*60+am); if(d<0)d+=1440; return Math.round(d*100/60)/100; };
+const fmtH = h => { if(!h)return '0h'; const hh=Math.floor(h),mm=Math.round((h-hh)*60); return hh>0&&mm>0?`${hh}h ${mm}m`:hh>0?`${hh}h`:`${mm}m`; };
+const eur = v => Number(v||0).toFixed(2).replace('.',',')+' €';
+const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const WDAYS = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+const WSHORT = ['L','M','X','J','V','S','D'];
+const cap = s => s?s.charAt(0).toUpperCase()+s.slice(1):s;
+const dlbl = s => { if(!s)return ''; const[y,m,d]=s.split('-'); return `${parseInt(d)} de ${MONTHS[parseInt(m)-1]} de ${y}`; };
+const wday = s => { if(!s)return ''; return WDAYS[new Date(s+'T12:00:00').getDay()]; };
+// Amount options: 0.50, 1, 1.50, 2 ... 100 (0.50 increments)
+const IMPORTE_OPTS = [0.50, ...Array.from({length:100},(_,i)=>i+1)];
+const isStdAmount = v => IMPORTE_OPTS.includes(Number(v));
+
+// ── INDEXEDDB ────────────────────────────────────────────
+const DB_NAME='TimerProV2',DB_VER=1;
+const ST={entries:'entries',tasks:'tasks',sites:'sites',workorders:'workorders',vehicles:'vehicles',settings:'settings',workers:'workers',companies:'companies'};
+let db;
+function openDB(){
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open(DB_NAME,DB_VER);
+    r.onupgradeneeded=e=>{
+      const d=e.target.result;
+      Object.values(ST).forEach(s=>{ if(!d.objectStoreNames.contains(s)) d.createObjectStore(s,{keyPath:'id',autoIncrement:true}); });
+    };
+    r.onsuccess=e=>{db=e.target.result;res(db);};
+    r.onerror=()=>rej(r.error);
+  });
+}
+const dbAll=st=>new Promise((res,rej)=>{const t=db.transaction(st,'readonly'),r=t.objectStore(st).getAll();r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});
+const dbPut=(st,obj)=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrite'),r=t.objectStore(st).put(obj);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});
+const dbDel=(st,id)=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrite'),r=t.objectStore(st).delete(id);r.onsuccess=()=>res();r.onerror=()=>rej(r.error);});
+const dbClear=st=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrite'),r=t.objectStore(st).clear();r.onsuccess=()=>res();r.onerror=()=>rej(r.error);});
+
+// ── ESTADO GLOBAL ────────────────────────────────────────
+const S = {
+  tab:'fichar', dark:true,
+  entries:[], tasks:[], sites:[], workorders:[], vehicles:[], settings:{},
+  // Jornada activa
+  entry:null,
+  // Modales
+  modal:null,
+  // Alerta
+  alertMsg:null, alertType:'ok', alertTimer:null,
+  // Reloj
+  clock:'',
+};
+
+// ── DEFAULTS ─────────────────────────────────────────────
+const defEntry = () => ({
+  fecha:today(), fichajes:[], horasNormales:0, importeNormales:0,
+  horasExtra:0, importeExtra:0, horasNocturnas:0, importeNocturnas:0,
+  horasFestivas:0, importeFestivas:0, dieta:0, dietasExtra:[], transporte:0,
+  otrosConceptos:[], notas:'', journeys:[], ubicacionEntrada:'', ubicacionSalida:'',
+  entradaLocked:false
+});
+const defFichaje = () => ({_fid:Date.now(), entrada:'', salida:'', nota:'', editing:false});
+const defTask = f => ({fecha:f||today(), titulo:'', horaInicio:nowTime(), horaFin:'', descripcion:'', siteId:'', workOrderId:'', otNumero:'', usaOT:false, fotos:[]});
+const defJourney = () => ({vehicleId:'', tipoManual:'coche', precioManual:0.19, origen:'', destino:'', km:0, horaInicio:nowTime(), horaFin:''});
+const defWorker = {nombre:'',apellidos:'',dni:'',cargo:'',departamento:'',email:'',telefono:'',numSS:'',fechaAlta:'',convenio:'',firma:'',foto:''};
+const defCompany = {nombre:'',cif:'',direccion:'',ciudad:'',cp:'',telefono:'',email:'',web:'',logo:''};
+const defSite = {nombre:'',direccion:'',ciudad:'',telefono:'',notas:''};
+const defWO = {codigo:'',descripcion:'',cliente:'',notas:''};
+const defVehicle = {nombre:'',tipo:'coche',matricula:'',precioPorKm:0.19,notas:''};
+
+// Formularios
+let fEntry = defEntry();
+let fTask = defTask();
+let fWorker = {...defWorker};
+let fCompany = {...defCompany};
+let fSite = {...defSite};
+let fWO = {...defWO};
+let fVehicle = {...defVehicle};
+let editSiteId = null, editWOId = null, editVehId = null;
+let showSiteF = false, showWOF = false, showVehF = false;
+let editingEntry = false;
+let filterMonth = '';
+let calYear = new Date().getFullYear(), calMonth = new Date().getMonth();
+let selDate = today();
+let dSearch = '', dFY = '', dFM = '';
+let syncMode = 'export';
+let dlDialog = null;
+let workers = []; // list of saved workers
+let companies = []; // list of saved companies
+let activeWorkerId = null;
+let activeCompanyId = null;
+let showWorkerF = false;
+let showCompanyF = false;
+// Firebase
+let fbApp=null, fbAuth=null, fbDb=null, fbUser=null;
+let fbConfig=null; // loaded from localStorage
+let syncStatus=''; // '', 'syncing', 'ok', 'err'
+let syncTimer=null;
+let driveUrl='https://script.google.com/macros/s/AKfycbw1CkOlfTsp-nVb7IY5nTWf3vP0q93ys4AHILmt9G3Sn7sgpRDnMugSm5er_xuG0BbvTg/exec'; // URL fija - ya configurada
+let lastSync='';
+let autoSaveTimer=null;
+let draftSaveTimer=null;
+let confirmDialog=null; // {msg, onOk}
+
+// ── RENDER ENGINE ────────────────────────────────────────
+function h(tag, attrs, ...children){
+  const el = document.createElement(tag);
+  const BOOL=['selected','checked','disabled','multiple','readonly','required','autofocus'];
+  if(attrs) Object.entries(attrs).forEach(([k,v])=>{
+    if(k==='on') Object.entries(v).forEach(([ev,fn])=>el.addEventListener(ev,fn));
+    else if(k==='class') el.className=v;
+    else if(k==='html') el.innerHTML=v;
+    else if(k==='style'&&typeof v==='object') Object.assign(el.style,v);
+    else if(k==='data') Object.entries(v).forEach(([dk,dv])=>el.dataset[dk]=dv);
+    else if(BOOL.includes(k)){ el[k]=(v===true||v===''||v==='true'); }
+    else if(v!==false&&v!==null&&v!==undefined) el.setAttribute(k,v);
+  });
+  children.flat(Infinity).forEach(c=>{
+    if(c===null||c===undefined||c===false)return;
+    el.appendChild(typeof c==='string'||typeof c==='number' ? document.createTextNode(c) : c);
+  });
+  return el;
+}
+
+let renderScheduled = false;
+function rerender(){
+  if(renderScheduled)return;
+  renderScheduled=true;
+  requestAnimationFrame(()=>{ renderScheduled=false; renderApp(); });
+}
+
+function renderApp(){
+  try {
+    const app = document.getElementById('app');
+    if(!app) return;
+    const scrollTop = app.querySelector('main')?.scrollTop||0;
+    while(app.firstChild) app.removeChild(app.firstChild);
+    try { app.appendChild(renderNav()); } catch(e) { app.appendChild(errEl('nav',e)); }
+    try { app.appendChild(renderTabs()); } catch(e) { app.appendChild(errEl('tabs',e)); }
+    try { app.appendChild(h('main',{},renderMain())); } catch(e) { app.appendChild(errEl('main:'+S.tab,e)); }
+    document.querySelectorAll('.modal-bg,.alert-box').forEach(el=>el.remove());
+    if(S.modal){ try{ const m=renderModal(); if(m) document.body.appendChild(m); }catch(e){} }
+    if(S.alertMsg){ try{ const a=renderAlert(); if(a) document.body.appendChild(a); }catch(e){} }
+    const m = app.querySelector('main');
+    if(m) m.scrollTop=scrollTop;
+    document.documentElement.classList.toggle('light',!S.dark);
+  } catch(e) {
+    console.error('renderApp error:',e);
+    const app=document.getElementById('app');
+    if(app) app.innerHTML='<div style="color:red;padding:20px;font-family:monospace;font-size:12px">Render error: '+e.message+'</div>';
+  }
+}
+function errEl(ctx,e){ return h('div',{style:{color:'red',padding:'8px',fontSize:'12px',fontFamily:'monospace'}},'Error in '+ctx+': '+e.message); }
+
+// ── NAV ──────────────────────────────────────────────────
+function renderNav(){
+  const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
+  return h('nav',{},
+    h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
+    h('div',{class:'nav-clock'},S.clock),
+    h('div',{class:'nav-btns'},
+      h('div',{class:'user-pill',on:{click:()=>openModal('driveaccount')}},
+        h('span',{class:'sync-dot '+syncDot}),
+        'Drive'
+      ),
+      h('button',{class:'nav-btn',title:'Modo oscuro/claro',on:{click:toggleDark}},S.dark?'☀️':'🌙'),
+      h('button',{class:'nav-btn',title:'Exportar',on:{click:()=>openModal('export')}},'📤')
+    )
+  );
+}
+
+// ── TABS ─────────────────────────────────────────────────
+const TABS = [
+  {id:'fichar',icon:'⏱',label:'Fichar'},
+  {id:'tareas',icon:'📝',label:'Tareas'},
+  {id:'calendario',icon:'📅',label:'Calendario'},
+  {id:'sitios',icon:'📍',label:'Sitios'},
+  {id:'ordenes',icon:'🔧',label:'O.T.'},
+  {id:'vehiculos',icon:'🚗',label:'Vehículos'},
+  {id:'resumen',icon:'📊',label:'Resumen'},
+  {id:'sincronizar',icon:'🔄',label:'Sincronizar'},
+  {id:'trabajador',icon:'👤',label:'Trabajador'},
+  {id:'empresa',icon:'🏢',label:'Empresa'},
+];
+function renderTabs(){
+  return h('div',{class:'tabs'},
+    ...TABS.map(t=>h('button',{class:'tab'+(S.tab===t.id?' active':''),on:{click:()=>{S.tab=t.id;rerender()}}},
+      h('span',{class:'tab-icon'},t.icon),t.label
+    ))
+  );
+}
+
+// ── MAIN ─────────────────────────────────────────────────
+function renderMain(){
+  switch(S.tab){
+    case 'fichar':     return renderFichar();
+    case 'tareas':     return renderTareas();
+    case 'calendario': return renderCalendario();
+    case 'sitios':     return renderSitios();
+    case 'ordenes':    return renderOrdenes();
+    case 'vehiculos':  return renderVehiculos();
+    case 'resumen':    return renderResumen();
+    case 'sincronizar':return renderSincronizar();
+    case 'trabajador': return renderTrabajador();
+    case 'empresa':    return renderEmpresa();
+    default: return h('div',{},'');
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// FICHAR
+// ══════════════════════════════════════════════════════════
+function renderFichar(){
+  const e = fEntry;
+  const today_entries = S.entries.filter(x=>x.fecha===e.fecha);
+  
+  return h('div',{},
+    // Fecha
+    h('div',{class:'card'},
+      h('div',{class:'grid-2'},
+        field('Fecha','date',e.fecha,v=>{fEntry.fecha=v;rerender()}),
+        h('div',{class:'field'},
+          h('label',{},'JORNADA'),
+          h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.2rem'}},
+            editingEntry
+              ? h('button',{class:'btn btn-gh btn-sm',on:{click:cancelEditing}},'✕ Cancelar')
+              : h('button',{class:'btn btn-g btn-sm',on:{click:saveEntry}},'💾 Finalizar jornada'),
+            !editingEntry&&fEntry.id?h('span',{style:{fontSize:'.7rem',color:'var(--acc)'},title:'Guardado automáticamente'},'✓ guardado'):null,
+            !editingEntry&&today_entries.length>0
+              ? h('button',{class:'btn btn-b btn-sm',on:{click:()=>loadHistorial(today_entries[0])}},`📋 Historial (${today_entries.length})`)
+              : null
+          )
+        )
+      )
+    ),
+
+    // Fichajes
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'Fichajes del día'),
+      ...e.fichajes.map((fj,i)=>renderFichaje(fj,i)),
+      h('button',{class:'btn btn-gh btn-sm',style:{marginTop:'.3rem'},on:{click:addFichaje}},'➕ Añadir fichaje'),
+      e.fichajes.length>0&&e.fichajes[0].entrada
+        ? h('div',{class:'locked-badge',style:{marginTop:'.5rem'}},
+            h('button',{class:'toggle'+(e.entradaLocked?' on':''),on:{click:()=>{fEntry.entradaLocked=!fEntry.entradaLocked;rerender()}}},null),
+            ' Entrada bloqueada'
+          )
+        : null
+    ),
+
+    // Horas e importes
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'Horas e Importes'),
+      ...(['Normales','Extra','Nocturnas','Festivas'].map(tipo=>
+        h('div',{class:'grid-2',style:{marginBottom:'.5rem'}},
+          h('div',{class:'field'},
+            h('label',{},`HORAS ${tipo.toUpperCase()}`),
+            h('input',{type:'number',min:'0',step:'0.5',value:e['horas'+tipo]||'',placeholder:'0',
+              on:{blur:ev=>{fEntry['horas'+tipo]=parseFloat(ev.target.value)||0;scheduleDraftSave();}}})
+          ),
+          h('div',{class:'field'},
+            h('label',{},`IMPORTE ${tipo.toUpperCase()}`),
+            importeField(e['importe'+tipo], v=>{fEntry['importe'+tipo]=v;rerender()})
+          )
+        )
+      )),
+      h('div',{class:'sep'}),
+      h('div',{class:'grid-2'},
+        h('div',{class:'field'},
+          h('label',{},'DIETA'),
+          importeField(e.dieta, v=>{fEntry.dieta=v;rerender()})
+        ),
+        h('div',{class:'field'},
+          h('label',{},'TRANSPORTE'),
+          importeField(e.transporte, v=>{fEntry.transporte=v;rerender()})
+        )
+      )
+    ),
+
+    // Dietas extra
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'Dietas Extra'),
+      ...(e.dietasExtra||[]).map((d,i)=>
+        h('div',{class:'grid-2',style:{marginBottom:'.4rem'}},
+          field('Concepto','text',d.concepto,v=>{fEntry.dietasExtra[i].concepto=v}),
+          h('div',{class:'field'},
+            h('label',{},'IMPORTE'),
+            h('div',{class:'imp-wrap'},
+              importeField(d.importe,v=>{fEntry.dietasExtra[i].importe=v;rerender()}),
+              h('button',{class:'btn btn-r btn-sm',on:{click:()=>{fEntry.dietasExtra.splice(i,1);rerender()}}},'✕')
+            )
+          )
+        )
+      ),
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{fEntry.dietasExtra.push({concepto:'',importe:0});rerender()}}},'➕ Añadir dieta extra')
+    ),
+
+    // Otros conceptos
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'Otros Conceptos'),
+      ...(e.otrosConceptos||[]).map((c,i)=>
+        h('div',{class:'grid-2',style:{marginBottom:'.4rem'}},
+          field('Concepto','text',c.concepto,v=>{fEntry.otrosConceptos[i].concepto=v}),
+          h('div',{class:'field'},
+            h('label',{},'IMPORTE'),
+            h('div',{class:'imp-wrap'},
+              importeField(c.importe,v=>{fEntry.otrosConceptos[i].importe=v;rerender()}),
+              h('button',{class:'btn btn-r btn-sm',on:{click:()=>{fEntry.otrosConceptos.splice(i,1);rerender()}}},'✕')
+            )
+          )
+        )
+      ),
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{fEntry.otrosConceptos.push({concepto:'',importe:0});rerender()}}},'➕ Añadir concepto')
+    ),
+
+    // Viajes
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'Viajes'),
+      ...(e.journeys||[]).map((j,i)=>renderJourney(j,i,'entry')),
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{fEntry.journeys.push(defJourney());rerender()}}},'🚗 Añadir viaje')
+    ),
+
+    // Notas
+    h('div',{class:'card'},
+      fieldArea('Nota de jornada',e.notas,v=>{fEntry.notas=v})
+    ),
+
+    // Ubicación
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'Ubicación'),
+      h('div',{class:'field'},
+        h('label',{},'ENTRADA — dirección o coordenadas'),
+        h('div',{style:{display:'flex',gap:'.4rem'}},
+          h('input',{type:'text',placeholder:'Calle, ciudad o pega coordenadas...',
+            value:locLabel(e.ubicacionEntrada),
+            on:{blur:ev=>{if(ev.target.value)fEntry.ubicacionEntrada=textToLoc(ev.target.value);}}}),
+          h('button',{class:'btn btn-gh btn-sm',style:{flexShrink:0},title:'Usar GPS',on:{click:()=>captureGPS('entrada')}},'📍')
+        ),
+        e.ubicacionEntrada?h('div',{style:{marginTop:'.3rem'}},gpsDisplay(e.ubicacionEntrada)):null
+      ),
+      h('div',{class:'field'},
+        h('label',{},'SALIDA — dirección o coordenadas'),
+        h('div',{style:{display:'flex',gap:'.4rem'}},
+          h('input',{type:'text',placeholder:'Calle, ciudad o pega coordenadas...',
+            value:locLabel(e.ubicacionSalida),
+            on:{blur:ev=>{if(ev.target.value)fEntry.ubicacionSalida=textToLoc(ev.target.value);}}}),
+          h('button',{class:'btn btn-gh btn-sm',style:{flexShrink:0},title:'Usar GPS',on:{click:()=>captureGPS('salida')}},'📍')
+        ),
+        e.ubicacionSalida?h('div',{style:{marginTop:'.3rem'}},gpsDisplay(e.ubicacionSalida)):null
+      ),
+      h('p',{style:{fontSize:'.72rem',color:'var(--ink3)',marginTop:'.3rem'}},
+        '💡 Escribe la dirección directamente o pulsa 📍 para GPS (requiere HTTPS)'
+      )
+    ),
+
+    // Historial
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'Historial de Jornadas'),
+      S.entries.length===0
+        ? h('div',{class:'empty'},'Sin jornadas guardadas')
+        : h('div',{},
+            ...S.entries.slice().reverse().slice(0,20).map(en=>
+              h('div',{class:'sum-row',style:{cursor:'pointer'},on:{click:()=>loadHistorial(en)}},
+                h('div',{},
+                  h('div',{style:{fontWeight:700,fontSize:'.85rem'}},`${cap(wday(en.fecha))}, ${dlbl(en.fecha)}`),
+                  h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},
+                    `${fmtH((en.horasNormales||0)+(en.horasExtra||0)+(en.horasNocturnas||0)+(en.horasFestivas||0))} · ${(en.fichajes||[]).length} fichajes`
+                  )
+                ),
+                h('div',{style:{display:'flex',gap:'.3rem'}},
+                  h('button',{class:'btn btn-b btn-sm',on:{click:ev=>{ev.stopPropagation();loadHistorial(en);}}},'✏️'),
+                  h('button',{class:'btn btn-r btn-sm',on:{click:ev=>{ev.stopPropagation();deleteEntry(en.id);}}},'🗑')
+                )
+              )
+            )
+          )
+    )
+  );
+}
+
+function renderFichaje(fj,i){
+  return h('div',{class:'fich-row'},
+    h('span',{style:{fontSize:'.75rem',color:'var(--ink2)',minWidth:'20px'}},i+1+'.'),
+    h('div',{class:'fich-time'},
+      h('input',{type:'time',value:fj.entrada,on:{change:e=>{fEntry.fichajes[i].entrada=e.target.value;scheduleDraftSave();}}}),
+      h('span',{style:{color:'var(--ink3)',margin:'0 .2rem'}},'-'),
+      h('input',{type:'time',value:fj.salida,on:{change:e=>{fEntry.fichajes[i].salida=e.target.value;scheduleDraftSave();}}})
+    ),
+    fj.entrada&&fj.salida?h('span',{class:'badge badge-g'},fmtH(calcH(fj.entrada,fj.salida))):null,
+    h('button',{class:'btn btn-r btn-sm',on:{click:()=>{fEntry.fichajes=[...fEntry.fichajes.slice(0,i),...fEntry.fichajes.slice(i+1)];scheduleDraftSave();rerender();}}},'✕')
+  );
+}
+
+function renderJourney(j,i,ctx){
+  const vehOpts = [{id:'',nombre:'Manual'},...S.vehicles];
+  const selVeh = S.vehicles.find(v=>v.id==j.vehicleId);
+  const precio = j.vehicleId&&selVeh ? selVeh.precioPorKm : j.precioManual;
+  const coste = (j.km||0)*precio;
+  
+  return h('div',{class:'journey-card'},
+    h('div',{class:'grid-2',style:{marginBottom:'.4rem'}},
+      h('div',{class:'field'},
+        h('label',{},'VEHÍCULO'),
+        h('select',{value:j.vehicleId,on:{change:ev=>{
+          if(ctx==='entry')fEntry.journeys[i].vehicleId=ev.target.value;
+          else fTask.journeys[i].vehicleId=ev.target.value;
+          rerender();
+        }}},
+          ...vehOpts.map(v=>h('option',{value:v.id,selected:v.id==j.vehicleId?'':null},v.nombre||v.tipo||'Manual'))
+        )
+      ),
+      !j.vehicleId
+        ? h('div',{class:'field'},
+            h('label',{},'TIPO'),
+            h('select',{on:{change:ev=>{if(ctx==='entry')fEntry.journeys[i].tipoManual=ev.target.value;else fTask.journeys[i].tipoManual=ev.target.value;}}},
+              ['coche','moto','furgoneta','camión','otro'].map(t=>h('option',{value:t,selected:t===j.tipoManual?'':null},t))
+            )
+          )
+        : h('div',{class:'field'},h('label',{},'MATRÍCULA'),h('div',{style:{padding:'.5rem',color:'var(--ink2)'}},selVeh?.matricula||'—'))
+    ),
+    h('div',{class:'grid-3',style:{marginBottom:'.4rem'}},
+      field('Origen','text',j.origen,v=>{if(ctx==='entry')fEntry.journeys[i].origen=v;else fTask.journeys[i].origen=v;}),
+      field('Destino','text',j.destino,v=>{if(ctx==='entry')fEntry.journeys[i].destino=v;else fTask.journeys[i].destino=v;}),
+      field('Km','number',j.km,v=>{if(ctx==='entry')fEntry.journeys[i].km=parseFloat(v)||0;else fTask.journeys[i].km=parseFloat(v)||0;rerender();},{min:'0',step:'0.1'})
+    ),
+    h('div',{class:'grid-2',style:{marginBottom:'.4rem'}},
+      field('Hora inicio','time',j.horaInicio,v=>{if(ctx==='entry')fEntry.journeys[i].horaInicio=v;else fTask.journeys[i].horaInicio=v;}),
+      field('Hora fin','time',j.horaFin,v=>{if(ctx==='entry')fEntry.journeys[i].horaFin=v;else fTask.journeys[i].horaFin=v;})
+    ),
+    !j.vehicleId
+      ? h('div',{class:'field'},h('label',{},'€/KM'),h('input',{type:'number',min:'0',step:'0.001',value:j.precioManual,on:{input:ev=>{if(ctx==='entry')fEntry.journeys[i].precioManual=parseFloat(ev.target.value)||0;else fTask.journeys[i].precioManual=parseFloat(ev.target.value)||0;}}}))
+      : null,
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'.3rem'}},
+      h('span',{class:'badge badge-b'},`Coste: ${eur(coste)}`),
+      h('button',{class:'btn btn-r btn-sm',on:{click:()=>{if(ctx==='entry')fEntry.journeys.splice(i,1);else fTask.journeys.splice(i,1);rerender();}}},'✕')
+    )
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// TAREAS
+// ══════════════════════════════════════════════════════════
+function renderTareas(){
+  const tasks = S.tasks.filter(t=>!filterMonth||t.fecha.startsWith(filterMonth));
+  const siteOpts = [{id:'',nombre:'Sin sitio'},...S.sites];
+  const woOpts = [{id:'',codigo:'Sin O.T.'},...S.workorders];
+  
+  return h('div',{},
+    // Formulario nueva tarea
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'Nueva Tarea'),
+      h('div',{class:'grid-2'},
+        field('Fecha','date',fTask.fecha,v=>{fTask.fecha=v;}),
+        field('Título','text',fTask.titulo,v=>{fTask.titulo=v;},{},'Título de la tarea')
+      ),
+      h('div',{class:'grid-2'},
+        field('Hora inicio','time',fTask.horaInicio,v=>{fTask.horaInicio=v;}),
+        field('Hora fin','time',fTask.horaFin,v=>{fTask.horaFin=v;})
+      ),
+      fieldArea('Descripción',fTask.descripcion,v=>{fTask.descripcion=v;}),
+      h('div',{class:'grid-2'},
+        h('div',{class:'field'},
+          h('label',{},'SITIO'),
+          h('select',{on:{change:ev=>{fTask.siteId=ev.target.value;}}},
+            ...siteOpts.map(s=>h('option',{value:s.id,selected:s.id==fTask.siteId?'':null},s.nombre))
+          )
+        ),
+        h('div',{class:'field'},
+          h('label',{},'O.T.'),
+          h('div',{class:'toggle-row'},
+            h('span',{},'Usar O.T.'),
+            h('button',{class:'toggle'+(fTask.usaOT?' on':''),on:{click:()=>{fTask.usaOT=!fTask.usaOT;rerender();}}})
+          )
+        )
+      ),
+      fTask.usaOT ? h('div',{class:'grid-2'},
+        h('div',{class:'field'},
+          h('label',{},'O.T. DEL CATÁLOGO'),
+          h('select',{on:{change:ev=>{fTask.workOrderId=ev.target.value;rerender();}}},
+            ...woOpts.map(w=>h('option',{value:w.id,selected:w.id==fTask.workOrderId?'':null},
+              w.id ? `[${w.codigo}] ${w.descripcion||''}` : w.codigo
+            ))
+          )
+        ),
+        field('Nº O.T. (máx 10 dígitos)','text',fTask.otNumero,v=>{fTask.otNumero=v.replace(/\D/g,'').slice(0,10);},{maxlength:'10',pattern:'[0-9]*'})
+      ) : null,
+      // Fotos
+      h('div',{class:'field'},
+        h('label',{},'FOTOS'),
+        h('div',{class:'photo-grid'},
+          ...(fTask.fotos||[]).map((f,fi)=>
+            h('div',{class:'photo-del',on:{click:()=>{fTask.fotos.splice(fi,1);rerender();}}},
+              h('img',{src:f,class:'photo-thumb'})
+            )
+          ),
+          h('button',{class:'btn btn-gh btn-sm',on:{click:()=>addPhoto('task_new')}},'📷 Foto'),
+          h('button',{class:'btn btn-gh btn-sm',on:{click:()=>addPhotoGallery('task_new')}},'🖼 Galería')
+        )
+      ),
+      // Viajes de la tarea
+      ...(fTask.journeys||[]).map((j,i)=>renderJourney(j,i,'task')),
+      h('div',{class:'btn-row'},
+        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{if(!fTask.journeys)fTask.journeys=[];fTask.journeys.push(defJourney());rerender();}}},'🚗 Añadir viaje'),
+        h('button',{class:'btn btn-g',on:{click:saveTask}},'💾 Guardar Tarea')
+      )
+    ),
+
+    // Filtro
+    h('div',{class:'card'},
+      h('div',{class:'grid-2'},
+        h('div',{class:'field'},
+          h('label',{},'FILTRAR MES'),
+          h('input',{type:'month',value:filterMonth,on:{change:ev=>{filterMonth=ev.target.value;rerender();}}})
+        ),
+        h('div',{style:{display:'flex',alignItems:'flex-end',paddingBottom:'.7rem'}},
+          filterMonth?h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{filterMonth='';rerender();}}},'✕ Todos'):null
+        )
+      )
+    ),
+
+    // Lista de tareas
+    tasks.length===0
+      ? h('div',{class:'empty'},'Sin tareas'+(filterMonth?' en este mes':''))
+      : h('div',{},
+          ...tasks.slice().reverse().map(t=>renderTaskCard(t))
+        )
+  );
+}
+
+function renderTaskCard(t){
+  const site = S.sites.find(s=>s.id==t.siteId);
+  const wo = S.workorders.find(w=>w.id==t.workOrderId);
+  
+  return h('div',{class:'task-card'},
+    h('div',{class:'task-head'},
+      h('div',{class:'task-title'},t.titulo||'Sin título'),
+      h('div',{style:{display:'flex',gap:'.3rem'}},
+        h('button',{class:'btn btn-b btn-sm',on:{click:()=>editTask(t)}},'✏️'),
+        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>copyTask(t)}},'📋'),
+        h('button',{class:'btn btn-r btn-sm',on:{click:()=>deleteTask(t.id)}},'🗑')
+      )
+    ),
+    h('div',{class:'task-meta'},
+      h('span',{},`📅 ${cap(wday(t.fecha))}, ${dlbl(t.fecha)}`),
+      t.horaInicio?h('span',{},`🕐 ${t.horaInicio}${t.horaFin?' → '+t.horaFin:''}${t.horaInicio&&t.horaFin?' ('+fmtH(calcH(t.horaInicio,t.horaFin))+')':''}`):'',
+      site?h('span',{},`📍 ${site.nombre}`):'',
+      wo?h('span',{class:'badge badge-y'},`🔧 ${wo.codigo}`):''
+    ),
+    t.otNumero?h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.3rem'}},`Nº O.T.: ${t.otNumero}`):null,
+    t.descripcion?h('div',{style:{fontSize:'.8rem',color:'var(--ink2)',marginBottom:'.4rem'}},t.descripcion):null,
+    (t.fotos||[]).length>0
+      ? h('div',{class:'photo-grid'},...t.fotos.map(f=>h('img',{src:f,class:'photo-thumb'})))
+      : null,
+    (t.journeys||[]).length>0
+      ? h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',marginTop:'.3rem'}},
+          `🚗 ${t.journeys.length} viaje(s) — ${eur(t.journeys.reduce((a,j)=>a+(j.km||0)*(j.vehicleId?S.vehicles.find(v=>v.id==j.vehicleId)?.precioPorKm||0:j.precioManual||0),0))}`
+        )
+      : null
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// CALENDARIO
+// ══════════════════════════════════════════════════════════
+function renderCalendario(){
+  const year=calYear, month=calMonth;
+  const firstDay=new Date(year,month,1).getDay();
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const offset=(firstDay+6)%7; // Monday first
+  const cells=[];
+  for(let i=0;i<offset;i++)cells.push({d:null});
+  for(let d=1;d<=daysInMonth;d++)cells.push({d,curr:true});
+  
+  return h('div',{},
+    h('div',{class:'card'},
+      h('div',{class:'cal-nav'},
+        h('button',{on:{click:()=>{calMonth--;if(calMonth<0){calMonth=11;calYear--;}rerender();}}},'\u25c4'),
+        h('span',{},`${MONTHS[month].toUpperCase()} ${year}`),
+        h('button',{on:{click:()=>{calMonth++;if(calMonth>11){calMonth=0;calYear++;}rerender();}}},'\u25ba')
+      ),
+      h('div',{class:'cal-grid'},
+        ...WSHORT.map(d=>h('div',{class:'cal-dn'},d)),
+        ...cells.map(cell=>{
+          if(!cell.d)return h('div',{class:'cal-day other-month'});
+          const ds=`${year}-${pad(month+1)}-${pad(cell.d)}`;
+          const hasEntry=S.entries.some(e=>e.fecha===ds);
+          const hasTasks=S.tasks.some(t=>t.fecha===ds);
+          const isToday=ds===today();
+          const isSel=ds===selDate;
+          let cls='cal-day';
+          if(isSel)cls+=' selected';
+          else if(isToday)cls+=' today';
+          if(hasEntry||hasTasks)cls+=' has-e';
+          return h('div',{class:cls,on:{click:()=>{selDate=ds;rerender();}}},cell.d);
+        })
+      )
+    ),
+    // Detalle del día seleccionado
+    selDate?renderDayDetail(selDate):null
+  );
+}
+
+function renderDayDetail(ds){
+  const entry=S.entries.find(e=>e.fecha===ds);
+  const tasks=S.tasks.filter(t=>t.fecha===ds);
+  return h('div',{class:'card'},
+    h('div',{class:'sec-title'},`${cap(wday(ds))}, ${dlbl(ds)}`),
+    entry
+      ? h('div',{},
+          h('div',{style:{fontSize:'.85rem',marginBottom:'.4rem'}},
+            `⏱ ${fmtH((entry.horasNormales||0)+(entry.horasExtra||0)+(entry.horasNocturnas||0)+(entry.horasFestivas||0))} trabajadas`
+          ),
+          (entry.fichajes||[]).map(fj=>h('div',{style:{fontSize:'.8rem',color:'var(--ink2)'}},
+            `▶ ${fj.entrada||'—'} — ${fj.salida||'—'}`
+          )),
+          h('div',{class:'btn-row',style:{marginTop:'.5rem'}},
+            h('button',{class:'btn btn-b btn-sm',on:{click:()=>loadHistorial(entry)}},'✏️ Editar'),
+            h('button',{class:'btn btn-r btn-sm',on:{click:()=>deleteEntry(entry.id)}},'🗑 Eliminar')
+          )
+        )
+      : h('div',{style:{color:'var(--ink2)',fontSize:'.82rem'}},'Sin jornada registrada'),
+    tasks.length>0
+      ? h('div',{style:{marginTop:'.5rem'}},
+          h('div',{style:{fontSize:'.75rem',fontWeight:700,color:'var(--ink2)',marginBottom:'.3rem'}},`📝 ${tasks.length} tarea(s)`),
+          ...tasks.map(t=>h('div',{style:{fontSize:'.8rem',color:'var(--ink2)'}},`· ${t.titulo||'Sin título'}`))
+        )
+      : null
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// CATÁLOGOS: SITIOS
+// ══════════════════════════════════════════════════════════
+function renderSitios(){
+  return h('div',{},
+    h('button',{class:'btn btn-g',style:{marginBottom:'1rem'},on:{click:()=>{fSite={...defSite};editSiteId=null;showSiteF=true;rerender();}}},
+      '➕ Nuevo Sitio'
+    ),
+    showSiteF?h('div',{class:'card'},
+      h('div',{class:'sec-title'},editSiteId?'Editar Sitio':'Nuevo Sitio'),
+      field('Nombre *','text',fSite.nombre,v=>{fSite.nombre=v;}),
+      h('div',{class:'grid-2'},
+        field('Ciudad','text',fSite.ciudad,v=>{fSite.ciudad=v;}),
+        field('Teléfono','tel',fSite.telefono,v=>{fSite.telefono=v;})
+      ),
+      field('Dirección completa','text',fSite.direccion,v=>{fSite.direccion=v;}),
+      fieldArea('Notas',fSite.notas,v=>{fSite.notas=v;}),
+      h('div',{class:'btn-row'},
+        h('button',{class:'btn btn-g',on:{click:saveSite}},'💾 Guardar'),
+        h('button',{class:'btn btn-gh',on:{click:()=>{showSiteF=false;rerender();}}},'Cancelar')
+      )
+    ):null,
+    S.sites.length===0
+      ? h('div',{class:'empty'},'Sin sitios. Crea el primero.')
+      : h('div',{},
+          ...S.sites.map(s=>h('div',{class:'card'},
+            h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
+              h('div',{},
+                h('div',{style:{fontWeight:700}},s.nombre),
+                s.ciudad?h('div',{style:{fontSize:'.8rem',color:'var(--ink2)'}},s.ciudad):null,
+                s.direccion?h('div',{style:{fontSize:'.75rem',color:'var(--ink3)'}},s.direccion):null
+              ),
+              h('div',{style:{display:'flex',gap:'.3rem'}},
+                h('button',{class:'btn btn-b btn-sm',on:{click:()=>{fSite={...s};editSiteId=s.id;showSiteF=true;rerender();}}},'✏️'),
+                h('button',{class:'btn btn-r btn-sm',on:{click:()=>deleteSite(s.id)}},'🗑')
+              )
+            )
+          ))
+        )
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// ÓRDENES DE TRABAJO
+// ══════════════════════════════════════════════════════════
+function renderOrdenes(){
+  return h('div',{},
+    h('button',{class:'btn btn-g',style:{marginBottom:'1rem'},on:{click:()=>{fWO={...defWO};editWOId=null;showWOF=true;rerender();}}},'➕ Nueva O.T.'),
+    showWOF?h('div',{class:'card'},
+      h('div',{class:'sec-title'},editWOId?'Editar O.T.':'Nueva Orden de Trabajo'),
+      h('div',{class:'grid-2'},
+        field('Código O.T. *','text',fWO.codigo,v=>{fWO.codigo=v;},{},'Ej: OT-2024-001'),
+        field('Cliente','text',fWO.cliente,v=>{fWO.cliente=v;})
+      ),
+      field('Descripción','text',fWO.descripcion,v=>{fWO.descripcion=v;},{},'Descripción breve'),
+      fieldArea('Notas',fWO.notas,v=>{fWO.notas=v;}),
+      h('div',{class:'btn-row'},
+        h('button',{class:'btn btn-g',on:{click:saveWO}},'💾 Guardar'),
+        h('button',{class:'btn btn-gh',on:{click:()=>{showWOF=false;rerender();}}},'Cancelar')
+      )
+    ):null,
+    S.workorders.length===0
+      ? h('div',{class:'empty'},'Sin órdenes. Crea la primera.')
+      : h('div',{},
+          ...S.workorders.map(w=>h('div',{class:'card'},
+            h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
+              h('div',{},
+                h('div',{style:{fontWeight:700,display:'flex',gap:'.4rem',alignItems:'center'}},
+                  h('span',{class:'badge badge-y'},w.codigo),
+                  w.cliente?h('span',{style:{fontSize:'.8rem',fontWeight:400,color:'var(--ink2)'}},w.cliente):null
+                ),
+                w.descripcion?h('div',{style:{fontSize:'.82rem',color:'var(--ink2)',marginTop:'.2rem'}},w.descripcion):null,
+                w.notas?h('div',{style:{fontSize:'.75rem',color:'var(--ink3)'}},w.notas):null
+              ),
+              h('div',{style:{display:'flex',gap:'.3rem'}},
+                h('button',{class:'btn btn-b btn-sm',on:{click:()=>{fWO={...w};editWOId=w.id;showWOF=true;rerender();}}},'✏️'),
+                h('button',{class:'btn btn-r btn-sm',on:{click:()=>deleteWO(w.id)}},'🗑')
+              )
+            )
+          ))
+        )
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// VEHÍCULOS
+// ══════════════════════════════════════════════════════════
+function renderVehiculos(){
+  return h('div',{},
+    h('button',{class:'btn btn-g',style:{marginBottom:'1rem'},on:{click:()=>{fVehicle={...defVehicle};editVehId=null;showVehF=true;rerender();}}},'➕ Nuevo Vehículo'),
+    showVehF?h('div',{class:'card'},
+      h('div',{class:'sec-title'},editVehId?'Editar Vehículo':'Nuevo Vehículo'),
+      h('div',{class:'grid-2'},
+        field('Nombre','text',fVehicle.nombre,v=>{fVehicle.nombre=v;}),
+        h('div',{class:'field'},
+          h('label',{},'TIPO'),
+          h('select',{on:{change:ev=>{fVehicle.tipo=ev.target.value;}}},
+            ['coche','moto','furgoneta','camión','otro'].map(t=>h('option',{value:t,selected:t===fVehicle.tipo?'':null},t))
+          )
+        )
+      ),
+      h('div',{class:'grid-2'},
+        field('Matrícula','text',fVehicle.matricula,v=>{fVehicle.matricula=v;}),
+        field('€/km','number',fVehicle.precioPorKm,v=>{fVehicle.precioPorKm=parseFloat(v)||0;},{min:'0',step:'0.001'})
+      ),
+      fieldArea('Notas',fVehicle.notas,v=>{fVehicle.notas=v;}),
+      h('div',{class:'btn-row'},
+        h('button',{class:'btn btn-g',on:{click:saveVehicle}},'💾 Guardar'),
+        h('button',{class:'btn btn-gh',on:{click:()=>{showVehF=false;rerender();}}},'Cancelar')
+      )
+    ):null,
+    S.vehicles.length===0
+      ? h('div',{class:'empty'},'Sin vehículos.')
+      : h('div',{},
+          ...S.vehicles.map(v=>h('div',{class:'card'},
+            h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+              h('div',{},
+                h('div',{style:{fontWeight:700}},`${v.nombre} (${v.tipo})`),
+                h('div',{style:{fontSize:'.8rem',color:'var(--ink2)'}},
+                  `${v.matricula||'Sin matrícula'} · ${v.precioPorKm} €/km`
+                )
+              ),
+              h('div',{style:{display:'flex',gap:'.3rem'}},
+                h('button',{class:'btn btn-b btn-sm',on:{click:()=>{fVehicle={...v};editVehId=v.id;showVehF=true;rerender();}}},'✏️'),
+                h('button',{class:'btn btn-r btn-sm',on:{click:()=>deleteVehicle(v.id)}},'🗑')
+              )
+            )
+          ))
+        )
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// RESUMEN
+// ══════════════════════════════════════════════════════════
+function renderResumen(){
+  const entries = filterMonth ? S.entries.filter(e=>e.fecha.startsWith(filterMonth)) : S.entries;
+  const tasks = filterMonth ? S.tasks.filter(t=>t.fecha.startsWith(filterMonth)) : S.tasks;
+  
+  const totals = entries.reduce((a,e)=>({
+    n: a.n+1,
+    hn: a.hn+(+e.horasNormales||0),
+    he: a.he+(+e.horasExtra||0),
+    hnoc: a.hnoc+(+e.horasNocturnas||0),
+    hf: a.hf+(+e.horasFestivas||0),
+    in: a.in+(+e.importeNormales||0),
+    ie: a.ie+(+e.importeExtra||0),
+    inoc: a.inoc+(+e.importeNocturnas||0),
+    if_: a.if_+(+e.importeFestivas||0),
+    diet: a.diet+(+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0)),
+    transp: a.transp+(+e.transporte||0),
+    otros: a.otros+((e.otrosConceptos||[]).reduce((x,c)=>x+(+c.importe||0),0)),
+  }),{n:0,hn:0,he:0,hnoc:0,hf:0,in:0,ie:0,inoc:0,if_:0,diet:0,transp:0,otros:0});
+  
+  const totalH = totals.hn+totals.he+totals.hnoc+totals.hf;
+  const totalImp = totals.in+totals.ie+totals.inoc+totals.if_;
+  const totalViajes = entries.reduce((a,e)=>{
+    return a+((e.journeys||[]).reduce((b,j)=>{
+      const v=S.vehicles.find(x=>x.id==j.vehicleId);
+      return b+(j.km||0)*(v?+v.precioPorKm:+j.precioManual||0);
+    },0));
+  },0);
+  const totalOther = totals.diet+totals.transp+totals.otros+totalViajes;
+  const grandTotal = totalImp+totalOther;
+  
+  return h('div',{},
+    h('div',{class:'card'},
+      h('div',{class:'field'},
+        h('label',{},'FILTRAR MES'),
+        h('input',{type:'month',value:filterMonth,on:{change:ev=>{filterMonth=ev.target.value;rerender();}}})
+      )
+    ),
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'HORAS'),
+      sumRow('Normales',fmtH(totals.hn)),
+      sumRow('Extra',fmtH(totals.he)),
+      sumRow('Nocturnas',fmtH(totals.hnoc)),
+      sumRow('Festivas',fmtH(totals.hf)),
+      sumRow('TOTAL HORAS',fmtH(totalH),true)
+    ),
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'IMPORTES'),
+      sumRow('Normales',eur(totals.in)),
+      sumRow('Extra',eur(totals.ie)),
+      sumRow('Nocturnas',eur(totals.inoc)),
+      sumRow('Festivas',eur(totals.if_)),
+      sumRow('Subtotal horas',eur(totalImp),true)
+    ),
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'OTROS CONCEPTOS'),
+      sumRow('Dietas',eur(totals.diet)),
+      sumRow('Transporte',eur(totals.transp)),
+      sumRow('Viajes',eur(totalViajes)),
+      sumRow('Otros',eur(totals.otros)),
+      sumRow('Subtotal otros',eur(totalOther),true)
+    ),
+    h('div',{class:'card'},
+      sumRow('TOTAL GENERAL',eur(grandTotal),true),
+      h('div',{style:{marginTop:'.5rem',fontSize:'.8rem',color:'var(--ink2)'}},
+        `${totals.n} jornadas · ${tasks.length} tareas`
+      )
+    ),
+    h('div',{class:'btn-row'},
+      h('button',{class:'btn btn-r btn-lg btn-full',on:{click:()=>openModal('export')}},'📤 Exportar Informe')
+    )
+  );
+}
+
+function sumRow(label, val, total=false){
+  return h('div',{class:'sum-row'},
+    h('div',{class:'sum-label'},label),
+    h('div',{class:total?'sum-total':'sum-val'},val)
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// SINCRONIZAR
+// ══════════════════════════════════════════════════════════
+function renderSincronizar(){
+  return h('div',{},
+    // Cloud sync card
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'☁️ SINCRONIZACIÓN EN LA NUBE'),
+      fbUser
+        ? h('div',{},
+            h('div',{style:{display:'flex',alignItems:'center',gap:'.8rem',marginBottom:'.8rem'}},
+              fbUser.photoURL?h('img',{src:fbUser.photoURL,style:{width:'40px',height:'40px',borderRadius:'50%'}}):null,
+              h('div',{},
+                h('div',{style:{fontWeight:700}},fbUser.displayName||fbUser.email),
+                h('div',{style:{fontSize:'.75rem',color:'var(--ink2)'}},
+                  syncStatus==='ok'?'✅ Datos sincronizados':
+                  syncStatus==='syncing'?'🔄 Sincronizando...':
+                  syncStatus==='err'?'❌ Error de sincronización':'Conectado')
+              )
+            ),
+            h('div',{class:'btn-row'},
+              h('button',{class:'btn btn-g btn-full',on:{click:fbSync}},'🔄 Sincronizar ahora'),
+              h('button',{class:'btn btn-r btn-sm',on:{click:fbSignOut}},'🚪 Cerrar sesión')
+            )
+          )
+        : h('div',{},
+            h('p',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'.8rem'}},
+              'Conecta con Google para sincronizar automáticamente en todos tus dispositivos.'
+            ),
+            fbConfig
+              ? h('button',{class:'btn btn-g btn-full',on:{click:fbSignIn}},'🔑 Iniciar sesión con Google')
+              : h('button',{class:'btn btn-b btn-full',on:{click:()=>openModal('firebase')}},'⚙️ Configurar Firebase')
+          )
+    ),
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'COPIA DE SEGURIDAD LOCAL'),
+      h('p',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'.8rem'}},
+        'Exporta tus datos en JSON para guardarlos o importarlos en otro dispositivo.'
+      ),
+      h('div',{class:'btn-row'},
+        h('button',{class:'btn btn-g btn-full',on:{click:exportJSON}},'📤 Exportar JSON'),
+        h('button',{class:'btn btn-b btn-full',on:{click:showQR}},'📱 Mostrar QR')
+      )
+    ),
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'IMPORTAR DATOS'),
+      h('p',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'.8rem'}},
+        '⚠️ La importación reemplaza todos los datos actuales.'
+      ),
+      h('div',{
+        style:{border:'2px dashed var(--brd)',borderRadius:'var(--r)',padding:'2rem',textAlign:'center',cursor:'pointer',color:'var(--ink2)'},
+        on:{
+          click:()=>{
+            const inp=document.createElement('input');
+            inp.type='file';inp.accept='.json';
+            inp.onchange=e=>importJSON(e.target.files[0]);
+            inp.click();
+          },
+          dragover:ev=>ev.preventDefault(),
+          drop:ev=>{ev.preventDefault();importJSON(ev.dataTransfer.files[0]);}
+        }
+      },
+        h('div',{style:{fontSize:'2rem',marginBottom:'.5rem'}},'📂'),
+        'Pulsa o arrastra un archivo JSON'
+      )
+    )
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// TRABAJADOR
+// ══════════════════════════════════════════════════════════
+function renderTrabajador(){
+  const w = fWorker;
+  const activeW = workers.find(x=>x.id===activeWorkerId)||workers[0];
+  return h('div',{},
+    // Selector de trabajador
+    workers.length>0 ? h('div',{class:'card'},
+      h('div',{class:'sec-title'},'TRABAJADORES'),
+      h('div',{style:{display:'flex',gap:'.5rem',flexWrap:'wrap',marginBottom:'.8rem'}},
+        ...workers.map(w2=>h('div',{
+          style:{display:'flex',alignItems:'center',gap:'.5rem',padding:'.5rem .8rem',background:w2.id===activeWorkerId?'var(--acc-lt)':'var(--surf2)',border:'1px solid '+(w2.id===activeWorkerId?'var(--acc)':'var(--brd)'),borderRadius:'var(--r2)',cursor:'pointer'},
+          on:{click:()=>{activeWorkerId=w2.id;fWorker={...defWorker,...w2};saveActiveIds();rerender();}}
+        },
+          w2.foto?h('img',{src:w2.foto,style:{width:'32px',height:'32px',borderRadius:'50%',objectFit:'cover'}}):h('div',{style:{width:'32px',height:'32px',borderRadius:'50%',background:'var(--surf3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1rem'}},'👤'),
+          h('div',{},
+            h('div',{style:{fontWeight:700,fontSize:'.82rem'}},w2.nombre||'Sin nombre'),
+            h('div',{style:{fontSize:'.7rem',color:'var(--ink2)'}},w2.cargo||'Sin cargo')
+          ),
+          h('button',{class:'btn btn-r btn-sm',style:{marginLeft:'.3rem'},on:{click:ev=>{ev.stopPropagation();deleteWorker(w2.id);}}},'✕')
+        ))
+      ),
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{fWorker={...defWorker};activeWorkerId=null;showWorkerF=true;rerender();}}},'➕ Nuevo trabajador')
+    ):null,
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},activeWorkerId?'Editar Trabajador':'Nuevo Trabajador'),
+      // Foto del trabajador
+      h('div',{style:{display:'flex',alignItems:'center',gap:'1rem',marginBottom:'1rem'}},
+        h('div',{style:{position:'relative',cursor:'pointer'},on:{click:()=>addWorkerPhoto()}},
+          w.foto
+            ? h('img',{src:w.foto,style:{width:'72px',height:'72px',borderRadius:'50%',objectFit:'cover',border:'3px solid var(--acc)'}})
+            : h('div',{style:{width:'72px',height:'72px',borderRadius:'50%',background:'var(--surf3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'2rem',border:'3px dashed var(--brd)'}},'👤'),
+          h('div',{style:{position:'absolute',bottom:'0',right:'0',background:'var(--acc)',borderRadius:'50%',width:'24px',height:'24px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'.75rem'}},'📷')
+        ),
+        h('div',{},
+          h('div',{style:{fontWeight:700}},w.nombre||'Sin nombre'),
+          h('div',{style:{fontSize:'.8rem',color:'var(--ink2)'}},w.cargo||'Sin cargo'),
+          w.foto?h('button',{class:'btn btn-r btn-sm',style:{marginTop:'.3rem'},on:{click:()=>{fWorker.foto='';rerender();}}},'✕ Quitar foto'):null
+        )
+      ),
+    h('div',{class:'sec-title'},'Datos del Trabajador'),
+      h('div',{class:'grid-2'},
+        field('Nombre','text',w.nombre,v=>{fWorker.nombre=v;}),
+        field('Apellidos','text',w.apellidos,v=>{fWorker.apellidos=v;})
+      ),
+      h('div',{class:'grid-2'},
+        field('DNI','text',w.dni,v=>{fWorker.dni=v;}),
+        field('Cargo','text',w.cargo,v=>{fWorker.cargo=v;})
+      ),
+      h('div',{class:'grid-2'},
+        field('Departamento','text',w.departamento,v=>{fWorker.departamento=v;}),
+        field('Email','email',w.email,v=>{fWorker.email=v;})
+      ),
+      h('div',{class:'grid-2'},
+        field('Teléfono','tel',w.telefono,v=>{fWorker.telefono=v;}),
+        field('Nº Seguridad Social','text',w.numSS,v=>{fWorker.numSS=v;})
+      ),
+      h('div',{class:'grid-2'},
+        field('Fecha de Alta','date',w.fechaAlta,v=>{fWorker.fechaAlta=v;}),
+        field('Convenio','text',w.convenio,v=>{fWorker.convenio=v;})
+      ),
+      h('div',{class:'btn-row'},
+        h('button',{class:'btn btn-g',on:{click:saveWorker}},'💾 Guardar trabajador'),
+        activeWorkerId?h('button',{class:'btn btn-gh',on:{click:newWorker}},'➕ Nuevo'):null
+      )
+    ),
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'Firma Digital'),
+      w.firma
+        ? h('div',{},
+            h('img',{src:w.firma,style:{maxWidth:'300px',border:'1px solid var(--brd)',borderRadius:'var(--r)'}}),
+            h('div',{class:'btn-row'},
+              h('button',{class:'btn btn-r btn-sm',on:{click:()=>{fWorker.firma='';saveWorker();}}},'🗑 Eliminar firma')
+            )
+          )
+        : h('div',{},
+            renderFirmaCanvas(),
+            h('div',{class:'btn-row'},
+              h('button',{class:'btn btn-g btn-sm',on:{click:saveFirma}},'💾 Guardar Firma'),
+              h('button',{class:'btn btn-gh btn-sm',on:{click:clearFirma}},'🗑 Borrar')
+            )
+          )
+    )
+  );
+}
+
+function renderFirmaCanvas(){
+  const canvas = h('canvas',{
+    id:'firma-canvas',class:'firma-canvas',
+    width:300,height:150,
+    style:{width:'100%',maxWidth:'350px',height:'120px'}
+  });
+  setTimeout(()=>{
+    const c=document.getElementById('firma-canvas');
+    if(!c)return;
+    const ctx=c.getContext('2d');
+    ctx.strokeStyle='var(--ink)';ctx.lineWidth=2;ctx.lineCap='round';
+    let drawing=false,lx=0,ly=0;
+    function getPos(e){
+      const r=c.getBoundingClientRect();
+      const sx=c.width/r.width,sy=c.height/r.height;
+      if(e.touches){return{x:(e.touches[0].clientX-r.left)*sx,y:(e.touches[0].clientY-r.top)*sy};}
+      return{x:(e.clientX-r.left)*sx,y:(e.clientY-r.top)*sy};
+    }
+    c.addEventListener('mousedown',e=>{drawing=true;const p=getPos(e);lx=p.x;ly=p.y;});
+    c.addEventListener('touchstart',e=>{e.preventDefault();drawing=true;const p=getPos(e);lx=p.x;ly=p.y;},{passive:false});
+    function draw(e){
+      if(!drawing)return;
+      if(e.cancelable)e.preventDefault();
+      const p=getPos(e);
+      ctx.beginPath();ctx.moveTo(lx,ly);ctx.lineTo(p.x,p.y);ctx.stroke();
+      lx=p.x;ly=p.y;
+    }
+    c.addEventListener('mousemove',draw);
+    c.addEventListener('touchmove',draw,{passive:false});
+    c.addEventListener('mouseup',()=>drawing=false);
+    c.addEventListener('touchend',()=>drawing=false);
+  },50);
+  return canvas;
+}
+
+function saveFirma(){
+  const c=document.getElementById('firma-canvas');
+  if(!c)return;
+  fWorker.firma=c.toDataURL('image/png');
+  saveWorker();
+  showAlert('Firma guardada ✓');
+}
+
+function clearFirma(){
+  const c=document.getElementById('firma-canvas');
+  if(!c)return;
+  c.getContext('2d').clearRect(0,0,c.width,c.height);
+}
+
+// ══════════════════════════════════════════════════════════
+// EMPRESA
+// ══════════════════════════════════════════════════════════
+function renderEmpresa(){
+  const c = fCompany;
+  return h('div',{},
+    // Selector de empresa
+    companies.length>0 ? h('div',{class:'card'},
+      h('div',{class:'sec-title'},'EMPRESAS'),
+      h('div',{style:{display:'flex',gap:'.5rem',flexWrap:'wrap',marginBottom:'.8rem'}},
+        ...companies.map(c2=>h('div',{
+          style:{display:'flex',alignItems:'center',gap:'.5rem',padding:'.5rem .8rem',background:c2.id===activeCompanyId?'var(--acc-lt)':'var(--surf2)',border:'1px solid '+(c2.id===activeCompanyId?'var(--acc)':'var(--brd)'),borderRadius:'var(--r2)',cursor:'pointer'},
+          on:{click:()=>{activeCompanyId=c2.id;fCompany={...defCompany,...c2};saveActiveIds();rerender();}}
+        },
+          c2.logo?h('img',{src:c2.logo,style:{width:'32px',height:'32px',borderRadius:'var(--r2)',objectFit:'cover'}}):h('div',{style:{width:'32px',height:'32px',borderRadius:'var(--r2)',background:'var(--surf3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1rem'}},'🏢'),
+          h('div',{},
+            h('div',{style:{fontWeight:700,fontSize:'.82rem'}},c2.nombre||'Sin nombre'),
+            h('div',{style:{fontSize:'.7rem',color:'var(--ink2)'}},c2.cif||'')
+          ),
+          h('button',{class:'btn btn-r btn-sm',style:{marginLeft:'.3rem'},on:{click:ev=>{ev.stopPropagation();deleteCompany(c2.id);}}},'✕')
+        ))
+      ),
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{fCompany={...defCompany};activeCompanyId=null;rerender();}}},'➕ Nueva empresa')
+    ):null,
+    h('div',{class:'card'},
+      // Logo empresa
+      h('div',{style:{display:'flex',alignItems:'center',gap:'1rem',marginBottom:'1rem'}},
+        h('div',{style:{position:'relative',cursor:'pointer'},on:{click:()=>addCompanyLogo()}},
+          c.logo
+            ? h('img',{src:c.logo,style:{width:'72px',height:'72px',borderRadius:'var(--r2)',objectFit:'cover',border:'3px solid var(--acc)'}})
+            : h('div',{style:{width:'72px',height:'72px',borderRadius:'var(--r2)',background:'var(--surf3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'2rem',border:'3px dashed var(--brd)'}},'🏢'),
+          h('div',{style:{position:'absolute',bottom:'0',right:'0',background:'var(--acc)',borderRadius:'50%',width:'24px',height:'24px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'.75rem'}},'📷')
+        ),
+        h('div',{},
+          h('div',{style:{fontWeight:700}},c.nombre||'Sin nombre'),
+          h('div',{style:{fontSize:'.8rem',color:'var(--ink2)'}},c.cif?'CIF: '+c.cif:''),
+          c.logo?h('button',{class:'btn btn-r btn-sm',style:{marginTop:'.3rem'},on:{click:()=>{fCompany.logo='';rerender();}}},'✕ Quitar logo'):null
+        )
+      ),
+      h('div',{class:'sec-title'},'Datos de la Empresa'),
+    h('div',{class:'grid-2'},
+      field('Nombre','text',c.nombre,v=>{fCompany.nombre=v;}),
+      field('CIF','text',c.cif,v=>{fCompany.cif=v;})
+    ),
+    h('div',{class:'grid-2'},
+      field('Dirección','text',c.direccion,v=>{fCompany.direccion=v;}),
+      field('Ciudad','text',c.ciudad,v=>{fCompany.ciudad=v;})
+    ),
+    h('div',{class:'grid-2'},
+      field('CP','text',c.cp,v=>{fCompany.cp=v;}),
+      field('Teléfono','tel',c.telefono,v=>{fCompany.telefono=v;})
+    ),
+    h('div',{class:'grid-2'},
+      field('Email','email',c.email,v=>{fCompany.email=v;}),
+      field('Web','text',c.web,v=>{fCompany.web=v;})
+    ),
+      h('div',{class:'btn-row'},
+        h('button',{class:'btn btn-g',on:{click:saveCompany}},'💾 Guardar empresa'),
+        activeCompanyId?h('button',{class:'btn btn-gh',on:{click:()=>{fCompany={...defCompany};activeCompanyId=null;rerender();}}},'➕ Nueva'):null
+      )
+    )
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// MODAL
+// ══════════════════════════════════════════════════════════
+function renderModal(){
+  if(S.modal==='export') return renderModalExport();
+  if(S.modal==='dl') return renderModalDl();
+  if(S.modal==='qr') return renderModalQR();
+  if(S.modal==='firebase') return renderModalFirebase();
+  if(S.modal==='account') return renderModalAccount();
+  if(S.modal==='drive') return renderModalDriveSetup();
+  if(S.modal==='driveaccount') return renderModalDriveAccount();
+  if(S.modal==='confirm') return renderModalConfirm();
+  return null;
+}
+
+function renderModalExport(){
+  return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.className==='modal-bg'){S.modal=null;rerender();}}}},
+    h('div',{class:'modal-box'},
+      h('div',{class:'modal-title'},'📤 Exportar Informe'),
+      h('div',{class:'field'},
+        h('label',{},'FILTRAR MES'),
+        h('input',{type:'month',value:filterMonth,on:{change:ev=>{filterMonth=ev.target.value;rerender();}}})
+      ),
+      h('div',{class:'btn-row',style:{flexDirection:'column'}},
+        h('button',{class:'btn btn-r btn-full',on:{click:()=>{S.modal=null;rerender();setTimeout(exportPDF,100);}}},'📄 Vista previa PDF'),
+        h('button',{class:'btn btn-g btn-full',on:{click:()=>{S.modal=null;rerender();setTimeout(exportCSV,100);}}},'📊 Exportar CSV'),
+        h('button',{class:'btn btn-b btn-full',on:{click:()=>{S.modal=null;rerender();setTimeout(exportJSON,100);}}},'💾 Exportar JSON'),
+        h('button',{class:'btn btn-gh btn-full',on:{click:()=>{S.modal=null;rerender();}}},'Cancelar')
+      )
+    )
+  );
+}
+
+function renderModalDl(){
+  if(!dlDialog)return null;
+  return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.className==='modal-bg'){dlDialog=null;S.modal=null;rerender();}}}},
+    h('div',{class:'modal-box'},
+      h('div',{class:'modal-title'},dlDialog.title||'Guardar'),
+      h('div',{class:'btn-row',style:{flexDirection:'column'}},
+        h('button',{class:'btn btn-r btn-full',on:{click:()=>doOpen(dlDialog)}},'🔍 Abrir'),
+        h('button',{class:'btn btn-g btn-full',on:{click:()=>doSave(dlDialog)}},'💾 Guardar'),
+        navigator.share?h('button',{class:'btn btn-b btn-full',on:{click:()=>doShare(dlDialog)}},'🔗 Compartir'):null,
+        h('button',{class:'btn btn-gh btn-full',on:{click:()=>{dlDialog=null;S.modal=null;rerender();}}},'Cancelar')
+      )
+    )
+  );
+}
+
+function renderModalQR(){
+  return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.classList.contains('modal-bg')){S.modal=null;rerender();}}}},
+    h('div',{class:'modal-box'},
+      h('div',{class:'modal-title'},'📱 Código QR de Sincronización'),
+      h('div',{id:'qr-container',style:{textAlign:'center',padding:'1rem'}},
+        h('canvas',{id:'qr-canvas',style:{borderRadius:'8px',border:'4px solid #fff',background:'#fff'}})
+      ),
+      h('p',{style:{fontSize:'.8rem',color:'var(--ink2)',textAlign:'center'}},
+        'Escanea con otro dispositivo para sincronizar'
+      ),
+      h('button',{class:'btn btn-gh btn-full',style:{marginTop:'1rem'},on:{click:()=>{S.modal=null;rerender();}}},'Cerrar')
+    )
+  );
+}
+
+// ── ALERT ────────────────────────────────────────────────
+function renderModalFirebase(){
+  const cfg = fbConfig || {};
+  return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.classList.contains('modal-bg')){S.modal=null;rerender();}}}},
+    h('div',{class:'modal-box'},
+      h('div',{class:'modal-title'},'☁️ Conectar con Firebase'),
+      h('p',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'1rem'}},
+        'Para sincronizar en la nube necesitas un proyecto Firebase gratuito. ',
+        h('a',{href:'https://console.firebase.google.com',target:'_blank',style:{color:'var(--acc)'}},'Crear proyecto →')
+      ),
+      h('ol',{style:{fontSize:'.8rem',color:'var(--ink2)',paddingLeft:'1.2rem',marginBottom:'1rem',lineHeight:'1.8'}},
+        h('li',{},'Entra en console.firebase.google.com'),
+        h('li',{},'Crea un proyecto (nombre libre, sin Analytics)'),
+        h('li',{},'En Authentication → Método de acceso → activa Google'),
+        h('li',{},'En Firestore Database → Crear base de datos → Modo prueba'),
+        h('li',{},'En Configuración del proyecto → Añadir app web → Copia los datos:')
+      ),
+      h('div',{class:'field'},h('label',{},'API KEY'),h('input',{type:'text',id:'fb-apiKey',placeholder:'AIzaSy...',value:cfg.apiKey||''})),
+      h('div',{class:'field'},h('label',{},'AUTH DOMAIN'),h('input',{type:'text',id:'fb-authDomain',placeholder:'mi-proyecto.firebaseapp.com',value:cfg.authDomain||''})),
+      h('div',{class:'field'},h('label',{},'PROJECT ID'),h('input',{type:'text',id:'fb-projectId',placeholder:'mi-proyecto',value:cfg.projectId||''})),
+      h('div',{class:'btn-row',style:{flexDirection:'column'}},
+        h('button',{class:'btn btn-g btn-full',on:{click:saveFirebaseConfig}},'💾 Guardar y conectar'),
+        fbUser?h('button',{class:'btn btn-r btn-full',on:{click:fbSignOut}},'🚪 Cerrar sesión'):null,
+        h('button',{class:'btn btn-gh btn-full',on:{click:()=>{S.modal=null;rerender();}}},'Cancelar')
+      )
+    )
+  );
+}
+
+function renderModalAccount(){
+  return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.classList.contains('modal-bg')){S.modal=null;rerender();}}}},
+    h('div',{class:'modal-box'},
+      h('div',{class:'modal-title'},'☁️ Cuenta sincronizada'),
+      fbUser?h('div',{style:{display:'flex',alignItems:'center',gap:'.8rem',marginBottom:'1rem'}},
+        fbUser.photoURL?h('img',{src:fbUser.photoURL,style:{width:'48px',height:'48px',borderRadius:'50%'}}):null,
+        h('div',{},
+          h('div',{style:{fontWeight:700}},fbUser.displayName||'Usuario'),
+          h('div',{style:{fontSize:'.8rem',color:'var(--ink2)'}},fbUser.email)
+        )
+      ):null,
+      h('div',{class:'sum-row'},h('span',{class:'sum-label'},'Estado'),h('span',{class:'badge '+(syncStatus==='ok'?'badge-g':syncStatus==='err'?'badge-r':'badge-y')},syncStatus==='ok'?'Sincronizado':syncStatus==='syncing'?'Sincronizando...':'Error')),
+      h('div',{class:'btn-row',style:{flexDirection:'column'}},
+        h('button',{class:'btn btn-b btn-full',on:{click:()=>{S.modal=null;rerender();fbSync();}}},'🔄 Sincronizar ahora'),
+        h('button',{class:'btn btn-gh btn-full',on:{click:()=>openModal('firebase')}},'⚙️ Configuración'),
+        h('button',{class:'btn btn-r btn-full',on:{click:fbSignOut}},'🚪 Cerrar sesión'),
+        h('button',{class:'btn btn-gh btn-full',on:{click:()=>{S.modal=null;rerender();}}},'Cerrar')
+      )
+    )
+  );
+}
+
+function renderModalConfirm(){
+  if(!confirmDialog) return null;
+  return h('div',{class:'modal-bg'},
+    h('div',{class:'modal-box',style:{textAlign:'center'}},
+      h('div',{style:{fontSize:'1.5rem',marginBottom:'.5rem'}},'⚠️'),
+      h('div',{class:'modal-title',style:{textAlign:'center'}},confirmDialog.msg),
+      h('div',{class:'btn-row',style:{justifyContent:'center',marginTop:'1rem'}},
+        h('button',{class:'btn btn-r',on:{click:()=>{
+          const cb=confirmDialog.onOk;
+          confirmDialog=null;S.modal=null;rerender();
+          cb();
+        }}},'✅ Confirmar'),
+        h('button',{class:'btn btn-gh',on:{click:()=>{
+          confirmDialog=null;S.modal=null;rerender();
+        }}},'❌ Cancelar')
+      )
+    )
+  );
+}
+
+function ask(msg, onOk){
+  confirmDialog={msg,onOk};
+  S.modal='confirm';
+  rerender();
+}
+
+function renderModalDriveSetup(){
+  const url=driveUrl||'';
+  return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.classList.contains('modal-bg')){S.modal=null;rerender();}}}},
+    h('div',{class:'modal-box'},
+      h('div',{class:'modal-title'},'☁️ Conectar con Google Drive'),
+      h('p',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.8rem'}},
+        'Sigue estos pasos una sola vez. Tus datos se guardarán en un archivo en tu Google Drive.'
+      ),
+      h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r)',padding:'.8rem',marginBottom:'1rem',fontSize:'.8rem',lineHeight:1.8}},
+        h('div',{style:{fontWeight:700,marginBottom:'.4rem'}},'📋 Pasos (2 minutos):'),
+        h('div',{},'1. Abre '),
+        h('a',{href:'https://script.google.com',target:'_blank',style:{color:'var(--acc)'}},'script.google.com'),
+        h('div',{},'2. Pulsa → Nuevo proyecto'),
+        h('div',{},'3. Borra el código que aparece'),
+        h('div',{},'4. Pega el código del archivo .gs que te he dado'),
+        h('div',{},'5. Pulsa 💾 Guardar → luego ▶️ Implementar → Nueva implementación'),
+        h('div',{},'6. Tipo: Aplicación web → Acceso: Cualquier usuario → Implementar'),
+        h('div',{},'7. Copia la URL que aparece y pégala aquí abajo:')
+      ),
+      h('div',{class:'field'},
+        h('label',{},'URL DE TU SCRIPT (termina en /exec)'),
+        h('input',{type:'url',id:'drive-url-input',placeholder:'https://script.google.com/macros/s/.../exec',value:url})
+      ),
+      h('div',{class:'btn-row',style:{flexDirection:'column'}},
+        h('button',{class:'btn btn-g btn-full',on:{click:saveDriveUrl}},'💾 Conectar y sincronizar'),
+        h('button',{class:'btn btn-gh btn-full',on:{click:()=>{S.modal=null;rerender();}}},'Cancelar')
+      )
+    )
+  );
+}
+
+function renderModalDriveAccount(){
+  return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.classList.contains('modal-bg')){S.modal=null;rerender();}}}},
+    h('div',{class:'modal-box'},
+      h('div',{class:'modal-title'},'☁️ Google Drive Sync'),
+      h('div',{class:'sum-row'},h('span',{class:'sum-label'},'Estado'),h('span',{class:'badge '+(syncStatus==='ok'?'badge-g':syncStatus==='syncing'?'badge-y':'badge-g')},syncStatus==='syncing'?'Sincronizando...':'Conectado')),
+      h('div',{class:'sum-row'},h('span',{class:'sum-label'},'Última sync'),h('span',{},lastSync||'—')),
+      h('div',{class:'btn-row',style:{flexDirection:'column'}},
+        h('button',{class:'btn btn-g btn-full',on:{click:()=>{S.modal=null;rerender();driveSync();}}},'🔄 Sincronizar ahora'),
+        h('button',{class:'btn btn-b btn-full',on:{click:()=>{S.modal=null;rerender();driveLinkLoad();}}},'⬇️ Cargar desde Drive'),
+        h('button',{class:'btn btn-gh btn-full',on:{click:()=>openModal('drive')}},'⚙️ Cambiar URL'),
+        h('button',{class:'btn btn-r btn-full',on:{click:()=>{ask('¿Desconectar Google Drive?',()=>{driveUrl='';localStorage.removeItem('driveUrl');syncStatus='';S.modal=null;rerender();})}}},'✕ Desconectar'),
+        h('button',{class:'btn btn-gh btn-full',on:{click:()=>{S.modal=null;rerender();}}},'Cerrar')
+      )
+    )
+  );
+}
+
+function renderAlert(){
+  return h('div',{class:`alert-box alert-${S.alertType}`},S.alertMsg);
+}
+
+// ── FIELD HELPERS ────────────────────────────────────────
+function field(label, type, value, onChange, attrs={}, placeholder=''){
+  // For date/time/select: use change (triggers rerender); for text: use blur to avoid rerender while typing
+  const isText = (type==='text'||type==='email'||type==='tel'||type==='number');
+  const evts = isText
+    ? {blur:e=>{onChange(e.target.value);scheduleDraftSave();}, change:e=>{onChange(e.target.value);scheduleDraftSave();}}
+    : {change:e=>{onChange(e.target.value);rerender();scheduleDraftSave();}};
+  const el = h('div',{class:'field'},
+    h('label',{},label),
+    h('input',Object.assign({type,value:value||'',placeholder,on:evts},attrs))
+  );
+  return el;
+}
+
+function fieldArea(label, value, onChange){
+  return h('div',{class:'field'},
+    h('label',{},label),
+    h('textarea',{on:{blur:e=>onChange(e.target.value)}},value||'')
+  );
+}
+
+function importeField(value, onChange){
+  const val = Math.round((Number(value)||0)*100)/100;
+  const isManual = val>0 && !isStdAmount(val);
+  // Round to nearest 0.50 for display
+  const baseVal = isManual ? val : val;
+
+  return h('div',{class:'imp-wrap',style:{flexWrap:'wrap',gap:'.3rem'}},
+    h('select',{style:{flex:'1',minWidth:'90px'},on:{change:ev=>{
+      const v=ev.target.value;
+      if(v==='manual') return;
+      onChange(parseFloat(v)||0);
+      rerender();
+    }}},
+      h('option',{value:'0',selected:val===0?true:false},'—'),
+      h('option',{value:'0.5',selected:val===0.5?true:false},'0,50 €'),
+      ...Array.from({length:100},(_,i)=>i+1).map(i=>
+        h('option',{value:i,selected:val===i?true:false},i+' €')
+      ),
+      h('option',{value:'manual',selected:isManual?true:false},'Exacto...')
+    ),
+    // +0.50 button
+    val>0 ? h('button',{
+      class:'btn btn-gh btn-sm',
+      style:{padding:'.35rem .5rem',fontSize:'.75rem',flexShrink:0},
+      title:'Añadir 0,50 €',
+      on:{click:()=>{
+        const newVal=Math.round((val+0.5)*100)/100;
+        onChange(newVal);
+        rerender();
+      }}
+    },'+0,50') : null,
+    // Manual input
+    isManual ? h('input',{
+      type:'number',min:'0',step:'0.01',value:val,
+      style:{flex:'0 0 90px'},
+      on:{blur:ev=>{onChange(Math.round(parseFloat(ev.target.value||0)*100)/100);rerender();}}
+    }) : null,
+    // Show exact amount badge if not standard
+    val>0 ? h('span',{
+      style:{fontSize:'.75rem',color:'var(--acc)',fontWeight:700,alignSelf:'center'}
+    },val.toFixed(2).replace('.',',')+' €') : null
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// ACTIONS
+// ══════════════════════════════════════════════════════════
+function locLabel(loc){
+  if(!loc) return '';
+  try{ const d=JSON.parse(loc); return d.label||d.address||''; }
+  catch(e){ return loc; }
+}
+
+function textToLoc(text){
+  if(!text) return '';
+  // Check if it looks like coordinates
+  const coordMatch = text.match(/^(-?\d+\.\d+),\s*(-?\d+\.\d+)$/);
+  if(coordMatch){
+    const lat=coordMatch[1], lng=coordMatch[2];
+    return JSON.stringify({lat,lng,url:'https://www.google.com/maps?q='+lat+','+lng,label:lat+', '+lng});
+  }
+  // Plain address text
+  const encoded=encodeURIComponent(text);
+  return JSON.stringify({address:text,url:'https://www.google.com/maps/search/'+encoded,label:text});
+}
+
+// Auto-save current entry draft to IndexedDB every 10 seconds
+function scheduleDraftSave(){
+  if(draftSaveTimer) clearTimeout(draftSaveTimer);
+  draftSaveTimer = setTimeout(saveDraft, 2000);
+}
+
+async function saveDraft(){
+  if(!fEntry.fecha) return;
+  try{
+    // Save as draft (with _draft flag so we know it's not finalized)
+    const draft={...fEntry, _draft:true, _savedAt:new Date().toISOString()};
+    // Check if entry already exists
+    const existing = S.entries.find(e=>e.fecha===fEntry.fecha && !e._draft);
+    if(existing){
+      // Update existing entry automatically
+      draft.id = existing.id;
+      draft._draft = false;
+      await dbPut(ST.entries, draft);
+      S.entries = S.entries.map(e=>e.id===existing.id ? draft : e);
+    } else if(fEntry.id){
+      // Has ID, update it
+      await dbPut(ST.entries, draft);
+      S.entries = S.entries.map(e=>e.id===fEntry.id ? draft : e);
+    } else {
+      // Save as new draft entry
+      const existing_draft = S.entries.find(e=>e.fecha===fEntry.fecha && e._draft);
+      if(existing_draft){
+        draft.id = existing_draft.id;
+        await dbPut(ST.entries, draft);
+        S.entries = S.entries.map(e=>e.id===existing_draft.id ? draft : e);
+      } else {
+        const id = await dbPut(ST.entries, draft);
+        fEntry.id = id;
+        S.entries.push({...draft, id});
+      }
+    }
+    localStorage.setItem('lastSave', new Date().toISOString());
+  }catch(e){ console.warn('Draft save failed:', e); }
+}
+
+function gpsDisplay(loc){
+  if(!loc) return h('div',{style:{fontSize:'.75rem',color:'var(--ink3)'}},'No registrada');
+  try{
+    const d=JSON.parse(loc);
+    return h('div',{style:{fontSize:'.75rem'}},
+      h('a',{href:d.url,target:'_blank',rel:'noopener',style:{color:'var(--acc)',textDecoration:'none'}},
+        '🗺 '+d.label
+      )
+    );
+  }catch(e){
+    // Legacy format (plain string coords)
+    const parts=loc.split(',').map(s=>s.trim());
+    if(parts.length===2){
+      const url=`https://www.google.com/maps?q=${parts[0]},${parts[1]}`;
+      return h('div',{style:{fontSize:'.75rem'}},
+        h('a',{href:url,target:'_blank',rel:'noopener',style:{color:'var(--acc)',textDecoration:'none'}},
+          '🗺 '+loc
+        )
+      );
+    }
+    return h('div',{style:{fontSize:'.75rem',color:'var(--ink2)'}},loc);
+  }
+}
+
+function showAlert(msg, type='ok'){
+  if(S.alertTimer)clearTimeout(S.alertTimer);
+  S.alertMsg=msg; S.alertType=type;
+  rerender();
+  S.alertTimer=setTimeout(()=>{S.alertMsg=null;rerender();},2800);
+}
+
+function openModal(m){ S.modal=m; rerender(); }
+function toggleDark(){ S.dark=!S.dark; rerender(); }
+
+function addFichaje(){
+  fEntry.fichajes.push(defFichaje());
+  rerender();
+  scheduleDraftSave();
+}
+
+async function captureGPS(tipo){
+  if(!navigator.geolocation){
+    showAlert('GPS no disponible. Escribe la dirección manualmente.','err');
+    return;
+  }
+  showAlert('Obteniendo GPS…');
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      const lat=pos.coords.latitude.toFixed(6);
+      const lng=pos.coords.longitude.toFixed(6);
+      const loc=JSON.stringify({lat,lng,url:'https://www.google.com/maps?q='+lat+','+lng,label:lat+', '+lng});
+      if(tipo==='entrada')fEntry.ubicacionEntrada=loc;
+      else fEntry.ubicacionSalida=loc;
+      showAlert('✓ GPS capturado');
+      rerender();
+    },
+    err=>{
+      const tip = err.code===1
+        ? 'Permiso denegado. Escribe la dirección manualmente en el campo de texto.'
+        : 'No se pudo obtener GPS. Escribe la dirección manualmente.';
+      showAlert(tip,'err');
+    },
+    {enableHighAccuracy:true,timeout:10000,maximumAge:30000}
+  );
+}
+
+async function saveEntry(){
+  if(!fEntry.fecha){showAlert('Selecciona una fecha','err');return;}
+  try{
+    if(editingEntry&&fEntry.id){
+      await dbPut(ST.entries,fEntry);
+      S.entries=S.entries.map(e=>e.id===fEntry.id?fEntry:e);
+    } else {
+      const id=await dbPut(ST.entries,fEntry);
+      S.entries.push({...fEntry,id});
+    }
+    editingEntry=false;
+    fEntry=defEntry();
+    localStorage.setItem('lastSave',new Date().toISOString());
+    showAlert('Jornada guardada ✓');
+    rerender();
+    scheduleSync();
+  }catch(e){showAlert(e.message,'err');}
+}
+
+function cancelEditing(){
+  editingEntry=false;
+  fEntry=defEntry();
+  rerender();
+}
+
+function loadHistorial(entry){
+  fEntry={...entry,fichajes:[...(entry.fichajes||[])],dietasExtra:[...(entry.dietasExtra||[])],otrosConceptos:[...(entry.otrosConceptos||[])],journeys:[...(entry.journeys||[])]};
+  editingEntry=true;
+  S.tab='fichar';
+  rerender();
+}
+
+async function deleteEntry(id){
+  ask('¿Eliminar esta jornada?', async()=>{
+    await dbDel(ST.entries,id);
+    S.entries=S.entries.filter(e=>e.id!==id);
+    if(fEntry.id===id){editingEntry=false;fEntry=defEntry();}
+    showAlert('Jornada eliminada');
+    rerender();
+  });
+}
+
+// Schedule auto-sync to Drive after local save
+function scheduleSync(){
+  if(syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(()=>{ if(driveUrl) driveSync(); }, 5000);
+}
+
+async function saveTask(){
+  if(!fTask.titulo.trim()){showAlert('El título es obligatorio','err');return;}
+  try{
+    if(fTask.id){
+      await dbPut(ST.tasks,fTask);
+      S.tasks=S.tasks.map(t=>t.id===fTask.id?fTask:t);
+    } else {
+      const id=await dbPut(ST.tasks,fTask);
+      S.tasks.push({...fTask,id});
+    }
+    fTask=defTask();
+    showAlert('Tarea guardada ✓');
+    rerender();
+    scheduleSync();
+  }catch(e){showAlert(e.message,'err');}
+}
+
+function editTask(t){
+  fTask={...t,fotos:[...(t.fotos||[])],journeys:[...(t.journeys||[])]};
+  S.tab='tareas';
+  rerender();
+  setTimeout(()=>document.querySelector('main')?.scrollTo({top:0,behavior:'smooth'}),50);
+}
+
+function copyTask(t){
+  fTask={...t,id:undefined,titulo:t.titulo+' (copia)',fecha:today(),fotos:[...(t.fotos||[])],journeys:[...(t.journeys||[])]};
+  S.tab='tareas';
+  rerender();
+}
+
+async function deleteTask(id){
+  ask('¿Eliminar esta tarea?', async()=>{
+    await dbDel(ST.tasks,id);
+    S.tasks=S.tasks.filter(t=>t.id!==id);
+    showAlert('Tarea eliminada');
+    rerender();
+  });
+}
+
+// SITIOS
+async function saveSite(){
+  if(!fSite.nombre.trim()){showAlert('El nombre es obligatorio','err');return;}
+  try{
+    if(editSiteId){
+      const r={...fSite,id:editSiteId};
+      await dbPut(ST.sites,r);
+      S.sites=S.sites.map(s=>s.id===editSiteId?r:s);
+    } else {
+      const id=await dbPut(ST.sites,{...fSite});
+      S.sites.push({...fSite,id});
+    }
+    fSite={...defSite};editSiteId=null;showSiteF=false;
+    showAlert('Sitio guardado ✓');rerender();
+  }catch(e){showAlert(e.message,'err');}
+}
+async function deleteSite(id){
+  ask('¿Eliminar este sitio?', async()=>{
+    await dbDel(ST.sites,id);S.sites=S.sites.filter(s=>s.id!==id);showAlert('Sitio eliminado');rerender();
+  });
+}
+
+// ÓRDENES
+async function saveWO(){
+  if(!fWO.codigo.trim()){showAlert('El código es obligatorio','err');return;}
+  try{
+    if(editWOId){
+      const r={...fWO,id:editWOId};
+      await dbPut(ST.workorders,r);
+      S.workorders=S.workorders.map(w=>w.id===editWOId?r:w);
+    } else {
+      const id=await dbPut(ST.workorders,{...fWO});
+      S.workorders.push({...fWO,id});
+    }
+    fWO={...defWO};editWOId=null;showWOF=false;
+    showAlert('O.T. guardada ✓');rerender();
+  }catch(e){showAlert(e.message,'err');}
+}
+async function deleteWO(id){
+  ask('¿Eliminar esta O.T.?', async()=>{
+    await dbDel(ST.workorders,id);S.workorders=S.workorders.filter(w=>w.id!==id);showAlert('O.T. eliminada');rerender();
+  });
+}
+
+// VEHÍCULOS
+async function saveVehicle(){
+  if(!fVehicle.nombre.trim()){showAlert('El nombre es obligatorio','err');return;}
+  try{
+    if(editVehId){
+      const r={...fVehicle,id:editVehId};
+      await dbPut(ST.vehicles,r);
+      S.vehicles=S.vehicles.map(v=>v.id===editVehId?r:v);
+    } else {
+      const id=await dbPut(ST.vehicles,{...fVehicle});
+      S.vehicles.push({...fVehicle,id});
+    }
+    fVehicle={...defVehicle};editVehId=null;showVehF=false;
+    showAlert('Vehículo guardado ✓');rerender();
+  }catch(e){showAlert(e.message,'err');}
+}
+async function deleteVehicle(id){
+  ask('¿Eliminar este vehículo?', async()=>{
+    await dbDel(ST.vehicles,id);S.vehicles=S.vehicles.filter(v=>v.id!==id);showAlert('Vehículo eliminado');rerender();
+  });
+}
+
+// TRABAJADOR / EMPRESA
+async function saveWorker(){
+  try{
+    const data={...fWorker};
+    if(activeWorkerId){ data.id=activeWorkerId; await dbPut(ST.workers,data); workers=workers.map(w=>w.id===activeWorkerId?data:w); }
+    else{ const id=await dbPut(ST.workers,data); data.id=id; workers.push(data); activeWorkerId=id; }
+    fWorker={...data};
+    await saveActiveIds();
+    showAlert('Trabajador guardado ✓'); rerender(); scheduleFbSync();
+  }catch(e){showAlert(e.message,'err');}
+}
+function newWorker(){ fWorker={...defWorker}; activeWorkerId=null; rerender(); }
+async function deleteWorker(id){
+  ask('¿Eliminar este trabajador?', async()=>{
+    await dbDel(ST.workers,id);
+    workers=workers.filter(w=>w.id!==id);
+    if(activeWorkerId===id){ activeWorkerId=workers[0]?.id||null; fWorker=workers[0]?{...defWorker,...workers[0]}:{...defWorker}; }
+    await saveActiveIds(); showAlert('Trabajador eliminado'); rerender();
+  });
+}
+function addWorkerPhoto(){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*';
+  inp.onchange=e=>{
+    const f=e.target.files[0]; if(!f)return;
+    const r=new FileReader();
+    r.onload=ev=>{fWorker.foto=ev.target.result; rerender();};
+    r.readAsDataURL(f);
+  };
+  inp.click();
+}
+async function saveCompany(){
+  try{
+    const data={...fCompany};
+    if(activeCompanyId){ data.id=activeCompanyId; await dbPut(ST.companies,data); companies=companies.map(c=>c.id===activeCompanyId?data:c); }
+    else{ const id=await dbPut(ST.companies,data); data.id=id; companies.push(data); activeCompanyId=id; }
+    fCompany={...data};
+    await saveActiveIds();
+    showAlert('Empresa guardada ✓'); rerender(); scheduleFbSync();
+  }catch(e){showAlert(e.message,'err');}
+}
+async function deleteCompany(id){
+  ask('¿Eliminar esta empresa?', async()=>{
+    await dbDel(ST.companies,id);
+    companies=companies.filter(c=>c.id!==id);
+    if(activeCompanyId===id){ activeCompanyId=companies[0]?.id||null; fCompany=companies[0]?{...defCompany,...companies[0]}:{...defCompany}; }
+    await saveActiveIds(); showAlert('Empresa eliminada'); rerender();
+  });
+}
+function addCompanyLogo(){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*';
+  inp.onchange=e=>{
+    const f=e.target.files[0]; if(!f)return;
+    const r=new FileReader();
+    r.onload=ev=>{fCompany.logo=ev.target.result; rerender();};
+    r.readAsDataURL(f);
+  };
+  inp.click();
+}
+async function saveActiveIds(){
+  const settings=(await dbAll(ST.settings))[0]||{};
+  await dbPut(ST.settings,{...settings,id:1,activeWorkerId,activeCompanyId});
+}
+
+// ── FOTOS ────────────────────────────────────────────────
+function addPhoto(target){
+  const inp=document.createElement('input');
+  inp.type='file';inp.accept='image/*';inp.capture='environment';inp.multiple=true;
+  inp.onchange=e=>readPhotos(e.target.files,target);
+  inp.click();
+}
+function addPhotoGallery(target){
+  const inp=document.createElement('input');
+  inp.type='file';inp.accept='image/*';inp.multiple=true;
+  inp.onchange=e=>readPhotos(e.target.files,target);
+  inp.click();
+}
+function readPhotos(files,target){
+  const reads=[...files].map(f=>new Promise((res,rej)=>{
+    const r=new FileReader();r.onload=e=>res(e.target.result);r.onerror=rej;r.readAsDataURL(f);
+  }));
+  Promise.all(reads).then(imgs=>{
+    if(!fTask.fotos)fTask.fotos=[];
+    fTask.fotos.push(...imgs);
+    rerender();
+  });
+}
+
+// ── EXPORTAR ─────────────────────────────────────────────
+async function exportJSON(){
+  const entries=await dbAll(ST.entries);
+  const tasks=await dbAll(ST.tasks);
+  const sites=await dbAll(ST.sites);
+  const workorders=await dbAll(ST.workorders);
+  const vehicles=await dbAll(ST.vehicles);
+  const settings=await dbAll(ST.settings);
+  const data={version:1,exportedAt:new Date().toISOString(),entries,tasks,sites,workorders,vehicles,settings};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  // Try Web Share first, then download
+  if(navigator.share && navigator.canShare && navigator.canShare({files:[new File([blob],'x.json',{type:'application/json'})]})){
+    const file=new File([blob],'TimerPro_'+today()+'.json',{type:'application/json'});
+    try{ await navigator.share({files:[file],title:'TimerPro Datos'}); return; }catch(e){}
+  }
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='TimerPro_'+today()+'.json';
+  a.click();
+  showAlert('JSON descargado ✓');
+}
+
+async function importJSON(file){
+  if(!file)return;
+  try{
+    const text=await file.text();
+    const data=JSON.parse(text);
+    if(!confirm('¿Importar datos? Se reemplazarán los actuales.'))return;
+    await Promise.all(Object.values(ST).map(s=>dbClear(s)));
+    for(const e of(data.entries||[]))await dbPut(ST.entries,e);
+    for(const t of(data.tasks||[]))await dbPut(ST.tasks,t);
+    for(const s of(data.sites||[]))await dbPut(ST.sites,s);
+    for(const w of(data.workorders||[]))await dbPut(ST.workorders,w);
+    for(const v of(data.vehicles||[]))await dbPut(ST.vehicles,v);
+    for(const s of(data.settings||[]))await dbPut(ST.settings,s);
+    await loadData();
+    showAlert('Datos importados ✓');rerender();
+  }catch(e){showAlert('Error al importar: '+e.message,'err');}
+}
+
+async function showQR(){
+  const entries=await dbAll(ST.entries);
+  const tasks=await dbAll(ST.tasks);
+  const data=JSON.stringify({version:1,cnt:{entries:entries.length,tasks:tasks.length},ts:Date.now()});
+  S.modal='qr'; rerender();
+  setTimeout(()=>{ drawQR('qr-canvas', data); },100);
+}
+
+// ── Micro QR generator (pure JS) ──────────────────────────
+function drawQR(canvasId, text){
+  const c=document.getElementById(canvasId);
+  if(!c)return;
+  // Use Google Charts API as primary (requires internet)
+  const url='https://chart.googleapis.com/chart?cht=qr&chs=200x200&chl='+encodeURIComponent(text.slice(0,500));
+  const img=new Image();
+  img.onload=()=>{
+    const size=200;
+    c.width=size;c.height=size;
+    const ctx=c.getContext('2d');
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,size,size);
+    ctx.drawImage(img,0,0,size,size);
+  };
+  img.onerror=()=>{
+    // Fallback: show text to copy
+    c.width=200;c.height=200;
+    const ctx=c.getContext('2d');
+    ctx.fillStyle='#f5f5f5';ctx.fillRect(0,0,200,200);
+    ctx.fillStyle='#333';ctx.font='12px monospace';
+    ctx.textAlign='center';
+    ctx.fillText('Comparte el JSON',100,90);
+    ctx.fillText('para sincronizar',100,110);
+    const btn=document.createElement('button');
+    btn.textContent='📤 Compartir datos';
+    btn.className='btn btn-b btn-sm';
+    btn.style.marginTop='8px';
+    btn.onclick=()=>exportJSON();
+    const cont=document.getElementById('qr-container');
+    if(cont)cont.appendChild(btn);
+  };
+  img.src=url;
+}
+
+function exportCSV(){
+  const entries=filterMonth?S.entries.filter(e=>e.fecha.startsWith(filterMonth)):S.entries;
+  const tasks=filterMonth?S.tasks.filter(t=>t.fecha.startsWith(filterMonth)):S.tasks;
+  let csv='JORNADAS\n';
+  csv+='Fecha,Día,Entrada,Salida,H.Normales,Imp.Normales,H.Extra,Imp.Extra,H.Noct,Imp.Noct,H.Fest,Imp.Fest,Dieta,Transporte,Notas\n';
+  entries.forEach(e=>{
+    const f1=(e.fichajes||[])[0];
+    csv+=`${e.fecha},${wday(e.fecha)},${f1?.entrada||''},${f1?.salida||''},`;
+    csv+=`${e.horasNormales||0},${e.importeNormales||0},${e.horasExtra||0},${e.importeExtra||0},`;
+    csv+=`${e.horasNocturnas||0},${e.importeNocturnas||0},${e.horasFestivas||0},${e.importeFestivas||0},`;
+    csv+=`${e.dieta||0},${e.transporte||0},"${e.notas||''}"\n`;
+  });
+  csv+='\nTAREAS\n';
+  csv+='Fecha,Día,Título,H.Inicio,H.Fin,Sitio,Con O.T.,Código O.T.,Nº O.T.,Fotos,Descripción\n';
+  tasks.forEach(t=>{
+    const site=S.sites.find(s=>s.id==t.siteId);
+    const wo=S.workorders.find(w=>w.id==t.workOrderId);
+    csv+=`${t.fecha},${wday(t.fecha)},"${t.titulo||''}",${t.horaInicio||''},${t.horaFin||''},`;
+    csv+=`"${site?.nombre||''}",${t.usaOT?'Sí':'No'},"${wo?.codigo||''}","${t.otNumero||''}",${(t.fotos||[]).length},"${t.descripcion||''}"\n`;
+  });
+  const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
+  dlDialog={blob,filename:`TimerPro_${today()}.csv`,type:'csv',title:'Exportar CSV'};
+  S.modal='dl';rerender();
+}
+
+async function exportPDF(){
+  // On mobile, blob URLs for HTML don't open. Use write to new window instead.
+  const entries=filterMonth?S.entries.filter(e=>e.fecha.startsWith(filterMonth)):S.entries;
+  const tasks=filterMonth?S.tasks.filter(t=>t.fecha.startsWith(filterMonth)):S.tasks;
+  const css=`body{font-family:Arial,sans-serif;font-size:10px;color:#333}h1{font-size:16px}h2{font-size:12px;border-bottom:1px solid #ddd;padding-bottom:4px}.pill{display:inline-block;background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:20px;font-weight:700;margin-bottom:8px}table{width:100%;border-collapse:collapse;margin-bottom:12px}th{background:#f5f5f5;font-weight:700;text-align:left}td,th{border:1px solid #ddd;padding:3px 5px;font-size:9px}.sig{max-height:60px;border:1px solid #ddd}`;
+  let html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Informe TimerPro</title><style>${css}</style></head><body>`;
+  html+=`<h1>INFORME DE CONTROL HORARIO</h1>`;
+  html+=`<div class="pill">${filterMonth?MONTHS[parseInt(filterMonth.slice(5))-1]+' '+filterMonth.slice(0,4):'Período completo'}</div>`;
+  if(fWorker.nombre) html+=`<p><strong>${fWorker.nombre} ${fWorker.apellidos}</strong> · DNI: ${fWorker.dni||'—'}</p>`;
+  if(fCompany.nombre) html+=`<p>${fCompany.nombre} · CIF: ${fCompany.cif||'—'}</p>`;
+  
+  html+=`<h2>Jornadas</h2><table><tr><th>Fecha</th><th>Día</th><th>Entrada</th><th>Salida</th><th>H.Norm</th><th>H.Extra</th><th>H.Noct</th><th>H.Fest</th><th>Importe</th></tr>`;
+  entries.forEach(e=>{
+    const f1=(e.fichajes||[])[0];
+    const imp=(+e.importeNormales||0)+(+e.importeExtra||0)+(+e.importeNocturnas||0)+(+e.importeFestivas||0);
+    html+=`<tr><td>${e.fecha}</td><td>${wday(e.fecha)}</td><td>${f1?.entrada||'—'}</td><td>${f1?.salida||'—'}</td>`;
+    html+=`<td>${fmtH(e.horasNormales||0)}</td><td>${fmtH(e.horasExtra||0)}</td><td>${fmtH(e.horasNocturnas||0)}</td><td>${fmtH(e.horasFestivas||0)}</td>`;
+    html+=`<td>${eur(imp)}</td></tr>`;
+  });
+  html+=`</table>`;
+  
+  html+=`<h2>Tareas</h2><table><tr><th>Fecha</th><th>Título</th><th>Horario</th><th>Sitio</th><th>O.T.</th></tr>`;
+  tasks.forEach(t=>{
+    const site=S.sites.find(s=>s.id==t.siteId);
+    const wo=S.workorders.find(w=>w.id==t.workOrderId);
+    html+=`<tr><td>${t.fecha}</td><td>${t.titulo||'—'}</td><td>${t.horaInicio||'—'}${t.horaFin?' → '+t.horaFin:''}</td>`;
+    html+=`<td>${site?.nombre||'—'}</td><td>${wo?.codigo||'Sin O.T.'}</td></tr>`;
+  });
+  html+=`</table>`;
+  
+  if(fWorker.firma){html+=`<div><strong>Firma:</strong><br><img src="${fWorker.firma}" class="sig"></div>`;}
+  html+=`</body></html>`;
+  
+  S.modal=null; rerender();
+  // Show full-screen PDF preview overlay (works on all mobile browsers)
+  const overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;z-index:9999;background:#fff;display:flex;flex-direction:column';
+  const topbar=document.createElement('div');
+  topbar.style.cssText='background:#1a1a1a;color:#fff;padding:.6rem 1rem;display:flex;align-items:center;gap:.8rem;flex-shrink:0';
+  topbar.innerHTML='<span style="flex:1;font-weight:700;font-size:.9rem">📄 Vista previa del informe</span>';
+  const btnClose=document.createElement('button');
+  btnClose.textContent='✕ Cerrar';
+  btnClose.style.cssText='background:#444;color:#fff;border:none;padding:.4rem .8rem;border-radius:6px;cursor:pointer;font-size:.8rem';
+  btnClose.onclick=()=>document.body.removeChild(overlay);
+  const btnPrint=document.createElement('button');
+  btnPrint.textContent='🖨 Imprimir/PDF';
+  btnPrint.style.cssText='background:#22c55e;color:#000;border:none;padding:.4rem .8rem;border-radius:6px;cursor:pointer;font-size:.8rem;font-weight:700';
+  btnPrint.onclick=()=>iframe.contentWindow.print();
+  const btnShare=document.createElement('button');
+  btnShare.textContent='📤 Compartir';
+  btnShare.style.cssText='background:#3b82f6;color:#fff;border:none;padding:.4rem .8rem;border-radius:6px;cursor:pointer;font-size:.8rem';
+  btnShare.onclick=async()=>{
+    if(navigator.share){
+      const blob=new Blob([html],{type:'text/html'});
+      const file=new File([blob],'TimerPro_'+today()+'.html',{type:'text/html'});
+      try{ await navigator.share({files:[file],title:'Informe TimerPro'}); }
+      catch(e){ if(e.name!=='AbortError') fallbackDl(html); }
+    } else fallbackDl(html);
+  };
+  function fallbackDl(content){
+    const b=new Blob([content],{type:'text/html'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(b);
+    a.download='TimerPro_'+today()+'.html';
+    a.click();
+  }
+  topbar.appendChild(btnPrint);
+  topbar.appendChild(btnShare);
+  topbar.appendChild(btnClose);
+  const iframe=document.createElement('iframe');
+  iframe.style.cssText='flex:1;border:none;width:100%';
+  overlay.appendChild(topbar);
+  overlay.appendChild(iframe);
+  document.body.appendChild(overlay);
+  iframe.contentDocument.open();
+  iframe.contentDocument.write(html);
+  iframe.contentDocument.close();
+}
+
+function doOpen(dlg){
+  const url=URL.createObjectURL(dlg.blob);
+  window.open(url,'_blank');
+  S.modal=null;dlDialog=null;rerender();
+}
+function doSave(dlg){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(dlg.blob);
+  a.download=dlg.filename;
+  a.click();
+  S.modal=null;dlDialog=null;rerender();
+}
+async function doShare(dlg){
+  if(!navigator.share){doSave(dlg);return;}
+  try{
+    const file=new File([dlg.blob],dlg.filename,{type:dlg.blob.type});
+    await navigator.share({files:[file],title:'TimerPro'});
+  }catch(e){if(e.name!=='AbortError')doSave(dlg);}
+  S.modal=null;dlDialog=null;rerender();
+}
+
+// ── FIREBASE ──────────────────────────────────────────────
+function saveFirebaseConfig(){
+  const apiKey=document.getElementById('fb-apiKey')?.value.trim();
+  const authDomain=document.getElementById('fb-authDomain')?.value.trim();
+  const projectId=document.getElementById('fb-projectId')?.value.trim();
+  if(!apiKey||!authDomain||!projectId){showAlert('Completa todos los campos','err');return;}
+  fbConfig={apiKey,authDomain,projectId,storageBucket:projectId+'.appspot.com',messagingSenderId:'',appId:''};
+  localStorage.setItem('fbConfig',JSON.stringify(fbConfig));
+  S.modal=null; rerender();
+  initFirebase().then(()=>fbSignIn()).catch(e=>showAlert('Error Firebase: '+e.message,'err'));
+}
+
+async function initFirebase(){
+  if(!fbConfig)return;
+  if(fbApp){return;} // already initialized
+  try{
+    fbApp=firebase.initializeApp(fbConfig);
+    fbAuth=firebase.auth();
+    fbDb=firebase.firestore();
+    // Listen for auth state
+    fbAuth.onAuthStateChanged(user=>{
+      fbUser=user;
+      if(user){ fbSyncFromCloud().catch(()=>{}); }
+      rerender();
+    });
+  }catch(e){
+    showAlert('Error iniciando Firebase: '+e.message,'err');
+    throw e;
+  }
+}
+
+async function fbSignIn(){
+  if(!fbAuth)return;
+  try{
+    const provider=new firebase.auth.GoogleAuthProvider();
+    await fbAuth.signInWithPopup(provider);
+    showAlert('Sesión iniciada con Google ✓');
+  }catch(e){
+    if(e.code==='auth/popup-blocked'){
+      // Try redirect on mobile
+      try{ await fbAuth.signInWithRedirect(new firebase.auth.GoogleAuthProvider()); }
+      catch(e2){ showAlert('Error login: '+e2.message,'err'); }
+    } else { showAlert('Error: '+e.message,'err'); }
+  }
+}
+
+async function fbSignOut(){
+  if(!fbAuth)return;
+  await fbAuth.signOut();
+  fbUser=null; S.modal=null;
+  showAlert('Sesión cerrada');
+  rerender();
+}
+
+async function fbSync(){
+  if(!fbUser||!fbDb)return;
+  syncStatus='syncing'; rerender();
+  try{
+    await fbSyncToCloud();
+    syncStatus='ok';
+    showAlert('Datos sincronizados en la nube ✓');
+    rerender();
+  }catch(e){
+    syncStatus='err';
+    showAlert('Error sync: '+e.message,'err');
+    rerender();
+  }
+}
+
+async function fbSyncToCloud(){
+  if(!fbUser||!fbDb)return;
+  const uid=fbUser.uid;
+  const ref=fbDb.collection('timerpro').doc(uid);
+  const data={
+    entries:S.entries, tasks:S.tasks, sites:S.sites,
+    workorders:S.workorders, vehicles:S.vehicles,
+    worker:fWorker, company:fCompany,
+    updatedAt:new Date().toISOString()
+  };
+  // Firestore has 1MB limit per doc — chunk if needed
+  await ref.set(data);
+}
+
+async function fbSyncFromCloud(){
+  if(!fbUser||!fbDb)return;
+  syncStatus='syncing'; rerender();
+  try{
+    const uid=fbUser.uid;
+    const doc=await fbDb.collection('timerpro').doc(uid).get();
+    if(doc.exists){
+      const d=doc.data();
+      // Import to IndexedDB
+      await Promise.all(Object.values(ST).map(s=>dbClear(s)));
+      for(const e of(d.entries||[]))await dbPut(ST.entries,e);
+      for(const t of(d.tasks||[]))await dbPut(ST.tasks,t);
+      for(const s of(d.sites||[]))await dbPut(ST.sites,s);
+      for(const w of(d.workorders||[]))await dbPut(ST.workorders,w);
+      for(const v of(d.vehicles||[]))await dbPut(ST.vehicles,v);
+      if(d.worker)fWorker={...defWorker,...d.worker};
+      if(d.company)fCompany={...defCompany,...d.company};
+      await loadData();
+      syncStatus='ok';
+      showAlert('Datos cargados desde la nube ✓');
+      rerender();
+    } else {
+      // First time: push local data
+      await fbSyncToCloud();
+      syncStatus='ok'; rerender();
+    }
+  }catch(e){
+    syncStatus='err'; rerender();
+    throw e;
+  }
+}
+
+// Silent auto-load on startup (doesn't ask confirmation)
+async function driveAutoLoad(force){
+  if(!driveUrl)return;
+  const cbName='driveAutoLoad_'+Date.now();
+  const script=document.createElement('script');
+  let done=false;
+  window[cbName]=async function(result){
+    done=true;
+    delete window[cbName];
+    script.remove();
+    if(!result||!result.ok||!result.data||!result.data.entries)return;
+    const d=result.data;
+    // Only load if Drive has newer data (unless forced)
+    if(!force){
+      const driveTime=new Date(d.exportedAt||0).getTime();
+      const localTime=new Date(localStorage.getItem('lastSave')||0).getTime();
+      if(driveTime<=localTime && d.entries.length<=S.entries.length)return;
+    }
+    // Import silently
+    try{
+      await Promise.all(Object.values(ST).map(s=>dbClear(s)));
+      for(const e of(d.entries||[]))await dbPut(ST.entries,e);
+      for(const t of(d.tasks||[]))await dbPut(ST.tasks,t);
+      for(const s of(d.sites||[]))await dbPut(ST.sites,s);
+      for(const w of(d.workorders||[]))await dbPut(ST.workorders,w);
+      for(const v of(d.vehicles||[]))await dbPut(ST.vehicles,v);
+      for(const w of(d.workers||[]))await dbPut(ST.workers,w);
+      for(const c of(d.companies||[]))await dbPut(ST.companies,c);
+      if(d.worker)fWorker={...defWorker,...d.worker};
+      if(d.company)fCompany={...defCompany,...d.company};
+      activeWorkerId=d.activeWorkerId||null;
+      activeCompanyId=d.activeCompanyId||null;
+      await loadData();
+      syncStatus='ok';
+      lastSync=new Date().toLocaleTimeString('es-ES');
+      localStorage.setItem('lastSync',lastSync);
+      showAlert('☁️ Datos actualizados desde Drive');
+      rerender();
+    }catch(e){}
+  };
+  setTimeout(()=>{ if(!done){ delete window[cbName]; script.remove(); }},10000);
+  script.src=driveUrl+'?action=load&callback='+cbName;
+  document.body.appendChild(script);
+}
+
+// driveLinkLoad: manual load from Drive with confirmation
+function driveLinkLoad(){
+  if(!driveUrl){showAlert('Conecta Drive primero','err');return;}
+  // handled by ask() below
+  driveAutoLoad(true); // force=true skips timestamp check
+}
+
+function scheduleFbSync(){
+  // Auto-sync 3 seconds after a save action
+  if(syncTimer)clearTimeout(syncTimer);
+  syncTimer=setTimeout(()=>{ if(fbUser)fbSync(); },3000);
+}
+
+// ── GOOGLE DRIVE SYNC ─────────────────────────────────────
+async function saveDriveUrl(){
+  const url=(document.getElementById('drive-url-input')?.value||'').trim();
+  if(!url||!url.includes('script.google.com')){
+    showAlert('URL no válida. Debe ser de script.google.com','err');
+    return;
+  }
+  driveUrl=url;
+  localStorage.setItem('driveUrl',url);
+  // Also save to IndexedDB for persistence
+  try{
+    const s=(await dbAll(ST.settings))[0]||{};
+    await dbPut(ST.settings,{...s,id:1,driveUrl:url});
+  }catch(e){}
+  S.modal=null; rerender();
+  driveSync();
+}
+
+// ── DRIVE SYNC (reliable version) ─────────────────────
+function drivePing(callback){
+  const cb='ping_'+Date.now();
+  const s=document.createElement('script');
+  let ok=false;
+  window[cb]=r=>{ok=true;delete window[cb];s.remove();callback(true,r);};
+  setTimeout(()=>{if(!ok){delete window[cb];s.remove();callback(false,null);}},8000);
+  s.src=driveUrl+'?action=ping&callback='+cb;
+  document.body.appendChild(s);
+}
+
+function driveSync(){
+  if(!driveUrl){showAlert('Conecta Drive primero','err');return;}
+  syncStatus='syncing';rerender();
+  // First test connection
+  drivePing((ok,r)=>{
+    if(!ok){
+      syncStatus='err';
+      showAlert('No se puede conectar. Verifica que redeployaste el script v4 con acceso "Cualquier usuario".','err');
+      rerender();return;
+    }
+    // Connection OK, now save data in small chunks via JSONP
+    const data={
+      version:2,
+      exportedAt:new Date().toISOString(),
+      // Exclude photos/signatures to keep size manageable
+      entries:S.entries.map(e=>({...e})),
+      tasks:S.tasks.map(t=>({...t,fotos:[]})),
+      sites:S.sites, workorders:S.workorders, vehicles:S.vehicles,
+      workers:workers.map(w=>({...w,foto:'',firma:''})),
+      companies:companies.map(c=>({...c,logo:''})),
+      activeWorkerId, activeCompanyId,
+      worker:{...fWorker,foto:'',firma:''},
+      company:{...fCompany,logo:''}
+    };
+    const json=JSON.stringify(data);
+    const cb='save_'+Date.now();
+    const s=document.createElement('script');
+    let done=false;
+    window[cb]=res=>{
+      done=true;delete window[cb];s.remove();
+      if(res&&res.ok){
+        syncStatus='ok';
+        lastSync=new Date().toLocaleTimeString('es-ES');
+        localStorage.setItem('lastSync',lastSync);
+        showAlert('✅ Sincronizado en Google Drive');
+      }else{
+        syncStatus='err';
+        showAlert('Error guardando: '+(res&&res.error||'sin respuesta'),'err');
+      }
+      rerender();
+    };
+    setTimeout(()=>{if(!done){delete window[cb];s.remove();syncStatus='err';showAlert('Tiempo agotado guardando datos','err');rerender();}},15000);
+    // Encode and send
+    const encoded=encodeURIComponent(json);
+    s.src=driveUrl+'?action=save&callback='+cb+'&d='+encoded;
+    document.body.appendChild(s);
+  });
+}
+
+function scheduleFbSync(){
+  if(syncTimer)clearTimeout(syncTimer);
+  syncTimer=setTimeout(()=>{ driveSync(); },4000);
+}
+
+// ── CARGA INICIAL ─────────────────────────────────────────
+async function loadData(){
+  [S.entries,S.tasks,S.sites,S.workorders,S.vehicles,workers,companies]=await Promise.all([
+    dbAll(ST.entries),dbAll(ST.tasks),dbAll(ST.sites),dbAll(ST.workorders),dbAll(ST.vehicles),
+    dbAll(ST.workers),dbAll(ST.companies)
+  ]);
+  // Load active worker/company
+  const settings=(await dbAll(ST.settings))[0]||{};
+  if(settings.activeWorkerId) activeWorkerId=settings.activeWorkerId;
+  if(settings.activeCompanyId) activeCompanyId=settings.activeCompanyId;
+  // Legacy single worker/company migration
+  if(settings.worker && workers.length===0){
+    const id=await dbPut(ST.workers,settings.worker);
+    workers=[{...settings.worker,id}];
+    activeWorkerId=id;
+  }
+  if(settings.company && companies.length===0){
+    const id=await dbPut(ST.companies,settings.company);
+    companies=[{...settings.company,id}];
+    activeCompanyId=id;
+  }
+  // Set active forms
+  const aw=workers.find(w=>w.id===activeWorkerId)||workers[0];
+  const ac=companies.find(c=>c.id===activeCompanyId)||companies[0];
+  if(aw) fWorker={...defWorker,...aw};
+  if(ac) fCompany={...defCompany,...ac};
+}
+
+// ── RELOJ ────────────────────────────────────────────────
+function startClock(){
+  function tick(){
+    const d=new Date();
+    const t=`${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    S.clock=t;
+    // Only update clock element, not full rerender
+    const el=document.querySelector('.nav-clock');
+    if(el) el.textContent=t;
+  }
+  tick();setInterval(tick,1000);
+}
+
+// ── ARRANQUE ─────────────────────────────────────────────
+(async()=>{
+  try {
+    await openDB();
+    await loadData();
+    // URL ya fija en el código - guardar en storage por si acaso
+    try{
+      localStorage.setItem('driveUrl', driveUrl);
+      const s=(await dbAll(ST.settings))[0]||{};
+      await dbPut(ST.settings,{...s,id:1,driveUrl});
+    }catch(e){}
+    lastSync=localStorage.getItem('lastSync')||'';
+    // Auto-load from Drive on startup if configured
+    // Restore draft if exists for today
+    const todayDraft = S.entries.find(e=>e.fecha===today()&&e._draft);
+    if(todayDraft){ fEntry={...todayDraft}; editingEntry=true; }
+    if(driveUrl){
+      setTimeout(()=>driveAutoLoad(),1500);
+    }
+    // Load Firebase config if saved
+    const savedCfg=localStorage.getItem('fbConfig');
+    if(savedCfg){ try{ fbConfig=JSON.parse(savedCfg); await initFirebase(); }catch(e){} }
+    renderApp();
+    startClock();
+  } catch(e) {
+    document.getElementById('app').innerHTML = 
+      '<div style="color:red;padding:20px;font-family:monospace">Error: ' + e.message + '<br>' + e.stack + '</div>';
+  }
+})();
+</script>
+</body>
+</html>
