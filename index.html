@@ -2331,12 +2331,14 @@ async function driveAutoLoad(force){
       syncStatus='ok';
       lastSync=new Date().toLocaleTimeString('es-ES');
       localStorage.setItem('lastSync',lastSync);
-      showAlert('☁️ Datos actualizados desde Drive');
+      // Reset active entry to show fresh data
+      if(!editingEntry) fEntry=defEntry();
+      showAlert('☁️ Datos actualizados desde Drive ('+S.entries.length+' jornadas, '+S.tasks.length+' tareas)');
       rerender();
-    }catch(e){}
+    }catch(e){ console.error('Import error:',e); showAlert('Error importando: '+e.message,'err'); }
   };
   setTimeout(()=>{ if(!done){ delete window[cbName]; script.remove(); }},10000);
-  script.src=driveUrl+'?action=load&callback='+cbName;
+  script.src=driveUrl+'?action=load&callback='+cbName+'&t='+Date.now();
   document.body.appendChild(script);
 }
 
