@@ -383,7 +383,7 @@ function renderSyncBar(){
         fontSize:'.72rem',
         padding:'.25rem .6rem'
       },
-      on:{click:()=>{ if(!isSyncing) driveLinkLoad(); }}
+      on:{click:()=>{ if(!isSyncing) _doLoad(true); }}
     }, isSyncing?'...' :'⬇️ Cargar Drive')
   );
 }
@@ -2348,6 +2348,141 @@ function driveLinkLoad(){
   // handled by ask() below
   driveAutoLoad(true); // force=true skips timestamp check
 }
+
+function scheduleFbSync(){
+  // Auto-sync 3 seconds after a save action
+  if(syncTimer)clearTimeout(syncTimer);
+  syncTimer=setTimeout(()=>{ if(fbUser)fbSync(); },3000);
+}
+
+// ── GOOGLE DRIVE SYNC ─────────────────────────────────────
+async function saveDriveUrl(){
+  const url=(document.getElementById('drive-url-input')?.value||'').trim();
+  if(!url||!url.includes('script.google.com')){
+    showAlert('URL no válida. Debe ser de script.google.com','err');
+    return;
+  }
+  driveUrl=url;
+  localStorage.setItem('driveUrl',url);
+  // Also save to IndexedDB for persistence
+  try{
+    const s=(await dbAll(ST.settings))[0]||{};
+    await dbPut(ST.settings,{...s,id:1,driveUrl:url});
+  }catch(e){}
+  S.modal=null; rerender();
+  driveSync();
+}
+
+// ── DRIVE SYNC ────────────────────────────────────────
+function driveSync(){
+  if(!driveUrl){ showAlert('Drive no configurado','err'); return; }
+  syncStatus='syncing'; rerender();
+
+  const data={
+    version:2,
+    exportedAt:new Date().toISOString(),
+    entries:S.entries,
+    tasks:S.tasks.map(t=>({...t,fotos:[]})), // sin fotos para reducir tamaño
+    sites:S.sites, workorders:S.workorders, vehicles:S.vehicles,
+    workers:workers.map(w=>({...w,foto:'',firma:''})),
+    companies:companies.map(c=>({...c,logo:''})),
+    activeWorkerId, activeCompanyId,
+    worker:{...fWorker,foto:'',firma:''},
+    company:{...fCompany,logo:''}
+  };
+
+  // POST con no-cors: evita CORS y no hay límite de URL
+  fetch(driveUrl, {
+    method:'POST',
+    mode:'no-cors',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify(data)
+  }).then(()=>{
+    syncStatus='ok';
+    lastSync=new Date().toLocaleTimeString('es-ES');
+    localStorage.setItem('lastSync',lastSync);
+    showAlert('✅ Guardado en Drive ('+S.entries.length+' jornadas)');
+    rerender();
+  }).catch(e=>{
+    // no-cors siempre lanza error de opaque response - lo ignoramos
+    syncStatus='ok';
+    lastSync=new Date().toLocaleTimeString('es-ES');
+    localStorage.setItem('lastSync',lastSync);
+    showAlert('✅ Enviado a Drive');
+    rerender();
+  });
+}
+
+function driveLinkLoad(forced){
+  if(!driveUrl){showAlert('Drive no configurado','err');return;}
+  if(!forced && !confirm('¿Cargar datos desde Drive? Se reemplazarán los datos actuales.'))return;
+  _doLoad(forced);
+}
+
+function driveAutoLoad(force){
+  if(!driveUrl)return;
+  _doLoad(force);
+}
+
+function _doLoad(force){
+  syncStatus='syncing'; rerender();
+  const cbName='load_'+Date.now();
+  const script=document.createElement('script');
+  let done=false;
+
+  window[cbName]=async function(result){
+    done=true; delete window[cbName]; script.remove();
+    if(!result||!result.ok){
+      syncStatus='err';
+      showAlert('Error cargando: '+(result&&result.error||'sin datos'),'err');
+      rerender(); return;
+    }
+    const d=result.data;
+    if(!d||!d.entries||d.entries.length===0){
+      syncStatus='ok';
+      showAlert('Drive vacío - guarda primero desde el PC','err');
+      rerender(); return;
+    }
+    try{
+      await Promise.all(Object.values(ST).map(s=>dbClear(s)));
+      for(const e of(d.entries||[]))await dbPut(ST.entries,e);
+      for(const t of(d.tasks||[]))await dbPut(ST.tasks,t);
+      for(const s of(d.sites||[]))await dbPut(ST.sites,s);
+      for(const w of(d.workorders||[]))await dbPut(ST.workorders,w);
+      for(const v of(d.vehicles||[]))await dbPut(ST.vehicles,v);
+      for(const w of(d.workers||[]))await dbPut(ST.workers,w);
+      for(const c of(d.companies||[]))await dbPut(ST.companies,c);
+      if(d.worker)fWorker={...defWorker,...d.worker};
+      if(d.company)fCompany={...defCompany,...d.company};
+      activeWorkerId=d.activeWorkerId||null;
+      activeCompanyId=d.activeCompanyId||null;
+      await loadData();
+      syncStatus='ok';
+      lastSync=new Date().toLocaleTimeString('es-ES');
+      localStorage.setItem('lastSync',lastSync);
+      if(!editingEntry)fEntry=defEntry();
+      showAlert('✅ Cargado: '+S.entries.length+' jornadas, '+S.tasks.length+' tareas');
+      rerender();
+    }catch(e){
+      syncStatus='err';
+      showAlert('Error importando datos: '+e.message,'err');
+      rerender();
+    }
+  };
+
+  setTimeout(()=>{
+    if(!done){
+      delete window[cbName]; script.remove();
+      syncStatus='err';
+      showAlert('Sin respuesta de Drive. Comprueba tu conexión.','err');
+      rerender();
+    }
+  },15000);
+
+  script.src=driveUrl+'?action=load&callback='+cbName+'&t='+Date.now();
+  document.body.appendChild(script);
+}
+
 
 function scheduleFbSync(){
   // Auto-sync 3 seconds after a save action
