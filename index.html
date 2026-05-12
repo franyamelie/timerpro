@@ -2396,46 +2396,51 @@ function driveSync(){
   if(!driveUrl) return;
   const data = buildSyncData();
   if(data.entries.length===0 && data.tasks.length===0){
-    showAlert('Sin datos que guardar — añade una jornada primero','err');
+    showAlert('Sin datos que guardar','err');
     return;
   }
   syncStatus='syncing'; rerender();
 
-  // Hidden iframe form POST - bypasses CORS completely, no redirect issues
-  // Form submissions always work across domains
-  const iframeId = 'drive-post-frame';
-  let iframe = document.getElementById(iframeId);
-  if(iframe) iframe.remove();
-  
-  iframe = document.createElement('iframe');
-  iframe.id = iframeId;
-  iframe.name = iframeId;
-  iframe.style.display = 'none';
-  document.body.appendChild(iframe);
+  // Minimize data - remove zero/empty values to reduce size
+  const mini = JSON.stringify(data, (k,v)=>{
+    if(v===0||v===''||v===null||v===false) return undefined;
+    if(Array.isArray(v)&&v.length===0) return undefined;
+    return v;
+  });
 
-  const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = driveUrl;
-  form.target = iframeId;
-  form.style.display = 'none';
+  console.log('Sync data size:', mini.length, 'chars');
 
-  const input = document.createElement('input');
-  input.type = 'hidden';
-  input.name = 'data';
-  input.value = JSON.stringify(data);
-  form.appendChild(input);
-  document.body.appendChild(form);
-  form.submit();
-  
-  setTimeout(()=>{ 
-    try{ form.remove(); }catch(e){}
-  }, 1000);
+  // Send via JSONP GET (proven to work - same mechanism as load)
+  const cbName = 'save_'+Date.now();
+  const script = document.createElement('script');
+  let done = false;
 
-  // After 4 seconds, verify by loading from Drive
-  const entryCount = data.entries.length;
+  window[cbName] = function(res){
+    done=true; delete window[cbName]; script.remove();
+    if(res && res.ok){
+      syncStatus='ok';
+      lastSync=new Date().toLocaleTimeString('es-ES');
+      localStorage.setItem('lastSync',lastSync);
+      showAlert('✅ Drive guardado: '+data.entries.length+' jornadas');
+    } else {
+      syncStatus='err';
+      showAlert('❌ Error Drive: '+(res&&res.error||'sin respuesta'),'err');
+    }
+    rerender();
+  };
+
   setTimeout(()=>{
-    _doLoad(true, true); // verify mode
-  }, 4000);
+    if(!done){
+      delete window[cbName]; script.remove();
+      syncStatus='err';
+      showAlert('⚠️ Sin respuesta. Comprueba que el script está actualizado a v5.','err');
+      rerender();
+    }
+  },20000);
+
+  const encoded = encodeURIComponent(mini);
+  script.src = driveUrl+'?action=save&callback='+cbName+'&d='+encoded+'&t='+Date.now();
+  document.body.appendChild(script);
 }
 
 
