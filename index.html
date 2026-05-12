@@ -355,6 +355,39 @@ function renderApp(){
 function errEl(ctx,e){ return h('div',{style:{color:'red',padding:'8px',fontSize:'12px',fontFamily:'monospace'}},'Error in '+ctx+': '+e.message); }
 
 // ── NAV ──────────────────────────────────────────────────
+function renderSyncBar(){
+  if(!driveUrl) return h('div',{}); // no Drive configured, show nothing
+  const isOk = syncStatus==='ok';
+  const isSyncing = syncStatus==='syncing';
+  const isErr = syncStatus==='err';
+  return h('div',{
+    style:{
+      display:'flex',alignItems:'center',gap:'.5rem',
+      padding:'.4rem .8rem',
+      background: isErr?'var(--red-lt)':isSyncing?'var(--yel-lt)':'var(--acc-lt)',
+      borderBottom:'1px solid var(--brd)',
+      flexShrink:0
+    }
+  },
+    h('span',{style:{fontSize:'.75rem',flex:1,color:isErr?'var(--red)':isSyncing?'var(--yel)':'var(--acc)'}},
+      isSyncing ? '🔄 Sincronizando con Drive...' :
+      isErr ? '❌ Error al sincronizar con Drive' :
+      isOk ? ('✅ Drive sincronizado · '+lastSync) :
+      '☁️ Drive conectado'
+    ),
+    h('button',{
+      class:'btn btn-sm',
+      style:{
+        background: isSyncing?'var(--yel)':isErr?'var(--red)':'var(--acc)',
+        color: isErr?'#fff':'#000',
+        fontSize:'.72rem',
+        padding:'.25rem .6rem'
+      },
+      on:{click:()=>{ if(!isSyncing) driveLinkLoad(); }}
+    }, isSyncing?'...' :'⬇️ Cargar Drive')
+  );
+}
+
 function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
@@ -2460,8 +2493,9 @@ function startClock(){
     // Restore draft if exists for today
     const todayDraft = S.entries.find(e=>e.fecha===today()&&e._draft);
     if(todayDraft){ fEntry={...todayDraft}; editingEntry=true; }
+    // Always load from Drive on startup
     if(driveUrl){
-      setTimeout(()=>driveAutoLoad(),1500);
+      setTimeout(()=>driveAutoLoad(true),1000); // force=true always loads
     }
     // Load Firebase config if saved
     const savedCfg=localStorage.getItem('fbConfig');
