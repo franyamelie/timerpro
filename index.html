@@ -1082,36 +1082,31 @@ function sumRow(label, val, total=false){
 // ══════════════════════════════════════════════════════════
 function renderSincronizar(){
   return h('div',{},
-    // Cloud sync card
     h('div',{class:'card'},
-      h('div',{class:'sec-title'},'☁️ SINCRONIZACIÓN EN LA NUBE'),
-      fbUser
-        ? h('div',{},
-            h('div',{style:{display:'flex',alignItems:'center',gap:'.8rem',marginBottom:'.8rem'}},
-              fbUser.photoURL?h('img',{src:fbUser.photoURL,style:{width:'40px',height:'40px',borderRadius:'50%'}}):null,
-              h('div',{},
-                h('div',{style:{fontWeight:700}},fbUser.displayName||fbUser.email),
-                h('div',{style:{fontSize:'.75rem',color:'var(--ink2)'}},
-                  syncStatus==='ok'?'✅ Datos sincronizados':
-                  syncStatus==='syncing'?'🔄 Sincronizando...':
-                  syncStatus==='err'?'❌ Error de sincronización':'Conectado')
-              )
-            ),
-            h('div',{class:'btn-row'},
-              h('button',{class:'btn btn-g btn-full',on:{click:fbSync}},'🔄 Sincronizar ahora'),
-              h('button',{class:'btn btn-r btn-sm',on:{click:fbSignOut}},'🚪 Cerrar sesión')
-            )
-          )
-        : h('div',{},
-            h('p',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'.8rem'}},
-              'Conecta con Google para sincronizar automáticamente en todos tus dispositivos.'
-            ),
-            fbConfig
-              ? h('button',{class:'btn btn-g btn-full',on:{click:fbSignIn}},'🔑 Iniciar sesión con Google')
-              : h('button',{class:'btn btn-b btn-full',on:{click:()=>openModal('firebase')}},'⚙️ Configurar Firebase')
-          )
-    ),
-    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'☁️ GOOGLE DRIVE'),
+      h('div',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'1rem',lineHeight:1.7}},
+        'Sube tus datos al Drive cuando quieras. Carga desde Drive para obtener los datos más recientes.'
+      ),
+      lastSync?h('div',{class:'sum-row'},
+        h('span',{class:'sum-label'},'Última subida'),
+        h('span',{style:{fontSize:'.8rem',color:'var(--ink2)'}},lastSync)
+      ):null,
+      h('div',{class:'sum-row'},
+        h('span',{class:'sum-label'},'Jornadas locales'),
+        h('span',{style:{fontWeight:700}},S.entries.length+' jornadas')
+      ),
+      h('div',{class:'btn-row',style:{flexDirection:'column',marginTop:'.5rem'}},
+        h('button',{class:'btn btn-g btn-full btn-lg',on:{click:driveSync}},
+          '☁️ Subir TODO a Drive'
+        ),
+        h('button',{class:'btn btn-b btn-full btn-lg',on:{click:()=>_doLoad(true,false,true)}},
+          '⬇️ Cargar TODO desde Drive'
+        )
+      ),
+      h('div',{style:{fontSize:'.75rem',color:'var(--ink3)',marginTop:'.5rem',textAlign:'center'}},
+        '⚠️ "Cargar" reemplaza los datos locales con los de Drive'
+      )
+    ),    h('div',{class:'card'},
       h('div',{class:'sec-title'},'COPIA DE SEGURIDAD LOCAL'),
       h('p',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'.8rem'}},
         'Exporta tus datos en JSON para guardarlos o importarlos en otro dispositivo.'
@@ -1816,7 +1811,6 @@ async function saveEntry(){
     localStorage.setItem('lastSave',new Date().toISOString());
     showAlert('Jornada guardada ✓');
     rerender();
-    scheduleSync();
   }catch(e){showAlert(e.message,'err');}
 }
 
@@ -2579,7 +2573,7 @@ function driveSync(){
 }
 
 
-function _doLoad(force, verifyMode){
+function _doLoad(force, verifyMode, confirmMode){
   if(!driveUrl) return;
   syncStatus='syncing'; rerender();
   const cbName='load_'+Date.now();
@@ -2600,19 +2594,7 @@ function _doLoad(force, verifyMode){
       rerender(); return;
     }
 
-    // If both local and Drive have data, always ask
-    const localCount = S.entries.length;
-    const driveCount = (d.entries||[]).length;
-
-    if(localCount > 0 && driveCount > 0 && !verifyMode){
-      S._pendingDriveData = d;
-      S.modal = 'merge';
-      syncStatus='ok';
-      rerender();
-      return;
-    }
-
-    // Otherwise load directly
+    // Load directly - user controls when to load
     await importDriveData(d, verifyMode);
   };
 
