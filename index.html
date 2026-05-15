@@ -1588,7 +1588,11 @@ function field(label, type, value, onChange, attrs={}, placeholder=''){
   // For date/time/select: use change (triggers rerender); for text: use blur to avoid rerender while typing
   const isText = (type==='text'||type==='email'||type==='tel'||type==='number');
   const evts = isText
-    ? {blur:e=>{onChange(e.target.value);scheduleDraftSave();}, change:e=>{onChange(e.target.value);scheduleDraftSave();}}
+    ? {
+        input:e=>onChange(e.target.value),  // capture every keystroke
+        blur:e=>{onChange(e.target.value);scheduleDraftSave();},
+        change:e=>{onChange(e.target.value);scheduleDraftSave();}
+      }
     : {change:e=>{onChange(e.target.value);rerender();scheduleDraftSave();}};
   const el = h('div',{class:'field'},
     h('label',{},label),
@@ -1600,7 +1604,12 @@ function field(label, type, value, onChange, attrs={}, placeholder=''){
 function fieldArea(label, value, onChange){
   return h('div',{class:'field'},
     h('label',{},label),
-    h('textarea',{on:{blur:e=>onChange(e.target.value)}},value||'')
+    h('textarea',{
+      on:{
+        blur:e=>{onChange(e.target.value);scheduleDraftSave();},
+        input:e=>onChange(e.target.value)  // capture every keystroke
+      }
+    },value||'')
   );
 }
 
@@ -1710,6 +1719,20 @@ async function saveDraft(){
   }catch(e){ console.warn('Draft save failed:', e); }
 }
 
+function captureFormValues(){
+  // Read all textarea and input values currently in the DOM
+  document.querySelectorAll('textarea').forEach(el=>{
+    if(el.closest && el.closest('.field')){
+      const label = el.closest('.field')?.querySelector('label')?.textContent?.toLowerCase()||'';
+      if(label.includes('nota')) fEntry.notas = el.value;
+    }
+  });
+  // Read all visible text inputs
+  document.querySelectorAll('input[type="text"],input[type="number"],input[type="time"],input[type="date"]').forEach(el=>{
+    // Already handled by blur/change events
+  });
+}
+
 function gpsDisplay(loc){
   if(!loc) return h('div',{style:{fontSize:'.75rem',color:'var(--ink3)'}},'No registrada');
   try{
@@ -1778,6 +1801,8 @@ async function captureGPS(tipo){
 
 async function saveEntry(){
   if(!fEntry.fecha){showAlert('Selecciona una fecha','err');return;}
+  // Capture any pending form values that blur might have missed
+  captureFormValues();
   try{
     if(editingEntry&&fEntry.id){
       await dbPut(ST.entries,fEntry);
@@ -2579,13 +2604,7 @@ function _doLoad(force, verifyMode){
     const localCount = S.entries.length;
     const driveCount = (d.entries||[]).length;
 
-    // Show merge if either side has data the other doesn't
-    const localDates = new Set(S.entries.map(e=>e.fecha));
-    const driveDates = new Set((d.entries||[]).map(e=>e.fecha));
-    const localHasUnique = [...localDates].some(f=>!driveDates.has(f));
-    const driveHasUnique = [...driveDates].some(f=>!localDates.has(f));
-    
-    if(localCount > 0 && driveCount > 0 && (localHasUnique || driveHasUnique) && !verifyMode){
+    if(localCount > 0 && driveCount > 0 && !verifyMode){
       S._pendingDriveData = d;
       S.modal = 'merge';
       syncStatus='ok';
