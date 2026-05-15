@@ -2607,21 +2607,11 @@ function _doLoad(force, verifyMode){
       rerender(); return;
     }
 
-    // Compare dates
-    const driveDate = new Date(d.exportedAt||0);
-    const localEntries = S.entries.filter(e=>!e._draft);
-    const localDate = localEntries.length>0
-      ? new Date(Math.max(...localEntries.map(e=>new Date(e._savedAt||e.fecha||0))))
-      : new Date(0);
+    // If both local and Drive have data, always ask
+    const localCount = S.entries.length;
+    const driveCount = (d.entries||[]).length;
 
-    const driveNewer = driveDate > localDate;
-    const localNewer = localDate > driveDate;
-    const driveCount = d.entries.length;
-    const localCount = localEntries.length;
-
-    // If local has data newer than Drive, ask what to do
-    if(localNewer && localCount > 0 && !verifyMode){
-      // Show merge dialog
+    if(localCount > 0 && driveCount > 0 && !verifyMode){
       S._pendingDriveData = d;
       S.modal = 'merge';
       syncStatus='ok';
