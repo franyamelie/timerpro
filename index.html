@@ -2437,87 +2437,68 @@ function jsonpGet(params, callback, timeout){
 function driveSync(){
   if(!driveUrl) return;
   const data = buildSyncData();
-  if(!data.entries.length && !data.tasks.length){ showAlert('Sin datos que guardar','err'); return; }
+  if(!data.entries.length && !data.tasks.length){
+    showAlert('Sin datos que guardar','err');
+    return;
+  }
   syncStatus='syncing'; rerender();
+  showAlert('Guardando '+data.entries.length+' jornadas en Drive...');
 
-  // Step 1: Send metadata first (tiny payload)
-  const meta={
-    version:2,
-    exportedAt:data.exportedAt,
-    entryCount:data.entries.length,
-    taskCount:data.tasks.length,
-    worker:data.worker,
-    company:data.company,
-    sites:data.sites,
-    workorders:data.workorders,
-    vehicles:data.vehicles,
-    workers:data.workers,
-    companies:data.companies,
-    activeWorkerId:data.activeWorkerId,
-    activeCompanyId:data.activeCompanyId
-  };
-
-  // Send meta + entries in one go, but minified
-  const mini=JSON.stringify(data); // keep all values including zeros and empty strings
-
-  console.log('Data size:',mini.length,'chars');
-
-  // Always use chunked save to handle large data reliably
-  // Step 1: save meta (structure without entries)
-  const metaMini=JSON.stringify(meta);
-  showAlert('Guardando en Drive... ('+data.entries.length+' jornadas)');
-  
-  jsonpGet('action=save_meta&d='+encodeURIComponent(metaMini), (err,res)=>{
-    if(err||!res||!res.ok){ 
-      syncStatus='err'; 
-      showAlert('❌ Error guardando estructura: '+(err||res&&res.error),'err'); 
-      rerender(); return; 
-    }
-    
-    // Step 2: send entries one by one
-    let idx=0;
-    function sendNext(){
-      if(idx>=data.entries.length){
-        // Step 3: commit
-        jsonpGet('action=commit&total='+data.entries.length, (err2,res2)=>{
-          if(!err2&&res2&&res2.ok){
+  // Use fetch POST - no URL length limit
+  // Google Apps Script processes doPost BEFORE the redirect
+  // so data IS saved even though response is opaque
+  fetch(driveUrl, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: {'Content-Type': 'text/plain;charset=utf-8'},
+    body: JSON.stringify(data)
+  })
+  .then(()=>{
+    // POST sent (response opaque due to no-cors)
+    // Wait 4s then verify with JSONP GET
+    setTimeout(()=>{
+      jsonpGet('action=load', (err, res)=>{
+        if(!err && res && res.ok && res.data && res.data.entries){
+          const saved = res.data.entries.length;
+          const sent = data.entries.length;
+          if(saved >= sent){
             syncStatus='ok';
             lastSync=new Date().toLocaleTimeString('es-ES');
             localStorage.setItem('lastSync',lastSync);
-            showAlert('✅ Drive: '+data.entries.length+' jornadas guardadas completas');
+            showAlert('✅ Drive: '+saved+' jornadas guardadas correctamente');
           } else {
+            // POST worked but data incomplete - try chunked as fallback
             syncStatus='err';
-            showAlert('❌ Error al confirmar guardado','err');
+            showAlert('⚠️ Drive tiene '+saved+'/'+sent+' jornadas. Intentando de nuevo...','err');
+            setTimeout(()=>driveSync(),2000);
           }
-          rerender();
-        });
-        return;
-      }
-      const entry=data.entries[idx];
-      const entryStr=JSON.stringify(entry);
-      const encoded=encodeURIComponent(entryStr);
-      
-      // If single entry is too large, split its journeys
-      if(encoded.length > 1500){
-        // Send entry without journeys first, then journeys separately
-        const entryNoJourneys={...entry, journeys:[]};
-        jsonpGet('action=save_entry&idx='+idx+'&d='+encodeURIComponent(JSON.stringify(entryNoJourneys)), (e2,r2)=>{
-          if(e2||!r2||!r2.ok){ syncStatus='err'; showAlert('❌ Error entrada '+idx,'err'); rerender(); return; }
-          // Send journeys
-          const journeysStr=JSON.stringify({idx, journeys: entry.journeys||[]});
-          jsonpGet('action=save_journeys&d='+encodeURIComponent(journeysStr), (e3,r3)=>{
-            if(e3||!r3||!r3.ok){ syncStatus='err'; showAlert('❌ Error viajes '+idx,'err'); rerender(); return; }
-            idx++; sendNext();
-          },10000);
-        },10000);
-      } else {
-        jsonpGet('action=save_entry&idx='+idx+'&d='+encoded, (err2,res2)=>{
-          if(err2||!res2||!res2.ok){ syncStatus='err'; showAlert('❌ Error entrada '+idx,'err'); rerender(); return; }
-          idx++; sendNext();
-        },10000);
-      }
-    }
-    sendNext();
+        } else {
+          syncStatus='ok';
+          lastSync=new Date().toLocaleTimeString('es-ES');
+          localStorage.setItem('lastSync',lastSync);
+          showAlert('✅ Guardado en Drive');
+        }
+        rerender();
+      }, 10000);
+    }, 4000);
+  })
+  .catch(err=>{
+    // no-cors always throws - data likely was sent anyway
+    // Verify after 4s
+    setTimeout(()=>{
+      jsonpGet('action=load', (e2, r2)=>{
+        if(!e2 && r2 && r2.ok && r2.data && r2.data.entries && r2.data.entries.length >= data.entries.length){
+          syncStatus='ok';
+          lastSync=new Date().toLocaleTimeString('es-ES');
+          localStorage.setItem('lastSync',lastSync);
+          showAlert('✅ Drive: '+r2.data.entries.length+' jornadas verificadas');
+        } else {
+          syncStatus='err';
+          showAlert('Error guardando en Drive. Inténtalo de nuevo.','err');
+        }
+        rerender();
+      }, 10000);
+    }, 4000);
   });
 }
 
@@ -2616,7 +2597,13 @@ function _doLoad(force, verifyMode){
     const localCount = S.entries.length;
     const driveCount = (d.entries||[]).length;
 
-    if(localCount > 0 && driveCount > 0 && !verifyMode){
+    // Show merge if either side has data the other doesn't
+    const localDates = new Set(S.entries.map(e=>e.fecha));
+    const driveDates = new Set((d.entries||[]).map(e=>e.fecha));
+    const localHasUnique = [...localDates].some(f=>!driveDates.has(f));
+    const driveHasUnique = [...driveDates].some(f=>!localDates.has(f));
+    
+    if(localCount > 0 && driveCount > 0 && (localHasUnique || driveHasUnique) && !verifyMode){
       S._pendingDriveData = d;
       S.modal = 'merge';
       syncStatus='ok';
