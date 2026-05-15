@@ -1353,7 +1353,7 @@ function renderModal(){
   if(S.modal==='drive') return renderModalDriveSetup();
   if(S.modal==='driveaccount') return renderModalDriveAccount();
   if(S.modal==='confirm') return renderModalConfirm();
-  if(S.modal==='merge') return renderModalMerge();
+
   return null;
 }
 
@@ -1456,49 +1456,6 @@ function renderModalAccount(){
   );
 }
 
-function renderModalMerge(){
-  const d = S._pendingDriveData;
-  if(!d) return null;
-  const driveDate = new Date(d.exportedAt||0).toLocaleString('es-ES');
-  const localCount = S.entries.filter(e=>!e._draft).length;
-  const driveCount = (d.entries||[]).length;
-
-  return h('div',{class:'modal-bg'},
-    h('div',{class:'modal-box'},
-      h('div',{class:'modal-title'},'⚠️ Conflicto de datos'),
-      h('div',{style:{fontSize:'.85rem',marginBottom:'1rem',lineHeight:1.6}},
-        h('div',{style:{marginBottom:'.5rem'}},'Tienes datos locales más recientes que los de Drive:'),
-        h('div',{class:'sum-row'},h('span',{class:'sum-label'},'📱 Este dispositivo'),h('span',{style:{fontWeight:700}},localCount+' jornadas')),
-        h('div',{class:'sum-row'},h('span',{class:'sum-label'},'☁️ Google Drive'),h('span',{style:{fontWeight:700}},driveCount+' jornadas')),
-        h('div',{class:'sum-row'},h('span',{class:'sum-label'},'Drive guardado'),h('span',{style:{color:'var(--ink2)'}},driveDate)),
-        h('div',{style:{marginTop:'.8rem',padding:'.7rem',background:'var(--yel-lt)',borderRadius:'var(--r2)',fontSize:'.8rem',color:'var(--yel)'}},
-          '⚠️ Si cargas desde Drive perderás los datos locales no sincronizados.'
-        )
-      ),
-      h('div',{class:'btn-row',style:{flexDirection:'column'}},
-        h('button',{class:'btn btn-g btn-full',on:{click:async()=>{
-          S.modal=null;
-          await mergeDriveData(S._pendingDriveData);
-          S._pendingDriveData=null;
-        }}},'🔀 Fusionar (combinar ambos)'),
-        h('button',{class:'btn btn-b btn-full',on:{click:async()=>{
-          const d=S._pendingDriveData;
-          S.modal=null; S._pendingDriveData=null;
-          await importDriveData(d,false);
-        }}},'☁️ Usar Drive (reemplazar local)'),
-        h('button',{class:'btn btn-y btn-full',on:{click:()=>{
-          S._pendingDriveData=null; S.modal=null;
-          driveSync();
-          rerender();
-        }}},'📤 Subir local a Drive (ignorar Drive)'),
-        h('button',{class:'btn btn-gh btn-full',on:{click:()=>{
-          S._pendingDriveData=null; S.modal=null;
-          syncStatus=''; rerender();
-        }}},'❌ Cancelar')
-      )
-    )
-  );
-}
 
 function renderModalConfirm(){
   if(!confirmDialog) return null;
@@ -1796,8 +1753,9 @@ async function captureGPS(tipo){
 
 async function saveEntry(){
   if(!fEntry.fecha){showAlert('Selecciona una fecha','err');return;}
-  // Capture any pending form values that blur might have missed
-  captureFormValues();
+  // Read notas directly from DOM before saving
+  const notasEl = document.querySelector('textarea');
+  if(notasEl) fEntry.notas = notasEl.value;
   try{
     if(editingEntry&&fEntry.id){
       await dbPut(ST.entries,fEntry);
@@ -1834,6 +1792,8 @@ async function deleteEntry(id){
     if(fEntry.id===id){editingEntry=false;fEntry=defEntry();}
     showAlert('Jornada eliminada');
     rerender();
+    // Auto-upload after delete so Drive reflects the deletion
+    if(driveUrl) setTimeout(()=>driveSync(),1000);
   });
 }
 
@@ -1879,6 +1839,7 @@ async function deleteTask(id){
     S.tasks=S.tasks.filter(t=>t.id!==id);
     showAlert('Tarea eliminada');
     rerender();
+    if(driveUrl) setTimeout(()=>driveSync(),1000);
   });
 }
 
@@ -2594,7 +2555,6 @@ function _doLoad(force, verifyMode, confirmMode){
       rerender(); return;
     }
 
-    // Load directly - user controls when to load
     await importDriveData(d, verifyMode);
   };
 
