@@ -298,7 +298,7 @@ let fbApp=null, fbAuth=null, fbDb=null, fbUser=null;
 let fbConfig=null; // loaded from localStorage
 let syncStatus=''; // '', 'syncing', 'ok', 'err'
 let syncTimer=null;
-let driveUrl='https://script.google.com/macros/s/AKfycbz90y0SDev3NZwfIFJe4XBgCZlLF2j5xMKzwAljoqsygRxPAvgvZ85ZyAAsUd5UaiRzSA/exec'; // URL fija - ya configurada
+let driveUrl='https://script.google.com/macros/s/AKfycbyaHPepTcBvSk-CiEnqvApBNPl3pp1x2iHhN3Zx3qNTc4hGb0FEFOUa9IVN34GG0I1pmQ/exec'; // URL fija - ya configurada
 let lastSync='';
 let autoSaveTimer=null;
 let draftSaveTimer=null;
@@ -2462,43 +2462,32 @@ function driveSync(){
 
   console.log('Data size:',mini.length,'chars');
 
-  // If data is small enough, send in one request
-  if(mini.length < 1500){
-    jsonpGet('action=save&d='+encodeURIComponent(mini), (err,res)=>{
-      if(err||!res||!res.ok){
-        syncStatus='err';
-        showAlert('❌ Error: '+(err||res&&res.error||'sin respuesta'),'err');
-      } else {
-        syncStatus='ok';
-        lastSync=new Date().toLocaleTimeString('es-ES');
-        localStorage.setItem('lastSync',lastSync);
-        showAlert('✅ Drive: '+data.entries.length+' jornadas guardadas');
-      }
-      rerender();
-    });
-    return;
-  }
-
-  // Data too large: send in chunks
-  // First save meta+structure, then entries one by one
+  // Always use chunked save to handle large data reliably
+  // Step 1: save meta (structure without entries)
   const metaMini=JSON.stringify(meta);
+  showAlert('Guardando en Drive... ('+data.entries.length+' jornadas)');
+  
   jsonpGet('action=save_meta&d='+encodeURIComponent(metaMini), (err,res)=>{
-    if(err||!res||!res.ok){ syncStatus='err'; showAlert('❌ Error meta: '+(err||res&&res.error),'err'); rerender(); return; }
+    if(err||!res||!res.ok){ 
+      syncStatus='err'; 
+      showAlert('❌ Error guardando estructura: '+(err||res&&res.error),'err'); 
+      rerender(); return; 
+    }
     
-    // Send entries one by one
+    // Step 2: send entries one by one
     let idx=0;
     function sendNext(){
       if(idx>=data.entries.length){
-        // All done - commit
+        // Step 3: commit
         jsonpGet('action=commit&total='+data.entries.length, (err2,res2)=>{
           if(!err2&&res2&&res2.ok){
             syncStatus='ok';
             lastSync=new Date().toLocaleTimeString('es-ES');
             localStorage.setItem('lastSync',lastSync);
-            showAlert('✅ Drive: '+data.entries.length+' jornadas guardadas');
+            showAlert('✅ Drive: '+data.entries.length+' jornadas guardadas completas');
           } else {
             syncStatus='err';
-            showAlert('❌ Error commit','err');
+            showAlert('❌ Error al confirmar guardado','err');
           }
           rerender();
         });
@@ -2506,11 +2495,27 @@ function driveSync(){
       }
       const entry=data.entries[idx];
       const entryStr=JSON.stringify(entry);
-      jsonpGet('action=save_entry&idx='+idx+'&d='+encodeURIComponent(entryStr), (err2,res2)=>{
-        if(err2||!res2||!res2.ok){ syncStatus='err'; showAlert('❌ Error entrada '+idx,'err'); rerender(); return; }
-        idx++;
-        sendNext();
-      },10000);
+      const encoded=encodeURIComponent(entryStr);
+      
+      // If single entry is too large, split its journeys
+      if(encoded.length > 1500){
+        // Send entry without journeys first, then journeys separately
+        const entryNoJourneys={...entry, journeys:[]};
+        jsonpGet('action=save_entry&idx='+idx+'&d='+encodeURIComponent(JSON.stringify(entryNoJourneys)), (e2,r2)=>{
+          if(e2||!r2||!r2.ok){ syncStatus='err'; showAlert('❌ Error entrada '+idx,'err'); rerender(); return; }
+          // Send journeys
+          const journeysStr=JSON.stringify({idx, journeys: entry.journeys||[]});
+          jsonpGet('action=save_journeys&d='+encodeURIComponent(journeysStr), (e3,r3)=>{
+            if(e3||!r3||!r3.ok){ syncStatus='err'; showAlert('❌ Error viajes '+idx,'err'); rerender(); return; }
+            idx++; sendNext();
+          },10000);
+        },10000);
+      } else {
+        jsonpGet('action=save_entry&idx='+idx+'&d='+encoded, (err2,res2)=>{
+          if(err2||!res2||!res2.ok){ syncStatus='err'; showAlert('❌ Error entrada '+idx,'err'); rerender(); return; }
+          idx++; sendNext();
+        },10000);
+      }
     }
     sendNext();
   });
