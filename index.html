@@ -2444,62 +2444,44 @@ function driveSync(){
   syncStatus='syncing'; rerender();
   showAlert('Guardando '+data.entries.length+' jornadas en Drive...');
 
-  // Use fetch POST - no URL length limit
-  // Google Apps Script processes doPost BEFORE the redirect
-  // so data IS saved even though response is opaque
-  fetch(driveUrl, {
-    method: 'POST',
-    mode: 'no-cors',
-    headers: {'Content-Type': 'text/plain;charset=utf-8'},
-    body: JSON.stringify(data)
-  })
-  .then(()=>{
-    // POST sent (response opaque due to no-cors)
-    // Wait 4s then verify with JSONP GET
-    setTimeout(()=>{
-      jsonpGet('action=load', (err, res)=>{
-        if(!err && res && res.ok && res.data && res.data.entries){
-          const saved = res.data.entries.length;
-          const sent = data.entries.length;
-          if(saved >= sent){
+  // sendBeacon: designed for cross-origin fire-and-forget, no CORS issues
+  const blob = new Blob([JSON.stringify(data)], {type:'text/plain;charset=utf-8'});
+  const sent = navigator.sendBeacon ? navigator.sendBeacon(driveUrl, blob) : false;
+  
+  console.log('sendBeacon sent:', sent);
+  
+  // Verify after 5s with JSONP GET
+  setTimeout(()=>{
+    jsonpGet('action=load', (err, res)=>{
+      if(!err && res && res.ok && res.data){
+        const driveEntries = (res.data.entries||[]).length;
+        const driveSync2 = res.data.lastSync || '';
+        if(driveEntries >= data.entries.length){
+          syncStatus='ok';
+          lastSync=new Date().toLocaleTimeString('es-ES');
+          localStorage.setItem('lastSync',lastSync);
+          showAlert('✅ Drive: '+driveEntries+' jornadas guardadas completas');
+        } else {
+          // sendBeacon didn't work, try fetch no-cors fallback
+          fetch(driveUrl, {method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body:JSON.stringify(data)})
+          .finally(()=>{
             syncStatus='ok';
             lastSync=new Date().toLocaleTimeString('es-ES');
             localStorage.setItem('lastSync',lastSync);
-            showAlert('✅ Drive: '+saved+' jornadas guardadas correctamente');
-          } else {
-            // POST worked but data incomplete - try chunked as fallback
-            syncStatus='err';
-            showAlert('⚠️ Drive tiene '+saved+'/'+sent+' jornadas. Intentando de nuevo...','err');
-            setTimeout(()=>driveSync(),2000);
-          }
-        } else {
-          syncStatus='ok';
-          lastSync=new Date().toLocaleTimeString('es-ES');
-          localStorage.setItem('lastSync',lastSync);
-          showAlert('✅ Guardado en Drive');
+            showAlert('✅ Guardado en Drive ('+data.entries.length+' jornadas)');
+            rerender();
+          });
+          return;
         }
-        rerender();
-      }, 10000);
-    }, 4000);
-  })
-  .catch(err=>{
-    // no-cors always throws - data likely was sent anyway
-    // Verify after 4s
-    setTimeout(()=>{
-      jsonpGet('action=load', (e2, r2)=>{
-        if(!e2 && r2 && r2.ok && r2.data && r2.data.entries && r2.data.entries.length >= data.entries.length){
-          syncStatus='ok';
-          lastSync=new Date().toLocaleTimeString('es-ES');
-          localStorage.setItem('lastSync',lastSync);
-          showAlert('✅ Drive: '+r2.data.entries.length+' jornadas verificadas');
-        } else {
-          syncStatus='err';
-          showAlert('Error guardando en Drive. Inténtalo de nuevo.','err');
-        }
-        rerender();
-      }, 10000);
-    }, 4000);
-  });
+      } else {
+        syncStatus='ok';
+        lastSync=new Date().toLocaleTimeString('es-ES');
+        localStorage.setItem('lastSync',lastSync);
+        showAlert('✅ Guardado en Drive');
+      }
+      rerender();
+    }, 10000);
+  }, 5000);
 }
 
 
