@@ -263,9 +263,9 @@ const S = {
 
 // ── DEFAULTS ─────────────────────────────────────────────
 const defEntry = () => ({
-  fecha:today(), fichajes:[], horasNormales:0, importeNormales:0,
-  horasExtra:0, importeExtra:0, horasNocturnas:0, importeNocturnas:0,
-  horasFestivas:0, importeFestivas:0, dieta:0, dietasExtra:[], transporte:0,
+  fecha:today(), fichajes:[], horasNormales:0, precioHoraNormal:0, importeNormales:0,
+  horasExtra:0, precioHoraExtra:0, importeExtra:0, horasNocturnas:0, precioHoraNocturna:0, importeNocturnas:0,
+  horasFestivas:0, precioHoraFestiva:0, importeFestivas:0, dieta:0, dietasExtra:[], transporte:0,
   otrosConceptos:[], notas:'', journeys:[], ubicacionEntrada:'', ubicacionSalida:'',
   entradaLocked:false
 });
@@ -493,19 +493,50 @@ function renderFichar(){
     // Horas e importes
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'Horas e Importes'),
-      ...(['Normales','Extra','Nocturnas','Festivas'].map(tipo=>
-        h('div',{class:'grid-2',style:{marginBottom:'.5rem'}},
-          h('div',{class:'field'},
-            h('label',{},`HORAS ${tipo.toUpperCase()}`),
-            h('input',{type:'number',min:'0',step:'0.5',value:e['horas'+tipo]||'',placeholder:'0',
-              on:{blur:ev=>{fEntry['horas'+tipo]=parseFloat(ev.target.value)||0;scheduleDraftSave();}}})
+      // Header row
+      h('div',{style:{display:'grid',gridTemplateColumns:'2fr 2fr 1fr',gap:'.4rem',marginBottom:'.3rem'}},
+        h('div',{style:{fontSize:'.65rem',fontWeight:700,color:'var(--ink3)',textTransform:'uppercase'}},'HORAS × PRECIO/H'),
+        h('div',{}),
+        h('div',{style:{fontSize:'.65rem',fontWeight:700,color:'var(--ink3)',textTransform:'uppercase',textAlign:'right'}},'IMPORTE')
+      ),
+      ...(['Normales','Extra','Nocturnas','Festivas'].map(tipo=>{
+        const pk='precioHora'+tipo;
+        const hk='horas'+tipo;
+        const ik='importe'+tipo;
+        const horas=parseFloat(e[hk])||0;
+        const precio=parseFloat(e[pk])||0;
+        const calc=Math.round(horas*precio*100)/100;
+        // Auto-update importe when horas or precio change
+        return h('div',{style:{display:'grid',gridTemplateColumns:'1fr auto 1fr auto',gap:'.4rem',alignItems:'center',marginBottom:'.5rem'}},
+          h('div',{class:'field',style:{margin:0}},
+            h('label',{},tipo.toUpperCase()),
+            h('input',{type:'number',min:'0',step:'0.5',value:horas||'',placeholder:'0',
+              on:{input:ev=>{
+                fEntry[hk]=parseFloat(ev.target.value)||0;
+                fEntry[ik]=Math.round(fEntry[hk]*(parseFloat(e[pk])||0)*100)/100;
+                rerender();
+              }}})
           ),
-          h('div',{class:'field'},
-            h('label',{},`IMPORTE ${tipo.toUpperCase()}`),
-            importeField(e['importe'+tipo], v=>{fEntry['importe'+tipo]=v;rerender()})
-          )
-        )
-      )),
+          h('div',{style:{color:'var(--ink3)',fontSize:'1.2rem',marginTop:'1rem'}},'×'),
+          h('div',{class:'field',style:{margin:0}},
+            h('label',{},'€/HORA'),
+            h('input',{type:'number',min:'0',step:'0.01',value:precio||'',placeholder:'0.00',
+              on:{input:ev=>{
+                fEntry[pk]=parseFloat(ev.target.value)||0;
+                fEntry[ik]=Math.round((parseFloat(e[hk])||0)*fEntry[pk]*100)/100;
+                rerender();
+              }}})
+          ),
+          h('div',{style:{
+            background:calc>0?'var(--acc-lt)':'var(--surf2)',
+            color:calc>0?'var(--acc)':'var(--ink3)',
+            borderRadius:'var(--r2)',padding:'.4rem .6rem',
+            fontWeight:700,fontSize:'.85rem',marginTop:'1rem',
+            border:'1px solid '+(calc>0?'var(--acc)':'var(--brd)'),
+            minWidth:'70px',textAlign:'right'
+          }},calc>0?eur(calc):'—')
+        );
+      })),
       h('div',{class:'sep'}),
       h('div',{class:'grid-2'},
         h('div',{class:'field'},
