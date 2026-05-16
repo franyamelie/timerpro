@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778966770730 -->
+<!-- v1778967247145 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -240,7 +240,14 @@ function openDB(){
     const r=indexedDB.open(DB_NAME,DB_VER);
     r.onupgradeneeded=e=>{
       const d=e.target.result;
-      Object.values(ST).forEach(s=>{ if(!d.objectStoreNames.contains(s)) d.createObjectStore(s,{keyPath:'id',autoIncrement:true}); });
+      // SAFE: only ADD new stores, never delete or modify existing ones
+      Object.values(ST).forEach(s=>{
+        try{
+          if(!d.objectStoreNames.contains(s)){
+            d.createObjectStore(s,{keyPath:'id',autoIncrement:true});
+          }
+        }catch(err){ console.warn('Store already exists:',s); }
+      });
     };
     r.onsuccess=e=>{db=e.target.result;res(db);};
     r.onerror=()=>rej(r.error);
@@ -3861,7 +3868,7 @@ async function manualCheckUpdate(){
   showAlert('Buscando actualizacion...');
 }
 // Store current version
-localStorage.setItem('appVersion', '1778966770730');
+localStorage.setItem('appVersion', '1778967247145');
 
 
 // ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
