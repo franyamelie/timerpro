@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778946291750 -->
+<!-- v1778946593482 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3562,11 +3562,7 @@ async function checkForUpdate(){
   }catch(e){}
 }
 // Store current version
-localStorage.setItem('appVersion', '1778944427711');
-// Check on startup after 3 seconds
-setTimeout(checkForUpdate, 3000);
-// Check every 10 minutes while app is open
-setInterval(checkForUpdate, 10 * 60 * 1000);
+localStorage.setItem('appVersion', '1778944753212');
 
 
 // ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
@@ -3622,8 +3618,6 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     lastSync=localStorage.getItem('lastSync')||'';
     pinCode=localStorage.getItem('pinCode')||'';
     if(pinCode){pinLocked=true;pinEntered='';}
-    pinCode=localStorage.getItem('pinCode')||'';
-    if(pinCode){pinLocked=true;pinEntered='';}
     // Auto-load from Drive on startup if configured
     // Restore draft if exists for today
     const todayDraft = S.entries.find(e=>e.fecha===today()&&e._draft);
@@ -3646,6 +3640,12 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     if(savedCfg){ try{ fbConfig=JSON.parse(savedCfg); await initFirebase(); }catch(e){} }
     renderApp();
     startClock();
+    // Check for new version after 6 seconds
+    setTimeout(checkForUpdate, 6000);
+    setInterval(checkForUpdate, 10 * 60 * 1000);
+    // Check Drive for new data every 5 seconds
+    setTimeout(checkDriveForNewData, 12000);
+    setInterval(checkDriveForNewData, 5000);
   } catch(e) {
     document.getElementById('app').innerHTML = 
       '<div style="color:red;padding:20px;font-family:monospace">Error: ' + e.message + '<br>' + e.stack + '</div>';
