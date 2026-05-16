@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778962003490 -->
+<!-- v1778962264104 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -521,16 +521,18 @@ function renderFichar(){
         h('div',{class:'field'},
           h('label',{style:{display:'flex',alignItems:'center',gap:'.4rem',flexWrap:'wrap'}},'JORNADA',
             h('span',{
+              class:'drive-badge',
               style:{display:'flex',alignItems:'center',gap:'.25rem',borderRadius:'20px',padding:'.15rem .55rem',fontSize:'.67rem',fontWeight:700,background:driveHasNew?'var(--acc)':'var(--surf3)',color:driveHasNew?'#000':'var(--ink3)',border:'1px solid '+(driveHasNew?'var(--acc)':'var(--brd)'),cursor:driveHasNew?'pointer':'default',transition:'all .3s'},
               on:{click:()=>{if(driveHasNew){driveHasNew=false;driveChecked=true;_doLoad(true,false,true);}}}
             },
-              h('span',{style:{width:'7px',height:'7px',borderRadius:'50%',background:driveHasNew?'#000':'var(--ink3)',flexShrink:0,display:'inline-block'}}),
+              h('span',{class:'badge-dot',style:{width:'7px',height:'7px',borderRadius:'50%',background:driveHasNew?'#000':'var(--ink3)',flexShrink:0,display:'inline-block'}}),
               ' Datos nuevos'
             ),
             h('span',{
+              class:'drive-badge',
               style:{display:'flex',alignItems:'center',gap:'.25rem',borderRadius:'20px',padding:'.15rem .55rem',fontSize:'.67rem',fontWeight:700,background:(driveChecked&&!driveHasNew)?'var(--red)':'var(--surf3)',color:(driveChecked&&!driveHasNew)?'#fff':'var(--ink3)',border:'1px solid '+((driveChecked&&!driveHasNew)?'var(--red)':'var(--brd)'),transition:'all .3s'}
             },
-              h('span',{style:{width:'7px',height:'7px',borderRadius:'50%',background:(driveChecked&&!driveHasNew)?'#fff':'var(--ink3)',flexShrink:0,display:'inline-block'}}),
+              h('span',{class:'badge-dot',style:{width:'7px',height:'7px',borderRadius:'50%',background:(driveChecked&&!driveHasNew)?'#fff':'var(--ink3)',flexShrink:0,display:'inline-block'}}),
               ' Sin datos nuevos'
             ),
             h('span',{
@@ -3592,18 +3594,46 @@ function checkDriveForNewData(){
   window[cbName]=function(res){
     done=true; delete window[cbName]; s.remove();
     if(!res||!res.ok||!res.data) return;
-    const driveTime=new Date(res.data.exportedAt||0).getTime();
-    const localTime=new Date(lastSync||localStorage.getItem('lastSync')||0).getTime();
-    const wasNew=driveHasNew;
-    const wasChecked=driveChecked;
-    driveChecked=true;
-    driveHasNew = driveTime > localTime + 5000;
-    if(driveHasNew!==wasNew || driveChecked!==wasChecked) rerender();
+    const exportedAt = new Date(res.data.exportedAt||0).getTime();
+    const lastLoaded = parseInt(localStorage.getItem('lastDriveLoad')||'0');
+    const newHasNew = exportedAt > lastLoaded + 3000;
+    const changed = newHasNew !== driveHasNew || !driveChecked;
+    driveChecked = true;
+    driveHasNew = newHasNew;
+    driveLastExportedAt = exportedAt;
+    if(changed){
+      // Update ONLY the badge elements in DOM without full rerender
+      // This avoids disrupting user input
+      updateDriveBadges();
+    }
   };
-  setTimeout(()=>{if(!done){delete window[cbName];s.remove();}},10000);
+  setTimeout(()=>{if(!done){delete window[cbName];s.remove();}},8000);
   s.src=driveUrl+'?action=load&callback='+cbName+'&t='+Date.now();
   document.body.appendChild(s);
 }
+
+function updateDriveBadges(){
+  // Find and update badge dots without full rerender
+  const badges = document.querySelectorAll('.drive-badge');
+  if(badges.length > 0){
+    // Update existing badges
+    badges[0] && updateBadgeEl(badges[0], driveHasNew, driveHasNew?'var(--acc)':'var(--surf3)', driveHasNew?'#000':'var(--ink3)');
+    badges[1] && updateBadgeEl(badges[1], driveChecked&&!driveHasNew, 'var(--red)', '#fff');
+  } else {
+    // No badges in DOM yet, do a full rerender only if tab is visible
+    if(S.tab==='fichar') rerender();
+  }
+}
+
+function updateBadgeEl(el, active, bgActive, colorActive){
+  el.style.background = active ? bgActive : 'var(--surf3)';
+  el.style.color = active ? colorActive : 'var(--ink3)';
+  el.style.border = '1px solid ' + (active ? bgActive : 'var(--brd)');
+  el.style.cursor = active ? 'pointer' : 'default';
+  const dot = el.querySelector('.badge-dot');
+  if(dot) dot.style.background = active ? colorActive : 'var(--ink3)';
+}
+
 
 // ── RELOJ ────────────────────────────────────────────────
 function startClock(){
