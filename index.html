@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778941279380 -->
+<!-- v1778941555340 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1306,9 +1306,36 @@ function renderSincronizar(){
       )
     ),
     h('div',{class:'card'},
-      h('div',{class:'sec-title'},'IMPORTAR DATOS'),
+      h('div',{class:'sec-title'},'IMPORTAR DESDE PLANTILLA EXCEL'),
+      h('p',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'.8rem',lineHeight:1.6}},
+        '1. Descarga la plantilla Excel, rellenala con tus jornadas y arrastrala aqui para importar automaticamente.'
+      ),
+      h('button',{class:'btn btn-g btn-full',style:{marginBottom:'.8rem'},on:{click:downloadTemplate}},
+        '📥 Descargar plantilla Excel'
+      ),
+      h('div',{
+        style:{border:'2px dashed var(--acc)',borderRadius:'var(--r)',padding:'1.5rem',textAlign:'center',cursor:'pointer',color:'var(--acc)',background:'var(--acc-lt)'},
+        on:{
+          click:()=>{
+            const inp=document.createElement('input');
+            inp.type='file';inp.accept='.xlsx,.xls';
+            inp.onchange=e=>importFromTemplate(e.target.files[0]);
+            inp.click();
+          },
+          dragover:ev=>{ev.preventDefault();ev.currentTarget.style.background='var(--acc-lt)';},
+          dragleave:ev=>{ev.currentTarget.style.background='var(--acc-lt)';},
+          drop:ev=>{ev.preventDefault();importFromTemplate(ev.dataTransfer.files[0]);}
+        }
+      },
+        h('div',{style:{fontSize:'2rem',marginBottom:'.5rem'}},'📊'),
+        h('div',{style:{fontWeight:700}},'Arrastra aqui tu Excel relleno'),
+        h('div',{style:{fontSize:'.75rem',marginTop:'.3rem',opacity:.8}},'o pulsa para seleccionar el archivo')
+      )
+    ),
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'IMPORTAR DATOS JSON'),
       h('p',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'.8rem'}},
-        '⚠️ La importación reemplaza todos los datos actuales.'
+        '⚠️ La importacion JSON reemplaza todos los datos actuales.'
       ),
       h('div',{
         style:{border:'2px dashed var(--brd)',borderRadius:'var(--r)',padding:'2rem',textAlign:'center',cursor:'pointer',color:'var(--ink2)'},
@@ -2447,6 +2474,144 @@ function drawQR(canvasId, text){
   img.src=url;
 }
 
+
+// ── PLANTILLA EXCEL PARA IMPORTAR ────────────────────────
+async function downloadTemplate(){
+  if(!window.XLSX){showAlert('Cargando libreria...','err');setTimeout(downloadTemplate,2000);return;}
+  const wb=XLSX.utils.book_new();
+
+  // Sheet: Jornadas
+  const rows=[
+    ['TIMERPRO - PLANTILLA DE JORNADAS'],
+    ['Instrucciones: Rellena una fila por jornada. NO modifiques los encabezados (fila 4).'],
+    ['Formatos: Fecha=YYYY-MM-DD, Horas=numerico (ej: 8 o 7.5), Importe=numerico (ej: 15.50)'],
+    [],
+    [
+      'Fecha','Entrada','Salida',
+      'Horas Normales','Precio/h Normal',
+      'Horas Extra','Precio/h Extra',
+      'Horas Nocturnas','Precio/h Nocturnas',
+      'Horas Festivas','Precio/h Festivas',
+      'Dieta','Transporte','Nota'
+    ],
+    // Example rows
+    [today(),'08:00','16:00', 8,15.50, 0,0, 0,0, 0,0, 10,5,'Ejemplo - borra esta fila'],
+    [today(),'07:30','14:00', 6.5,15.50, 1,20, 0,0, 0,0, 12,0,'']
+  ];
+
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[
+    {wch:12},{wch:8},{wch:8},
+    {wch:14},{wch:14},
+    {wch:12},{wch:12},
+    {wch:16},{wch:16},
+    {wch:14},{wch:14},
+    {wch:8},{wch:10},{wch:30}
+  ];
+  // Style header row (row 5 = index 4)
+  XLSX.utils.book_append_sheet(wb,ws,'Jornadas');
+
+  const fname='TimerPro_Plantilla.xlsx';
+  const arr=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+  const blob=new Blob([arr],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const file=new File([blob],fname,{type:blob.type});
+
+  if(navigator.share){
+    try{await navigator.share({files:[file],title:'Plantilla TimerPro'});return;}
+    catch(e){if(e.name==='AbortError')return;}
+  }
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=fname;a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  showAlert('Plantilla descargada. Rellenala y arrastrarla aqui para importar.');
+}
+
+async function importFromTemplate(file){
+  if(!file)return;
+  if(!window.XLSX){showAlert('Cargando libreria...','err');return;}
+
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+
+    // Find header row (contains 'Fecha')
+    let headerIdx=-1;
+    for(let i=0;i<rows.length;i++){
+      if(rows[i].some(c=>String(c).toLowerCase().includes('fecha'))){
+        headerIdx=i; break;
+      }
+    }
+    if(headerIdx<0){showAlert('No se encontro la fila de encabezados','err');return;}
+
+    const headers=rows[headerIdx].map(h=>String(h).toLowerCase().trim());
+    const dataRows=rows.slice(headerIdx+1).filter(r=>r[0]&&String(r[0]).match(/\d{4}-\d{2}-\d{2}/));
+
+    if(dataRows.length===0){showAlert('No se encontraron filas con datos validos','err');return;}
+
+    const col=name=>headers.findIndex(h=>h.includes(name));
+    const cFecha=col('fecha'), cEnt=col('entrada'), cSal=col('salida');
+    const cHN=col('normales'), cPN=col('precio/h normal')||col('precio normal');
+    const cHE=col('extra'), cPE=col('precio/h extra')||col('precio extra');
+    const cHNoc=col('nocturnas'), cPNoc=col('precio/h noct')||col('precio noct');
+    const cHF=col('festivas'), cPF=col('precio/h fest')||col('precio fest');
+    const cDieta=col('dieta'), cTransp=col('transporte'), cNota=col('nota');
+
+    let imported=0, skipped=0;
+    for(const row of dataRows){
+      const fecha=String(row[cFecha]||'').trim();
+      if(!fecha.match(/\d{4}-\d{2}-\d{2}/)){skipped++;continue;}
+
+      // Skip example rows
+      const nota=cNota>=0?String(row[cNota]||''):'';
+      if(nota.toLowerCase().includes('ejemplo')){skipped++;continue;}
+
+      const hN=parseFloat(row[cHN])||0;
+      const pN=parseFloat(row[cPN])||0;
+      const hE=parseFloat(row[cHE])||0;
+      const pE=parseFloat(row[cPE])||0;
+      const hNoc=parseFloat(row[cHNoc])||0;
+      const pNoc=parseFloat(row[cPNoc])||0;
+      const hF=parseFloat(row[cHF])||0;
+      const pF=parseFloat(row[cPF])||0;
+
+      const entry={
+        ...defEntry(),
+        fecha,
+        fichajes: (cEnt>=0&&row[cEnt])?[{_fid:Date.now()+imported,entrada:String(row[cEnt]),salida:cSal>=0?String(row[cSal]):'',nota:'',editing:false}]:[],
+        horasNormales:hN, precioHoraNormal:pN, importeNormales:Math.round(hN*pN*100)/100,
+        horasExtra:hE, precioHoraExtra:pE, importeExtra:Math.round(hE*pE*100)/100,
+        horasNocturnas:hNoc, precioHoraNocturna:pNoc, importeNocturnas:Math.round(hNoc*pNoc*100)/100,
+        horasFestivas:hF, precioHoraFestiva:pF, importeFestivas:Math.round(hF*pF*100)/100,
+        dieta:cDieta>=0?parseFloat(row[cDieta])||0:0,
+        transporte:cTransp>=0?parseFloat(row[cTransp])||0:0,
+        notas:nota,
+        _savedAt:new Date().toISOString()
+      };
+
+      // Check if entry for this date already exists
+      const existing=S.entries.find(e=>e.fecha===fecha);
+      if(existing){
+        entry.id=existing.id;
+        await dbPut(ST.entries,entry);
+        S.entries=S.entries.map(e=>e.id===existing.id?{...entry,id:existing.id}:e);
+      } else {
+        const id=await dbPut(ST.entries,entry);
+        S.entries.push({...entry,id});
+      }
+      imported++;
+    }
+
+    showAlert('Importadas '+imported+' jornadas'+(skipped>0?' ('+skipped+' omitidas)':''));
+    rerender();
+    if(driveUrl) setTimeout(driveSync,2000);
+  }catch(e){
+    showAlert('Error importando: '+e.message,'err');
+    console.error(e);
+  }
+}
+
 function exportCSV(){
   const entries=filterMonth?S.entries.filter(e=>e.fecha.startsWith(filterMonth)):S.entries;
   const tasks=filterMonth?S.tasks.filter(t=>t.fecha.startsWith(filterMonth)):S.tasks;
@@ -2768,9 +2933,26 @@ async function exportExcel(){
     const fname='TimerPro_'+today()+'.xlsx';
     const arr=XLSX.write(wb,{bookType:'xlsx',type:'array'});
     const blob=new Blob([arr],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[new File([blob],fname,{type:blob.type})]})){try{await navigator.share({files:[new File([blob],fname,{type:blob.type})],title:'TimerPro Excel'});return;}catch(e){if(e.name==='AbortError')return;}}
-    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=fname;a.click();URL.revokeObjectURL(url);
-    showAlert('Excel generado: '+fname);
+    const file=new File([blob],fname,{type:blob.type});
+
+    // Try native share (works on mobile: WhatsApp, Gmail, Drive, etc.)
+    if(navigator.share){
+      try{
+        await navigator.share({files:[file],title:'TimerPro - Informe Excel',text:'Informe de control horario'});
+        showAlert('Excel compartido');
+        return;
+      }catch(e){
+        if(e.name==='AbortError')return; // user cancelled
+        // Fall through to download
+      }
+    }
+
+    // Desktop fallback: download
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download=fname;a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    showAlert('Excel descargado: '+fname);
   }catch(e){showAlert('Error Excel: '+e.message,'err');console.error(e);}
 }
 
