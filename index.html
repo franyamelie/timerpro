@@ -1712,21 +1712,25 @@ function gpsDisplay(loc){
   if(!loc) return h('div',{style:{fontSize:'.75rem',color:'var(--ink3)'}},'No registrada');
   try{
     const d=JSON.parse(loc);
-    return h('div',{style:{fontSize:'.75rem'}},
-      h('a',{href:d.url,target:'_blank',rel:'noopener',style:{color:'var(--acc)',textDecoration:'none'}},
-        '🗺 '+d.label
-      )
-    );
-  }catch(e){
-    // Legacy format (plain string coords)
-    const parts=loc.split(',').map(s=>s.trim());
-    if(parts.length===2){
-      const url=`https://www.google.com/maps?q=${parts[0]},${parts[1]}`;
-      return h('div',{style:{fontSize:'.75rem'}},
-        h('a',{href:url,target:'_blank',rel:'noopener',style:{color:'var(--acc)',textDecoration:'none'}},
-          '🗺 '+loc
+    if(d.mapImg){
+      return h('a',{href:d.url,target:'_blank',rel:'noopener',style:{display:'block',textDecoration:'none',marginTop:'.3rem'}},
+        h('div',{style:{position:'relative',borderRadius:'var(--r2)',overflow:'hidden',border:'1px solid var(--brd)',maxWidth:'280px'}},
+          h('img',{src:d.mapImg,style:{width:'100%',height:'120px',objectFit:'cover',display:'block'}}),
+          h('div',{style:{position:'absolute',bottom:'0',left:'0',right:'0',background:'rgba(0,0,0,.65)',color:'#fff',padding:'.3rem .5rem',fontSize:'.7rem',display:'flex',alignItems:'center',gap:'.3rem'}},
+            h('span',{},d.label+(d.acc?' (±'+d.acc+'m)':'')),
+            h('span',{style:{marginLeft:'auto',opacity:.8}},'Ver en Maps')
+          )
         )
       );
+    }
+    return h('a',{href:d.url,target:'_blank',rel:'noopener',style:{fontSize:'.75rem',color:'var(--acc)',textDecoration:'none'}},
+      d.label
+    );
+  }catch(e){
+    const parts=loc.split(',').map(s=>s.trim());
+    if(parts.length===2){
+      const url='https://www.google.com/maps?q='+parts[0]+','+parts[1];
+      return h('a',{href:url,target:'_blank',rel:'noopener',style:{fontSize:'.75rem',color:'var(--acc)',textDecoration:'none'}},loc);
     }
     return h('div',{style:{fontSize:'.75rem',color:'var(--ink2)'}},loc);
   }
@@ -1753,24 +1757,26 @@ async function captureGPS(tipo){
     showAlert('GPS no disponible. Escribe la dirección manualmente.','err');
     return;
   }
-  showAlert('Obteniendo GPS…');
+  showAlert('📍 Obteniendo ubicación…');
   navigator.geolocation.getCurrentPosition(
     pos=>{
       const lat=pos.coords.latitude.toFixed(6);
       const lng=pos.coords.longitude.toFixed(6);
-      const loc=JSON.stringify({lat,lng,url:'https://www.google.com/maps?q='+lat+','+lng,label:lat+', '+lng});
+      const acc=Math.round(pos.coords.accuracy);
+      // Static map preview using OpenStreetMap (free, no API key)
+      const mapImg='https://staticmap.openstreetmap.de/staticmap.php?center='+lat+','+lng+'&zoom=16&size=300x150&markers='+lat+','+lng+',red-pushpin';
+      const mapsUrl='https://www.google.com/maps?q='+lat+','+lng;
+      const loc=JSON.stringify({lat,lng,url:mapsUrl,label:lat+', '+lng,mapImg,acc});
       if(tipo==='entrada')fEntry.ubicacionEntrada=loc;
       else fEntry.ubicacionSalida=loc;
-      showAlert('✓ GPS capturado');
+      showAlert('✅ Ubicación capturada (±'+acc+'m)');
       rerender();
     },
     err=>{
-      const tip = err.code===1
-        ? 'Permiso denegado. Escribe la dirección manualmente en el campo de texto.'
-        : 'No se pudo obtener GPS. Escribe la dirección manualmente.';
-      showAlert(tip,'err');
+      const msgs={1:'Permiso denegado. Actívalo en Ajustes del navegador.',2:'GPS no disponible.',3:'Tiempo agotado.'};
+      showAlert(msgs[err.code]||'Error GPS','err');
     },
-    {enableHighAccuracy:true,timeout:10000,maximumAge:30000}
+    {enableHighAccuracy:true,timeout:15000,maximumAge:0}
   );
 }
 
