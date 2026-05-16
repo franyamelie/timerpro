@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778944427711 -->
+<!-- v1778944753212 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3520,6 +3520,33 @@ async function loadData(){
   if(aw) fWorker={...defWorker,...aw};
   if(ac) fCompany={...defCompany,...ac};
 }
+
+
+// ── AUTO-UPDATE ─────────────────────────────────────────
+// Checks GitHub for new version every time app opens
+async function checkForUpdate(){
+  try{
+    const url = location.href.split('?')[0] + '?_=' + Date.now();
+    const r = await fetch(url, {cache:'no-store'});
+    const text = await r.text();
+    const match = text.match(/<!-- v(\d+) -->/);
+    if(match){
+      const serverV = match[1];
+      const localV = localStorage.getItem('appVersion') || '0';
+      if(serverV > localV){
+        localStorage.setItem('appVersion', serverV);
+        showAlert('Nueva version disponible. Actualizando...', 'ok');
+        setTimeout(()=>location.reload(true), 1500);
+      }
+    }
+  }catch(e){}
+}
+// Store current version
+localStorage.setItem('appVersion', '1778944427711');
+// Check on startup after 3 seconds
+setTimeout(checkForUpdate, 3000);
+// Check every 10 minutes while app is open
+setInterval(checkForUpdate, 10 * 60 * 1000);
 
 // ── RELOJ ────────────────────────────────────────────────
 function startClock(){
