@@ -1470,7 +1470,7 @@ function renderModalAccount(){
       ):null,
       h('div',{class:'sum-row'},h('span',{class:'sum-label'},'Estado'),h('span',{class:'badge '+(syncStatus==='ok'?'badge-g':syncStatus==='err'?'badge-r':'badge-y')},syncStatus==='ok'?'Sincronizado':syncStatus==='syncing'?'Sincronizando...':'Error')),
       h('div',{class:'btn-row',style:{flexDirection:'column'}},
-        h('button',{class:'btn btn-b btn-full',on:{click:()=>{S.modal=null;rerender();fbSync();}}},'🔄 Sincronizar ahora'),
+        h('button',{class:'btn btn-g btn-full',on:{click:()=>{S.modal=null;rerender();driveSync();}}},'☁️ Subir a Drive'),
         h('button',{class:'btn btn-gh btn-full',on:{click:()=>openModal('firebase')}},'⚙️ Configuración'),
         h('button',{class:'btn btn-r btn-full',on:{click:fbSignOut}},'🚪 Cerrar sesión'),
         h('button',{class:'btn btn-gh btn-full',on:{click:()=>{S.modal=null;rerender();}}},'Cerrar')
