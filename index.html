@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778968033078 -->
+<!-- v1778968298766 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3874,7 +3874,11 @@ async function checkForUpdate(){
     if(m && m[1] > (localStorage.getItem('appVersion')||'0')){
       // Show update banner WITHOUT reloading automatically
       const existing = document.getElementById('update-banner');
-      if(existing) return; // already showing
+      if(existing) return;
+      // Don't spam: only show once per 30 min
+      const lastBanner = parseInt(localStorage.getItem('lastUpdateBanner')||'0');
+      if(Date.now()-lastBanner < 30*60*1000) return;
+      localStorage.setItem('lastUpdateBanner', Date.now().toString());
       const newV = m[1];
       const banner = document.createElement('div');
       banner.id = 'update-banner';
@@ -3906,7 +3910,7 @@ async function manualCheckUpdate(){
   showAlert('Buscando actualizacion...');
 }
 // Store current version
-localStorage.setItem('appVersion', '1778967927453');
+localStorage.setItem('appVersion', '1778968298766');
 
 
 // ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
@@ -4270,9 +4274,9 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     autoSnapshot();
     // Clean URL param on load
     if(location.search){ history.replaceState(null,'',location.pathname); }
-    // Version check every 6 seconds
-    setTimeout(checkForUpdate, 6000);
-    setInterval(checkForUpdate, 6000);
+    // Version check: on startup after 10s, then every 5 minutes
+    setTimeout(checkForUpdate, 10000);
+    setInterval(checkForUpdate, 5 * 60 * 1000);
     // Adaptive Drive check: 30s active, 8s inactive (>10s idle)
     let lastActivity = Date.now();
     function trackActivity(){lastActivity = Date.now();}
