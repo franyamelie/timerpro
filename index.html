@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778923102356 -->
+<!-- v1778923370283 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -315,7 +315,8 @@ let driveUrl='https://script.google.com/macros/s/AKfycbyaHPepTcBvSk-CiEnqvApBNPl
 let lastSync='';
 let autoSaveTimer=null;
 let draftSaveTimer=null;
-let confirmDialog=null; // {msg, onOk}
+let confirmDialog=null;
+let pinLocked=false,pinEntered='',pinCode='';
 
 // ── RENDER ENGINE ────────────────────────────────────────
 function h(tag, attrs, ...children){
@@ -1668,14 +1669,13 @@ function renderModalDriveSetup(){
 function renderModalDriveAccount(){
   return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.classList.contains('modal-bg')){S.modal=null;rerender();}}}},
     h('div',{class:'modal-box'},
-      h('div',{class:'modal-title'},'☁️ Google Drive Sync'),
-      h('div',{class:'sum-row'},h('span',{class:'sum-label'},'Estado'),h('span',{class:'badge '+(syncStatus==='ok'?'badge-g':syncStatus==='syncing'?'badge-y':'badge-g')},syncStatus==='syncing'?'Sincronizando...':'Conectado')),
-      h('div',{class:'sum-row'},h('span',{class:'sum-label'},'Última sync'),h('span',{},lastSync||'—')),
-      h('div',{class:'btn-row',style:{flexDirection:'column'}},
-        h('button',{class:'btn btn-g btn-full',on:{click:()=>{S.modal=null;rerender();driveSync();}}},'🔄 Sincronizar ahora'),
-        h('button',{class:'btn btn-b btn-full',on:{click:()=>{S.modal=null;rerender();driveLinkLoad();}}},'⬇️ Cargar desde Drive'),
-        h('button',{class:'btn btn-gh btn-full',on:{click:()=>openModal('drive')}},'⚙️ Cambiar URL'),
-        h('button',{class:'btn btn-r btn-full',on:{click:()=>{ask('¿Desconectar Google Drive?',()=>{driveUrl='';localStorage.removeItem('driveUrl');syncStatus='';S.modal=null;rerender();})}}},'✕ Desconectar'),
+      h('div',{class:'modal-title'},'Google Drive'),
+      h('div',{class:'sum-row'},h('span',{class:'sum-label'},'Estado'),h('span',{class:'badge '+(syncStatus==='syncing'?'badge-y':'badge-g')},syncStatus==='syncing'?'Subiendo...':'Conectado')),
+      h('div',{class:'sum-row'},h('span',{class:'sum-label'},'Ultima subida'),h('span',{},lastSync||'—')),
+      h('div',{class:'sum-row'},h('span',{class:'sum-label'},'Jornadas locales'),h('span',{style:{fontWeight:700}},S.entries.length+' jornadas')),
+      h('div',{class:'btn-row',style:{flexDirection:'column',marginTop:'.5rem'}},
+        h('button',{class:'btn btn-g btn-full',on:{click:()=>{S.modal=null;rerender();driveSync();}}},'Subir TODO a Drive'),
+        h('button',{class:'btn btn-b btn-full',on:{click:()=>{S.modal=null;rerender();_doLoad(true,false,true);}}},'Cargar TODO desde Drive'),
         h('button',{class:'btn btn-gh btn-full',on:{click:()=>{S.modal=null;rerender();}}},'Cerrar')
       )
     )
@@ -1883,73 +1883,39 @@ async function applyTemplate(tmpl){
 function gpsDisplay(loc){
   if(!loc) return h('div',{style:{fontSize:'.75rem',color:'var(--ink3)'}},'No registrada');
   try{
-    const d = JSON.parse(loc);
-    const lat = parseFloat(d.lat);
-    const lng = parseFloat(d.lng);
-    if(!lat || !lng) throw new Error('no coords');
-
-    const zoom = 15;
-    const tile = latLngToTile(lat, lng, zoom);
-    // Use 2x2 tiles for wider view
-    const tileUrl = `https://tile.openstreetmap.org/${zoom}/${tile.x}/${tile.y}.png`;
-
+    const d=JSON.parse(loc);
+    const lat=parseFloat(d.lat),lng=parseFloat(d.lng);
+    if(!lat||!lng) throw new Error('no coords');
+    const zoom=16,tile=latLngToTile(lat,lng,zoom);
+    const t0='https://tile.openstreetmap.org/'+zoom+'/'+(tile.x-1)+'/'+tile.y+'.png';
+    const t1='https://tile.openstreetmap.org/'+zoom+'/'+tile.x+'/'+tile.y+'.png';
+    const t2='https://tile.openstreetmap.org/'+zoom+'/'+(tile.x+1)+'/'+tile.y+'.png';
     return h('div',{style:{marginTop:'.4rem'}},
       h('a',{href:d.url,target:'_blank',rel:'noopener',style:{display:'block',textDecoration:'none'}},
-        h('div',{style:{
-          position:'relative',borderRadius:'var(--r)',overflow:'hidden',
-          border:'2px solid var(--acc)',maxWidth:'300px',cursor:'pointer',
-          boxShadow:'var(--sh)'
-        }},
-          // Map tile as background
-          h('div',{style:{
-            width:'100%',height:'130px',
-            backgroundImage:`url(${tileUrl})`,
-            backgroundSize:'cover',backgroundPosition:'center',
-            backgroundColor:'#e8f4f8'
-          }}),
-          // Pin marker overlay
-          h('div',{style:{
-            position:'absolute',top:'50%',left:'50%',
-            transform:'translate(-50%,-100%)',
-            fontSize:'1.8rem',lineHeight:1
-          }},'\u{1F4CD}'),
-          // Info bar at bottom (WhatsApp style)
-          h('div',{style:{
-            position:'absolute',bottom:'0',left:'0',right:'0',
-            background:'rgba(0,0,0,.72)',color:'#fff',
-            padding:'.35rem .6rem',fontSize:'.72rem',
-            display:'flex',alignItems:'center',gap:'.4rem'
-          }},
+        h('div',{style:{position:'relative',borderRadius:'var(--r)',overflow:'hidden',border:'2px solid var(--acc)',maxWidth:'300px',cursor:'pointer',boxShadow:'var(--sh)',height:'130px',backgroundColor:'#e8f4f8'}},
+          h('div',{style:{position:'absolute',top:0,left:0,right:0,bottom:0,display:'flex'}},
+            h('img',{src:t0,style:{flex:1,objectFit:'cover'}}),
+            h('img',{src:t1,style:{flex:1,objectFit:'cover'}}),
+            h('img',{src:t2,style:{flex:1,objectFit:'cover'}})
+          ),
+          h('div',{style:{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-100%)',fontSize:'2rem',lineHeight:1,filter:'drop-shadow(0 2px 4px rgba(0,0,0,.5))'}},"\u{1F4CD}"),
+          h('div',{style:{position:'absolute',bottom:'0',left:'0',right:'0',background:'rgba(0,0,0,.75)',color:'#fff',padding:'.35rem .6rem',fontSize:'.72rem',display:'flex',alignItems:'center',gap:'.4rem'}},
             h('div',{style:{flex:1}},
-              h('div',{style:{fontWeight:700,fontSize:'.78rem'}},
-                d.acc ? `\u00b1${d.acc}m de precision` : 'Ubicacion GPS'
-              ),
+              h('div',{style:{fontWeight:700,fontSize:'.78rem'}},d.acc?'\u00b1'+d.acc+'m de precision':'Ubicacion GPS'),
               h('div',{style:{opacity:.8,fontSize:'.68rem'}},d.label)
             ),
-            h('div',{style:{
-              background:'var(--acc)',color:'#000',
-              padding:'.2rem .5rem',borderRadius:'20px',fontSize:'.68rem',fontWeight:700
-            }},'Maps \u2192')
+            h('div',{style:{background:'var(--acc)',color:'#000',padding:'.2rem .5rem',borderRadius:'20px',fontSize:'.68rem',fontWeight:700}},'Maps \u2192')
           )
         )
       )
     );
   }catch(e){
-    // Legacy text or manual address
-    let label = loc, url = '';
-    try{
-      const d=JSON.parse(loc);
-      label=d.label||d.address||loc;
-      url=d.url||'';
-    }catch(ex){
+    let label=loc,url='';
+    try{const d=JSON.parse(loc);label=d.label||d.address||loc;url=d.url||'';}catch(ex){
       const parts=loc.split(',').map(s=>s.trim());
-      if(parts.length===2) url='https://www.google.com/maps?q='+parts[0]+','+parts[1];
+      if(parts.length===2)url='https://www.google.com/maps?q='+parts[0]+','+parts[1];
     }
-    if(url){
-      return h('a',{href:url,target:'_blank',rel:'noopener',style:{fontSize:'.8rem',color:'var(--acc)',textDecoration:'none',display:'flex',alignItems:'center',gap:'.3rem'}},
-        '\u{1F4CD} '+label
-      );
-    }
+    if(url)return h('a',{href:url,target:'_blank',rel:'noopener',style:{fontSize:'.8rem',color:'var(--acc)',textDecoration:'none'}},label);
     return h('div',{style:{fontSize:'.75rem',color:'var(--ink2)'}},label);
   }
 }
@@ -3310,6 +3276,8 @@ function startClock(){
       await dbPut(ST.settings,{...s,id:1,driveUrl});
     }catch(e){}
     lastSync=localStorage.getItem('lastSync')||'';
+    pinCode=localStorage.getItem('pinCode')||'';
+    if(pinCode){pinLocked=true;pinEntered='';}
     // Auto-load from Drive on startup if configured
     // Restore draft if exists for today
     const todayDraft = S.entries.find(e=>e.fecha===today()&&e._draft);
