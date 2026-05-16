@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778947592854 -->
+<!-- v1778961422989 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -206,6 +206,7 @@ main{flex:1;overflow-y:auto;padding:1rem}
 <body>
 <div id="app"></div>
 <script>
+
 'use strict';
 // ═══════════════════════════════════════════════════════
 // TIMERPRO - Control Horario Laboral
@@ -518,49 +519,24 @@ function renderFichar(){
       h('div',{class:'grid-2'},
         field('Fecha','date',e.fecha,v=>{fEntry.fecha=v;rerender()}),
         h('div',{class:'field'},
-          h('label',{style:{display:'flex',alignItems:'center',gap:'.5rem',flexWrap:'wrap'}},'JORNADA',
-            h('div',{style:{display:'flex',gap:'.3rem',flexWrap:'wrap',alignItems:'center'}},
-              // Indicator 1: new data available (green)
-              h('span',{
-                style:{
-                  display:'flex',alignItems:'center',gap:'.25rem',
-                  borderRadius:'20px',padding:'.15rem .55rem',fontSize:'.67rem',fontWeight:700,
-                  background: driveHasNew ? 'var(--acc)' : 'var(--surf3)',
-                  color: driveHasNew ? '#000' : 'var(--ink3)',
-                  border: '1px solid ' + (driveHasNew ? 'var(--acc)' : 'var(--brd)'),
-                  cursor: driveHasNew ? 'pointer' : 'default',
-                  transition:'all .3s'
-                },
-                on:{click:()=>{ if(driveHasNew) _doLoad(true,false,true); }}
-              },
-                h('span',{style:{width:'7px',height:'7px',borderRadius:'50%',background:driveHasNew?'#000':'var(--ink3)',flexShrink:0}}),
-                '📥 Datos nuevos'
-              ),
-              // Indicator 2: checked, no new data (red)
-              h('span',{
-                style:{
-                  display:'flex',alignItems:'center',gap:'.25rem',
-                  borderRadius:'20px',padding:'.15rem .55rem',fontSize:'.67rem',fontWeight:700,
-                  background: (driveChecked && !driveHasNew) ? 'var(--red)' : 'var(--surf3)',
-                  color: (driveChecked && !driveHasNew) ? '#fff' : 'var(--ink3)',
-                  border: '1px solid ' + ((driveChecked && !driveHasNew) ? 'var(--red)' : 'var(--brd)'),
-                  transition:'all .3s'
-                }
-              },
-                h('span',{style:{width:'7px',height:'7px',borderRadius:'50%',background:(driveChecked&&!driveHasNew)?'#fff':'var(--ink3)',flexShrink:0}}),
-                'Sin datos nuevos'
-              ),
-              // Comprobar button - always visible
-              h('span',{
-                style:{
-                  display:'flex',alignItems:'center',gap:'.25rem',
-                  borderRadius:'20px',padding:'.15rem .55rem',fontSize:'.67rem',fontWeight:700,
-                  background:'var(--blu-lt)',color:'var(--blu)',
-                  border:'1px solid var(--blu)',cursor:'pointer'
-                },
-                on:{click:()=>{driveChecked=false;driveHasNew=false;rerender();checkDriveForNewData();}}
-              },'⟳ Comprobar')
-            )
+          h('label',{style:{display:'flex',alignItems:'center',gap:'.4rem',flexWrap:'wrap'}},'JORNADA',
+            h('span',{
+              style:{display:'flex',alignItems:'center',gap:'.25rem',borderRadius:'20px',padding:'.15rem .55rem',fontSize:'.67rem',fontWeight:700,background:driveHasNew?'var(--acc)':'var(--surf3)',color:driveHasNew?'#000':'var(--ink3)',border:'1px solid '+(driveHasNew?'var(--acc)':'var(--brd)'),cursor:driveHasNew?'pointer':'default',transition:'all .3s'},
+              on:{click:()=>{if(driveHasNew){driveHasNew=false;driveChecked=true;_doLoad(true,false,true);}}}
+            },
+              h('span',{style:{width:'7px',height:'7px',borderRadius:'50%',background:driveHasNew?'#000':'var(--ink3)',flexShrink:0,display:'inline-block'}}),
+              ' Datos nuevos'
+            ),
+            h('span',{
+              style:{display:'flex',alignItems:'center',gap:'.25rem',borderRadius:'20px',padding:'.15rem .55rem',fontSize:'.67rem',fontWeight:700,background:(driveChecked&&!driveHasNew)?'var(--red)':'var(--surf3)',color:(driveChecked&&!driveHasNew)?'#fff':'var(--ink3)',border:'1px solid '+((driveChecked&&!driveHasNew)?'var(--red)':'var(--brd)'),transition:'all .3s'}
+            },
+              h('span',{style:{width:'7px',height:'7px',borderRadius:'50%',background:(driveChecked&&!driveHasNew)?'#fff':'var(--ink3)',flexShrink:0,display:'inline-block'}}),
+              ' Sin datos nuevos'
+            ),
+            h('span',{
+              style:{display:'flex',alignItems:'center',gap:'.25rem',borderRadius:'20px',padding:'.15rem .55rem',fontSize:'.67rem',fontWeight:700,background:'var(--blu-lt)',color:'var(--blu)',border:'1px solid var(--blu)',cursor:'pointer'},
+              on:{click:()=>{driveChecked=false;driveHasNew=false;rerender();checkDriveForNewData();}}
+            },'\u21BB Comprobar')
           ),
           h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.2rem'}},
             editingEntry
@@ -3358,6 +3334,7 @@ function driveSync(){
             syncStatus='ok';
             lastSync=new Date().toLocaleTimeString('es-ES');
             localStorage.setItem('lastSync',lastSync);
+            localStorage.setItem('lastDriveLoad', Date.now().toString());
             showAlert('✅ Drive: '+data.entries.length+' jornadas guardadas');
           } else {
             syncStatus='err';
@@ -3485,8 +3462,7 @@ async function importDriveData(d, verifyMode){
     syncStatus='ok';
     lastSync=new Date().toLocaleTimeString('es-ES');
     localStorage.setItem('lastSync',lastSync);
-    driveHasNew=false;
-    localStorage.setItem('lastLoaded', Date.now().toString());
+    driveHasNew=false; // cleared after loading
     if(!editingEntry) fEntry=defEntry();
     if(verifyMode){
       showAlert('✅ Drive OK: '+S.entries.length+' jornadas guardadas correctamente');
@@ -3598,16 +3574,13 @@ async function checkForUpdate(){
   }catch(e){ console.log('Update check failed:', e); }
 }
 
-// Manual update - forces fresh load bypassing ALL cache
-function manualCheckUpdate(){
+// Manual update check function
+async function manualCheckUpdate(){
   showAlert('Cargando ultima version...');
-  setTimeout(()=>{
-    const baseUrl = location.href.split('?')[0];
-    window.location.replace(baseUrl + '?fresh=' + Date.now());
-  }, 500);
+  setTimeout(()=>window.location.replace(location.href.split('?')[0]+'?v='+Date.now()),500);
 }
 // Store current version
-localStorage.setItem('appVersion', '1778947592854');
+localStorage.setItem('appVersion', '1778948428708');
 
 
 // ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
@@ -3620,12 +3593,11 @@ function checkDriveForNewData(){
     done=true; delete window[cbName]; s.remove();
     if(!res||!res.ok||!res.data) return;
     const driveTime=new Date(res.data.exportedAt||0).getTime();
-    // Use lastLoaded (when we last loaded FROM Drive) not lastSync (when we last uploaded)
-    const lastLoaded=parseInt(localStorage.getItem('lastLoaded')||'0');
+    const localTime=new Date(lastSync||localStorage.getItem('lastSync')||0).getTime();
     const wasNew=driveHasNew;
     const wasChecked=driveChecked;
     driveChecked=true;
-    driveHasNew = driveTime > lastLoaded + 5000;
+    driveHasNew = driveTime > localTime + 5000;
     if(driveHasNew!==wasNew || driveChecked!==wasChecked) rerender();
   };
   setTimeout(()=>{if(!done){delete window[cbName];s.remove();}},10000);
@@ -3686,19 +3658,20 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     if(savedCfg){ try{ fbConfig=JSON.parse(savedCfg); await initFirebase(); }catch(e){} }
     renderApp();
     startClock();
-    // Clean URL if loaded with version param
-    if(location.search.includes('v=')){ history.replaceState(null,'',location.pathname); }
-    // Check for new version after 6 seconds
+    // Clean URL param on load
+    if(location.search){ history.replaceState(null,'',location.pathname); }
+    // Version check every 6 seconds
     setTimeout(checkForUpdate, 6000);
-    setInterval(checkForUpdate, 10 * 60 * 1000);
-    // Check Drive for new data every 5 seconds
-    setTimeout(checkDriveForNewData, 12000);
-    setInterval(checkDriveForNewData, 5000);
+    setInterval(checkForUpdate, 6000);
+    // Drive data check every 30 seconds
+    setTimeout(checkDriveForNewData, 10000);
+    setInterval(checkDriveForNewData, 30000);
   } catch(e) {
     document.getElementById('app').innerHTML = 
       '<div style="color:red;padding:20px;font-family:monospace">Error: ' + e.message + '<br>' + e.stack + '</div>';
   }
 })();
+
 </script>
 </body>
 </html>
