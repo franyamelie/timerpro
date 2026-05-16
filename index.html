@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778967247145 -->
+<!-- v1778967663482 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2264,8 +2264,8 @@ async function saveEntry(){
     localStorage.setItem('lastSave',new Date().toISOString());
     showAlert('Jornada guardada ✓');
     rerender();
-    // Auto-sync to Drive after saving
-    if(driveUrl) setTimeout(driveSync, 2000);
+    // Auto-sync to Drive after saving (5s delay)
+    if(driveUrl) setTimeout(()=>{ if(!_syncInProgress) driveSync(); }, 5000);
   }catch(e){showAlert(e.message,'err');}
 }
 
@@ -2517,7 +2517,7 @@ async function saveWorker(){
     fWorker={...data};
     await saveActiveIds();
     showAlert('Trabajador guardado ✓'); rerender();
-    if(driveUrl) setTimeout(driveSync, 2000);
+    if(driveUrl) setTimeout(()=>{ if(!_syncInProgress) driveSync(); }, 5000);
   }catch(e){showAlert(e.message,'err');}
 }
 function newWorker(){ fWorker={...defWorker}; activeWorkerId=null; rerender(); }
@@ -2548,7 +2548,7 @@ async function saveCompany(){
     fCompany={...data};
     await saveActiveIds();
     showAlert('Empresa guardada ✓'); rerender();
-    if(driveUrl) setTimeout(driveSync, 2000);
+    if(driveUrl) setTimeout(()=>{ if(!_syncInProgress) driveSync(); }, 5000);
   }catch(e){showAlert(e.message,'err');}
 }
 async function deleteCompany(id){
@@ -3568,14 +3568,17 @@ function jsonpGet(params, callback, timeout){
   const s=document.createElement('script');
   let done=false;
   window[cbName]=function(res){ done=true; delete window[cbName]; s.remove(); callback(null,res); };
-  setTimeout(()=>{ if(!done){ delete window[cbName]; s.remove(); callback('timeout'); } }, timeout||15000);
+  setTimeout(()=>{ if(!done){ delete window[cbName]; s.remove(); callback('timeout'); } }, timeout||30000);
   s.src=driveUrl+'?callback='+cbName+'&t='+Date.now()+'&'+params;
   document.body.appendChild(s);
 }
 
+let _syncInProgress=false;
 async function driveSync(){
-  if(!driveUrl) return;
-  const data = await buildSyncDataWithPhotos();
+  if(!driveUrl||_syncInProgress) return;
+  _syncInProgress=true;
+  let data;
+  try{ data=await buildSyncDataWithPhotos(); }catch(e){ _syncInProgress=false; return; }
   if(!data.entries.length && !data.tasks.length){
     showAlert('Sin datos que guardar - añade una jornada primero','err');
     return;
@@ -3596,6 +3599,7 @@ async function driveSync(){
   jsonpGet('action=save_meta&d='+encodeURIComponent(JSON.stringify(meta)), (err,res)=>{
     if(err||!res||!res.ok){
       syncStatus='err';
+      _syncInProgress=false;
       if(!isOnline){pendingSync=true;showAlert('Sin conexion - se subira cuando vuelva el internet','err');}
       else showAlert('Error guardando: '+(err||res&&res.error||'sin respuesta'),'err');
       rerender(); return;
@@ -3613,6 +3617,7 @@ async function driveSync(){
             localStorage.setItem('lastDriveLoad', Date.now().toString());
             showAlert('✅ Drive: '+data.entries.length+' jornadas guardadas');
           } else {
+            _syncInProgress=false;
             syncStatus='err';
             showAlert('Error al confirmar guardado','err');
           }
@@ -3868,7 +3873,7 @@ async function manualCheckUpdate(){
   showAlert('Buscando actualizacion...');
 }
 // Store current version
-localStorage.setItem('appVersion', '1778967247145');
+localStorage.setItem('appVersion', '1778967663482');
 
 
 // ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
