@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778944753212 -->
+<!-- v1778945638609 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -315,6 +315,7 @@ let syncTimer=null;
 let deferredInstall=null;
 let driveUrl='https://script.google.com/macros/s/AKfycbyaHPepTcBvSk-CiEnqvApBNPl3pp1x2iHhN3Zx3qNTc4hGb0FEFOUa9IVN34GG0I1pmQ/exec'; // URL fija - ya configurada
 let lastSync='';
+let driveHasNew=false; // Drive has newer data than local
 let autoSaveTimer=null;
 let draftSaveTimer=null;
 let confirmDialog=null;
@@ -452,9 +453,12 @@ function renderNav(){
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
     h('div',{class:'nav-clock'},S.clock),
     h('div',{class:'nav-btns'},
-      h('div',{class:'user-pill',on:{click:()=>openModal('driveaccount')}},
+      h('div',{class:'user-pill',on:{click:()=>openModal('driveaccount')},
+        style:{background:driveHasNew?'var(--yel-lt)':undefined,border:driveHasNew?'1px solid var(--yel)':undefined}
+      },
         h('span',{class:'sync-dot '+syncDot}),
-        'Drive'
+        'Drive',
+        driveHasNew?h('span',{style:{background:'var(--yel)',color:'#000',borderRadius:'50%',width:'8px',height:'8px',display:'inline-block',marginLeft:'2px'}}):''
       ),
       h('button',{class:'nav-btn',title:'Modo oscuro/claro',on:{click:toggleDark}},S.dark?'☀️':'🌙'),
       deferredInstall?h('button',{class:'nav-btn',title:'Instalar app',on:{click:async()=>{if(deferredInstall){deferredInstall.prompt();const r=await deferredInstall.userChoice;if(r.outcome==='accepted')deferredInstall=null;rerender();}}}},'+📲'):null,
@@ -515,7 +519,13 @@ function renderFichar(){
       h('div',{class:'grid-2'},
         field('Fecha','date',e.fecha,v=>{fEntry.fecha=v;rerender()}),
         h('div',{class:'field'},
-          h('label',{},'JORNADA'),
+          h('label',{style:{display:'flex',alignItems:'center',gap:'.5rem'}},'JORNADA',
+            driveHasNew?h('span',{
+              style:{background:'var(--yel)',color:'#000',borderRadius:'20px',padding:'.1rem .5rem',fontSize:'.65rem',fontWeight:700,animation:'pulse 2s infinite',cursor:'pointer'},
+              title:'Hay datos nuevos en Drive. Pulsa para cargar.',
+              on:{click:()=>_doLoad(true,false,true)}
+            },'📥 Datos nuevos'):''
+          ),
           h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.2rem'}},
             editingEntry
               ? h('button',{class:'btn btn-gh btn-sm',on:{click:cancelEditing}},'✕ Cancelar')
@@ -3439,6 +3449,7 @@ async function importDriveData(d, verifyMode){
     syncStatus='ok';
     lastSync=new Date().toLocaleTimeString('es-ES');
     localStorage.setItem('lastSync',lastSync);
+    driveHasNew=false; // cleared after loading
     if(!editingEntry) fEntry=defEntry();
     if(verifyMode){
       showAlert('✅ Drive OK: '+S.entries.length+' jornadas guardadas correctamente');
@@ -3547,6 +3558,31 @@ localStorage.setItem('appVersion', '1778944427711');
 setTimeout(checkForUpdate, 3000);
 // Check every 10 minutes while app is open
 setInterval(checkForUpdate, 10 * 60 * 1000);
+
+
+// ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
+function checkDriveForNewData(){
+  if(!driveUrl) return;
+  const cbName='chk_'+Date.now();
+  const s=document.createElement('script');
+  let done=false;
+  window[cbName]=function(res){
+    done=true; delete window[cbName]; s.remove();
+    if(!res||!res.ok||!res.data) return;
+    const driveTime=new Date(res.data.exportedAt||0).getTime();
+    const localTime=new Date(lastSync||localStorage.getItem('lastSync')||0).getTime();
+    // Drive is newer than our last load?
+    if(driveTime > localTime + 5000){ // 5 second buffer
+      if(!driveHasNew){
+        driveHasNew=true;
+        rerender();
+      }
+    }
+  };
+  setTimeout(()=>{if(!done){delete window[cbName];s.remove();}},10000);
+  s.src=driveUrl+'?action=load&callback='+cbName+'&t='+Date.now();
+  document.body.appendChild(s);
+}
 
 // ── RELOJ ────────────────────────────────────────────────
 function startClock(){
