@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778967663482 -->
+<!-- v1778968033078 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3515,27 +3515,30 @@ function compressImage(dataUrl, maxSize=150, quality=0.6){
 }
 
 async function buildSyncDataWithPhotos(){
+  // Get base data first
+  const base = buildSyncData();
   // Compress photos for sync (small enough for Drive URL limits)
   const [wFoto, wFirma, cLogo] = await Promise.all([
-    compressImage(fWorker.foto, 100, 0.5),
-    compressImage(fWorker.firma, 200, 0.7),
-    compressImage(fCompany.logo, 100, 0.5)
+    compressImage(fWorker.foto, 120, 0.6),
+    compressImage(fWorker.firma, 250, 0.7),
+    compressImage(fCompany.logo, 120, 0.6)
   ]);
   const compWorkers = await Promise.all(workers.map(async w=>({
     ...w,
-    foto: await compressImage(w.foto, 100, 0.5),
-    firma: await compressImage(w.firma, 200, 0.7)
+    foto: await compressImage(w.foto, 120, 0.6),
+    firma: await compressImage(w.firma, 250, 0.7)
   })));
   const compCompanies = await Promise.all(companies.map(async c=>({
     ...c,
-    logo: await compressImage(c.logo, 100, 0.5)
+    logo: await compressImage(c.logo, 120, 0.6)
   })));
+  // Override the stripped photo fields with compressed versions
   return {
-    ...buildSyncData(),
+    ...base,
     workers: compWorkers,
     companies: compCompanies,
-    worker: {...fWorker, foto:wFoto, firma:wFirma},
-    company: {...fCompany, logo:cLogo}
+    worker: {...base.worker, foto:wFoto, firma:wFirma},
+    company: {...base.company, logo:cLogo}
   };
 }
 
@@ -3726,19 +3729,49 @@ function _doLoad(force, verifyMode, confirmMode){
 }
 
 async function importDriveData(d, verifyMode){
-  // Create safety snapshot before overwriting with Drive data
   if(S.entries.length>0) await createSnapshot('Antes de cargar Drive - '+new Date().toLocaleString('es-ES'));
   try{
-    await Promise.all(Object.values(ST).map(s=>dbClear(s)));
-    for(const e of(d.entries||[]))  await dbPut(ST.entries,e);
-    for(const t of(d.tasks||[]))    await dbPut(ST.tasks,t);
+    // Save ALL local photos before clearing (Drive strips them for size)
+    const localWorkers = [...workers];
+    const localWorkerMap = {};
+    localWorkers.forEach(w=>{ if(w.id) localWorkerMap[w.id]=w; });
+    const localCompanies = [...companies];
+    const localCompanyMap = {};
+    localCompanies.forEach(c=>{ if(c.id) localCompanyMap[c.id]=c; });
+    const savedWorkerFoto = fWorker.foto||'';
+    const savedWorkerFirma = fWorker.firma||'';
+    const savedCompanyLogo = fCompany.logo||'';
+    // Save local task photos (keyed by id)
+    const localTaskMap = {};
+    S.tasks.forEach(t=>{ if(t.id) localTaskMap[t.id]={fotos:t.fotos||[]}; });
+    // Save local entry fotosGastos (keyed by fecha)
+    const localEntryMap = {};
+    S.entries.forEach(e=>{ if(e.fecha) localEntryMap[e.fecha]={fotosGastos:e.fotosGastos||[]}; });
+
+    await Promise.all(Object.values(ST).filter(s=>s!=='snapshots').map(s=>dbClear(s)));
+    for(const e of(d.entries||[])){
+      // Restore fotosGastos from local if Drive stripped them
+      const localE = localEntryMap[e.fecha]||{};
+      await dbPut(ST.entries,{...e, fotosGastos:e.fotosGastos&&e.fotosGastos.length?e.fotosGastos:localE.fotosGastos||[]});
+    }
+    for(const t of(d.tasks||[])){
+      // Restore fotos from local if Drive stripped them
+      const localT = localTaskMap[t.id]||{};
+      await dbPut(ST.tasks,{...t, fotos:t.fotos&&t.fotos.length?t.fotos:localT.fotos||[]});
+    }
     for(const s of(d.sites||[]))    await dbPut(ST.sites,s);
     for(const w of(d.workorders||[]))await dbPut(ST.workorders,w);
     for(const v of(d.vehicles||[])) await dbPut(ST.vehicles,v);
-    for(const w of(d.workers||[]))  await dbPut(ST.workers,w);
-    for(const c of(d.companies||[]))await dbPut(ST.companies,c);
-    if(d.worker)  fWorker={...defWorker,...d.worker};
-    if(d.company) fCompany={...defCompany,...d.company};
+    for(const w of(d.workers||[])){
+      const local = localWorkerMap[w.id]||{};
+      await dbPut(ST.workers,{...w, foto:w.foto||local.foto||'', firma:w.firma||local.firma||''});
+    }
+    for(const c of(d.companies||[])){
+      const local = localCompanyMap[c.id]||{};
+      await dbPut(ST.companies,{...c, logo:c.logo||local.logo||''});
+    }
+    if(d.worker)  fWorker={...defWorker,...d.worker, foto:d.worker.foto||savedWorkerFoto, firma:d.worker.firma||savedWorkerFirma};
+    if(d.company) fCompany={...defCompany,...d.company, logo:d.company.logo||savedCompanyLogo};
     activeWorkerId=d.activeWorkerId||null;
     activeCompanyId=d.activeCompanyId||null;
     await loadData();
@@ -3873,7 +3906,7 @@ async function manualCheckUpdate(){
   showAlert('Buscando actualizacion...');
 }
 // Store current version
-localStorage.setItem('appVersion', '1778967663482');
+localStorage.setItem('appVersion', '1778967927453');
 
 
 // ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
