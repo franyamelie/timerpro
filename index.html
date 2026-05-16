@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778922608202 -->
+<!-- v1778922810952 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -352,7 +352,7 @@ function renderApp(){
     while(app.firstChild) app.removeChild(app.firstChild);
     try { app.appendChild(renderNav()); } catch(e) { app.appendChild(errEl('nav',e)); }
     try { app.appendChild(renderTabs()); } catch(e) { app.appendChild(errEl('tabs',e)); }
-    try { app.appendChild(h('main',{},renderMain())); } catch(e) { app.appendChild(errEl('main:'+S.tab,e)); }
+    try { app.appendChild(h('main',{},renderMain())); renderCharts(); } catch(e) { app.appendChild(errEl('main:'+S.tab,e)); }
     document.querySelectorAll('.modal-bg,.alert-box').forEach(el=>el.remove());
     if(S.modal){ try{ const m=renderModal(); if(m) document.body.appendChild(m); }catch(e){} }
     if(S.alertMsg){ try{ const a=renderAlert(); if(a) document.body.appendChild(a); }catch(e){} }
@@ -3141,56 +3141,7 @@ function buildSyncData(){
   };
 }
 
-function driveSync(){
-  if(!driveUrl) return;
-  const data = buildSyncData();
-  if(data.entries.length===0 && data.tasks.length===0){
-    showAlert('Sin datos que guardar','err');
-    return;
-  }
-  syncStatus='syncing'; rerender();
 
-  // Minimize data - remove zero/empty values to reduce size
-  const mini = JSON.stringify(data, (k,v)=>{
-    if(v===0||v===''||v===null||v===false) return undefined;
-    if(Array.isArray(v)&&v.length===0) return undefined;
-    return v;
-  });
-
-  console.log('Sync data size:', mini.length, 'chars');
-
-  // Send via JSONP GET (proven to work - same mechanism as load)
-  const cbName = 'save_'+Date.now();
-  const script = document.createElement('script');
-  let done = false;
-
-  window[cbName] = function(res){
-    done=true; delete window[cbName]; script.remove();
-    if(res && res.ok){
-      syncStatus='ok';
-      lastSync=new Date().toLocaleTimeString('es-ES');
-      localStorage.setItem('lastSync',lastSync);
-      showAlert('✅ Drive guardado: '+data.entries.length+' jornadas');
-    } else {
-      syncStatus='err';
-      showAlert('❌ Error Drive: '+(res&&res.error||'sin respuesta'),'err');
-    }
-    rerender();
-  };
-
-  setTimeout(()=>{
-    if(!done){
-      delete window[cbName]; script.remove();
-      syncStatus='err';
-      showAlert('⚠️ Sin respuesta. Comprueba que el script está actualizado a v5.','err');
-      rerender();
-    }
-  },20000);
-
-  const encoded = encodeURIComponent(mini);
-  script.src = driveUrl+'?action=save&callback='+cbName+'&d='+encoded+'&t='+Date.now();
-  document.body.appendChild(script);
-}
 
 
 function _doLoad(force, verifyMode, confirmMode){
@@ -3298,15 +3249,8 @@ async function mergeDriveData(d){
 }
 
 
-function driveAutoLoad(force){ _doLoad(force); }
-function driveLinkLoad(force){ _doLoad(true); }
 
-function scheduleFbSync(){
-  if(syncTimer) clearTimeout(syncTimer);
-  syncTimer = setTimeout(()=>{ if(driveUrl && S.entries.length>0) driveSync(); },5000);
-}
 
-// ── CARGA INICIAL ─────────────────────────────────────────
 // ── CARGA INICIAL ─────────────────────────────────────────
 async function loadData(){
   [S.entries,S.tasks,S.sites,S.workorders,S.vehicles,workers,companies]=await Promise.all([
