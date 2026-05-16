@@ -191,6 +191,10 @@ main{flex:1;overflow-y:auto;padding:1rem}
   .grid-2{grid-template-columns:repeat(2,1fr)}
 }
 </style>
+<!-- Export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
@@ -1362,19 +1366,34 @@ function renderModal(){
 }
 
 function renderModalExport(){
-  return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.className==='modal-bg'){S.modal=null;rerender();}}}},
+  return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.classList.contains('modal-bg')){S.modal=null;rerender();}}}},
     h('div',{class:'modal-box'},
-      h('div',{class:'modal-title'},'📤 Exportar Informe'),
+      h('div',{class:'modal-title'},'\u{1F4E4} Exportar Informe'),
       h('div',{class:'field'},
-        h('label',{},'FILTRAR MES'),
+        h('label',{},'FILTRAR MES (opcional)'),
         h('input',{type:'month',value:filterMonth,on:{change:ev=>{filterMonth=ev.target.value;rerender();}}})
       ),
-      h('div',{class:'btn-row',style:{flexDirection:'column'}},
-        h('button',{class:'btn btn-r btn-full',on:{click:()=>{S.modal=null;rerender();setTimeout(exportPDF,100);}}},'📄 Vista previa PDF'),
-        h('button',{class:'btn btn-g btn-full',on:{click:()=>{S.modal=null;rerender();setTimeout(exportCSV,100);}}},'📊 Exportar CSV'),
-        h('button',{class:'btn btn-b btn-full',on:{click:()=>{S.modal=null;rerender();setTimeout(exportJSON,100);}}},'💾 Exportar JSON'),
-        h('button',{class:'btn btn-gh btn-full',on:{click:()=>{S.modal=null;rerender();}}},'Cancelar')
-      )
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.8rem',marginTop:'.5rem'}},
+        h('button',{
+          class:'btn btn-r btn-full',
+          style:{padding:'1.2rem',flexDirection:'column',gap:'.4rem',display:'flex',alignItems:'center',justifyContent:'center'},
+          on:{click:()=>{S.modal=null;rerender();setTimeout(exportPDFReal,200);}}
+        },
+          h('span',{style:{fontSize:'2rem'}},'\u{1F4C4}'),
+          h('span',{style:{fontWeight:700}},'PDF'),
+          h('span',{style:{fontSize:'.72rem'}},'Informe completo')
+        ),
+        h('button',{
+          class:'btn btn-g btn-full',
+          style:{padding:'1.2rem',flexDirection:'column',gap:'.4rem',display:'flex',alignItems:'center',justifyContent:'center'},
+          on:{click:()=>{S.modal=null;rerender();setTimeout(exportExcel,200);}}
+        },
+          h('span',{style:{fontSize:'2rem'}},'\u{1F4CA}'),
+          h('span',{style:{fontWeight:700}},'Excel'),
+          h('span',{style:{fontSize:'.72rem'}},'Hoja de calculo')
+        )
+      ),
+      h('button',{class:'btn btn-gh btn-full',style:{marginTop:'.8rem'},on:{click:()=>{S.modal=null;rerender();}}},'Cancelar')
     )
   );
 }
@@ -2107,6 +2126,80 @@ function exportCSV(){
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
   dlDialog={blob,filename:`TimerPro_${today()}.csv`,type:'csv',title:'Exportar CSV'};
   S.modal='dl';rerender();
+}
+
+
+async function exportPDFReal(){
+  try{
+    if(!window.jspdf){showAlert('Cargando libreria PDF, espera...','err');setTimeout(exportPDFReal,2000);return;}
+    const {jsPDF} = window.jspdf;
+    const entries = filterMonth ? S.entries.filter(e=>e.fecha.startsWith(filterMonth)) : S.entries;
+    const tasks = filterMonth ? S.tasks.filter(t=>t.fecha.startsWith(filterMonth)) : S.tasks;
+    const doc = new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    const G=[22,163,74],D=[15,15,15],GR=[100,100,100];
+    doc.setFillColor(...G);doc.rect(0,0,210,22,'F');
+    doc.setTextColor(255,255,255);doc.setFontSize(16);doc.setFont('helvetica','bold');
+    doc.text('TimerPro - Control Horario',14,14);
+    let y=28;
+    doc.setTextColor(...D);doc.setFontSize(9);doc.setFont('helvetica','normal');
+    if(fWorker.nombre){doc.setFont('helvetica','bold');doc.text(fWorker.nombre+' '+fWorker.apellidos,14,y);doc.setFont('helvetica','normal');if(fWorker.dni)doc.text('DNI: '+fWorker.dni,100,y);y+=5;}
+    if(fCompany.nombre){doc.text(fCompany.nombre,14,y);if(fCompany.cif)doc.text('CIF: '+fCompany.cif,100,y);y+=5;}
+    const periodo=filterMonth?MONTHS[parseInt(filterMonth.slice(5))-1]+' '+filterMonth.slice(0,4):'Periodo completo';
+    doc.setTextColor(...GR);doc.text('Periodo: '+periodo+' | Generado: '+new Date().toLocaleDateString('es-ES'),14,y);y+=6;
+    doc.setDrawColor(...G);doc.setLineWidth(0.3);doc.line(14,y,196,y);y+=4;
+    const tot=entries.reduce((a,e)=>({hn:a.hn+(+e.horasNormales||0),he:a.he+(+e.horasExtra||0),hnoc:a.hnoc+(+e.horasNocturnas||0),hf:a.hf+(+e.horasFestivas||0),in_:a.in_+(+e.importeNormales||0),ie:a.ie+(+e.importeExtra||0),inoc:a.inoc+(+e.importeNocturnas||0),if_:a.if_+(+e.importeFestivas||0),diet:a.diet+(+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0)),transp:a.transp+(+e.transporte||0)}),{hn:0,he:0,hnoc:0,hf:0,in_:0,ie:0,inoc:0,if_:0,diet:0,transp:0});
+    const totalH=tot.hn+tot.he+tot.hnoc+tot.hf,totalImp=tot.in_+tot.ie+tot.inoc+tot.if_;
+    doc.setFillColor(240,253,244);doc.rect(14,y,182,18,'F');
+    doc.setTextColor(...G);doc.setFont('helvetica','bold');doc.setFontSize(9);doc.text('RESUMEN',18,y+5);
+    doc.setTextColor(...D);doc.setFontSize(8);doc.setFont('helvetica','normal');
+    doc.text('Horas: '+fmtH(totalH),18,y+11);doc.text('Importe: '+eur(totalImp),60,y+11);doc.text('Dietas: '+eur(tot.diet),105,y+11);doc.text('Transp: '+eur(tot.transp),145,y+11);
+    doc.setFont('helvetica','bold');doc.setFontSize(9);doc.text('TOTAL: '+eur(totalImp+tot.diet+tot.transp),155,y+5);
+    y+=22;
+    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...D);doc.text('JORNADAS ('+entries.length+')',14,y);y+=3;
+    doc.autoTable({startY:y,head:[['Fecha','Dia','Entrada','Salida','H.N','H.E','H.Noc','H.F','Importe','Dieta','Transp','Nota']],body:entries.sort((a,b)=>a.fecha.localeCompare(b.fecha)).map(e=>{const f1=(e.fichajes||[])[0];const imp=(+e.importeNormales||0)+(+e.importeExtra||0)+(+e.importeNocturnas||0)+(+e.importeFestivas||0);const diet=(+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0));return[e.fecha,cap(wday(e.fecha)),f1?.entrada||'-',f1?.salida||'-',e.horasNormales||0,e.horasExtra||0,e.horasNocturnas||0,e.horasFestivas||0,eur(imp),eur(diet),eur(e.transporte||0),e.notas||''];}),styles:{fontSize:7,cellPadding:1.5},headStyles:{fillColor:G,textColor:[255,255,255],fontStyle:'bold'},alternateRowStyles:{fillColor:[248,255,250]},margin:{left:14,right:14}});
+    if(tasks.length>0){let ty=doc.lastAutoTable.finalY+6;if(ty>240){doc.addPage();ty=14;}doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...D);doc.text('TAREAS ('+tasks.length+')',14,ty);ty+=3;doc.autoTable({startY:ty,head:[['Fecha','Dia','Titulo','H.Inicio','H.Fin','Duracion','Sitio','O.T.']],body:tasks.sort((a,b)=>a.fecha.localeCompare(b.fecha)).map(t=>{const site=S.sites.find(s=>s.id==t.siteId);const wo=S.workorders.find(w=>w.id==t.workOrderId);const dur=t.horaInicio&&t.horaFin?fmtH(calcH(t.horaInicio,t.horaFin)):'-';return[t.fecha,cap(wday(t.fecha)),t.titulo||'-',t.horaInicio||'-',t.horaFin||'-',dur,site?.nombre||'-',wo?.codigo||'Sin O.T.'];}),styles:{fontSize:7,cellPadding:1.5},headStyles:{fillColor:[59,130,246],textColor:[255,255,255],fontStyle:'bold'},alternateRowStyles:{fillColor:[239,246,255]},margin:{left:14,right:14}});}
+    if(fWorker.firma){doc.addPage();doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('FIRMA',14,20);doc.addImage(fWorker.firma,'PNG',14,25,60,30);doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);doc.text(fWorker.nombre+' '+fWorker.apellidos,14,60);}
+    const pc=doc.internal.getNumberOfPages();for(let i=1;i<=pc;i++){doc.setPage(i);doc.setFontSize(7);doc.setTextColor(...GR);doc.text('TimerPro - Pagina '+i+'/'+pc,14,290);doc.text(new Date().toLocaleDateString('es-ES'),175,290);}
+    const fname='TimerPro_'+today()+'.pdf';
+    const blob=doc.output('blob');
+    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[new File([blob],fname,{type:'application/pdf'})]})){try{await navigator.share({files:[new File([blob],fname,{type:'application/pdf'})],title:'Informe TimerPro'});return;}catch(e){if(e.name==='AbortError')return;}}
+    doc.save(fname);showAlert('PDF generado: '+fname);
+  }catch(e){showAlert('Error PDF: '+e.message,'err');console.error(e);}
+}
+
+async function exportExcel(){
+  try{
+    if(!window.XLSX){showAlert('Cargando libreria Excel...','err');setTimeout(exportExcel,2000);return;}
+    const entries=filterMonth?S.entries.filter(e=>e.fecha.startsWith(filterMonth)):S.entries;
+    const tasks=filterMonth?S.tasks.filter(t=>t.fecha.startsWith(filterMonth)):S.tasks;
+    const wb=XLSX.utils.book_new();
+    const jorData=[['TIMERPRO - JORNADAS'],['Trabajador:',fWorker.nombre+' '+fWorker.apellidos,'','Empresa:',fCompany.nombre],['Periodo:',filterMonth||'Completo'],[]];
+    jorData.push(['Fecha','Dia','Entrada','Salida','H.Normales','Imp.Normales','H.Extra','Imp.Extra','H.Nocturnas','Imp.Nocturnas','H.Festivas','Imp.Festivas','Dieta','Dietas Extra','Transporte','Otros Conceptos','Nota','Ubic.Entrada','Ubic.Salida']);
+    entries.sort((a,b)=>a.fecha.localeCompare(b.fecha)).forEach(e=>{
+      const f1=(e.fichajes||[])[0];
+      const dex=(e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0);
+      const otros=(e.otrosConceptos||[]).map(c=>c.concepto+': '+c.importe+'eu').join('; ');
+      let le='',ls='';try{const o=JSON.parse(e.ubicacionEntrada||'{}');le=o.label||o.address||'';}catch(ex){}try{const o=JSON.parse(e.ubicacionSalida||'{}');ls=o.label||o.address||'';}catch(ex){}
+      jorData.push([e.fecha,cap(wday(e.fecha)),f1?.entrada||'',f1?.salida||'',+e.horasNormales||0,+e.importeNormales||0,+e.horasExtra||0,+e.importeExtra||0,+e.horasNocturnas||0,+e.importeNocturnas||0,+e.horasFestivas||0,+e.importeFestivas||0,+e.dieta||0,dex,+e.transporte||0,otros,e.notas||'',le,ls]);
+    });
+    const ws1=XLSX.utils.aoa_to_sheet(jorData);
+    ws1['!cols']=[10,8,8,8,10,11,8,11,10,12,10,12,8,10,10,20,20,25,25].map(w=>({wch:w}));
+    XLSX.utils.book_append_sheet(wb,ws1,'Jornadas');
+    if(tasks.length>0){
+      const td=[['TIMERPRO - TAREAS'],[],['Fecha','Dia','Titulo','H.Inicio','H.Fin','Duracion','Sitio','Con O.T.','Codigo O.T.','N O.T.','Descripcion']];
+      tasks.sort((a,b)=>a.fecha.localeCompare(b.fecha)).forEach(t=>{const site=S.sites.find(s=>s.id==t.siteId);const wo=S.workorders.find(w=>w.id==t.workOrderId);const dur=t.horaInicio&&t.horaFin?calcH(t.horaInicio,t.horaFin):0;td.push([t.fecha,cap(wday(t.fecha)),t.titulo||'',t.horaInicio||'',t.horaFin||'',dur,site?.nombre||'',t.usaOT?'Si':'No',wo?.codigo||'',t.otNumero||'',t.descripcion||'']);});
+      const ws2=XLSX.utils.aoa_to_sheet(td);ws2['!cols']=[10,8,20,8,8,10,15,8,12,12,30].map(w=>({wch:w}));XLSX.utils.book_append_sheet(wb,ws2,'Tareas');
+    }
+    const tot=entries.reduce((a,e)=>({hn:a.hn+(+e.horasNormales||0),he:a.he+(+e.horasExtra||0),hnoc:a.hnoc+(+e.horasNocturnas||0),hf:a.hf+(+e.horasFestivas||0),in_:a.in_+(+e.importeNormales||0),ie:a.ie+(+e.importeExtra||0),inoc:a.inoc+(+e.importeNocturnas||0),if_:a.if_+(+e.importeFestivas||0),diet:a.diet+(+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0)),transp:a.transp+(+e.transporte||0)}),{hn:0,he:0,hnoc:0,hf:0,in_:0,ie:0,inoc:0,if_:0,diet:0,transp:0});
+    const rd=[['RESUMEN'],['Trabajador:',fWorker.nombre+' '+fWorker.apellidos],['Empresa:',fCompany.nombre],['Periodo:',filterMonth||'Completo'],[],['HORAS'],['Normales',tot.hn],['Extra',tot.he],['Nocturnas',tot.hnoc],['Festivas',tot.hf],['TOTAL HORAS',tot.hn+tot.he+tot.hnoc+tot.hf],[],['IMPORTES'],['Normales',tot.in_],['Extra',tot.ie],['Nocturnas',tot.inoc],['Festivas',tot.if_],['Subtotal horas',tot.in_+tot.ie+tot.inoc+tot.if_],[],['OTROS'],['Dietas',tot.diet],['Transporte',tot.transp],[],['TOTAL GENERAL',tot.in_+tot.ie+tot.inoc+tot.if_+tot.diet+tot.transp]];
+    const ws3=XLSX.utils.aoa_to_sheet(rd);ws3['!cols']=[{wch:20},{wch:15}];XLSX.utils.book_append_sheet(wb,ws3,'Resumen');
+    const fname='TimerPro_'+today()+'.xlsx';
+    const arr=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+    const blob=new Blob([arr],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[new File([blob],fname,{type:blob.type})]})){try{await navigator.share({files:[new File([blob],fname,{type:blob.type})],title:'TimerPro Excel'});return;}catch(e){if(e.name==='AbortError')return;}}
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=fname;a.click();URL.revokeObjectURL(url);
+    showAlert('Excel generado: '+fname);
+  }catch(e){showAlert('Error Excel: '+e.message,'err');console.error(e);}
 }
 
 async function exportPDF(){
