@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778923370283 -->
+<!-- v1778941279380 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -349,6 +349,7 @@ function renderApp(){
   try {
     const app = document.getElementById('app');
     if(!app) return;
+    if(pinLocked&&pinCode){while(app.firstChild)app.removeChild(app.firstChild);app.appendChild(renderPinScreen());return;}
     const scrollTop = app.querySelector('main')?.scrollTop||0;
     while(app.firstChild) app.removeChild(app.firstChild);
     try { app.appendChild(renderNav()); } catch(e) { app.appendChild(errEl('nav',e)); }
@@ -402,6 +403,38 @@ function renderSyncBar(){
   );
 }
 
+function renderPinScreen(){
+  return h('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100dvh',background:'var(--bg)',gap:'1.5rem',padding:'2rem'}},
+    h('div',{style:{fontSize:'3rem'}},String.fromCodePoint(0x1F512)),
+    h('div',{style:{fontSize:'1.2rem',fontWeight:700}},'TimerPro'),
+    h('div',{style:{fontSize:'.85rem',color:'var(--ink2)'}},'Introduce tu PIN'),
+    h('div',{style:{display:'flex',gap:'.8rem',margin:'.5rem 0'}},
+      ...Array.from({length:4},(_,i)=>h('div',{style:{width:'16px',height:'16px',borderRadius:'50%',background:pinEntered.length>i?'var(--acc)':'var(--surf3)',border:'2px solid '+(pinEntered.length>i?'var(--acc)':'var(--ink3)'),transition:'background .2s'}}))
+    ),
+    h('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'.8rem',maxWidth:'240px',width:'100%'}},
+      ...[1,2,3,4,5,6,7,8,9,'','0','<'].map(k=>
+        k===''?h('div',{}):
+        h('button',{class:'btn',style:{background:'var(--surf)',border:'1px solid var(--brd)',borderRadius:'var(--r)',padding:'1rem',fontSize:'1.3rem',fontWeight:700,color:'var(--ink)',justifyContent:'center',minHeight:'56px'},
+          on:{click:()=>{
+            if(k==='<'){pinEntered=pinEntered.slice(0,-1);}
+            else{if(pinEntered.length<4)pinEntered+=String(k);if(pinEntered.length===4){if(pinEntered===pinCode){pinLocked=false;pinEntered='';}else{pinEntered='';showAlert('PIN incorrecto','err');}}}
+            rerender();
+          }}},k==='<'?'⌫':String(k))
+      )
+    ),
+    h('div',{style:{fontSize:'.75rem',color:'var(--ink3)'}},'PIN de 4 digitos')
+  );
+}
+
+function setupPIN(){
+  const pin=prompt('PIN de 4 digitos (vacio para desactivar):');
+  if(pin===null)return;
+  if(pin===''){pinCode='';localStorage.removeItem('pinCode');showAlert('PIN desactivado');}
+  else if(/^\d{4}$/.test(pin)){pinCode=pin;localStorage.setItem('pinCode',pin);showAlert('PIN activado');}
+  else showAlert('Debe ser exactamente 4 digitos','err');
+  rerender();
+}
+
 function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
@@ -414,7 +447,8 @@ function renderNav(){
       ),
       h('button',{class:'nav-btn',title:'Modo oscuro/claro',on:{click:toggleDark}},S.dark?'☀️':'🌙'),
       deferredInstall?h('button',{class:'nav-btn',title:'Instalar app',on:{click:async()=>{if(deferredInstall){deferredInstall.prompt();const r=await deferredInstall.userChoice;if(r.outcome==='accepted')deferredInstall=null;rerender();}}}},'+📲'):null,
-      h('button',{class:'nav-btn',title:'Exportar',on:{click:()=>openModal('export')}},'📤')
+      h('button',{class:'nav-btn',title:'Exportar',on:{click:()=>openModal('export')}},'📤'),
+      h('button',{class:'nav-btn',title:pinCode?'PIN activo':'Activar PIN',on:{click:setupPIN}},pinCode?'🔐':'🔓')
     )
   );
 }
@@ -529,40 +563,58 @@ function renderFichar(){
         const horas=parseFloat(e[hk])||0;
         const precio=parseFloat(e[pk])||0;
         const calc=Math.round(horas*precio*100)/100;
-        // Auto-update importe when horas or precio change
+        const dispId='imp-'+tipo.toLowerCase();
         return h('div',{style:{display:'grid',gridTemplateColumns:'1fr auto 1fr auto',gap:'.4rem',alignItems:'center',marginBottom:'.5rem'}},
           h('div',{class:'field',style:{margin:0}},
             h('label',{},tipo.toUpperCase()),
-            h('input',{type:'text',inputmode:'decimal',value:horas||'',placeholder:'0',
-              on:{input:ev=>{
-                const v=ev.target.value.replace(',','.');
-                fEntry[hk]=parseFloat(v)||0;
-                fEntry[ik]=Math.round(fEntry[hk]*(parseFloat(e[pk])||0)*100)/100;
-                rerender();
-              },blur:ev=>{
-                const v=ev.target.value.replace(',','.');
-                fEntry[hk]=parseFloat(v)||0;
-                fEntry[ik]=Math.round(fEntry[hk]*(parseFloat(e[pk])||0)*100)/100;
-                rerender();
-              }}})
+            h('input',{type:'text',inputmode:'decimal',
+              value:horas||'',placeholder:'0',
+              on:{
+                input:ev=>{
+                  // Update state without rerender (avoids resetting cursor/value)
+                  const v=ev.target.value.replace(',','.');
+                  const h2=parseFloat(v)||0;
+                  fEntry[hk]=h2;
+                  const p2=parseFloat(e[pk])||0;
+                  const c2=Math.round(h2*p2*100)/100;
+                  fEntry[ik]=c2;
+                  // Update display directly
+                  const el=document.getElementById(dispId);
+                  if(el){el.textContent=c2>0?eur(c2):'—';el.style.background=c2>0?'var(--acc-lt)':'var(--surf2)';el.style.color=c2>0?'var(--acc)':'var(--ink3)';}
+                },
+                blur:ev=>{
+                  const v=ev.target.value.replace(',','.');
+                  fEntry[hk]=parseFloat(v)||0;
+                  fEntry[ik]=Math.round(fEntry[hk]*(parseFloat(e[pk])||0)*100)/100;
+                  rerender();
+                }
+              }})
           ),
           h('div',{style:{color:'var(--ink3)',fontSize:'1.2rem',marginTop:'1rem'}},'×'),
           h('div',{class:'field',style:{margin:0}},
             h('label',{},'€/HORA'),
-            h('input',{type:'text',inputmode:'decimal',value:precio||'',placeholder:'0,00',
-              on:{input:ev=>{
-                const v=ev.target.value.replace(',','.');
-                fEntry[pk]=parseFloat(v)||0;
-                fEntry[ik]=Math.round((parseFloat(e[hk])||0)*fEntry[pk]*100)/100;
-                rerender();
-              },blur:ev=>{
-                const v=ev.target.value.replace(',','.');
-                fEntry[pk]=parseFloat(v)||0;
-                fEntry[ik]=Math.round((parseFloat(e[hk])||0)*fEntry[pk]*100)/100;
-                rerender();
-              }}})
+            h('input',{type:'text',inputmode:'decimal',
+              value:precio||'',placeholder:'0,00',
+              on:{
+                input:ev=>{
+                  const v=ev.target.value.replace(',','.');
+                  const p2=parseFloat(v)||0;
+                  fEntry[pk]=p2;
+                  const h2=parseFloat(e[hk])||0;
+                  const c2=Math.round(h2*p2*100)/100;
+                  fEntry[ik]=c2;
+                  const el=document.getElementById(dispId);
+                  if(el){el.textContent=c2>0?eur(c2):'—';el.style.background=c2>0?'var(--acc-lt)':'var(--surf2)';el.style.color=c2>0?'var(--acc)':'var(--ink3)';}
+                },
+                blur:ev=>{
+                  const v=ev.target.value.replace(',','.');
+                  fEntry[pk]=parseFloat(v)||0;
+                  fEntry[ik]=Math.round((parseFloat(e[hk])||0)*fEntry[pk]*100)/100;
+                  rerender();
+                }
+              }})
           ),
-          h('div',{style:{
+          h('div',{id:dispId,style:{
             background:calc>0?'var(--acc-lt)':'var(--surf2)',
             color:calc>0?'var(--acc)':'var(--ink3)',
             borderRadius:'var(--r2)',padding:'.4rem .6rem',
@@ -3276,6 +3328,8 @@ function startClock(){
       await dbPut(ST.settings,{...s,id:1,driveUrl});
     }catch(e){}
     lastSync=localStorage.getItem('lastSync')||'';
+    pinCode=localStorage.getItem('pinCode')||'';
+    if(pinCode){pinLocked=true;pinEntered='';}
     pinCode=localStorage.getItem('pinCode')||'';
     if(pinCode){pinLocked=true;pinEntered='';}
     // Auto-load from Drive on startup if configured
