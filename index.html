@@ -2233,40 +2233,268 @@ function exportCSV(){
 
 async function exportPDFReal(){
   try{
-    if(!window.jspdf){showAlert('Cargando libreria PDF, espera...','err');setTimeout(exportPDFReal,2000);return;}
-    const {jsPDF} = window.jspdf;
-    const entries = filterMonth ? S.entries.filter(e=>e.fecha.startsWith(filterMonth)) : S.entries;
-    const tasks = filterMonth ? S.tasks.filter(t=>t.fecha.startsWith(filterMonth)) : S.tasks;
-    const doc = new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-    const G=[22,163,74],D=[15,15,15],GR=[100,100,100];
-    doc.setFillColor(...G);doc.rect(0,0,210,22,'F');
-    doc.setTextColor(255,255,255);doc.setFontSize(16);doc.setFont('helvetica','bold');
-    doc.text('TimerPro - Control Horario',14,14);
-    let y=28;
-    doc.setTextColor(...D);doc.setFontSize(9);doc.setFont('helvetica','normal');
-    if(fWorker.nombre){doc.setFont('helvetica','bold');doc.text(fWorker.nombre+' '+fWorker.apellidos,14,y);doc.setFont('helvetica','normal');if(fWorker.dni)doc.text('DNI: '+fWorker.dni,100,y);y+=5;}
-    if(fCompany.nombre){doc.text(fCompany.nombre,14,y);if(fCompany.cif)doc.text('CIF: '+fCompany.cif,100,y);y+=5;}
+    if(!window.jspdf){showAlert('Cargando libreria PDF...','err');setTimeout(exportPDFReal,2000);return;}
+    const {jsPDF}=window.jspdf;
+    const entries=(filterMonth?S.entries.filter(e=>e.fecha.startsWith(filterMonth)):S.entries).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    const tasks=(filterMonth?S.tasks.filter(t=>t.fecha.startsWith(filterMonth)):S.tasks).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    const G=[22,163,74],D=[20,20,20],GR=[120,120,120],BL=[59,130,246];
+    const W=210,M=14;
+
+    function addPage(){doc.addPage();}
+    function checkY(needed,y){if(y+needed>280){addPage();return 16;}return y;}
+
+    // ── HEADER ──
+    doc.setFillColor(...G);doc.rect(0,0,W,28,'F');
+    doc.setTextColor(255,255,255);doc.setFontSize(20);doc.setFont('helvetica','bold');
+    doc.text('TimerPro',M,12);
+    doc.setFontSize(10);doc.setFont('helvetica','normal');
+    doc.text('Control Horario Laboral',M,19);
     const periodo=filterMonth?MONTHS[parseInt(filterMonth.slice(5))-1]+' '+filterMonth.slice(0,4):'Periodo completo';
-    doc.setTextColor(...GR);doc.text('Periodo: '+periodo+' | Generado: '+new Date().toLocaleDateString('es-ES'),14,y);y+=6;
-    doc.setDrawColor(...G);doc.setLineWidth(0.3);doc.line(14,y,196,y);y+=4;
-    const tot=entries.reduce((a,e)=>({hn:a.hn+(+e.horasNormales||0),he:a.he+(+e.horasExtra||0),hnoc:a.hnoc+(+e.horasNocturnas||0),hf:a.hf+(+e.horasFestivas||0),in_:a.in_+(+e.importeNormales||0),ie:a.ie+(+e.importeExtra||0),inoc:a.inoc+(+e.importeNocturnas||0),if_:a.if_+(+e.importeFestivas||0),diet:a.diet+(+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0)),transp:a.transp+(+e.transporte||0)}),{hn:0,he:0,hnoc:0,hf:0,in_:0,ie:0,inoc:0,if_:0,diet:0,transp:0});
-    const totalH=tot.hn+tot.he+tot.hnoc+tot.hf,totalImp=tot.in_+tot.ie+tot.inoc+tot.if_;
-    doc.setFillColor(240,253,244);doc.rect(14,y,182,18,'F');
-    doc.setTextColor(...G);doc.setFont('helvetica','bold');doc.setFontSize(9);doc.text('RESUMEN',18,y+5);
-    doc.setTextColor(...D);doc.setFontSize(8);doc.setFont('helvetica','normal');
-    doc.text('Horas: '+fmtH(totalH),18,y+11);doc.text('Importe: '+eur(totalImp),60,y+11);doc.text('Dietas: '+eur(tot.diet),105,y+11);doc.text('Transp: '+eur(tot.transp),145,y+11);
-    doc.setFont('helvetica','bold');doc.setFontSize(9);doc.text('TOTAL: '+eur(totalImp+tot.diet+tot.transp),155,y+5);
-    y+=22;
-    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...D);doc.text('JORNADAS ('+entries.length+')',14,y);y+=3;
-    doc.autoTable({startY:y,head:[['Fecha','Dia','Entrada','Salida','H.N','H.E','H.Noc','H.F','Importe','Dieta','Transp','Nota']],body:entries.sort((a,b)=>a.fecha.localeCompare(b.fecha)).map(e=>{const f1=(e.fichajes||[])[0];const imp=(+e.importeNormales||0)+(+e.importeExtra||0)+(+e.importeNocturnas||0)+(+e.importeFestivas||0);const diet=(+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0));return[e.fecha,cap(wday(e.fecha)),f1?.entrada||'-',f1?.salida||'-',e.horasNormales||0,e.horasExtra||0,e.horasNocturnas||0,e.horasFestivas||0,eur(imp),eur(diet),eur(e.transporte||0),e.notas||''];}),styles:{fontSize:7,cellPadding:1.5},headStyles:{fillColor:G,textColor:[255,255,255],fontStyle:'bold'},alternateRowStyles:{fillColor:[248,255,250]},margin:{left:14,right:14}});
-    if(tasks.length>0){let ty=doc.lastAutoTable.finalY+6;if(ty>240){doc.addPage();ty=14;}doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...D);doc.text('TAREAS ('+tasks.length+')',14,ty);ty+=3;doc.autoTable({startY:ty,head:[['Fecha','Dia','Titulo','H.Inicio','H.Fin','Duracion','Sitio','O.T.']],body:tasks.sort((a,b)=>a.fecha.localeCompare(b.fecha)).map(t=>{const site=S.sites.find(s=>s.id==t.siteId);const wo=S.workorders.find(w=>w.id==t.workOrderId);const dur=t.horaInicio&&t.horaFin?fmtH(calcH(t.horaInicio,t.horaFin)):'-';return[t.fecha,cap(wday(t.fecha)),t.titulo||'-',t.horaInicio||'-',t.horaFin||'-',dur,site?.nombre||'-',wo?.codigo||'Sin O.T.'];}),styles:{fontSize:7,cellPadding:1.5},headStyles:{fillColor:[59,130,246],textColor:[255,255,255],fontStyle:'bold'},alternateRowStyles:{fillColor:[239,246,255]},margin:{left:14,right:14}});}
-    if(fWorker.firma){doc.addPage();doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('FIRMA',14,20);doc.addImage(fWorker.firma,'PNG',14,25,60,30);doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);doc.text(fWorker.nombre+' '+fWorker.apellidos,14,60);}
-    const pc=doc.internal.getNumberOfPages();for(let i=1;i<=pc;i++){doc.setPage(i);doc.setFontSize(7);doc.setTextColor(...GR);doc.text('TimerPro - Pagina '+i+'/'+pc,14,290);doc.text(new Date().toLocaleDateString('es-ES'),175,290);}
+    doc.text(periodo,W-M,12,{align:'right'});
+    doc.text(new Date().toLocaleDateString('es-ES'),W-M,19,{align:'right'});
+
+    let y=34;
+
+    // ── WORKER & COMPANY ──
+    if(fWorker.nombre||fCompany.nombre){
+      doc.setFillColor(245,255,248);doc.rect(M,y,W-2*M,fWorker.nombre&&fCompany.nombre?18:10,'F');
+      doc.setTextColor(...D);
+      if(fWorker.nombre){
+        doc.setFont('helvetica','bold');doc.setFontSize(10);
+        doc.text(fWorker.nombre+' '+fWorker.apellidos,M+3,y+6);
+        doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
+        const info=[fWorker.dni&&'DNI: '+fWorker.dni,fWorker.cargo,fWorker.email,fWorker.telefono].filter(Boolean).join('  ·  ');
+        if(info)doc.text(info,M+3,y+11);
+      }
+      if(fCompany.nombre){
+        const cy=fWorker.nombre?y+14:y+6;
+        doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...D);
+        doc.text(fCompany.nombre,M+3,cy);
+        doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
+        const ci=[fCompany.cif&&'CIF: '+fCompany.cif,fCompany.ciudad,fCompany.email].filter(Boolean).join('  ·  ');
+        if(ci)doc.text(ci,M+3,cy+5);
+      }
+      y+=fWorker.nombre&&fCompany.nombre?22:14;
+    }
+
+    // ── TOTALS SUMMARY ──
+    const tot=entries.reduce((a,e)=>({
+      hn:a.hn+(+e.horasNormales||0),he:a.he+(+e.horasExtra||0),
+      hnoc:a.hnoc+(+e.horasNocturnas||0),hf:a.hf+(+e.horasFestivas||0),
+      in_:a.in_+(+e.importeNormales||0),ie:a.ie+(+e.importeExtra||0),
+      inoc:a.inoc+(+e.importeNocturnas||0),if_:a.if_+(+e.importeFestivas||0),
+      diet:a.diet+(+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0)),
+      transp:a.transp+(+e.transporte||0),
+      otros:a.otros+((e.otrosConceptos||[]).reduce((x,c)=>x+(+c.importe||0),0))
+    }),{hn:0,he:0,hnoc:0,hf:0,in_:0,ie:0,inoc:0,if_:0,diet:0,transp:0,otros:0});
+    const totalH=tot.hn+tot.he+tot.hnoc+tot.hf;
+    const totalImp=tot.in_+tot.ie+tot.inoc+tot.if_;
+    const totalOther=tot.diet+tot.transp+tot.otros;
+    const grandTotal=totalImp+totalOther;
+
+    doc.setFillColor(22,163,74,0.1);doc.setFillColor(240,253,244);
+    doc.rect(M,y,W-2*M,16,'F');
+    doc.setDrawColor(...G);doc.rect(M,y,W-2*M,16,'S');
+    doc.setTextColor(...G);doc.setFont('helvetica','bold');doc.setFontSize(8);
+    doc.text('RESUMEN',M+3,y+5);
+    doc.setTextColor(...D);doc.setFontSize(9);
+    doc.text('Total horas: '+fmtH(totalH),M+3,y+12);
+    doc.text('Horas: '+eur(totalImp),70,y+12);
+    doc.text('Otros: '+eur(totalOther),120,y+12);
+    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...G);
+    doc.text('TOTAL: '+eur(grandTotal),W-M,y+12,{align:'right'});
+    y+=20;
+
+    // ── JORNADAS ──
+    doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...D);
+    doc.text('JORNADAS ('+entries.length+')',M,y);y+=4;
+
+    doc.autoTable({
+      startY:y,
+      head:[['Fecha','Día','Entrada','Salida','H.Norm','€/h','Imp.Norm','H.Extra','€/h','Imp.Extra','H.Noct','Imp.Noct','H.Fest','Imp.Fest','Dieta','Transp','Total']],
+      body:entries.map(e=>{
+        const f1=(e.fichajes||[])[0];
+        const impH=(+e.importeNormales||0)+(+e.importeExtra||0)+(+e.importeNocturnas||0)+(+e.importeFestivas||0);
+        const diet=(+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0));
+        return[
+          e.fecha,cap(wday(e.fecha)),f1?.entrada||'—',f1?.salida||'—',
+          fmtH(e.horasNormales||0),e.precioHoraNormal||'—',eur(e.importeNormales||0),
+          fmtH(e.horasExtra||0),e.precioHoraExtra||'—',eur(e.importeExtra||0),
+          fmtH(e.horasNocturnas||0),eur(e.importeNocturnas||0),
+          fmtH(e.horasFestivas||0),eur(e.importeFestivas||0),
+          eur(diet),eur(e.transporte||0),eur(impH+diet+(+e.transporte||0))
+        ];
+      }),
+      styles:{fontSize:6.5,cellPadding:1.5},
+      headStyles:{fillColor:G,textColor:[255,255,255],fontStyle:'bold',fontSize:6},
+      alternateRowStyles:{fillColor:[248,255,250]},
+      columnStyles:{0:{cellWidth:18},1:{cellWidth:10}},
+      margin:{left:M,right:M}
+    });
+    y=doc.lastAutoTable.finalY+4;
+
+    // ── DETALLE JORNADAS (notas, viajes, GPS, dietas extra) ──
+    const jornadasConDetalle=entries.filter(e=>
+      e.notas||(e.dietasExtra||[]).length||(e.otrosConceptos||[]).length||
+      (e.journeys||[]).length||e.ubicacionEntrada||e.ubicacionSalida
+    );
+
+    if(jornadasConDetalle.length>0){
+      y=checkY(10,y);
+      doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...D);
+      doc.text('DETALLE DE JORNADAS',M,y);y+=5;
+
+      for(const e of jornadasConDetalle){
+        y=checkY(12,y);
+        doc.setFillColor(245,245,245);doc.rect(M,y,W-2*M,7,'F');
+        doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...D);
+        doc.text(cap(wday(e.fecha))+', '+dlbl(e.fecha),M+2,y+5);
+        y+=9;
+
+        // Notas
+        if(e.notas){
+          y=checkY(6,y);
+          doc.setFont('helvetica','italic');doc.setFontSize(8);doc.setTextColor(...GR);
+          doc.text('Nota: '+e.notas,M+3,y);y+=5;
+        }
+
+        // Dietas extra
+        if((e.dietasExtra||[]).length){
+          y=checkY(5,y);
+          doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...D);
+          const dex=e.dietasExtra.map(d=>d.concepto+': '+eur(d.importe)).join('  |  ');
+          doc.text('Dietas extra: '+dex,M+3,y);y+=5;
+        }
+
+        // Otros conceptos
+        if((e.otrosConceptos||[]).length){
+          y=checkY(5,y);
+          doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...D);
+          const oc=e.otrosConceptos.map(c=>c.concepto+': '+eur(c.importe)).join('  |  ');
+          doc.text('Otros: '+oc,M+3,y);y+=5;
+        }
+
+        // GPS
+        ['Entrada','Salida'].forEach(tipo=>{
+          const locStr=e['ubicacion'+tipo];
+          if(!locStr)return;
+          y=checkY(5,y);
+          try{
+            const d=JSON.parse(locStr);
+            doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...BL);
+            doc.textWithLink('GPS '+tipo+': '+d.label,M+3,y,{url:d.url});
+            if(d.acc){doc.setTextColor(...GR);doc.text(' (±'+d.acc+'m)',M+3+doc.getTextWidth('GPS '+tipo+': '+d.label),y);}
+          }catch(ex){
+            doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
+            doc.text('Ubicacion '+tipo+': '+locStr,M+3,y);
+          }
+          y+=5;
+        });
+
+        // Viajes
+        if((e.journeys||[]).length){
+          y=checkY(5,y);
+          doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(...D);
+          doc.text('Viajes:',M+3,y);y+=4;
+          e.journeys.forEach((j,ji)=>{
+            y=checkY(5,y);
+            const v=S.vehicles.find(v=>v.id==j.vehicleId);
+            const veh=v?v.nombre+' ('+v.matricula+')':j.tipoManual||'Vehiculo';
+            const precio=v?v.precioPorKm:j.precioManual||0;
+            const coste=(j.km||0)*precio;
+            const ruta=[j.origen,j.destino].filter(Boolean).join(' → ')||'Sin ruta';
+            doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
+            doc.text((ji+1)+'. '+veh+' | '+ruta+(j.km?' | '+j.km+'km':'')+' | '+eur(coste),M+6,y);
+            y+=4;
+          });
+        }
+        y+=2;
+      }
+    }
+
+    // ── TAREAS ──
+    if(tasks.length>0){
+      y=checkY(15,y);
+      doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...D);
+      doc.text('TAREAS ('+tasks.length+')',M,y);y+=4;
+
+      doc.autoTable({
+        startY:y,
+        head:[['Fecha','Día','Título','H.Inicio','H.Fin','Duración','Sitio','O.T.','Descripción']],
+        body:tasks.map(t=>{
+          const site=S.sites.find(s=>s.id==t.siteId);
+          const wo=S.workorders.find(w=>w.id==t.workOrderId);
+          const dur=t.horaInicio&&t.horaFin?fmtH(calcH(t.horaInicio,t.horaFin)):'—';
+          return[t.fecha,cap(wday(t.fecha)),t.titulo||'—',t.horaInicio||'—',t.horaFin||'—',dur,site?.nombre||'—',wo?.codigo||'Sin O.T.',t.descripcion||''];
+        }),
+        styles:{fontSize:7.5,cellPadding:1.5},
+        headStyles:{fillColor:BL,textColor:[255,255,255],fontStyle:'bold'},
+        alternateRowStyles:{fillColor:[239,246,255]},
+        margin:{left:M,right:M}
+      });
+      y=doc.lastAutoTable.finalY+5;
+
+      // Fotos de tareas
+      const tareasConFotos=tasks.filter(t=>(t.fotos||[]).length>0);
+      if(tareasConFotos.length>0){
+        y=checkY(15,y);
+        doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...D);
+        doc.text('FOTOGRAFIAS DE TAREAS',M,y);y+=5;
+
+        for(const t of tareasConFotos){
+          y=checkY(12,y);
+          doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(...GR);
+          doc.text(t.titulo||t.fecha,M,y);y+=4;
+
+          let fx=M;
+          for(const foto of(t.fotos||[])){
+            if(fx+45>W-M){fx=M;y+=45;y=checkY(45,y);}
+            try{
+              doc.addImage(foto,'JPEG',fx,y,42,42);
+              fx+=44;
+            }catch(ex){}
+          }
+          y+=46;
+        }
+      }
+    }
+
+    // ── FIRMA ──
+    if(fWorker.firma){
+      y=checkY(40,y);
+      doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...D);
+      doc.text('FIRMA DEL TRABAJADOR',M,y);y+=5;
+      doc.setDrawColor(...GR);doc.rect(M,y,70,30,'S');
+      try{doc.addImage(fWorker.firma,'PNG',M,y,70,30);}catch(ex){}
+      y+=32;
+      doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
+      doc.text(fWorker.nombre+' '+fWorker.apellidos+(fWorker.dni?' — DNI: '+fWorker.dni:''),M,y);
+    }
+
+    // ── FOOTER ──
+    const pc=doc.internal.getNumberOfPages();
+    for(let i=1;i<=pc;i++){
+      doc.setPage(i);
+      doc.setFillColor(...G);doc.rect(0,287,W,10,'F');
+      doc.setTextColor(255,255,255);doc.setFontSize(7);doc.setFont('helvetica','normal');
+      doc.text('TimerPro — Control Horario  |  Pagina '+i+'/'+pc,M,293);
+      doc.text(new Date().toLocaleDateString('es-ES'),W-M,293,{align:'right'});
+    }
+
+    // ── SAVE/SHARE ──
     const fname='TimerPro_'+today()+'.pdf';
     const blob=doc.output('blob');
-    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[new File([blob],fname,{type:'application/pdf'})]})){try{await navigator.share({files:[new File([blob],fname,{type:'application/pdf'})],title:'Informe TimerPro'});return;}catch(e){if(e.name==='AbortError')return;}}
-    doc.save(fname);showAlert('PDF generado: '+fname);
-  }catch(e){showAlert('Error PDF: '+e.message,'err');console.error(e);}
+    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[new File([blob],fname,{type:'application/pdf'})]})){
+      try{await navigator.share({files:[new File([blob],fname,{type:'application/pdf'})],title:'Informe TimerPro'});return;}
+      catch(e){if(e.name==='AbortError')return;}
+    }
+    doc.save(fname);
+    showAlert('PDF generado: '+fname);
+  }catch(e){
+    showAlert('Error PDF: '+e.message,'err');
+    console.error(e);
+  }
 }
 
 async function exportExcel(){
