@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778947032009 -->
+<!-- v1778947592854 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -519,22 +519,48 @@ function renderFichar(){
         field('Fecha','date',e.fecha,v=>{fEntry.fecha=v;rerender()}),
         h('div',{class:'field'},
           h('label',{style:{display:'flex',alignItems:'center',gap:'.5rem',flexWrap:'wrap'}},'JORNADA',
-            driveChecked
-              ? driveHasNew
-                ? h('span',{
-                    style:{background:'var(--acc)',color:'#000',borderRadius:'20px',padding:'.15rem .6rem',fontSize:'.68rem',fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:'.3rem'},
-                    title:'Hay datos nuevos en Drive. Pulsa para cargar.',
-                    on:{click:()=>_doLoad(true,false,true)}
-                  },'📥 Hay datos nuevos')
-                : h('span',{
-                    style:{background:'var(--red)',color:'#fff',borderRadius:'20px',padding:'.15rem .6rem',fontSize:'.68rem',fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:'.3rem'},
-                    title:'Drive comprobado - sin datos nuevos. Pulsa para comprobar ahora.',
-                    on:{click:()=>{driveChecked=false;checkDriveForNewData();}}
-                  },'🔴 Sin datos nuevos')
-              : h('span',{
-                  style:{background:'var(--surf3)',color:'var(--ink2)',borderRadius:'20px',padding:'.15rem .6rem',fontSize:'.68rem',fontWeight:700,cursor:'pointer'},
-                  on:{click:()=>{driveChecked=false;checkDriveForNewData();}}
-                },'⟳ Comprobar')
+            h('div',{style:{display:'flex',gap:'.3rem',flexWrap:'wrap',alignItems:'center'}},
+              // Indicator 1: new data available (green)
+              h('span',{
+                style:{
+                  display:'flex',alignItems:'center',gap:'.25rem',
+                  borderRadius:'20px',padding:'.15rem .55rem',fontSize:'.67rem',fontWeight:700,
+                  background: driveHasNew ? 'var(--acc)' : 'var(--surf3)',
+                  color: driveHasNew ? '#000' : 'var(--ink3)',
+                  border: '1px solid ' + (driveHasNew ? 'var(--acc)' : 'var(--brd)'),
+                  cursor: driveHasNew ? 'pointer' : 'default',
+                  transition:'all .3s'
+                },
+                on:{click:()=>{ if(driveHasNew) _doLoad(true,false,true); }}
+              },
+                h('span',{style:{width:'7px',height:'7px',borderRadius:'50%',background:driveHasNew?'#000':'var(--ink3)',flexShrink:0}}),
+                '📥 Datos nuevos'
+              ),
+              // Indicator 2: checked, no new data (red)
+              h('span',{
+                style:{
+                  display:'flex',alignItems:'center',gap:'.25rem',
+                  borderRadius:'20px',padding:'.15rem .55rem',fontSize:'.67rem',fontWeight:700,
+                  background: (driveChecked && !driveHasNew) ? 'var(--red)' : 'var(--surf3)',
+                  color: (driveChecked && !driveHasNew) ? '#fff' : 'var(--ink3)',
+                  border: '1px solid ' + ((driveChecked && !driveHasNew) ? 'var(--red)' : 'var(--brd)'),
+                  transition:'all .3s'
+                }
+              },
+                h('span',{style:{width:'7px',height:'7px',borderRadius:'50%',background:(driveChecked&&!driveHasNew)?'#fff':'var(--ink3)',flexShrink:0}}),
+                'Sin datos nuevos'
+              ),
+              // Comprobar button - always visible
+              h('span',{
+                style:{
+                  display:'flex',alignItems:'center',gap:'.25rem',
+                  borderRadius:'20px',padding:'.15rem .55rem',fontSize:'.67rem',fontWeight:700,
+                  background:'var(--blu-lt)',color:'var(--blu)',
+                  border:'1px solid var(--blu)',cursor:'pointer'
+                },
+                on:{click:()=>{driveChecked=false;driveHasNew=false;rerender();checkDriveForNewData();}}
+              },'⟳ Comprobar')
+            )
           ),
           h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.2rem'}},
             editingEntry
@@ -3459,7 +3485,8 @@ async function importDriveData(d, verifyMode){
     syncStatus='ok';
     lastSync=new Date().toLocaleTimeString('es-ES');
     localStorage.setItem('lastSync',lastSync);
-    driveHasNew=false; // cleared after loading
+    driveHasNew=false;
+    localStorage.setItem('lastLoaded', Date.now().toString());
     if(!editingEntry) fEntry=defEntry();
     if(verifyMode){
       showAlert('✅ Drive OK: '+S.entries.length+' jornadas guardadas correctamente');
@@ -3571,19 +3598,16 @@ async function checkForUpdate(){
   }catch(e){ console.log('Update check failed:', e); }
 }
 
-// Manual update check function
-async function manualCheckUpdate(){
-  showAlert('Comprobando actualizaciones...');
-  await checkForUpdate();
-  // If no update found, confirm current version is latest
+// Manual update - forces fresh load bypassing ALL cache
+function manualCheckUpdate(){
+  showAlert('Cargando ultima version...');
   setTimeout(()=>{
-    const localV = localStorage.getItem('appVersion') || '0';
-    const serverV = localV; // if no redirect happened, we are up to date
-    showAlert('App actualizada. Version: ' + localV.slice(-6));
-  }, 3000);
+    const baseUrl = location.href.split('?')[0];
+    window.location.replace(baseUrl + '?fresh=' + Date.now());
+  }, 500);
 }
 // Store current version
-localStorage.setItem('appVersion', '1778947032009');
+localStorage.setItem('appVersion', '1778947592854');
 
 
 // ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
@@ -3596,11 +3620,12 @@ function checkDriveForNewData(){
     done=true; delete window[cbName]; s.remove();
     if(!res||!res.ok||!res.data) return;
     const driveTime=new Date(res.data.exportedAt||0).getTime();
-    const localTime=new Date(lastSync||localStorage.getItem('lastSync')||0).getTime();
+    // Use lastLoaded (when we last loaded FROM Drive) not lastSync (when we last uploaded)
+    const lastLoaded=parseInt(localStorage.getItem('lastLoaded')||'0');
     const wasNew=driveHasNew;
     const wasChecked=driveChecked;
     driveChecked=true;
-    driveHasNew = driveTime > localTime + 5000;
+    driveHasNew = driveTime > lastLoaded + 5000;
     if(driveHasNew!==wasNew || driveChecked!==wasChecked) rerender();
   };
   setTimeout(()=>{if(!done){delete window[cbName];s.remove();}},10000);
