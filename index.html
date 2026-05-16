@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778962615245 -->
+<!-- v1778964118079 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -294,6 +294,8 @@ let editSiteId = null, editWOId = null, editVehId = null;
 let showSiteF = false, showWOF = false, showVehF = false;
 let editingEntry = false;
 let filterMonth = '';
+let filterFrom = ''; // date range from (YYYY-MM-DD)
+let filterTo = '';   // date range to (YYYY-MM-DD)
 let calYear = new Date().getFullYear(), calMonth = new Date().getMonth();
 let calView = 'month'; // 'month' or 'week'
 let selDate = today();
@@ -454,6 +456,7 @@ function renderNav(){
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
     h('div',{class:'nav-clock'},S.clock),
+    !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
       h('div',{class:'user-pill',on:{click:()=>openModal('driveaccount')}},
         h('span',{class:'sync-dot '+syncDot}),
@@ -1215,10 +1218,27 @@ function renderVehiculos(){
 // ══════════════════════════════════════════════════════════
 // RESUMEN
 // ══════════════════════════════════════════════════════════
+function filterEntries(){
+  return S.entries.filter(e=>{
+    if(filterFrom && e.fecha < filterFrom) return false;
+    if(filterTo && e.fecha > filterTo) return false;
+    if(!filterFrom && !filterTo && filterMonth && !e.fecha.startsWith(filterMonth)) return false;
+    return true;
+  });
+}
+function filterTasks(){
+  return S.tasks.filter(t=>{
+    if(filterFrom && t.fecha < filterFrom) return false;
+    if(filterTo && t.fecha > filterTo) return false;
+    if(!filterFrom && !filterTo && filterMonth && !t.fecha.startsWith(filterMonth)) return false;
+    return true;
+  });
+}
+
 function renderResumen(){
-  const entries = filterMonth ? S.entries.filter(e=>e.fecha.startsWith(filterMonth)) : S.entries;
-  const tasks = filterMonth ? S.tasks.filter(t=>t.fecha.startsWith(filterMonth)) : S.tasks;
-  
+  const entries = filterEntries();
+  const tasks = filterTasks();
+
   const totals = entries.reduce((a,e)=>({
     n: a.n+1,
     hn: a.hn+(+e.horasNormales||0),
@@ -1233,7 +1253,7 @@ function renderResumen(){
     transp: a.transp+(+e.transporte||0),
     otros: a.otros+((e.otrosConceptos||[]).reduce((x,c)=>x+(+c.importe||0),0)),
   }),{n:0,hn:0,he:0,hnoc:0,hf:0,in:0,ie:0,inoc:0,if_:0,diet:0,transp:0,otros:0});
-  
+
   const totalH = totals.hn+totals.he+totals.hnoc+totals.hf;
   const totalImp = totals.in+totals.ie+totals.inoc+totals.if_;
   const totalViajes = entries.reduce((a,e)=>{
@@ -1244,14 +1264,42 @@ function renderResumen(){
   },0);
   const totalOther = totals.diet+totals.transp+totals.otros+totalViajes;
   const grandTotal = totalImp+totalOther;
-  
+
+  const hasRange = filterFrom||filterTo||filterMonth;
+  const rangeLabel = filterFrom||filterTo
+    ? (filterFrom||'inicio')+' al '+(filterTo||'hoy')
+    : filterMonth ? MONTHS[parseInt(filterMonth.slice(5))-1]+' '+filterMonth.slice(0,4) : 'Todo el periodo';
+
   return h('div',{},
+    // ── FILTROS ──
     h('div',{class:'card'},
-      h('div',{class:'field'},
-        h('label',{},'FILTRAR MES'),
-        h('input',{type:'month',value:filterMonth,on:{change:ev=>{filterMonth=ev.target.value;rerender();}}})
-      )
+      h('div',{class:'sec-title'},'FILTRAR PERIODO'),
+      h('div',{class:'grid-2'},
+        h('div',{class:'field'},
+          h('label',{},'MES (rapido)'),
+          h('input',{type:'month',value:filterMonth,on:{change:ev=>{filterMonth=ev.target.value;filterFrom='';filterTo='';rerender();}}})
+        ),
+        h('div',{style:{display:'flex',alignItems:'flex-end',paddingBottom:'.7rem'}},
+          hasRange?h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{filterMonth='';filterFrom='';filterTo='';rerender();}}},'x Todo'):null
+        )
+      ),
+      h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.6rem',marginTop:'.3rem'}},
+        h('div',{style:{fontSize:'.7rem',fontWeight:700,color:'var(--ink2)',marginBottom:'.5rem'}},'RANGO PERSONALIZADO'),
+        h('div',{class:'grid-2'},
+          h('div',{class:'field',style:{margin:0}},
+            h('label',{},'DESDE'),
+            h('input',{type:'date',value:filterFrom,on:{change:ev=>{filterFrom=ev.target.value;filterMonth='';rerender();}}})
+          ),
+          h('div',{class:'field',style:{margin:0}},
+            h('label',{},'HASTA'),
+            h('input',{type:'date',value:filterTo,on:{change:ev=>{filterTo=ev.target.value;filterMonth='';rerender();}}})
+          )
+        )
+      ),
+      hasRange?h('div',{style:{marginTop:'.5rem',fontSize:'.75rem',color:'var(--acc)',fontWeight:700}},'Mostrando: '+rangeLabel):null
     ),
+
+    // ── HORAS ──
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'HORAS'),
       sumRow('Normales',fmtH(totals.hn)),
@@ -1260,6 +1308,8 @@ function renderResumen(){
       sumRow('Festivas',fmtH(totals.hf)),
       sumRow('TOTAL HORAS',fmtH(totalH),true)
     ),
+
+    // ── IMPORTES ──
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'IMPORTES'),
       sumRow('Normales',eur(totals.in)),
@@ -1268,6 +1318,8 @@ function renderResumen(){
       sumRow('Festivas',eur(totals.if_)),
       sumRow('Subtotal horas',eur(totalImp),true)
     ),
+
+    // ── OTROS ──
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'OTROS CONCEPTOS'),
       sumRow('Dietas',eur(totals.diet)),
@@ -1276,20 +1328,48 @@ function renderResumen(){
       sumRow('Otros',eur(totals.otros)),
       sumRow('Subtotal otros',eur(totalOther),true)
     ),
+
+    // ── TOTAL ──
     h('div',{class:'card'},
       sumRow('TOTAL GENERAL',eur(grandTotal),true),
       h('div',{style:{marginTop:'.5rem',fontSize:'.8rem',color:'var(--ink2)'}},
-        `${totals.n} jornadas · ${tasks.length} tareas`
+        totals.n+' jornadas \u00b7 '+tasks.length+' tareas \u00b7 '+rangeLabel
       )
     ),
+
+    // ── GRAFICAS ──
     h('div',{class:'card'},
-      h('div',{class:'sec-title'},'EVOLUCIÓN MENSUAL'),
-      h('canvas',{id:'chart-horas',height:'200',style:{width:'100%',height:'200px',display:'block'}}),
+      h('div',{class:'sec-title'},'EVOLUCION MENSUAL'),
+      h('canvas',{id:'chart-horas',style:{width:'100%',height:'200px',display:'block'}}),
       h('div',{style:{height:'8px'}}),
-      h('canvas',{id:'chart-import',height:'200',style:{width:'100%',height:'200px',display:'block'}})
+      h('canvas',{id:'chart-import',style:{width:'100%',height:'200px',display:'block'}})
     ),
-    h('div',{class:'btn-row'},
-      h('button',{class:'btn btn-r btn-lg btn-full',on:{click:()=>openModal('export')}},'📤 Exportar Informe')
+
+    // ── EXPORTAR desde RESUMEN ──
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'EXPORTAR ESTE PERIODO: '+rangeLabel),
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.6rem'}},
+        h('button',{
+          class:'btn btn-full',
+          style:{background:'#dc2626',color:'#fff',padding:'1rem .5rem',flexDirection:'column',gap:'.3rem',display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'var(--r)'},
+          on:{click:()=>exportPDFReal(false)}
+        },h('span',{style:{fontSize:'1.5rem'}},'PDF'),h('span',{style:{fontWeight:700,fontSize:'.82rem'}},'PDF'),h('span',{style:{fontSize:'.67rem',opacity:.85}},'Con importes')),
+        h('button',{
+          class:'btn btn-full',
+          style:{background:'#f97316',color:'#fff',padding:'1rem .5rem',flexDirection:'column',gap:'.3rem',display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'var(--r)'},
+          on:{click:()=>exportPDFReal(true)}
+        },h('span',{style:{fontSize:'1.5rem'}},'PDF'),h('span',{style:{fontWeight:700,fontSize:'.82rem'}},'PDF'),h('span',{style:{fontSize:'.67rem',opacity:.85}},'Sin importes')),
+        h('button',{
+          class:'btn btn-full',
+          style:{background:'#16a34a',color:'#fff',padding:'1rem .5rem',flexDirection:'column',gap:'.3rem',display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'var(--r)'},
+          on:{click:()=>exportExcel(false)}
+        },h('span',{style:{fontSize:'1.5rem'}},'XLS'),h('span',{style:{fontWeight:700,fontSize:'.82rem'}},'Excel'),h('span',{style:{fontSize:'.67rem',opacity:.85}},'Con importes')),
+        h('button',{
+          class:'btn btn-full',
+          style:{background:'#0891b2',color:'#fff',padding:'1rem .5rem',flexDirection:'column',gap:'.3rem',display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'var(--r)'},
+          on:{click:()=>exportExcel(true)}
+        },h('span',{style:{fontSize:'1.5rem'}},'XLS'),h('span',{style:{fontWeight:700,fontSize:'.82rem'}},'Excel'),h('span',{style:{fontSize:'.67rem',opacity:.85}},'Sin importes'))
+      )
     )
   );
 }
@@ -1320,8 +1400,8 @@ function renderSincronizar(){
         h('span',{style:{fontWeight:700}},S.entries.length+' jornadas')
       ),
       h('div',{class:'btn-row',style:{flexDirection:'column',marginTop:'.5rem'}},
-        h('button',{class:'btn btn-g btn-full btn-lg',on:{click:driveSync}},
-          '☁️ Subir TODO a Drive'
+        h('button',{class:'btn btn-g btn-full btn-lg',style:{opacity:isOnline?1:.5},on:{click:()=>{if(!isOnline){showAlert('Sin conexion. Los datos se subiran cuando vuelva el internet.','err');pendingSync=true;return;}driveSync();}}},
+          isOnline?'☁️ Subir TODO a Drive':'☁️ Subir (sin conexion)'
         ),
         h('button',{class:'btn btn-b btn-full btn-lg',on:{click:()=>_doLoad(true,false,true)}},
           '⬇️ Cargar TODO desde Drive'
@@ -1609,32 +1689,29 @@ function renderModal(){
 }
 
 function renderModalExport(){
+  function expBtn(icon,label,sub,bg,fn){
+    return h('button',{
+      class:'btn btn-full',
+      style:{background:bg,color:'#fff',padding:'1rem .5rem',flexDirection:'column',gap:'.3rem',display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'var(--r)'},
+      on:{click:()=>{S.modal=null;rerender();setTimeout(fn,200);}}
+    },
+      h('span',{style:{fontSize:'1.8rem'}},icon),
+      h('span',{style:{fontWeight:700,fontSize:'.82rem'}},label),
+      h('span',{style:{fontSize:'.67rem',opacity:.85}},sub)
+    );
+  }
   return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.classList.contains('modal-bg')){S.modal=null;rerender();}}}},
     h('div',{class:'modal-box'},
-      h('div',{class:'modal-title'},'\u{1F4E4} Exportar Informe'),
+      h('div',{class:'modal-title'},'Exportar Informe'),
       h('div',{class:'field'},
         h('label',{},'FILTRAR MES (opcional)'),
         h('input',{type:'month',value:filterMonth,on:{change:ev=>{filterMonth=ev.target.value;rerender();}}})
       ),
-      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.8rem',marginTop:'.5rem'}},
-        h('button',{
-          class:'btn btn-r btn-full',
-          style:{padding:'1.2rem',flexDirection:'column',gap:'.4rem',display:'flex',alignItems:'center',justifyContent:'center'},
-          on:{click:()=>{S.modal=null;rerender();setTimeout(exportPDFReal,200);}}
-        },
-          h('span',{style:{fontSize:'2rem'}},'\u{1F4C4}'),
-          h('span',{style:{fontWeight:700}},'PDF'),
-          h('span',{style:{fontSize:'.72rem'}},'Informe completo')
-        ),
-        h('button',{
-          class:'btn btn-g btn-full',
-          style:{padding:'1.2rem',flexDirection:'column',gap:'.4rem',display:'flex',alignItems:'center',justifyContent:'center'},
-          on:{click:()=>{S.modal=null;rerender();setTimeout(exportExcel,200);}}
-        },
-          h('span',{style:{fontSize:'2rem'}},'\u{1F4CA}'),
-          h('span',{style:{fontWeight:700}},'Excel'),
-          h('span',{style:{fontSize:'.72rem'}},'Hoja de calculo')
-        )
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.6rem',marginTop:'.5rem'}},
+        expBtn('PDF','PDF','Con importes','#dc2626',exportPDFReal),
+        expBtn('PDF','PDF','Sin importes','#f97316',()=>exportPDFReal(true)),
+        expBtn('XLS','Excel','Con importes','#16a34a',exportExcel),
+        expBtn('XLS','Excel','Sin importes','#0891b2',()=>exportExcel(true))
       ),
       h('button',{class:'btn btn-gh btn-full',style:{marginTop:'.8rem'},on:{click:()=>{S.modal=null;rerender();}}},'Cancelar')
     )
@@ -2136,7 +2213,7 @@ function renderCharts(){
 
     // Group entries by month
     const byMonth={};
-    S.entries.forEach(e=>{
+    filterEntries().forEach(e=>{
       const m=e.fecha.slice(0,7);
       if(!byMonth[m])byMonth[m]={hn:0,he:0,hnoc:0,hf:0,imp:0};
       byMonth[m].hn+=(+e.horasNormales||0);
@@ -2673,12 +2750,12 @@ function exportCSV(){
 }
 
 
-async function exportPDFReal(){
+async function exportPDFReal(noImportes=false){
   try{
     if(!window.jspdf){showAlert('Cargando libreria PDF...','err');setTimeout(exportPDFReal,2000);return;}
     const {jsPDF}=window.jspdf;
-    const entries=(filterMonth?S.entries.filter(e=>e.fecha.startsWith(filterMonth)):S.entries).sort((a,b)=>a.fecha.localeCompare(b.fecha));
-    const tasks=(filterMonth?S.tasks.filter(t=>t.fecha.startsWith(filterMonth)):S.tasks).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    const entries=filterEntries().sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    const tasks=filterTasks().sort((a,b)=>a.fecha.localeCompare(b.fecha));
     const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
     const G=[22,163,74],D=[20,20,20],GR=[120,120,120],BL=[59,130,246];
     const W=210,M=14;
@@ -2742,10 +2819,12 @@ async function exportPDFReal(){
     doc.text('RESUMEN',M+3,y+5);
     doc.setTextColor(...D);doc.setFontSize(9);
     doc.text('Total horas: '+fmtH(totalH),M+3,y+12);
-    doc.text('Horas: '+eur(totalImp),70,y+12);
-    doc.text('Otros: '+eur(totalOther),120,y+12);
-    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...G);
-    doc.text('TOTAL: '+eur(grandTotal),W-M,y+12,{align:'right'});
+    if(!noImportes){
+      doc.text('Horas: '+eur(totalImp),70,y+12);
+      doc.text('Otros: '+eur(totalOther),120,y+12);
+      doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...G);
+      doc.text('TOTAL: '+eur(grandTotal),W-M,y+12,{align:'right'});
+    }
     y+=20;
 
     // ── JORNADAS ──
@@ -2754,11 +2833,19 @@ async function exportPDFReal(){
 
     doc.autoTable({
       startY:y,
-      head:[['Fecha','Día','Entrada','Salida','H.Norm','€/h','Imp.Norm','H.Extra','€/h','Imp.Extra','H.Noct','Imp.Noct','H.Fest','Imp.Fest','Dieta','Transp','Total']],
+      head:[noImportes
+        ? ['Fecha','Dia','Entrada','Salida','H.Norm','H.Extra','H.Noct','H.Fest','Dieta','Transp','Nota']
+        : ['Fecha','Dia','Entrada','Salida','H.Norm','/h','Imp.Norm','H.Extra','/h','Imp.Extra','H.Noct','Imp.Noct','H.Fest','Imp.Fest','Dieta','Transp','Total']],
       body:entries.map(e=>{
         const f1=(e.fichajes||[])[0];
         const impH=(+e.importeNormales||0)+(+e.importeExtra||0)+(+e.importeNocturnas||0)+(+e.importeFestivas||0);
         const diet=(+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0));
+        if(noImportes) return[
+          e.fecha,cap(wday(e.fecha)),f1?.entrada||'--',f1?.salida||'--',
+          fmtH(e.horasNormales||0),fmtH(e.horasExtra||0),
+          fmtH(e.horasNocturnas||0),fmtH(e.horasFestivas||0),
+          e.dieta||0,e.transporte||0,e.notas||''
+        ];
         return[
           e.fecha,cap(wday(e.fecha)),f1?.entrada||'—',f1?.salida||'—',
           fmtH(e.horasNormales||0),e.precioHoraNormal||'—',eur(e.importeNormales||0),
@@ -2939,20 +3026,26 @@ async function exportPDFReal(){
   }
 }
 
-async function exportExcel(){
+async function exportExcel(noImportes=false){
   try{
     if(!window.XLSX){showAlert('Cargando libreria Excel...','err');setTimeout(exportExcel,2000);return;}
-    const entries=filterMonth?S.entries.filter(e=>e.fecha.startsWith(filterMonth)):S.entries;
-    const tasks=filterMonth?S.tasks.filter(t=>t.fecha.startsWith(filterMonth)):S.tasks;
+    const entries=filterEntries();
+    const tasks=filterTasks();
     const wb=XLSX.utils.book_new();
     const jorData=[['TIMERPRO - JORNADAS'],['Trabajador:',fWorker.nombre+' '+fWorker.apellidos,'','Empresa:',fCompany.nombre],['Periodo:',filterMonth||'Completo'],[]];
-    jorData.push(['Fecha','Dia','Entrada','Salida','H.Normales','Imp.Normales','H.Extra','Imp.Extra','H.Nocturnas','Imp.Nocturnas','H.Festivas','Imp.Festivas','Dieta','Dietas Extra','Transporte','Otros Conceptos','Nota','Ubic.Entrada','Ubic.Salida']);
+    jorData.push(noImportes
+      ? ['Fecha','Dia','Entrada','Salida','H.Norm','H.Extra','H.Noct','H.Fest','Dieta','Transp','Nota']
+      : ['Fecha','Dia','Entrada','Salida','H.Normales','Imp.Normales','H.Extra','Imp.Extra','H.Nocturnas','Imp.Nocturnas','H.Festivas','Imp.Festivas','Dieta','Dietas Extra','Transporte','Otros Conceptos','Nota','Ubic.Entrada','Ubic.Salida']);;
     entries.sort((a,b)=>a.fecha.localeCompare(b.fecha)).forEach(e=>{
       const f1=(e.fichajes||[])[0];
       const dex=(e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0);
       const otros=(e.otrosConceptos||[]).map(c=>c.concepto+': '+c.importe+'eu').join('; ');
       let le='',ls='';try{const o=JSON.parse(e.ubicacionEntrada||'{}');le=o.label||o.address||'';}catch(ex){}try{const o=JSON.parse(e.ubicacionSalida||'{}');ls=o.label||o.address||'';}catch(ex){}
-      jorData.push([e.fecha,cap(wday(e.fecha)),f1?.entrada||'',f1?.salida||'',+e.horasNormales||0,+e.importeNormales||0,+e.horasExtra||0,+e.importeExtra||0,+e.horasNocturnas||0,+e.importeNocturnas||0,+e.horasFestivas||0,+e.importeFestivas||0,+e.dieta||0,dex,+e.transporte||0,otros,e.notas||'',le,ls]);
+      jorData.push(noImportes
+        ? [e.fecha,cap(wday(e.fecha)),f1?.entrada||'',f1?.salida||'',
+           +e.horasNormales||0,+e.horasExtra||0,+e.horasNocturnas||0,+e.horasFestivas||0,
+           +e.dieta||0,+e.transporte||0,e.notas||'']
+        : [e.fecha,cap(wday(e.fecha)),f1?.entrada||'',f1?.salida||'',+e.horasNormales||0,+e.importeNormales||0,+e.horasExtra||0,+e.importeExtra||0,+e.horasNocturnas||0,+e.importeNocturnas||0,+e.horasFestivas||0,+e.importeFestivas||0,+e.dieta||0,dex,+e.transporte||0,otros,e.notas||'',le,ls]);
     });
     const ws1=XLSX.utils.aoa_to_sheet(jorData);
     ws1['!cols']=[10,8,8,8,10,11,8,11,10,12,10,12,8,10,10,20,20,25,25].map(w=>({wch:w}));
@@ -2965,7 +3058,7 @@ async function exportExcel(){
     const tot=entries.reduce((a,e)=>({hn:a.hn+(+e.horasNormales||0),he:a.he+(+e.horasExtra||0),hnoc:a.hnoc+(+e.horasNocturnas||0),hf:a.hf+(+e.horasFestivas||0),in_:a.in_+(+e.importeNormales||0),ie:a.ie+(+e.importeExtra||0),inoc:a.inoc+(+e.importeNocturnas||0),if_:a.if_+(+e.importeFestivas||0),diet:a.diet+(+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0)),transp:a.transp+(+e.transporte||0)}),{hn:0,he:0,hnoc:0,hf:0,in_:0,ie:0,inoc:0,if_:0,diet:0,transp:0});
     const rd=[['RESUMEN'],['Trabajador:',fWorker.nombre+' '+fWorker.apellidos],['Empresa:',fCompany.nombre],['Periodo:',filterMonth||'Completo'],[],['HORAS'],['Normales',tot.hn],['Extra',tot.he],['Nocturnas',tot.hnoc],['Festivas',tot.hf],['TOTAL HORAS',tot.hn+tot.he+tot.hnoc+tot.hf],[],['IMPORTES'],['Normales',tot.in_],['Extra',tot.ie],['Nocturnas',tot.inoc],['Festivas',tot.if_],['Subtotal horas',tot.in_+tot.ie+tot.inoc+tot.if_],[],['OTROS'],['Dietas',tot.diet],['Transporte',tot.transp],[],['TOTAL GENERAL',tot.in_+tot.ie+tot.inoc+tot.if_+tot.diet+tot.transp]];
     const ws3=XLSX.utils.aoa_to_sheet(rd);ws3['!cols']=[{wch:20},{wch:15}];XLSX.utils.book_append_sheet(wb,ws3,'Resumen');
-    const fname='TimerPro_'+today()+'.xlsx';
+    const fname='TimerPro_'+(noImportes?'SinImportes_':'')+today()+'.xlsx';
     const arr=XLSX.write(wb,{bookType:'xlsx',type:'array'});
     const blob=new Blob([arr],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     const file=new File([blob],fname,{type:blob.type});
@@ -3323,7 +3416,8 @@ function driveSync(){
   jsonpGet('action=save_meta&d='+encodeURIComponent(JSON.stringify(meta)), (err,res)=>{
     if(err||!res||!res.ok){
       syncStatus='err';
-      showAlert('Error guardando: '+(err||res&&res.error||'sin respuesta'),'err');
+      if(!isOnline){pendingSync=true;showAlert('Sin conexion - se subira cuando vuelva el internet','err');}
+      else showAlert('Error guardando: '+(err||res&&res.error||'sin respuesta'),'err');
       rerender(); return;
     }
     // Step 2: send each entry
@@ -3592,7 +3686,7 @@ async function manualCheckUpdate(){
   showAlert('Buscando actualizacion...');
 }
 // Store current version
-localStorage.setItem('appVersion', '1778962615245');
+localStorage.setItem('appVersion', '1778964118079');
 
 
 // ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
@@ -3637,6 +3731,73 @@ function checkDriveForNewData(){
 
 
 
+
+
+// ── SERVICE WORKER (offline support) ─────────────────────
+const SW_CODE = `
+const CACHE = 'timerpro-v1';
+self.addEventListener('install', e => {
+  e.waitUntil(
+    caches.open(CACHE).then(c => c.addAll([self.location.href.replace(/\\?.*$/,'')]))
+    .then(() => self.skipWaiting())
+  );
+});
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys().then(keys => Promise.all(
+      keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))
+    )).then(()=>self.clients.claim())
+  );
+});
+self.addEventListener('fetch', e => {
+  if(!e.request.url.includes('script.google.com') &&
+     !e.request.url.includes('tile.openstreetmap') &&
+     !e.request.url.includes('googleapis') &&
+     !e.request.url.includes('cdnjs') &&
+     !e.request.url.includes('gstatic')){
+    e.respondWith(
+      fetch(e.request).then(r => {
+        if(r && r.status === 200 && e.request.method === 'GET'){
+          const clone = r.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
+        }
+        return r;
+      }).catch(() => caches.match(e.request))
+    );
+  }
+});
+`;
+
+if('serviceWorker' in navigator){
+  try{
+    const blob = new Blob([SW_CODE], {type:'application/javascript'});
+    const swUrl = URL.createObjectURL(blob);
+    navigator.serviceWorker.register(swUrl).catch(()=>{});
+  }catch(e){}
+}
+
+// ── ONLINE/OFFLINE DETECTION ──────────────────────────────
+function handleOnline(){
+  isOnline = true;
+  showAlert('Conexion restaurada');
+  rerender();
+  // Auto-sync if there are pending changes
+  if(driveUrl && S.entries.length > 0){
+    setTimeout(()=>{
+      checkDriveForNewData();
+      if(pendingSync){ pendingSync=false; driveSync(); }
+    }, 2000);
+  }
+}
+
+function handleOffline(){
+  isOnline = false;
+  showAlert('Sin conexion - modo offline', 'err');
+  rerender();
+}
+
+window.addEventListener('online', handleOnline);
+window.addEventListener('offline', handleOffline);
 
 // ── RELOJ ────────────────────────────────────────────────
 function startClock(){
