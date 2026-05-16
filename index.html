@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778946593482 -->
+<!-- v1778947032009 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -461,7 +461,8 @@ function renderNav(){
       h('button',{class:'nav-btn',title:'Modo oscuro/claro',on:{click:toggleDark}},S.dark?'☀️':'🌙'),
       deferredInstall?h('button',{class:'nav-btn',title:'Instalar app',on:{click:async()=>{if(deferredInstall){deferredInstall.prompt();const r=await deferredInstall.userChoice;if(r.outcome==='accepted')deferredInstall=null;rerender();}}}},'+📲'):null,
       h('button',{class:'nav-btn',title:'Exportar',on:{click:()=>openModal('export')}},'📤'),
-      h('button',{class:'nav-btn',title:pinCode?'PIN activo':'Activar PIN',on:{click:setupPIN}},pinCode?'🔐':'🔓')
+      h('button',{class:'nav-btn',title:pinCode?'PIN activo':'Activar PIN',on:{click:setupPIN}},pinCode?'🔐':'🔓'),
+      h('button',{class:'nav-btn',title:'Buscar actualizacion',on:{click:manualCheckUpdate}},'🔄')
     )
   );
 }
@@ -532,7 +533,7 @@ function renderFichar(){
                   },'🔴 Sin datos nuevos')
               : h('span',{
                   style:{background:'var(--surf3)',color:'var(--ink2)',borderRadius:'20px',padding:'.15rem .6rem',fontSize:'.68rem',fontWeight:700,cursor:'pointer'},
-                  on:{click:()=>checkDriveForNewData()}
+                  on:{click:()=>{driveChecked=false;checkDriveForNewData();}}
                 },'⟳ Comprobar')
           ),
           h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.2rem'}},
@@ -3546,8 +3547,13 @@ async function loadData(){
 // Checks GitHub for new version every time app opens
 async function checkForUpdate(){
   try{
-    const url = location.href.split('?')[0] + '?_=' + Date.now();
-    const r = await fetch(url, {cache:'no-store'});
+    // Fetch with no-store to bypass ALL cache layers (CDN, browser, SW)
+    const baseUrl = location.href.split('?')[0];
+    const r = await fetch(baseUrl + '?nocache=' + Date.now(), {
+      cache: 'no-store',
+      headers: {'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache'}
+    });
+    if(!r.ok) return;
     const text = await r.text();
     const match = text.match(/<!-- v(\d+) -->/);
     if(match){
@@ -3555,14 +3561,29 @@ async function checkForUpdate(){
       const localV = localStorage.getItem('appVersion') || '0';
       if(serverV > localV){
         localStorage.setItem('appVersion', serverV);
-        showAlert('Nueva version disponible. Actualizando...', 'ok');
-        setTimeout(()=>location.reload(true), 1500);
+        showAlert('Nueva version! Actualizando en 2 segundos...', 'ok');
+        // Force load new version via URL param - bypasses ALL cache
+        setTimeout(()=>{
+          window.location.replace(baseUrl + '?v=' + serverV);
+        }, 2000);
       }
     }
-  }catch(e){}
+  }catch(e){ console.log('Update check failed:', e); }
+}
+
+// Manual update check function
+async function manualCheckUpdate(){
+  showAlert('Comprobando actualizaciones...');
+  await checkForUpdate();
+  // If no update found, confirm current version is latest
+  setTimeout(()=>{
+    const localV = localStorage.getItem('appVersion') || '0';
+    const serverV = localV; // if no redirect happened, we are up to date
+    showAlert('App actualizada. Version: ' + localV.slice(-6));
+  }, 3000);
 }
 // Store current version
-localStorage.setItem('appVersion', '1778944753212');
+localStorage.setItem('appVersion', '1778947032009');
 
 
 // ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
@@ -3640,6 +3661,8 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     if(savedCfg){ try{ fbConfig=JSON.parse(savedCfg); await initFirebase(); }catch(e){} }
     renderApp();
     startClock();
+    // Clean URL if loaded with version param
+    if(location.search.includes('v=')){ history.replaceState(null,'',location.pathname); }
     // Check for new version after 6 seconds
     setTimeout(checkForUpdate, 6000);
     setInterval(checkForUpdate, 10 * 60 * 1000);
