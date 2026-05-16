@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778968298766 -->
+<!-- v1778968570257 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1601,7 +1601,8 @@ function renderTrabajador(){
         h('div',{},
           h('div',{style:{fontWeight:700}},w.nombre||'Sin nombre'),
           h('div',{style:{fontSize:'.8rem',color:'var(--ink2)'}},w.cargo||'Sin cargo'),
-          w.foto?h('button',{class:'btn btn-r btn-sm',style:{marginTop:'.3rem'},on:{click:()=>{fWorker.foto='';rerender();}}},'✕ Quitar foto'):null
+          w.foto?h('button',{class:'btn btn-r btn-sm',style:{marginTop:'.3rem'},on:{click:()=>{fWorker.foto='';rerender();}}},'✕ Quitar foto'):null,
+          h('div',{style:{fontSize:'.65rem',color:'var(--ink3)',marginTop:'.3rem'}},'📱 La foto se guarda en este dispositivo')
         )
       ),
     h('div',{class:'sec-title'},'Datos del Trabajador'),
@@ -1735,7 +1736,8 @@ function renderEmpresa(){
         h('div',{},
           h('div',{style:{fontWeight:700}},c.nombre||'Sin nombre'),
           h('div',{style:{fontSize:'.8rem',color:'var(--ink2)'}},c.cif?'CIF: '+c.cif:''),
-          c.logo?h('button',{class:'btn btn-r btn-sm',style:{marginTop:'.3rem'},on:{click:()=>{fCompany.logo='';rerender();}}},'✕ Quitar logo'):null
+          c.logo?h('button',{class:'btn btn-r btn-sm',style:{marginTop:'.3rem'},on:{click:()=>{fCompany.logo='';rerender();}}},'✕ Quitar logo'):null,
+          h('div',{style:{fontSize:'.65rem',color:'var(--ink3)',marginTop:'.3rem'}},'📱 El logo se guarda en este dispositivo')
         )
       ),
       h('div',{class:'sec-title'},'Datos de la Empresa'),
@@ -2517,7 +2519,6 @@ async function saveWorker(){
     fWorker={...data};
     await saveActiveIds();
     showAlert('Trabajador guardado ✓'); rerender();
-    if(driveUrl) setTimeout(()=>{ if(!_syncInProgress) driveSync(); }, 5000);
   }catch(e){showAlert(e.message,'err');}
 }
 function newWorker(){ fWorker={...defWorker}; activeWorkerId=null; rerender(); }
@@ -2548,7 +2549,6 @@ async function saveCompany(){
     fCompany={...data};
     await saveActiveIds();
     showAlert('Empresa guardada ✓'); rerender();
-    if(driveUrl) setTimeout(()=>{ if(!_syncInProgress) driveSync(); }, 5000);
   }catch(e){showAlert(e.message,'err');}
 }
 async function deleteCompany(id){
@@ -3515,32 +3515,11 @@ function compressImage(dataUrl, maxSize=150, quality=0.6){
 }
 
 async function buildSyncDataWithPhotos(){
-  // Get base data first
-  const base = buildSyncData();
-  // Compress photos for sync (small enough for Drive URL limits)
-  const [wFoto, wFirma, cLogo] = await Promise.all([
-    compressImage(fWorker.foto, 120, 0.6),
-    compressImage(fWorker.firma, 250, 0.7),
-    compressImage(fCompany.logo, 120, 0.6)
-  ]);
-  const compWorkers = await Promise.all(workers.map(async w=>({
-    ...w,
-    foto: await compressImage(w.foto, 120, 0.6),
-    firma: await compressImage(w.firma, 250, 0.7)
-  })));
-  const compCompanies = await Promise.all(companies.map(async c=>({
-    ...c,
-    logo: await compressImage(c.logo, 120, 0.6)
-  })));
-  // Override the stripped photo fields with compressed versions
-  return {
-    ...base,
-    workers: compWorkers,
-    companies: compCompanies,
-    worker: {...base.worker, foto:wFoto, firma:wFirma},
-    company: {...base.company, logo:cLogo}
-  };
+  // Photos are kept LOCAL only (too large for Drive URL limits)
+  // All other data syncs normally
+  return buildSyncData();
 }
+
 
 // ── GOOGLE DRIVE SYNC ─────────────────────────────────────
 async function saveDriveUrl(){
@@ -3875,10 +3854,9 @@ async function checkForUpdate(){
       // Show update banner WITHOUT reloading automatically
       const existing = document.getElementById('update-banner');
       if(existing) return;
-      // Don't spam: only show once per 30 min
-      const lastBanner = parseInt(localStorage.getItem('lastUpdateBanner')||'0');
-      if(Date.now()-lastBanner < 30*60*1000) return;
-      localStorage.setItem('lastUpdateBanner', Date.now().toString());
+      // Only show banner ONCE per session
+      if(sessionStorage.getItem('updateBannerShown')) return;
+      sessionStorage.setItem('updateBannerShown','1');
       const newV = m[1];
       const banner = document.createElement('div');
       banner.id = 'update-banner';
@@ -3910,7 +3888,7 @@ async function manualCheckUpdate(){
   showAlert('Buscando actualizacion...');
 }
 // Store current version
-localStorage.setItem('appVersion', '1778968298766');
+localStorage.setItem('appVersion', '1778968570257');
 
 
 // ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
