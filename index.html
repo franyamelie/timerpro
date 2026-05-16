@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778962264104 -->
+<!-- v1778962615245 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -537,7 +537,7 @@ function renderFichar(){
             ),
             h('span',{
               style:{display:'flex',alignItems:'center',gap:'.25rem',borderRadius:'20px',padding:'.15rem .55rem',fontSize:'.67rem',fontWeight:700,background:'var(--blu-lt)',color:'var(--blu)',border:'1px solid var(--blu)',cursor:'pointer'},
-              on:{click:()=>{driveChecked=false;driveHasNew=false;rerender();checkDriveForNewData();}}
+              on:{click:()=>{driveChecked=false;driveHasNew=false;rerender();setTimeout(checkDriveForNewData,100);}}
             },'\u21BB Comprobar')
           ),
           h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.2rem'}},
@@ -3552,37 +3552,47 @@ async function loadData(){
 // Checks GitHub for new version every time app opens
 async function checkForUpdate(){
   try{
-    // Fetch with no-store to bypass ALL cache layers (CDN, browser, SW)
     const baseUrl = location.href.split('?')[0];
-    const r = await fetch(baseUrl + '?nocache=' + Date.now(), {
-      cache: 'no-store',
-      headers: {'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache'}
-    });
+    const r = await fetch(baseUrl + '?t=' + Date.now(), {cache:'no-store'});
     if(!r.ok) return;
     const text = await r.text();
-    const match = text.match(/<!-- v(\d+) -->/);
-    if(match){
-      const serverV = match[1];
-      const localV = localStorage.getItem('appVersion') || '0';
-      if(serverV > localV){
-        localStorage.setItem('appVersion', serverV);
-        showAlert('Nueva version! Actualizando en 2 segundos...', 'ok');
-        // Force load new version via URL param - bypasses ALL cache
-        setTimeout(()=>{
-          window.location.replace(baseUrl + '?v=' + serverV);
-        }, 2000);
-      }
+    const m = text.match(/<!-- v(\d+) -->/);
+    if(m && m[1] > (localStorage.getItem('appVersion')||'0')){
+      // Show update banner WITHOUT reloading automatically
+      const existing = document.getElementById('update-banner');
+      if(existing) return; // already showing
+      const newV = m[1];
+      const banner = document.createElement('div');
+      banner.id = 'update-banner';
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#22c55e;color:#000;padding:.5rem 1rem;display:flex;align-items:center;gap:.8rem;font-size:.82rem;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.3)';
+      const txt = document.createElement('span');
+      txt.style.flex = '1';
+      txt.textContent = 'Nueva version disponible';
+      const btnUpdate = document.createElement('button');
+      btnUpdate.textContent = 'Actualizar';
+      btnUpdate.style.cssText = 'background:#000;color:#fff;border:none;padding:.3rem .8rem;border-radius:6px;cursor:pointer;font-weight:700';
+      btnUpdate.onclick = ()=>{localStorage.setItem('appVersion',newV);window.location.replace(location.href.split('?')[0]+'?v='+newV);};
+      const btnLater = document.createElement('button');
+      btnLater.textContent = 'Luego';
+      btnLater.style.cssText = 'background:rgba(0,0,0,.2);color:#000;border:none;padding:.3rem .6rem;border-radius:6px;cursor:pointer';
+      btnLater.onclick = ()=>banner.remove();
+      banner.appendChild(txt);banner.appendChild(btnUpdate);banner.appendChild(btnLater);
+      document.body.appendChild(banner);
     }
-  }catch(e){ console.log('Update check failed:', e); }
+  }catch(e){}
 }
+
 
 // Manual update check function
 async function manualCheckUpdate(){
-  showAlert('Cargando ultima version...');
-  setTimeout(()=>window.location.replace(location.href.split('?')[0]+'?v='+Date.now()),500);
+  const existing=document.getElementById('update-banner');
+  if(existing)existing.remove();
+  localStorage.removeItem('appVersion');
+  checkForUpdate();
+  showAlert('Buscando actualizacion...');
 }
 // Store current version
-localStorage.setItem('appVersion', '1778948428708');
+localStorage.setItem('appVersion', '1778962615245');
 
 
 // ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
@@ -3590,49 +3600,42 @@ function checkDriveForNewData(){
   if(!driveUrl) return;
   const cbName='chk_'+Date.now();
   const s=document.createElement('script');
-  let done=false;
   window[cbName]=function(res){
-    done=true; delete window[cbName]; s.remove();
+    delete window[cbName]; s.remove();
     if(!res||!res.ok||!res.data) return;
     const exportedAt = new Date(res.data.exportedAt||0).getTime();
     const lastLoaded = parseInt(localStorage.getItem('lastDriveLoad')||'0');
     const newHasNew = exportedAt > lastLoaded + 3000;
-    const changed = newHasNew !== driveHasNew || !driveChecked;
+    if(newHasNew !== driveHasNew || !driveChecked){
+      driveChecked = true;
+      driveHasNew = newHasNew;
+      // Update only badge DOM elements - never rerender full app
+      requestAnimationFrame(()=>{
+        document.querySelectorAll('.drive-badge').forEach((el,i)=>{
+          const active = i===0 ? driveHasNew : (driveChecked&&!driveHasNew);
+          const bg = i===0 ? 'var(--acc)' : 'var(--red)';
+          const col = i===0 ? '#000' : '#fff';
+          el.style.background = active ? bg : 'var(--surf3)';
+          el.style.color = active ? col : 'var(--ink3)';
+          el.style.border = '1px solid '+(active ? bg : 'var(--brd)');
+          el.style.cursor = (i===0 && active) ? 'pointer' : 'default';
+          const dot = el.querySelector('.badge-dot');
+          if(dot) dot.style.background = active ? col : 'var(--ink3)';
+        });
+      });
+    }
     driveChecked = true;
     driveHasNew = newHasNew;
-    driveLastExportedAt = exportedAt;
-    if(changed){
-      // Update ONLY the badge elements in DOM without full rerender
-      // This avoids disrupting user input
-      updateDriveBadges();
-    }
   };
-  setTimeout(()=>{if(!done){delete window[cbName];s.remove();}},8000);
+  setTimeout(()=>{delete window[cbName];s.remove();},8000);
   s.src=driveUrl+'?action=load&callback='+cbName+'&t='+Date.now();
   document.body.appendChild(s);
 }
 
-function updateDriveBadges(){
-  // Find and update badge dots without full rerender
-  const badges = document.querySelectorAll('.drive-badge');
-  if(badges.length > 0){
-    // Update existing badges
-    badges[0] && updateBadgeEl(badges[0], driveHasNew, driveHasNew?'var(--acc)':'var(--surf3)', driveHasNew?'#000':'var(--ink3)');
-    badges[1] && updateBadgeEl(badges[1], driveChecked&&!driveHasNew, 'var(--red)', '#fff');
-  } else {
-    // No badges in DOM yet, do a full rerender only if tab is visible
-    if(S.tab==='fichar') rerender();
-  }
-}
 
-function updateBadgeEl(el, active, bgActive, colorActive){
-  el.style.background = active ? bgActive : 'var(--surf3)';
-  el.style.color = active ? colorActive : 'var(--ink3)';
-  el.style.border = '1px solid ' + (active ? bgActive : 'var(--brd)');
-  el.style.cursor = active ? 'pointer' : 'default';
-  const dot = el.querySelector('.badge-dot');
-  if(dot) dot.style.background = active ? colorActive : 'var(--ink3)';
-}
+
+
+
 
 
 // ── RELOJ ────────────────────────────────────────────────
