@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778943672168 -->
+<!-- v1778943957284 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3267,10 +3267,8 @@ function jsonpGet(params, callback, timeout){
   document.body.appendChild(s);
 }
 
-async function driveSync(){
+function driveSync(){
   if(!driveUrl) return;
-  // Auto-save current form before syncing so GPS/notes are included
-  if(fEntry.fecha) await saveDraft();
   const data = buildSyncData();
   if(!data.entries.length && !data.tasks.length){
     showAlert('Sin datos que guardar - añade una jornada primero','err');
@@ -3331,24 +3329,37 @@ async function driveSync(){
 
 
 function buildSyncData(){
-  // Strip mapImg from locations (recalculated from lat/lng on display)
   function cleanLoc(loc){
     if(!loc) return loc;
-    try{
-      const d=JSON.parse(loc);
-      delete d.mapImg;
-      return JSON.stringify(d);
-    }catch(e){return loc;}
+    try{const d=JSON.parse(loc);delete d.mapImg;return JSON.stringify(d);}
+    catch(e){return loc;}
   }
-  const cleanEntries=S.entries.map(e=>({
-    ...e,
-    ubicacionEntrada:cleanLoc(e.ubicacionEntrada),
-    ubicacionSalida:cleanLoc(e.ubicacionSalida)
-  }));
+  // Merge current fEntry into S.entries so GPS/notes from form are included
+  let entries = S.entries.map(e=>{
+    if(fEntry.fecha && e.fecha===fEntry.fecha){
+      // Overlay fEntry data (has latest GPS, notes, etc.)
+      return {
+        ...e,
+        ...fEntry,
+        id: e.id, // keep existing id
+        ubicacionEntrada: cleanLoc(fEntry.ubicacionEntrada||e.ubicacionEntrada),
+        ubicacionSalida: cleanLoc(fEntry.ubicacionSalida||e.ubicacionSalida)
+      };
+    }
+    return {
+      ...e,
+      ubicacionEntrada:cleanLoc(e.ubicacionEntrada),
+      ubicacionSalida:cleanLoc(e.ubicacionSalida)
+    };
+  });
+  // If fEntry has data but no matching entry yet, add it
+  if(fEntry.fecha && !S.entries.find(e=>e.fecha===fEntry.fecha) && (fEntry.ubicacionEntrada||fEntry.notas||fEntry.horasNormales)){
+    entries.push({...fEntry, ubicacionEntrada:cleanLoc(fEntry.ubicacionEntrada), ubicacionSalida:cleanLoc(fEntry.ubicacionSalida)});
+  }
   return {
     version:2,
     exportedAt:new Date().toISOString(),
-    entries:cleanEntries,
+    entries,
     tasks:S.tasks.map(t=>({...t,fotos:[]})),
     sites:S.sites,
     workorders:S.workorders,
