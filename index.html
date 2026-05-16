@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778943957284 -->
+<!-- v1778944427711 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -424,7 +424,16 @@ function renderPinScreen(){
           }}},k==='<'?'⌫':String(k))
       )
     ),
-    h('div',{style:{fontSize:'.75rem',color:'var(--ink3)'}},'PIN de 4 digitos')
+    h('div',{style:{fontSize:'.75rem',color:'var(--ink3)'}},'PIN de 4 digitos'),
+    h('button',{class:'btn btn-gh btn-sm',style:{marginTop:'.5rem',fontSize:'.72rem'},
+      on:{click:()=>{
+        if(confirm('Borrar PIN y acceder sin contrasena?')){
+          pinCode='';pinLocked=false;pinEntered='';
+          localStorage.removeItem('pinCode');
+          rerender();
+        }
+      }}
+    },'Olvide el PIN')
   );
 }
 
@@ -3528,7 +3537,9 @@ function startClock(){
 // ── ARRANQUE ─────────────────────────────────────────────
 (async()=>{
   // Capture install prompt
-  window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;rerender();});
+  // Unregister old service workers to force fresh loads
+if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(r=>r.forEach(x=>x.unregister()));}
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;rerender();});
   try {
     await openDB();
     await loadData();
