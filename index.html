@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778943393979 -->
+<!-- v1778943672168 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3267,8 +3267,10 @@ function jsonpGet(params, callback, timeout){
   document.body.appendChild(s);
 }
 
-function driveSync(){
+async function driveSync(){
   if(!driveUrl) return;
+  // Auto-save current form before syncing so GPS/notes are included
+  if(fEntry.fecha) await saveDraft();
   const data = buildSyncData();
   if(!data.entries.length && !data.tasks.length){
     showAlert('Sin datos que guardar - añade una jornada primero','err');
