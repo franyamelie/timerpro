@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778965496666 -->
+<!-- v1778966770730 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2257,6 +2257,8 @@ async function saveEntry(){
     localStorage.setItem('lastSave',new Date().toISOString());
     showAlert('Jornada guardada ✓');
     rerender();
+    // Auto-sync to Drive after saving
+    if(driveUrl) setTimeout(driveSync, 2000);
   }catch(e){showAlert(e.message,'err');}
 }
 
@@ -2507,7 +2509,8 @@ async function saveWorker(){
     else{ const id=await dbPut(ST.workers,data); data.id=id; workers.push(data); activeWorkerId=id; }
     fWorker={...data};
     await saveActiveIds();
-    showAlert('Trabajador guardado ✓'); rerender(); scheduleFbSync();
+    showAlert('Trabajador guardado ✓'); rerender();
+    if(driveUrl) setTimeout(driveSync, 2000);
   }catch(e){showAlert(e.message,'err');}
 }
 function newWorker(){ fWorker={...defWorker}; activeWorkerId=null; rerender(); }
@@ -2537,7 +2540,8 @@ async function saveCompany(){
     else{ const id=await dbPut(ST.companies,data); data.id=id; companies.push(data); activeCompanyId=id; }
     fCompany={...data};
     await saveActiveIds();
-    showAlert('Empresa guardada ✓'); rerender(); scheduleFbSync();
+    showAlert('Empresa guardada ✓'); rerender();
+    if(driveUrl) setTimeout(driveSync, 2000);
   }catch(e){showAlert(e.message,'err');}
 }
 async function deleteCompany(id){
@@ -3484,6 +3488,50 @@ function scheduleFbSync(){
   syncTimer=setTimeout(()=>{ if(fbUser)fbSync(); },3000);
 }
 
+
+// ── COMPRIMIR IMAGEN PARA SYNC ────────────────────────────
+function compressImage(dataUrl, maxSize=150, quality=0.6){
+  return new Promise(res=>{
+    if(!dataUrl){ res(''); return; }
+    const img=new Image();
+    img.onload=()=>{
+      const canvas=document.createElement('canvas');
+      const ratio=Math.min(maxSize/img.width, maxSize/img.height, 1);
+      canvas.width=img.width*ratio;
+      canvas.height=img.height*ratio;
+      canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+      res(canvas.toDataURL('image/jpeg',quality));
+    };
+    img.onerror=()=>res('');
+    img.src=dataUrl;
+  });
+}
+
+async function buildSyncDataWithPhotos(){
+  // Compress photos for sync (small enough for Drive URL limits)
+  const [wFoto, wFirma, cLogo] = await Promise.all([
+    compressImage(fWorker.foto, 100, 0.5),
+    compressImage(fWorker.firma, 200, 0.7),
+    compressImage(fCompany.logo, 100, 0.5)
+  ]);
+  const compWorkers = await Promise.all(workers.map(async w=>({
+    ...w,
+    foto: await compressImage(w.foto, 100, 0.5),
+    firma: await compressImage(w.firma, 200, 0.7)
+  })));
+  const compCompanies = await Promise.all(companies.map(async c=>({
+    ...c,
+    logo: await compressImage(c.logo, 100, 0.5)
+  })));
+  return {
+    ...buildSyncData(),
+    workers: compWorkers,
+    companies: compCompanies,
+    worker: {...fWorker, foto:wFoto, firma:wFirma},
+    company: {...fCompany, logo:cLogo}
+  };
+}
+
 // ── GOOGLE DRIVE SYNC ─────────────────────────────────────
 async function saveDriveUrl(){
   const url=(document.getElementById('drive-url-input')?.value||'').trim();
@@ -3518,9 +3566,9 @@ function jsonpGet(params, callback, timeout){
   document.body.appendChild(s);
 }
 
-function driveSync(){
+async function driveSync(){
   if(!driveUrl) return;
-  const data = buildSyncData();
+  const data = await buildSyncDataWithPhotos();
   if(!data.entries.length && !data.tasks.length){
     showAlert('Sin datos que guardar - añade una jornada primero','err');
     return;
@@ -3813,7 +3861,7 @@ async function manualCheckUpdate(){
   showAlert('Buscando actualizacion...');
 }
 // Store current version
-localStorage.setItem('appVersion', '1778965496666');
+localStorage.setItem('appVersion', '1778966770730');
 
 
 // ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
