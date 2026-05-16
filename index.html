@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778961422989 -->
+<!-- v1778962003490 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3663,9 +3663,21 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     // Version check every 6 seconds
     setTimeout(checkForUpdate, 6000);
     setInterval(checkForUpdate, 6000);
-    // Drive data check every 30 seconds
-    setTimeout(checkDriveForNewData, 10000);
-    setInterval(checkDriveForNewData, 30000);
+    // Adaptive Drive check: 30s active, 8s inactive (>10s idle)
+    let lastActivity = Date.now();
+    function trackActivity(){lastActivity = Date.now();}
+    ['click','touchstart','keydown','scroll','input'].forEach(ev=>
+      document.addEventListener(ev, trackActivity, {passive:true})
+    );
+
+    function adaptiveDriveCheck(){
+      const idle = Date.now() - lastActivity;
+      checkDriveForNewData();
+      // Schedule next check based on activity
+      const nextIn = idle > 10000 ? 8000 : 30000;
+      setTimeout(adaptiveDriveCheck, nextIn);
+    }
+    setTimeout(adaptiveDriveCheck, 10000);
   } catch(e) {
     document.getElementById('app').innerHTML = 
       '<div style="color:red;padding:20px;font-family:monospace">Error: ' + e.message + '<br>' + e.stack + '</div>';
