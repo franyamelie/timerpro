@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778942412653 -->
+<!-- v1778943393979 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2031,7 +2031,7 @@ async function captureGPS(tipo){
       // Static map preview using OpenStreetMap (free, no API key)
       const mapImg='https://staticmap.openstreetmap.de/staticmap.php?center='+lat+','+lng+'&zoom=16&size=300x150&markers='+lat+','+lng+',red-pushpin';
       const mapsUrl='https://www.google.com/maps?q='+lat+','+lng;
-      const loc=JSON.stringify({lat,lng,url:mapsUrl,label:lat+', '+lng,mapImg,acc});
+      const loc=JSON.stringify({lat,lng,url:mapsUrl,label:lat+', '+lng,acc});
       if(tipo==='entrada')fEntry.ubicacionEntrada=loc;
       else fEntry.ubicacionSalida=loc;
       showAlert('✅ Ubicación capturada (±'+acc+'m)');
@@ -3329,10 +3329,24 @@ function driveSync(){
 
 
 function buildSyncData(){
+  // Strip mapImg from locations (recalculated from lat/lng on display)
+  function cleanLoc(loc){
+    if(!loc) return loc;
+    try{
+      const d=JSON.parse(loc);
+      delete d.mapImg;
+      return JSON.stringify(d);
+    }catch(e){return loc;}
+  }
+  const cleanEntries=S.entries.map(e=>({
+    ...e,
+    ubicacionEntrada:cleanLoc(e.ubicacionEntrada),
+    ubicacionSalida:cleanLoc(e.ubicacionSalida)
+  }));
   return {
     version:2,
     exportedAt:new Date().toISOString(),
-    entries:S.entries,
+    entries:cleanEntries,
     tasks:S.tasks.map(t=>({...t,fotos:[]})),
     sites:S.sites,
     workorders:S.workorders,
