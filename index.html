@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778965057255 -->
+<!-- v1778965496666 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -232,8 +232,8 @@ const IMPORTE_OPTS = [0.50, ...Array.from({length:100},(_,i)=>i+1)];
 const isStdAmount = v => IMPORTE_OPTS.includes(Number(v));
 
 // ── INDEXEDDB ────────────────────────────────────────────
-const DB_NAME='TimerProV2',DB_VER=1;
-const ST={entries:'entries',tasks:'tasks',sites:'sites',workorders:'workorders',vehicles:'vehicles',settings:'settings',workers:'workers',companies:'companies'};
+const DB_NAME='TimerProV2',DB_VER=2;
+const ST={entries:'entries',tasks:'tasks',sites:'sites',workorders:'workorders',vehicles:'vehicles',settings:'settings',workers:'workers',companies:'companies',snapshots:'snapshots'};
 let db;
 function openDB(){
   return new Promise((res,rej)=>{
@@ -371,6 +371,10 @@ function renderApp(){
     try { app.appendChild(h('main',{},renderMain())); renderCharts(); } catch(e) { app.appendChild(errEl('main:'+S.tab,e)); }
     document.querySelectorAll('.modal-bg,.alert-box').forEach(el=>el.remove());
     if(S.modal){ try{ const m=renderModal(); if(m) document.body.appendChild(m); }catch(e){} }
+    // Load snapshots list async when on sincronizar tab
+    if(S.tab==='sincronizar'){
+      renderSnapshotsList();
+    }
     if(S.alertMsg){ try{ const a=renderAlert(); if(a) document.body.appendChild(a); }catch(e){} }
     const m = app.querySelector('main');
     if(m) m.scrollTop=scrollTop;
@@ -1509,6 +1513,24 @@ function renderSincronizar(){
         h('div',{style:{fontSize:'.75rem',marginTop:'.3rem',opacity:.8}},'o pulsa para seleccionar el archivo')
       )
     ),
+    // ── PUNTOS DE RESTAURACION ──
+    h('div',{class:'card'},
+      h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.8rem'}},
+        h('div',{class:'sec-title',style:{margin:0,flex:1}},'PUNTOS DE RESTAURACION'),
+        h('button',{class:'btn btn-g btn-sm',on:{click:async()=>{
+          const label=prompt('Nombre del punto de restauracion (opcional):');
+          if(label===null) return;
+          showAlert('Guardando...');
+          const ok=await createSnapshot(label||'Manual - '+new Date().toLocaleString('es-ES'));
+          if(ok){showAlert('Punto de restauracion creado');rerender();}
+          else showAlert('Error al crear punto de restauracion','err');
+        }}},'+ Crear ahora')
+      ),
+      h('div',{id:'snapshots-list',style:{maxHeight:'300px',overflowY:'auto'}},
+        h('div',{style:{color:'var(--ink3)',fontSize:'.8rem',padding:'.5rem'}},'Cargando...')
+      )
+    ),
+
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'IMPORTAR DATOS JSON'),
       h('p',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'.8rem'}},
@@ -3644,6 +3666,8 @@ function _doLoad(force, verifyMode, confirmMode){
 }
 
 async function importDriveData(d, verifyMode){
+  // Create safety snapshot before overwriting with Drive data
+  if(S.entries.length>0) await createSnapshot('Antes de cargar Drive - '+new Date().toLocaleString('es-ES'));
   try{
     await Promise.all(Object.values(ST).map(s=>dbClear(s)));
     for(const e of(d.entries||[]))  await dbPut(ST.entries,e);
@@ -3789,7 +3813,7 @@ async function manualCheckUpdate(){
   showAlert('Buscando actualizacion...');
 }
 // Store current version
-localStorage.setItem('appVersion', '1778965057255');
+localStorage.setItem('appVersion', '1778965496666');
 
 
 // ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
@@ -3972,6 +3996,130 @@ function updateTitle(){
   document.title='TimerPro'+timerStr+' · '+fmtH(totalH)+' · '+eur(totalE);
 }
 
+
+
+async function renderSnapshotsList(){
+  const container = document.getElementById('snapshots-list');
+  if(!container) return;
+  const all = await renderSnapshots();
+  if(all.length===0){
+    container.innerHTML='';
+    container.appendChild(h('div',{style:{color:'var(--ink3)',fontSize:'.8rem',padding:'.5rem',textAlign:'center'}},'Sin puntos de restauracion. Se crean automaticamente cada dia.'));
+    return;
+  }
+  container.innerHTML='';
+  // Group by date
+  const byDate={};
+  all.forEach(s=>{
+    const d=s.createdAt.slice(0,10);
+    if(!byDate[d]) byDate[d]=[];
+    byDate[d].push(s);
+  });
+  Object.entries(byDate).forEach(([date,snaps])=>{
+    const dateEl=h('div',{style:{fontSize:'.7rem',fontWeight:700,color:'var(--ink2)',padding:'.4rem .2rem',borderBottom:'1px solid var(--brd)',marginTop:'.4rem'}},
+      cap(wday(date))+', '+dlbl(date)
+    );
+    container.appendChild(dateEl);
+    snaps.forEach(snap=>{
+      const row=h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',padding:'.4rem .2rem',borderBottom:'1px solid var(--brd)'}},
+        h('div',{style:{flex:1}},
+          h('div',{style:{fontSize:'.8rem',fontWeight:600}},snap.label),
+          h('div',{style:{fontSize:'.7rem',color:'var(--ink2)'}},
+            new Date(snap.createdAt).toLocaleTimeString('es-ES')+' · '+snap.entriesCount+' jornadas'
+          )
+        ),
+        h('button',{class:'btn btn-b btn-sm',on:{click:()=>{
+          ask('Restaurar al punto: '+snap.label+'?',()=>restoreSnapshot(snap));
+        }}},'Restaurar'),
+        h('button',{class:'btn btn-r btn-sm',on:{click:async()=>{
+          await dbDel(ST.snapshots,snap.id);
+          showAlert('Punto eliminado');
+          renderSnapshotsList();
+        }}},'x')
+      );
+      container.appendChild(row);
+    });
+  });
+}
+
+// ── PUNTOS DE RESTAURACION ───────────────────────────────
+const MAX_SNAPSHOTS = 50; // max snapshots to keep
+
+async function createSnapshot(label=''){
+  try{
+    const data = {
+      entries: [...S.entries],
+      tasks: [...S.tasks],
+      sites: [...S.sites],
+      workorders: [...S.workorders],
+      vehicles: [...S.vehicles],
+      workers: [...workers],
+      companies: [...companies],
+      worker: {...fWorker},
+      company: {...fCompany},
+      activeWorkerId, activeCompanyId
+    };
+    const snap = {
+      createdAt: new Date().toISOString(),
+      label: label || ('Auto - '+new Date().toLocaleString('es-ES')),
+      entriesCount: S.entries.length,
+      tasksCount: S.tasks.length,
+      data: JSON.stringify(data)
+    };
+    await dbPut(ST.snapshots, snap);
+    // Trim old snapshots keeping only MAX_SNAPSHOTS
+    const all = await dbAll(ST.snapshots);
+    all.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+    if(all.length > MAX_SNAPSHOTS){
+      for(const old of all.slice(MAX_SNAPSHOTS)){
+        await dbDel(ST.snapshots, old.id);
+      }
+    }
+    return true;
+  }catch(e){ console.error('Snapshot failed:',e); return false; }
+}
+
+async function restoreSnapshot(snap){
+  try{
+    const data = JSON.parse(snap.data);
+    await Promise.all(Object.values(ST).filter(s=>s!=='snapshots').map(s=>dbClear(s)));
+    for(const e of(data.entries||[])) await dbPut(ST.entries,e);
+    for(const t of(data.tasks||[])) await dbPut(ST.tasks,t);
+    for(const s of(data.sites||[])) await dbPut(ST.sites,s);
+    for(const w of(data.workorders||[])) await dbPut(ST.workorders,w);
+    for(const v of(data.vehicles||[])) await dbPut(ST.vehicles,v);
+    for(const w of(data.workers||[])) await dbPut(ST.workers,w);
+    for(const c of(data.companies||[])) await dbPut(ST.companies,c);
+    if(data.worker) fWorker={...defWorker,...data.worker};
+    if(data.company) fCompany={...defCompany,...data.company};
+    activeWorkerId=data.activeWorkerId||null;
+    activeCompanyId=data.activeCompanyId||null;
+    await loadData();
+    fEntry=defEntry();
+    editingEntry=false;
+    showAlert('Restaurado: '+snap.label);
+    rerender();
+  }catch(e){ showAlert('Error al restaurar: '+e.message,'err'); }
+}
+
+async function renderSnapshots(){
+  const all = await dbAll(ST.snapshots);
+  all.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  return all;
+}
+
+// Auto-snapshot: once per day on startup
+async function autoSnapshot(){
+  const lastSnap = localStorage.getItem('lastAutoSnapshot')||'';
+  const today_ = today();
+  if(lastSnap !== today_){
+    if(S.entries.length > 0){
+      await createSnapshot('Automatico - '+new Date().toLocaleString('es-ES'));
+      localStorage.setItem('lastAutoSnapshot', today_);
+    }
+  }
+}
+
 // ── RELOJ ────────────────────────────────────────────────
 function startClock(){
   function tick(){
@@ -4026,6 +4174,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     renderApp();
     startClock();
     updateTitle();
+    autoSnapshot();
     // Clean URL param on load
     if(location.search){ history.replaceState(null,'',location.pathname); }
     // Version check every 6 seconds
