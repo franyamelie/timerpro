@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779005977780 -->
+<!-- v1779006653950 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2592,15 +2592,29 @@ async function importJSON(file){
     const text=await file.text();
     const data=JSON.parse(text);
     if(!confirm('¿Importar datos? Se reemplazarán los actuales.'))return;
-    await Promise.all(Object.values(ST).map(s=>dbClear(s)));
+    await Promise.all(Object.values(ST).filter(s=>s!=='snapshots').map(s=>dbClear(s)));
     for(const e of(data.entries||[]))await dbPut(ST.entries,e);
     for(const t of(data.tasks||[]))await dbPut(ST.tasks,t);
     for(const s of(data.sites||[]))await dbPut(ST.sites,s);
     for(const w of(data.workorders||[]))await dbPut(ST.workorders,w);
     for(const v of(data.vehicles||[]))await dbPut(ST.vehicles,v);
     for(const s of(data.settings||[]))await dbPut(ST.settings,s);
+    // Import workers and companies (from backup format)
+    for(const w of(data.workers||[]))await dbPut(ST.workers,w);
+    for(const c of(data.companies||[]))await dbPut(ST.companies,c);
+    // Set active worker/company
+    if(data.activeWorkerId) activeWorkerId=data.activeWorkerId;
+    if(data.activeCompanyId) activeCompanyId=data.activeCompanyId;
+    // Also handle single worker/company format
+    if(data.worker && data.worker.nombre) fWorker={...defWorker,...data.worker};
+    if(data.company && data.company.nombre) fCompany={...defCompany,...data.company};
+    // Save active IDs to settings
+    const settings=(await dbAll(ST.settings))[0]||{};
+    await dbPut(ST.settings,{...settings,id:1,activeWorkerId,activeCompanyId});
     await loadData();
-    showAlert('Datos importados ✓');rerender();
+    saveLocalBackup();
+    showAlert('Datos importados: '+( data.entries||[]).length+' jornadas, '+(data.workers||[]).length+' trabajadores');
+    rerender();
   }catch(e){showAlert('Error al importar: '+e.message,'err');}
 }
 
