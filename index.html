@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779030912780 -->
+<!-- v1779033634933 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -732,24 +732,72 @@ function renderFichar(){
     // Ubicación
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'Ubicación'),
+      // Ubicacion Entrada
       h('div',{class:'field'},
-        h('label',{},'ENTRADA — dirección o coordenadas'),
-        h('div',{style:{display:'flex',gap:'.4rem'}},
-          h('input',{type:'text',placeholder:'Calle, ciudad o pega coordenadas...',
+        h('label',{},'ENTRADA — dirección, GPS o sitio guardado'),
+        h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap'}},
+          h('input',{type:'text',placeholder:'Calle, ciudad o coordenadas...',
             value:locLabel(e.ubicacionEntrada),
             on:{blur:ev=>{if(ev.target.value)fEntry.ubicacionEntrada=textToLoc(ev.target.value);}}}),
-          h('button',{class:'btn btn-gh btn-sm',style:{flexShrink:0},title:'Usar GPS',on:{click:()=>captureGPS('entrada')}},'📍')
+          h('button',{class:'btn btn-gh btn-sm',style:{flexShrink:0},title:'Usar GPS',on:{click:()=>captureGPS('entrada')}},'📍'),
+          h('button',{class:'btn btn-b btn-sm',style:{flexShrink:0},title:'Elegir sitio guardado',
+            on:{click:()=>openSiteSelector('entrada')}
+          },'📋 Sitios')
         ),
+        // Sitios guardados dropdown for entrada
+        S.siteSelector==='entrada'?h('div',{style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',marginTop:'.3rem',maxHeight:'180px',overflowY:'auto'}},
+          S.sites.length===0
+            ? h('div',{style:{padding:'.5rem',fontSize:'.78rem',color:'var(--ink3)'}},'Sin sitios guardados. Ve a la pestaña Sitios.')
+            : S.sites.map(s=>h('div',{
+                style:{display:'flex',alignItems:'center',gap:'.5rem',padding:'.5rem .7rem',borderBottom:'1px solid var(--brd)',cursor:'pointer'},
+                on:{click:()=>{
+                  fEntry.ubicacionEntrada = s.lat&&s.lng
+                    ? JSON.stringify({lat:s.lat,lng:s.lng,url:'https://www.google.com/maps?q='+s.lat+','+s.lng,label:s.nombre||s.direccion,acc:s.acc||0})
+                    : textToLoc(s.direccion||s.nombre);
+                  S.siteSelector=null; rerender();
+                }}
+              },
+              h('span',{style:{fontSize:'1rem'}},'📍'),
+              h('div',{},
+                h('div',{style:{fontWeight:700,fontSize:'.82rem'}},s.nombre),
+                h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},s.direccion||s.ciudad||'')
+              )
+            ))
+        ):null,
         e.ubicacionEntrada?h('div',{style:{marginTop:'.3rem'}},gpsDisplay(e.ubicacionEntrada)):null
       ),
+      // Ubicacion Salida
       h('div',{class:'field'},
-        h('label',{},'SALIDA — dirección o coordenadas'),
-        h('div',{style:{display:'flex',gap:'.4rem'}},
-          h('input',{type:'text',placeholder:'Calle, ciudad o pega coordenadas...',
+        h('label',{},'SALIDA — dirección, GPS o sitio guardado'),
+        h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap'}},
+          h('input',{type:'text',placeholder:'Calle, ciudad o coordenadas...',
             value:locLabel(e.ubicacionSalida),
             on:{blur:ev=>{if(ev.target.value)fEntry.ubicacionSalida=textToLoc(ev.target.value);}}}),
-          h('button',{class:'btn btn-gh btn-sm',style:{flexShrink:0},title:'Usar GPS',on:{click:()=>captureGPS('salida')}},'📍')
+          h('button',{class:'btn btn-gh btn-sm',style:{flexShrink:0},title:'Usar GPS',on:{click:()=>captureGPS('salida')}},'📍'),
+          h('button',{class:'btn btn-b btn-sm',style:{flexShrink:0},title:'Elegir sitio guardado',
+            on:{click:()=>openSiteSelector('salida')}
+          },'📋 Sitios')
         ),
+        // Sitios guardados dropdown for salida
+        S.siteSelector==='salida'?h('div',{style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',marginTop:'.3rem',maxHeight:'180px',overflowY:'auto'}},
+          S.sites.length===0
+            ? h('div',{style:{padding:'.5rem',fontSize:'.78rem',color:'var(--ink3)'}},'Sin sitios guardados. Ve a la pestaña Sitios.')
+            : S.sites.map(s=>h('div',{
+                style:{display:'flex',alignItems:'center',gap:'.5rem',padding:'.5rem .7rem',borderBottom:'1px solid var(--brd)',cursor:'pointer'},
+                on:{click:()=>{
+                  fEntry.ubicacionSalida = s.lat&&s.lng
+                    ? JSON.stringify({lat:s.lat,lng:s.lng,url:'https://www.google.com/maps?q='+s.lat+','+s.lng,label:s.nombre||s.direccion,acc:s.acc||0})
+                    : textToLoc(s.direccion||s.nombre);
+                  S.siteSelector=null; rerender();
+                }}
+              },
+              h('span',{style:{fontSize:'1rem'}},'📍'),
+              h('div',{},
+                h('div',{style:{fontWeight:700,fontSize:'.82rem'}},s.nombre),
+                h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},s.direccion||s.ciudad||'')
+              )
+            ))
+        ):null,
         e.ubicacionSalida?h('div',{style:{marginTop:'.3rem'}},gpsDisplay(e.ubicacionSalida)):null
       ),
       h('p',{style:{fontSize:'.72rem',color:'var(--ink3)',marginTop:'.3rem'}},
@@ -1220,6 +1268,11 @@ async function searchSiteAddress(){
       container.appendChild(btn);
     });
   }catch(e){ if(container) container.innerHTML='<div style="padding:.5rem;font-size:.75rem;color:var(--red)">Error buscando</div>'; }
+}
+
+function openSiteSelector(tipo){
+  S.siteSelector = S.siteSelector===tipo ? null : tipo;
+  rerender();
 }
 
 function captureSiteGPS(){
