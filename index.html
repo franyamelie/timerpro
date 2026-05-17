@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779029072876 -->
+<!-- v1779030347622 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1485,10 +1485,12 @@ function renderSincronizar(){
     ),
 
     h('div',{class:'card'},
-      h('div',{class:'sec-title'},'IMPORTAR DESDE PDF PLANTILLA'),
+      h('div',{class:'sec-title'},'PLANTILLA PDF DIARIA'),
       h('p',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.8rem',lineHeight:1.6}},
-        'Descarga la plantilla PDF, rellenala y arrastrala aqui para importar automaticamente.'
+        'Descarga la plantilla del dia (con tus datos ya rellenados), completa los campos en el PDF y arrastrala aqui para importar.'
       ),
+      h('button',{class:'btn btn-r btn-full',style:{marginBottom:'.6rem'},on:{click:downloadPDFTemplate}},'PDF Descargar plantilla del dia'),
+
       h('div',{
         style:{border:'2px dashed var(--red)',borderRadius:'var(--r)',padding:'1.5rem',textAlign:'center',cursor:'pointer',color:'var(--red)',background:'var(--red-lt)'},
         on:{
@@ -2823,150 +2825,131 @@ async function importFromTemplate(file){
 }
 
 
+
+
+function downloadPDFTemplate(){
+  // Open static template - user fills it in their PDF reader
+  const a=document.createElement('a');
+  a.href='https://franyamelie.github.io/timerpro/TimerPro_Plantilla.pdf';
+  a.download='TimerPro_Plantilla_'+today()+'.pdf';
+  a.target='_blank';
+  a.click();
+  showAlert('Plantilla descargada. Rellenala y arrastrala aqui.');
+}
+
 // ── IMPORTAR DESDE PDF PLANTILLA ─────────────────────────
 async function importFromPDF(file){
   if(!file) return;
   showAlert('Leyendo PDF...');
   try{
-    // Load pdf.js dynamically
     if(!window.pdfjsLib){
       await new Promise((res,rej)=>{
         const s=document.createElement('script');
         s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-        s.onload=()=>{
-          window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-          res();
-        };
-        s.onerror=rej;
-        document.head.appendChild(s);
+        s.onload=()=>{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; res(); };
+        s.onerror=rej; document.head.appendChild(s);
       });
     }
-
     const buf = await file.arrayBuffer();
     const pdf = await window.pdfjsLib.getDocument({data:buf}).promise;
-    const page = await pdf.getPage(1);
 
-    // Extract form field values using annotations
-    const annotations = await page.getAnnotations();
+    // Read all pages annotations
     const fields = {};
-    annotations.forEach(a=>{
-      if(a.fieldName && a.fieldValue !== undefined){
-        fields[a.fieldName] = String(a.fieldValue||'').trim();
-      }
-    });
+    for(let p=1; p<=pdf.numPages; p++){
+      const page = await pdf.getPage(p);
+      const anns = await page.getAnnotations();
+      anns.forEach(a=>{ if(a.fieldName) fields[a.fieldName]=String(a.fieldValue||'').trim(); });
+    }
+    console.log('PDF fields found:', Object.keys(fields).length, fields);
 
-    console.log('PDF fields:', fields);
-
-    if(!fields.fecha){
-      showAlert('PDF no reconocido. Usa la plantilla de TimerPro.','err');
-      return;
+    if(!fields.fecha && !fields.t1_tit){
+      showAlert('PDF no reconocido — usa la plantilla oficial de TimerPro','err'); return;
     }
 
-    // Build entry from fields
-    const entry = {...defEntry(), fecha: fields.fecha || today()};
+    // ── ENTRY (Fichar) ──────────────────────────────────
+    if(fields.fecha){
+      const entry = {...defEntry(), fecha: fields.fecha||today()};
 
-    // Fichajes
-    for(let i=1; i<=3; i++){
-      const ent = fields[`fichaje_${i}_entrada`];
-      const sal = fields[`fichaje_${i}_salida`];
-      if(ent || sal){
-        entry.fichajes.push({
-          _fid: Date.now()+i,
-          entrada: ent||'', salida: sal||'',
-          nota: fields[`fichaje_${i}_nota`]||'',
-          editing: false
+      // Fichajes
+      for(let i=1;i<=5;i++){
+        const ent=fields[`f${i}_e`], sal=fields[`f${i}_s`];
+        if(ent||sal) entry.fichajes.push({_fid:Date.now()+i,entrada:ent||'',salida:sal||'',nota:fields[`f${i}_n`]||'',editing:false});
+      }
+
+      // Horas e importes
+      const tm={nor:['horasNormales','precioHoraNormal','importeNormales'],
+                ext:['horasExtra','precioHoraExtra','importeExtra'],
+                noc:['horasNocturnas','precioHoraNocturna','importeNocturnas'],
+                fes:['horasFestivas','precioHoraFestiva','importeFestivas']};
+      Object.entries(tm).forEach(([k,[hf,pf,imf]])=>{
+        const h=parseFloat(fields[`h_${k}`])||0, p=parseFloat(fields[`p_${k}`])||0;
+        entry[hf]=h; entry[pf]=p; entry[imf]=Math.round(h*p*100)/100;
+      });
+
+      // Dietas
+      entry.dieta=parseFloat(fields.dieta)||0;
+      entry.transporte=parseFloat(fields.transporte)||0;
+      if(fields.dietas_extra) entry.dietasExtra=fields.dietas_extra.split(',').map(d=>{const[c,i]=d.split(':').map(s=>s.trim());return{concepto:c||'',importe:parseFloat(i)||0};}).filter(d=>d.concepto);
+      if(fields.otros_conceptos) entry.otrosConceptos=fields.otros_conceptos.split(',').map(d=>{const[c,i]=d.split(':').map(s=>s.trim());return{concepto:c||'',importe:parseFloat(i)||0};}).filter(d=>d.concepto);
+
+      // Viajes
+      for(let i=1;i<=3;i++){
+        const km=parseFloat(fields[`v${i}_km`])||0;
+        if(km>0||fields[`v${i}_ori`]) entry.journeys.push({
+          origen:fields[`v${i}_ori`]||'',destino:fields[`v${i}_des`]||'',
+          km:km,precioManual:parseFloat(fields[`v${i}_prc`])||0.19,
+          tipoManual:fields[`v${i}_veh`]||'coche',vehicleId:'',horaInicio:'',horaFin:''
         });
       }
+
+      // Ubicacion y notas
+      if(fields.ubi_ent) entry.ubicacionEntrada=textToLoc(fields.ubi_ent);
+      if(fields.ubi_sal) entry.ubicacionSalida=textToLoc(fields.ubi_sal);
+      entry.notas=fields.notas||'';
+
+      const existing=S.entries.find(e=>e.fecha===entry.fecha);
+      if(existing){ entry.id=existing.id; await dbPut(ST.entries,entry); S.entries=S.entries.map(e=>e.id===existing.id?{...entry}:e); }
+      else { const id=await dbPut(ST.entries,entry); S.entries.push({...entry,id}); }
+      fEntry={...entry}; editingEntry=true;
     }
 
-    // Horas e importes
-    const tipos = ['normales','extra','nocturnas','festivas'];
-    const keys = {normales:'Normal',extra:'Extra',nocturnas:'Nocturna',festivas:'Festiva'};
-    tipos.forEach(t=>{
-      const h = parseFloat(fields[`horas_${t}`])||0;
-      const p = parseFloat(fields[`precio_${t}`])||0;
-      entry[`horas${keys[t]}s`||`horas${t.charAt(0).toUpperCase()+t.slice(1)}`] = h;
-    });
-    entry.horasNormales = parseFloat(fields.horas_normales)||0;
-    entry.precioHoraNormal = parseFloat(fields.precio_normales)||0;
-    entry.importeNormales = Math.round(entry.horasNormales*entry.precioHoraNormal*100)/100;
-    entry.horasExtra = parseFloat(fields.horas_extra)||0;
-    entry.precioHoraExtra = parseFloat(fields.precio_extra)||0;
-    entry.importeExtra = Math.round(entry.horasExtra*entry.precioHoraExtra*100)/100;
-    entry.horasNocturnas = parseFloat(fields.horas_nocturnas)||0;
-    entry.precioHoraNocturna = parseFloat(fields.precio_nocturnas)||0;
-    entry.importeNocturnas = Math.round(entry.horasNocturnas*entry.precioHoraNocturna*100)/100;
-    entry.horasFestivas = parseFloat(fields.horas_festivas)||0;
-    entry.precioHoraFestiva = parseFloat(fields.precio_festivas)||0;
-    entry.importeFestivas = Math.round(entry.horasFestivas*entry.precioHoraFestiva*100)/100;
-
-    // Dieta y transporte
-    entry.dieta = parseFloat(fields.dieta)||0;
-    entry.transporte = parseFloat(fields.transporte)||0;
-
-    // Dietas extra (formato: concepto:importe, ...)
-    if(fields.dietas_extra){
-      entry.dietasExtra = fields.dietas_extra.split(',').map(d=>{
-        const [concepto,importe] = d.split(':').map(s=>s.trim());
-        return {concepto: concepto||'', importe: parseFloat(importe)||0};
-      }).filter(d=>d.concepto);
+    // ── TAREAS ──────────────────────────────────────────
+    let tareasImport=0;
+    for(let ti=1;ti<=3;ti++){
+      if(!fields[`t${ti}_tit`]) continue;
+      const tarea={
+        ...defTask(fields[`t${ti}_fecha`]||fields.fecha||today()),
+        titulo:fields[`t${ti}_tit`]||'',
+        fecha:fields[`t${ti}_fecha`]||fields.fecha||today(),
+        horaInicio:fields[`t${ti}_hi`]||'',
+        horaFin:fields[`t${ti}_hf`]||'',
+        descripcion:fields[`t${ti}_desc`]||'',
+        siteId:'', fotos:[],
+        usaOT:fields[`t${ti}_ot`]==='Yes'||fields[`t${ti}_ot`]==='true'||fields[`t${ti}_ot`]==='1',
+        workOrderId:'',
+        otNumero:(fields[`t${ti}_otnum`]||'').replace(/\D/g,'').slice(0,10),
+        journeys:[]
+      };
+      // Viaje de la tarea
+      const vkm=parseFloat(fields[`t${ti}_vkm`])||0;
+      if(vkm>0||fields[`t${ti}_vori`]) tarea.journeys.push({
+        origen:fields[`t${ti}_vori`]||'',destino:fields[`t${ti}_vdes`]||'',
+        km:vkm,precioManual:parseFloat(fields[`t${ti}_vprc`])||0.19,
+        tipoManual:fields[`t${ti}_vveh`]||'coche',vehicleId:'',horaInicio:'',horaFin:''
+      });
+      const id=await dbPut(ST.tasks,tarea);
+      S.tasks.push({...tarea,id});
+      tareasImport++;
     }
 
-    // Otros conceptos
-    if(fields.otros_conceptos){
-      entry.otrosConceptos = fields.otros_conceptos.split(',').map(d=>{
-        const [concepto,importe] = d.split(':').map(s=>s.trim());
-        return {concepto: concepto||'', importe: parseFloat(importe)||0};
-      }).filter(d=>d.concepto);
-    }
-
-    // Viajes
-    for(let i=1; i<=2; i++){
-      const km = parseFloat(fields[`viaje_${i}_km`])||0;
-      if(km > 0 || fields[`viaje_${i}_origen`]){
-        entry.journeys.push({
-          origen: fields[`viaje_${i}_origen`]||'',
-          destino: fields[`viaje_${i}_destino`]||'',
-          km: km,
-          precioManual: parseFloat(fields[`viaje_${i}_precio`])||0.19,
-          tipoManual: fields[`viaje_${i}_vehiculo`]||'coche',
-          vehicleId: '',
-          horaInicio: '', horaFin: ''
-        });
-      }
-    }
-
-    // Ubicacion
-    if(fields.ubicacion_entrada) entry.ubicacionEntrada = textToLoc(fields.ubicacion_entrada);
-    if(fields.ubicacion_salida) entry.ubicacionSalida = textToLoc(fields.ubicacion_salida);
-
-    // Notas
-    entry.notas = fields.notas||'';
-
-    // Save entry
-    const existing = S.entries.find(e=>e.fecha===entry.fecha);
-    if(existing){
-      entry.id = existing.id;
-      await dbPut(ST.entries, entry);
-      S.entries = S.entries.map(e=>e.id===existing.id ? {...entry,id:existing.id} : e);
-    } else {
-      const id = await dbPut(ST.entries, entry);
-      S.entries.push({...entry, id});
-    }
-
-    // Load into form
-    fEntry = {...entry};
-    editingEntry = true;
-    S.tab = 'fichar';
+    S.tab='fichar';
     saveLocalBackup();
-    showAlert('PDF importado: '+entry.fecha+' con '+entry.fichajes.length+' fichajes');
+    showAlert(`PDF importado: jornada ${fields.fecha||''}${tareasImport>0?' + '+tareasImport+' tareas':''}`);
     rerender();
-
-  }catch(e){
-    showAlert('Error leyendo PDF: '+e.message,'err');
-    console.error(e);
-  }
+  }catch(e){ showAlert('Error PDF: '+e.message,'err'); console.error(e); }
 }
+
+
 
 function exportCSV(){
   const entries=filterMonth?S.entries.filter(e=>e.fecha.startsWith(filterMonth)):S.entries;
