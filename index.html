@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1778968570257 -->
+<!-- v1778969075454 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3659,10 +3659,10 @@ function buildSyncData(){
     sites:S.sites,
     workorders:S.workorders,
     vehicles:S.vehicles,
-    workers:workers.map(w=>({...w,foto:'',firma:''})),
+    workers:workers.map(w=>({...w,foto:''})), // keep firma, strip foto only
     companies:companies.map(c=>({...c,logo:''})),
     activeWorkerId, activeCompanyId,
-    worker:{...fWorker,foto:'',firma:''},
+    worker:{...fWorker,foto:''}, // keep firma for PDF export
     company:{...fCompany,logo:''}
   };
 }
@@ -3888,7 +3888,7 @@ async function manualCheckUpdate(){
   showAlert('Buscando actualizacion...');
 }
 // Store current version
-localStorage.setItem('appVersion', '1778968570257');
+localStorage.setItem('appVersion', '1778969075454');
 
 
 // ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
