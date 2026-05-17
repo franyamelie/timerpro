@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779052439186 -->
+<!-- v1779052800753 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2161,17 +2161,36 @@ function renderModalDl(){
 
 function renderModalQR(){
   const appUrl='https://franyamelie.github.io/timerpro';
-  const qrUrl='https://chart.googleapis.com/chart?cht=qr&chs=220x220&chl='+encodeURIComponent(appUrl)+'&choe=UTF-8';
+  // Generate QR after render
+  setTimeout(()=>{
+    const el=document.getElementById('qr-container-inner');
+    if(!el||el.querySelector('canvas')||el.querySelector('img')) return;
+    // Try loading qrcode.js
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+    s.onload=()=>{
+      el.innerHTML='';
+      new QRCode(el,{text:appUrl,width:200,height:200,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.H});
+    };
+    s.onerror=()=>{
+      // Fallback: use api.qrserver.com (different provider)
+      el.innerHTML='<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data='+encodeURIComponent(appUrl)+'" width="200" height="200" alt="QR" style="display:block"/>';
+    };
+    document.head.appendChild(s);
+  },150);
+
   return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.classList.contains('modal-bg')){S.modal=null;rerender();}}}},
     h('div',{class:'modal-box',style:{textAlign:'center',maxWidth:'300px'}},
       h('div',{class:'modal-title'},'📱 Abrir en otro dispositivo'),
-      h('div',{style:{display:'inline-block',padding:'12px',background:'#fff',borderRadius:'12px',margin:'1rem 0'}},
-        h('img',{src:qrUrl,width:'220',height:'220',alt:'QR TimerPro',style:{display:'block',borderRadius:'4px'}})
+      h('div',{style:{display:'inline-block',padding:'16px',background:'#fff',borderRadius:'12px',margin:'1rem 0'}},
+        h('div',{id:'qr-container-inner',style:{width:'200px',height:'200px',display:'flex',alignItems:'center',justifyContent:'center',color:'#999',fontSize:'.8rem'}},'Generando QR...')
       ),
       h('div',{style:{fontSize:'.78rem',color:'var(--ink2)',marginBottom:'.8rem',wordBreak:'break-all'}},appUrl),
       h('button',{class:'btn btn-g btn-full',on:{click:()=>{
-        navigator.clipboard?.writeText(appUrl).then(()=>showAlert('Enlace copiado')).catch(()=>showAlert('Copia: '+appUrl));
-      }}},'Copiar enlace'),
+        navigator.clipboard?.writeText(appUrl)
+          .then(()=>showAlert('Enlace copiado ✓'))
+          .catch(()=>showAlert('Copia: '+appUrl));
+      }}},'📋 Copiar enlace'),
       h('button',{class:'btn btn-gh btn-full',style:{marginTop:'.4rem'},on:{click:()=>{S.modal=null;rerender();}}},'Cerrar')
     )
   );
