@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779042295533 -->
+<!-- v1779042638101 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -4916,12 +4916,36 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
           let done=false;
           window[cb]=async function(result){
             done=true; delete window[cb]; sc.remove();
-            if(result&&result.ok&&result.data&&result.data.entries){
-              await importDriveData(result.data, false);
+            if(result&&result.ok&&result.data){
+              // Silent boot load - no alert, no snapshot
+              const d=result.data;
+              try{
+                // Preserve local photos
+                const lWorkerMap={}; workers.forEach(w=>{if(w.id)lWorkerMap[w.id]=w;});
+                const lCompanyMap={}; companies.forEach(c=>{if(c.id)lCompanyMap[c.id]=c;});
+                const lEntryMap={}; S.entries.forEach(e=>{if(e.fecha)lEntryMap[e.fecha]={fotosGastos:e.fotosGastos||[]};});
+                const lTaskMap={}; S.tasks.forEach(t=>{if(t.id)lTaskMap[t.id]={fotos:t.fotos||[]};});
+                const savedFoto=fWorker.foto||'', savedFirma=fWorker.firma||'', savedLogo=fCompany.logo||'';
+                await Promise.all(Object.values(ST).filter(s=>s!=='snapshots').map(s=>dbClear(s)));
+                for(const e of(d.entries||[])){ await dbPut(ST.entries,{...e,fotosGastos:e.fotosGastos?.length?e.fotosGastos:(lEntryMap[e.fecha]?.fotosGastos||[])}); }
+                for(const t of(d.tasks||[])){ await dbPut(ST.tasks,{...t,fotos:t.fotos?.length?t.fotos:(lTaskMap[t.id]?.fotos||[])}); }
+                for(const s of(d.sites||[])) await dbPut(ST.sites,s);
+                for(const w of(d.workorders||[])) await dbPut(ST.workorders,w);
+                for(const v of(d.vehicles||[])) await dbPut(ST.vehicles,v);
+                for(const w of(d.workers||[])){ const lw=lWorkerMap[w.id]||{}; await dbPut(ST.workers,{...w,foto:w.foto||lw.foto||'',firma:w.firma||lw.firma||''}); }
+                for(const co of(d.companies||[])){ const lc=lCompanyMap[co.id]||{}; await dbPut(ST.companies,{...co,logo:co.logo||lc.logo||''}); }
+                if(d.worker) fWorker={...defWorker,...d.worker,foto:d.worker.foto||savedFoto,firma:d.worker.firma||savedFirma};
+                if(d.company) fCompany={...defCompany,...d.company,logo:d.company.logo||savedLogo};
+                activeWorkerId=d.activeWorkerId||null;
+                activeCompanyId=d.activeCompanyId||null;
+                await loadData();
+                localStorage.setItem('lastDriveLoad', Date.now().toString());
+                syncStatus='ok';
+              }catch(e){ syncStatus='ok'; }
             } else {
-              syncStatus='ok'; rerender();
+              syncStatus='ok';
             }
-            res();
+            rerender(); res();
           };
           setTimeout(()=>{ if(!done){delete window[cb];sc.remove();syncStatus='ok';rerender();res();} },15000);
           sc.src=driveUrl+'?action=load&callback='+cb+'&t='+Date.now();
