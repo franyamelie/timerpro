@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779027931182 -->
+<!-- v1779029072876 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1485,6 +1485,30 @@ function renderSincronizar(){
     ),
 
     h('div',{class:'card'},
+      h('div',{class:'sec-title'},'IMPORTAR DESDE PDF PLANTILLA'),
+      h('p',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.8rem',lineHeight:1.6}},
+        'Descarga la plantilla PDF, rellenala y arrastrala aqui para importar automaticamente.'
+      ),
+      h('div',{
+        style:{border:'2px dashed var(--red)',borderRadius:'var(--r)',padding:'1.5rem',textAlign:'center',cursor:'pointer',color:'var(--red)',background:'var(--red-lt)'},
+        on:{
+          click:()=>{
+            const inp=document.createElement('input');
+            inp.type='file';inp.accept='.pdf';
+            inp.onchange=e=>importFromPDF(e.target.files[0]);
+            inp.click();
+          },
+          dragover:ev=>ev.preventDefault(),
+          drop:ev=>{ev.preventDefault();importFromPDF(ev.dataTransfer.files[0]);}
+        }
+      },
+        h('div',{style:{fontSize:'2rem',marginBottom:'.5rem'}},'PDF'),
+        h('div',{style:{fontWeight:700}},'Arrastra aqui tu PDF relleno'),
+        h('div',{style:{fontSize:'.75rem',marginTop:'.3rem',opacity:.8}},'o pulsa para seleccionar el archivo')
+      )
+    ),
+
+    h('div',{class:'card'},
       h('div',{class:'sec-title'},'IMPORTAR DATOS JSON'),
       h('p',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'.8rem'}},
         '⚠️ La importacion JSON reemplaza todos los datos actuales.'
@@ -2794,6 +2818,152 @@ async function importFromTemplate(file){
     // auto-sync disabled
   }catch(e){
     showAlert('Error importando: '+e.message,'err');
+    console.error(e);
+  }
+}
+
+
+// ── IMPORTAR DESDE PDF PLANTILLA ─────────────────────────
+async function importFromPDF(file){
+  if(!file) return;
+  showAlert('Leyendo PDF...');
+  try{
+    // Load pdf.js dynamically
+    if(!window.pdfjsLib){
+      await new Promise((res,rej)=>{
+        const s=document.createElement('script');
+        s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        s.onload=()=>{
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+          res();
+        };
+        s.onerror=rej;
+        document.head.appendChild(s);
+      });
+    }
+
+    const buf = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({data:buf}).promise;
+    const page = await pdf.getPage(1);
+
+    // Extract form field values using annotations
+    const annotations = await page.getAnnotations();
+    const fields = {};
+    annotations.forEach(a=>{
+      if(a.fieldName && a.fieldValue !== undefined){
+        fields[a.fieldName] = String(a.fieldValue||'').trim();
+      }
+    });
+
+    console.log('PDF fields:', fields);
+
+    if(!fields.fecha){
+      showAlert('PDF no reconocido. Usa la plantilla de TimerPro.','err');
+      return;
+    }
+
+    // Build entry from fields
+    const entry = {...defEntry(), fecha: fields.fecha || today()};
+
+    // Fichajes
+    for(let i=1; i<=3; i++){
+      const ent = fields[`fichaje_${i}_entrada`];
+      const sal = fields[`fichaje_${i}_salida`];
+      if(ent || sal){
+        entry.fichajes.push({
+          _fid: Date.now()+i,
+          entrada: ent||'', salida: sal||'',
+          nota: fields[`fichaje_${i}_nota`]||'',
+          editing: false
+        });
+      }
+    }
+
+    // Horas e importes
+    const tipos = ['normales','extra','nocturnas','festivas'];
+    const keys = {normales:'Normal',extra:'Extra',nocturnas:'Nocturna',festivas:'Festiva'};
+    tipos.forEach(t=>{
+      const h = parseFloat(fields[`horas_${t}`])||0;
+      const p = parseFloat(fields[`precio_${t}`])||0;
+      entry[`horas${keys[t]}s`||`horas${t.charAt(0).toUpperCase()+t.slice(1)}`] = h;
+    });
+    entry.horasNormales = parseFloat(fields.horas_normales)||0;
+    entry.precioHoraNormal = parseFloat(fields.precio_normales)||0;
+    entry.importeNormales = Math.round(entry.horasNormales*entry.precioHoraNormal*100)/100;
+    entry.horasExtra = parseFloat(fields.horas_extra)||0;
+    entry.precioHoraExtra = parseFloat(fields.precio_extra)||0;
+    entry.importeExtra = Math.round(entry.horasExtra*entry.precioHoraExtra*100)/100;
+    entry.horasNocturnas = parseFloat(fields.horas_nocturnas)||0;
+    entry.precioHoraNocturna = parseFloat(fields.precio_nocturnas)||0;
+    entry.importeNocturnas = Math.round(entry.horasNocturnas*entry.precioHoraNocturna*100)/100;
+    entry.horasFestivas = parseFloat(fields.horas_festivas)||0;
+    entry.precioHoraFestiva = parseFloat(fields.precio_festivas)||0;
+    entry.importeFestivas = Math.round(entry.horasFestivas*entry.precioHoraFestiva*100)/100;
+
+    // Dieta y transporte
+    entry.dieta = parseFloat(fields.dieta)||0;
+    entry.transporte = parseFloat(fields.transporte)||0;
+
+    // Dietas extra (formato: concepto:importe, ...)
+    if(fields.dietas_extra){
+      entry.dietasExtra = fields.dietas_extra.split(',').map(d=>{
+        const [concepto,importe] = d.split(':').map(s=>s.trim());
+        return {concepto: concepto||'', importe: parseFloat(importe)||0};
+      }).filter(d=>d.concepto);
+    }
+
+    // Otros conceptos
+    if(fields.otros_conceptos){
+      entry.otrosConceptos = fields.otros_conceptos.split(',').map(d=>{
+        const [concepto,importe] = d.split(':').map(s=>s.trim());
+        return {concepto: concepto||'', importe: parseFloat(importe)||0};
+      }).filter(d=>d.concepto);
+    }
+
+    // Viajes
+    for(let i=1; i<=2; i++){
+      const km = parseFloat(fields[`viaje_${i}_km`])||0;
+      if(km > 0 || fields[`viaje_${i}_origen`]){
+        entry.journeys.push({
+          origen: fields[`viaje_${i}_origen`]||'',
+          destino: fields[`viaje_${i}_destino`]||'',
+          km: km,
+          precioManual: parseFloat(fields[`viaje_${i}_precio`])||0.19,
+          tipoManual: fields[`viaje_${i}_vehiculo`]||'coche',
+          vehicleId: '',
+          horaInicio: '', horaFin: ''
+        });
+      }
+    }
+
+    // Ubicacion
+    if(fields.ubicacion_entrada) entry.ubicacionEntrada = textToLoc(fields.ubicacion_entrada);
+    if(fields.ubicacion_salida) entry.ubicacionSalida = textToLoc(fields.ubicacion_salida);
+
+    // Notas
+    entry.notas = fields.notas||'';
+
+    // Save entry
+    const existing = S.entries.find(e=>e.fecha===entry.fecha);
+    if(existing){
+      entry.id = existing.id;
+      await dbPut(ST.entries, entry);
+      S.entries = S.entries.map(e=>e.id===existing.id ? {...entry,id:existing.id} : e);
+    } else {
+      const id = await dbPut(ST.entries, entry);
+      S.entries.push({...entry, id});
+    }
+
+    // Load into form
+    fEntry = {...entry};
+    editingEntry = true;
+    S.tab = 'fichar';
+    saveLocalBackup();
+    showAlert('PDF importado: '+entry.fecha+' con '+entry.fichajes.length+' fichajes');
+    rerender();
+
+  }catch(e){
+    showAlert('Error leyendo PDF: '+e.message,'err');
     console.error(e);
   }
 }
