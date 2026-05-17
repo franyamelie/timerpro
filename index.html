@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779005256064 -->
+<!-- v1779005977780 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2211,8 +2211,6 @@ async function saveEntry(){
     saveLocalBackup();
     showAlert('Jornada guardada ✓');
     rerender();
-    // Auto-sync to Drive after saving (5s delay)
-    if(driveUrl) setTimeout(()=>{ if(!_syncInProgress) driveSync(); }, 5000);
   }catch(e){showAlert(e.message,'err');}
 }
 
@@ -2236,8 +2234,7 @@ async function deleteEntry(id){
     if(fEntry.id===id){editingEntry=false;fEntry=defEntry();}
     showAlert('Jornada eliminada');
     rerender();
-    // Auto-upload after delete so Drive reflects the deletion
-    if(driveUrl) setTimeout(()=>driveSync(),1000);
+
   });
 }
 
@@ -2345,8 +2342,7 @@ function renderCharts(){
 }
 
 function scheduleSync(){
-  if(syncTimer) clearTimeout(syncTimer);
-  syncTimer = setTimeout(()=>{ if(driveUrl && S.entries.length>0) driveSync(); }, 5000);
+  // Auto-sync disabled - use manual button
 }
 
 async function saveTask(){
@@ -2385,7 +2381,7 @@ async function deleteTask(id){
     S.tasks=S.tasks.filter(t=>t.id!==id);
     showAlert('Tarea eliminada');
     rerender();
-    if(driveUrl) setTimeout(()=>driveSync(),1000);
+
   });
 }
 
@@ -2464,7 +2460,7 @@ async function saveWorker(){
     fWorker={...data};
     await saveActiveIds();
     showAlert('Trabajador guardado ✓'); rerender();
-    if(driveUrl) setTimeout(()=>{ if(!_syncInProgress) driveSync(); }, 5000);
+    // auto-sync disabled
   }catch(e){showAlert(e.message,'err');}
 }
 function newWorker(){ fWorker={...defWorker}; activeWorkerId=null; rerender(); }
@@ -2495,7 +2491,7 @@ async function saveCompany(){
     fCompany={...data};
     await saveActiveIds();
     showAlert('Empresa guardada ✓'); rerender();
-    if(driveUrl) setTimeout(()=>{ if(!_syncInProgress) driveSync(); }, 5000);
+    // auto-sync disabled
   }catch(e){showAlert(e.message,'err');}
 }
 async function deleteCompany(id){
@@ -2781,7 +2777,7 @@ async function importFromTemplate(file){
 
     showAlert('Importadas '+imported+' jornadas'+(skipped>0?' ('+skipped+' omitidas)':''));
     rerender();
-    if(driveUrl) setTimeout(driveSync,2000);
+    // auto-sync disabled
   }catch(e){
     showAlert('Error importando: '+e.message,'err');
     console.error(e);
@@ -3807,7 +3803,7 @@ async function mergeDriveData(d){
     showAlert('✅ Fusionado: '+merged.length+' jornadas totales');
 
     // Upload merged data back to Drive
-    setTimeout(()=>driveSync(), 2000);
+    // auto-sync disabled
   }catch(e){
     showAlert('Error fusionando: '+e.message,'err');
   }
@@ -3994,7 +3990,7 @@ function handleOnline(){
   if(driveUrl && S.entries.length > 0){
     setTimeout(()=>{
       checkDriveForNewData();
-      if(pendingSync){ pendingSync=false; driveSync(); }
+      if(pendingSync){ pendingSync=false; showAlert('Datos pendientes - pulsa Subir cuando puedas'); }
     }, 2000);
   }
 }
@@ -4330,10 +4326,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
       const lastBackup=localStorage.getItem('lastBackup')||'';
       const weekAgo=new Date();weekAgo.setDate(weekAgo.getDate()-7);
       if(!lastBackup||new Date(lastBackup)<weekAgo){
-        setTimeout(()=>{
-          driveSync();
-          localStorage.setItem('lastBackup',new Date().toISOString());
-        },5000);
+        localStorage.setItem('lastBackup',new Date().toISOString());
       }
     }
     // Load Firebase config if saved
