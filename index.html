@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779006653950 -->
+<!-- v1779007308579 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3597,8 +3597,8 @@ async function driveSync(){
     if(err||!res||!res.ok){
       syncStatus='err';
       _syncInProgress=false;
-      if(!isOnline){pendingSync=true;showAlert('Sin conexion - se subira cuando vuelva el internet','err');}
-      else showAlert('Error guardando: '+(err||res&&res.error||'sin respuesta'),'err');
+      if(!isOnline){pendingSync=true;showAlert('Sin conexion','err');}
+      else showAlert('Error en meta: '+(err||res&&res.error||'sin respuesta'),'err');
       rerender(); return;
     }
     // Step 2: send each entry
