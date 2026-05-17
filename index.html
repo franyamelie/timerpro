@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779030347622 -->
+<!-- v1779030912780 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -218,7 +218,7 @@ const defTask = f => ({fecha:f||today(), titulo:'', horaInicio:nowTime(), horaFi
 const defJourney = () => ({vehicleId:'', tipoManual:'coche', precioManual:0.19, origen:'', destino:'', km:0, horaInicio:nowTime(), horaFin:''});
 const defWorker = {nombre:'',apellidos:'',dni:'',cargo:'',departamento:'',email:'',telefono:'',numSS:'',fechaAlta:'',convenio:'',firma:'',foto:''};
 const defCompany = {nombre:'',cif:'',direccion:'',ciudad:'',cp:'',telefono:'',email:'',web:'',logo:''};
-const defSite = {nombre:'',direccion:'',ciudad:'',telefono:'',notas:''};
+const defSite = {nombre:'',direccion:'',ciudad:'',telefono:'',notas:'',lat:'',lng:'',acc:0};
 const defWO = {codigo:'',descripcion:'',cliente:'',notas:''};
 const defVehicle = {nombre:'',tipo:'coche',matricula:'',precioPorKm:0.19,notas:''};
 
@@ -1094,42 +1094,147 @@ function renderDayDetail(ds){
 // ══════════════════════════════════════════════════════════
 function renderSitios(){
   return h('div',{},
-    h('button',{class:'btn btn-g',style:{marginBottom:'1rem'},on:{click:()=>{fSite={...defSite};editSiteId=null;showSiteF=true;rerender();}}},
-      '➕ Nuevo Sitio'
-    ),
+    h('button',{class:'btn btn-g',style:{marginBottom:'1rem'},on:{click:()=>{
+      fSite={...defSite};editSiteId=null;showSiteF=true;rerender();
+    }}},'+ Nuevo Sitio'),
+
     showSiteF?h('div',{class:'card'},
       h('div',{class:'sec-title'},editSiteId?'Editar Sitio':'Nuevo Sitio'),
       field('Nombre *','text',fSite.nombre,v=>{fSite.nombre=v;}),
+      // Address search
+      h('div',{class:'field'},
+        h('label',{},'BUSCAR DIRECCION O LUGAR'),
+        h('div',{style:{display:'flex',gap:'.4rem'}},
+          h('input',{
+            type:'text',id:'site-search-input',
+            placeholder:'Escribe calle, ciudad, lugar...',
+            value:fSite.direccion||'',
+            on:{
+              keydown:ev=>{if(ev.key==='Enter'){ev.preventDefault();searchSiteAddress();}},
+              input:ev=>{fSite.direccion=ev.target.value;}
+            }
+          }),
+          h('button',{class:'btn btn-b btn-sm',on:{click:searchSiteAddress}},'Buscar'),
+          h('button',{class:'btn btn-gh btn-sm',on:{click:captureSiteGPS}},'GPS')
+        ),
+        h('div',{id:'site-search-results'})
+      ),
+      fSite.lat&&fSite.lng
+        ? h('div',{style:{marginBottom:'.5rem'}},gpsDisplay(JSON.stringify({
+            lat:fSite.lat,lng:fSite.lng,
+            url:'https://www.google.com/maps?q='+fSite.lat+','+fSite.lng,
+            label:fSite.nombre||fSite.direccion,acc:fSite.acc
+          })))
+        : null,
       h('div',{class:'grid-2'},
         field('Ciudad','text',fSite.ciudad,v=>{fSite.ciudad=v;}),
-        field('Teléfono','tel',fSite.telefono,v=>{fSite.telefono=v;})
+        field('Telefono','tel',fSite.telefono,v=>{fSite.telefono=v;})
       ),
-      field('Dirección completa','text',fSite.direccion,v=>{fSite.direccion=v;}),
       fieldArea('Notas',fSite.notas,v=>{fSite.notas=v;}),
       h('div',{class:'btn-row'},
-        h('button',{class:'btn btn-g',on:{click:saveSite}},'💾 Guardar'),
+        h('button',{class:'btn btn-g',on:{click:saveSite}},'Guardar'),
         h('button',{class:'btn btn-gh',on:{click:()=>{showSiteF=false;rerender();}}},'Cancelar')
       )
     ):null,
+
     S.sites.length===0
       ? h('div',{class:'empty'},'Sin sitios. Crea el primero.')
       : h('div',{},
           ...S.sites.map(s=>h('div',{class:'card'},
             h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
-              h('div',{},
-                h('div',{style:{fontWeight:700}},s.nombre),
-                s.ciudad?h('div',{style:{fontSize:'.8rem',color:'var(--ink2)'}},s.ciudad):null,
-                s.direccion?h('div',{style:{fontSize:'.75rem',color:'var(--ink3)'}},s.direccion):null
+              h('div',{style:{flex:1}},
+                h('div',{style:{fontWeight:700,fontSize:'.9rem'}},s.nombre),
+                s.direccion?h('div',{style:{fontSize:'.8rem',color:'var(--ink2)'}},s.direccion):null,
+                s.ciudad?h('div',{style:{fontSize:'.75rem',color:'var(--ink3)'}},s.ciudad):null,
+                s.lat&&s.lng
+                  ? h('a',{href:'https://www.google.com/maps?q='+s.lat+','+s.lng,
+                      target:'_blank',rel:'noopener',
+                      style:{fontSize:'.72rem',color:'var(--acc)',textDecoration:'none',display:'flex',alignItems:'center',gap:'.2rem'}
+                    },'Ver en Maps')
+                  : null
               ),
-              h('div',{style:{display:'flex',gap:'.3rem'}},
-                h('button',{class:'btn btn-b btn-sm',on:{click:()=>{fSite={...s};editSiteId=s.id;showSiteF=true;rerender();}}},'✏️'),
-                h('button',{class:'btn btn-r btn-sm',on:{click:()=>deleteSite(s.id)}},'🗑')
+              h('div',{style:{display:'flex',gap:'.3rem',flexShrink:0}},
+                // Use as fichar location button
+                h('button',{
+                  class:'btn btn-gh btn-sm',
+                  title:'Usar como ubicacion de entrada',
+                  on:{click:()=>{
+                    if(s.lat&&s.lng){
+                      fEntry.ubicacionEntrada=JSON.stringify({lat:s.lat,lng:s.lng,url:'https://www.google.com/maps?q='+s.lat+','+s.lng,label:s.nombre||s.direccion});
+                      S.tab='fichar'; showAlert('Ubicacion de entrada: '+s.nombre); rerender();
+                    } else {
+                      fEntry.ubicacionEntrada=textToLoc(s.direccion||s.nombre);
+                      S.tab='fichar'; showAlert('Ubicacion de entrada: '+s.nombre); rerender();
+                    }
+                  }}
+                },'Entrada'),
+                h('button',{
+                  class:'btn btn-gh btn-sm',
+                  title:'Usar como ubicacion de salida',
+                  on:{click:()=>{
+                    if(s.lat&&s.lng){
+                      fEntry.ubicacionSalida=JSON.stringify({lat:s.lat,lng:s.lng,url:'https://www.google.com/maps?q='+s.lat+','+s.lng,label:s.nombre||s.direccion});
+                      S.tab='fichar'; showAlert('Ubicacion de salida: '+s.nombre); rerender();
+                    } else {
+                      fEntry.ubicacionSalida=textToLoc(s.direccion||s.nombre);
+                      S.tab='fichar'; showAlert('Ubicacion de salida: '+s.nombre); rerender();
+                    }
+                  }}
+                },'Salida'),
+                h('button',{class:'btn btn-b btn-sm',on:{click:()=>{fSite={...s};editSiteId=s.id;showSiteF=true;rerender();}}},'Editar'),
+                h('button',{class:'btn btn-r btn-sm',on:{click:()=>deleteSite(s.id)}},'x')
               )
             )
           ))
         )
   );
 }
+
+async function searchSiteAddress(){
+  const input=document.getElementById('site-search-input');
+  const q=input?.value?.trim();
+  if(!q){ showAlert('Escribe una direccion para buscar','err'); return; }
+  const container=document.getElementById('site-search-results');
+  if(container) container.innerHTML='<div style="padding:.5rem;font-size:.75rem;color:var(--ink2)">Buscando...</div>';
+  try{
+    const res=await fetch('https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q)+'&limit=4&addressdetails=1');
+    const data=await res.json();
+    if(!container) return;
+    if(!data.length){ container.innerHTML='<div style="padding:.5rem;font-size:.75rem;color:var(--red)">Sin resultados</div>'; return; }
+    container.innerHTML='';
+    data.forEach(r=>{
+      const btn=document.createElement('div');
+      btn.style.cssText='padding:.4rem .6rem;cursor:pointer;font-size:.78rem;border-bottom:1px solid var(--brd);color:var(--ink);background:var(--surf2)';
+      btn.textContent=r.display_name;
+      btn.onmouseenter=()=>btn.style.background='var(--surf3)';
+      btn.onmouseleave=()=>btn.style.background='var(--surf2)';
+      btn.onclick=()=>{
+        fSite.lat=parseFloat(r.lat).toFixed(6);
+        fSite.lng=parseFloat(r.lon).toFixed(6);
+        fSite.direccion=r.display_name.split(',').slice(0,2).join(',').trim();
+        if(!fSite.ciudad) fSite.ciudad=r.address?.city||r.address?.town||r.address?.village||'';
+        if(!fSite.nombre) fSite.nombre=fSite.direccion;
+        container.innerHTML='';
+        rerender();
+      };
+      container.appendChild(btn);
+    });
+  }catch(e){ if(container) container.innerHTML='<div style="padding:.5rem;font-size:.75rem;color:var(--red)">Error buscando</div>'; }
+}
+
+function captureSiteGPS(){
+  if(!navigator.geolocation){ showAlert('GPS no disponible','err'); return; }
+  showAlert('Obteniendo ubicacion...');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    fSite.lat=pos.coords.latitude.toFixed(6);
+    fSite.lng=pos.coords.longitude.toFixed(6);
+    fSite.acc=Math.round(pos.coords.accuracy);
+    if(!fSite.direccion) fSite.direccion=fSite.lat+', '+fSite.lng;
+    showAlert('GPS capturado (+-'+fSite.acc+'m)');
+    rerender();
+  },err=>{showAlert('Error GPS: '+err.message,'err');},{enableHighAccuracy:true,timeout:15000});
+}
+
 
 // ══════════════════════════════════════════════════════════
 // ÓRDENES DE TRABAJO
@@ -2827,14 +2932,50 @@ async function importFromTemplate(file){
 
 
 
-function downloadPDFTemplate(){
-  // Open static template - user fills it in their PDF reader
-  const a=document.createElement('a');
-  a.href='https://franyamelie.github.io/timerpro/TimerPro_Plantilla.pdf';
-  a.download='TimerPro_Plantilla_'+today()+'.pdf';
-  a.target='_blank';
-  a.click();
-  showAlert('Plantilla descargada. Rellenala y arrastrala aqui.');
+async function downloadPDFTemplate(){
+  showAlert('Preparando plantilla...');
+  try{
+    // Load pdf-lib
+    if(!window.PDFLib){
+      await new Promise((res,rej)=>{
+        const s=document.createElement('script');
+        s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+        s.onload=res; s.onerror=rej;
+        document.head.appendChild(s);
+      });
+    }
+    // Fetch base template
+    const resp = await fetch('https://franyamelie.github.io/timerpro/TimerPro_Plantilla.pdf');
+    if(!resp.ok) throw new Error('No se pudo cargar la plantilla base');
+    const pdfBytes = await resp.arrayBuffer();
+    const pdfDoc = await window.PDFLib.PDFDocument.load(pdfBytes);
+    const form = pdfDoc.getForm();
+
+    // Pre-fill with current data
+    function setField(name, value){
+      try{ if(value) form.getTextField(name).setText(String(value)); }catch(e){}
+    }
+    setField('fecha', today());
+    setField('trabajador', (fWorker.nombre||'')+' '+(fWorker.apellidos||''));
+    setField('empresa', fCompany.nombre||'');
+
+    const filled = await pdfDoc.save();
+    const blob = new Blob([filled], {type:'application/pdf'});
+    const fname = 'TimerPro_'+today()+'.pdf';
+
+    if(navigator.share && navigator.canShare && navigator.canShare({files:[new File([blob],fname,{type:'application/pdf'})]})){
+      try{ await navigator.share({files:[new File([blob],fname,{type:'application/pdf'})],title:'Plantilla TimerPro'}); return; }
+      catch(e){ if(e.name==='AbortError') return; }
+    }
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=fname; a.click();
+    showAlert('Plantilla descargada con tus datos pre-rellenados');
+  }catch(e){
+    // Fallback: open static template
+    window.open('https://franyamelie.github.io/timerpro/TimerPro_Plantilla.pdf','_blank');
+    showAlert('Plantilla abierta — rellena fecha, trabajador y empresa manualmente');
+  }
 }
 
 // ── IMPORTAR DESDE PDF PLANTILLA ─────────────────────────
