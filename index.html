@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779007308579 -->
+<!-- v1779008267354 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3573,50 +3573,64 @@ async function driveSync(){
   _syncInProgress=true;
   let data;
   try{ data=await buildSyncDataWithPhotos(); }catch(e){ _syncInProgress=false; return; }
-  if(!data.entries.length && !data.tasks.length){
-    if(!data.workers||!data.workers.length){
-      showAlert('Sin datos que guardar','err');
-      _syncInProgress=false;
-      return;
-    }
+  if(!data.entries.length && !data.workers.length){
+    showAlert('Sin datos que guardar','err');
+    _syncInProgress=false; return;
   }
   syncStatus='syncing'; rerender();
+  const metaStr = JSON.stringify(data.meta||{});
+  const totalStr = JSON.stringify(data);
+  console.log('Sync data size:', totalStr.length, 'bytes');
 
-  // Step 1: save meta (structure without entries)
+  // Use simple single-save action
+  const encoded = encodeURIComponent(totalStr);
+  if(encoded.length > 6000){
+    // Too large for single request - use chunked
+    driveChunkedSync(data);
+    return;
+  }
+  // Small data - use direct save
+  jsonpGet('action=save&d='+encoded, (err,res)=>{
+    _syncInProgress=false;
+    if(!err && res && res.ok){
+      syncStatus='ok';
+      localStorage.setItem('lastDriveLoad', Date.now().toString());
+      showAlert('Drive guardado: '+data.entries.length+' jornadas');
+    } else {
+      syncStatus='err';
+      showAlert('Error Drive: '+(err||res&&res.error||'sin respuesta'),'err');
+    }
+    rerender();
+  }, 30000);
+}
+
+function driveChunkedSync(data){
   const meta={
-    version:2, exportedAt:data.exportedAt,
+    version:data.version, exportedAt:data.exportedAt,
     tasks:data.tasks, sites:data.sites, workorders:data.workorders,
     vehicles:data.vehicles, workers:data.workers, companies:data.companies,
     activeWorkerId:data.activeWorkerId, activeCompanyId:data.activeCompanyId,
     worker:data.worker, company:data.company
   };
-
   showAlert('Guardando en Drive... ('+data.entries.length+' jornadas)');
-
   jsonpGet('action=save_meta&d='+encodeURIComponent(JSON.stringify(meta)), (err,res)=>{
     if(err||!res||!res.ok){
-      syncStatus='err';
-      _syncInProgress=false;
-      if(!isOnline){pendingSync=true;showAlert('Sin conexion','err');}
-      else showAlert('Error en meta: '+(err||res&&res.error||'sin respuesta'),'err');
+      _syncInProgress=false; syncStatus='err';
+      showAlert('Error en meta: '+(err||res&&res.error||'sin respuesta'),'err');
       rerender(); return;
     }
-    // Step 2: send each entry
     let idx=0;
     function sendNext(){
       if(idx>=data.entries.length){
-        // Step 3: commit
         jsonpGet('action=commit&total='+data.entries.length, (e2,r2)=>{
+          _syncInProgress=false;
           if(!e2&&r2&&r2.ok){
             syncStatus='ok';
-            lastSync=new Date().toLocaleTimeString('es-ES');
-            localStorage.setItem('lastSync',lastSync);
             localStorage.setItem('lastDriveLoad', Date.now().toString());
-            showAlert('✅ Drive: '+data.entries.length+' jornadas guardadas');
+            showAlert('Drive guardado: '+data.entries.length+' jornadas');
           } else {
-            _syncInProgress=false;
             syncStatus='err';
-            showAlert('Error al confirmar guardado','err');
+            showAlert('Error al confirmar','err');
           }
           rerender();
         });
@@ -3624,18 +3638,14 @@ async function driveSync(){
       }
       const entry=data.entries[idx];
       jsonpGet('action=save_entry&idx='+idx+'&d='+encodeURIComponent(JSON.stringify(entry)), (e2,r2)=>{
-        if(e2||!r2||!r2.ok){
-          syncStatus='err';
-          showAlert('Error en jornada '+idx,'err');
-          rerender(); return;
-        }
-        idx++;
-        sendNext();
-      },15000);
+        if(e2||!r2||!r2.ok){ _syncInProgress=false; syncStatus='err'; showAlert('Error en jornada '+idx,'err'); rerender(); return; }
+        idx++; sendNext();
+      },30000);
     }
     sendNext();
-  });
+  },30000);
 }
+
 
 
 function buildSyncData(){
