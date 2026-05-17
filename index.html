@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779025592911 -->
+<!-- v1779026101492 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2599,9 +2599,9 @@ async function importJSON(file){
     for(const w of(data.workorders||[]))await dbPut(ST.workorders,w);
     for(const v of(data.vehicles||[]))await dbPut(ST.vehicles,v);
     for(const s of(data.settings||[]))await dbPut(ST.settings,s);
-    // Import workers and companies (from backup format)
-    for(const w of(data.workers||[]))await dbPut(ST.workers,w);
-    for(const c of(data.companies||[]))await dbPut(ST.companies,c);
+    // Import workers and companies - strip photos (too large for sync)
+    for(const w of(data.workers||[]))await dbPut(ST.workers,{...w,foto:'',firma:''});
+    for(const c of(data.companies||[]))await dbPut(ST.companies,{...c,logo:''});
     // Set active worker/company
     if(data.activeWorkerId) activeWorkerId=data.activeWorkerId;
     if(data.activeCompanyId) activeCompanyId=data.activeCompanyId;
@@ -4239,8 +4239,8 @@ function saveLocalBackup(){
   try{
     const backup = {
       savedAt: new Date().toISOString(),
-      entries: S.entries,
-      tasks: S.tasks,
+      entries: S.entries.map(e=>({...e,fotosGastos:[]})),
+      tasks: S.tasks.map(t=>({...t,fotos:[]})),
       sites: S.sites,
       workorders: S.workorders,
       vehicles: S.vehicles,
@@ -4301,7 +4301,8 @@ function emergencyExport(){
       sites: S.sites,
       workorders: S.workorders,
       vehicles: S.vehicles,
-      workers, companies,
+      workers: workers.map(w=>({...w,foto:'',firma:''})),
+      companies: companies.map(c=>({...c,logo:''})),
       activeWorkerId, activeCompanyId
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
