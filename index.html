@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779004795075 -->
+<!-- v1779005256064 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1416,7 +1416,20 @@ function renderSincronizar(){
       h('div',{style:{fontSize:'.75rem',color:'var(--ink3)',marginTop:'.5rem',textAlign:'center'}},
         '⚠️ "Cargar" reemplaza los datos locales con los de Drive'
       )
-    ),    h('div',{class:'card'},
+    ),    h('div',{class:'card',style:{border:'2px solid var(--red)'}},
+      h('div',{class:'sec-title',style:{color:'var(--red)'}},'BACKUP DE EMERGENCIA'),
+      h('p',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.8rem',lineHeight:1.6}},
+        'Si tienes problemas con la app o pierdes datos, usa este boton para guardar una copia de seguridad ahora mismo en tu dispositivo.'
+      ),
+      h('button',{class:'btn btn-r btn-full btn-lg',on:{click:emergencyExport}},'🆘 Descargar Backup Ahora'),
+      localStorage.getItem('backup_date')
+        ? h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginTop:'.5rem',textAlign:'center'}},
+            'Ultima copia local: ' + new Date(localStorage.getItem('backup_date')||'').toLocaleString('es-ES')
+          )
+        : null
+    ),
+
+    h('div',{class:'card'},
       h('div',{class:'sec-title'},'COPIA DE SEGURIDAD LOCAL'),
       h('p',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'.8rem'}},
         'Exporta tus datos en JSON para guardarlos o importarlos en otro dispositivo.'
@@ -2195,6 +2208,7 @@ async function saveEntry(){
     editingEntry=false;
     fEntry=defEntry();
     localStorage.setItem('lastSave',new Date().toISOString());
+    saveLocalBackup();
     showAlert('Jornada guardada ✓');
     rerender();
     // Auto-sync to Drive after saving (5s delay)
@@ -3753,7 +3767,8 @@ async function importDriveData(d, verifyMode){
     if(verifyMode){
       showAlert('✅ Drive OK: '+S.entries.length+' jornadas guardadas correctamente');
     } else {
-      showAlert('✅ Cargado: '+S.entries.length+' jornadas, '+S.tasks.length+' tareas');
+      saveLocalBackup();
+    showAlert('✅ Cargado: '+S.entries.length+' jornadas, '+S.tasks.length+' tareas');
     }
     rerender();
   }catch(e){
@@ -4187,6 +4202,91 @@ async function autoSnapshot(){
   }
 }
 
+
+// ══════════════════════════════════════════════════════════
+// SISTEMA DE BACKUP ROBUSTO
+// ══════════════════════════════════════════════════════════
+
+// Guarda copia en localStorage cada vez que hay datos
+function saveLocalBackup(){
+  try{
+    const backup = {
+      savedAt: new Date().toISOString(),
+      entries: S.entries,
+      tasks: S.tasks,
+      sites: S.sites,
+      workorders: S.workorders,
+      vehicles: S.vehicles,
+      worker: {...fWorker, foto:'', firma:''},
+      company: {...fCompany, logo:''},
+      activeWorkerId, activeCompanyId
+    };
+    const json = JSON.stringify(backup);
+    // Keep last 3 backups in localStorage
+    localStorage.setItem('backup_latest', json);
+    localStorage.setItem('backup_date', new Date().toISOString());
+    // Also keep yesterday's backup
+    const prev = localStorage.getItem('backup_latest_prev');
+    const prevDate = localStorage.getItem('backup_date_prev')||'';
+    if(prevDate && prevDate.slice(0,10) !== new Date().toISOString().slice(0,10)){
+      localStorage.setItem('backup_latest_prev2', prev||'');
+    }
+    localStorage.setItem('backup_latest_prev', prev||'');
+    localStorage.setItem('backup_date_prev', prevDate);
+  }catch(e){ console.warn('Local backup failed:',e); }
+}
+
+// Restaurar desde localStorage si IndexedDB está vacío
+async function checkAndRestoreFromLocalBackup(){
+  if(S.entries.length > 0) return; // ya hay datos, no restaurar
+  const backup = localStorage.getItem('backup_latest');
+  const date = localStorage.getItem('backup_date');
+  if(!backup) return;
+  try{
+    const d = JSON.parse(backup);
+    if(!d.entries || d.entries.length === 0) return;
+    // Show recovery prompt
+    const ago = date ? new Date(date).toLocaleString('es-ES') : 'fecha desconocida';
+    if(confirm('Se detectaron datos de una copia de seguridad local del ' + ago + ' con ' + d.entries.length + ' jornadas. ¿Desea restaurar?')){
+      for(const e of d.entries) await dbPut(ST.entries, e);
+      for(const t of (d.tasks||[])) await dbPut(ST.tasks, t);
+      for(const s of (d.sites||[])) await dbPut(ST.sites, s);
+      for(const w of (d.workorders||[])) await dbPut(ST.workorders, w);
+      for(const v of (d.vehicles||[])) await dbPut(ST.vehicles, v);
+      if(d.worker) fWorker = {...defWorker, ...d.worker};
+      if(d.company) fCompany = {...defCompany, ...d.company};
+      activeWorkerId = d.activeWorkerId||null;
+      activeCompanyId = d.activeCompanyId||null;
+      await loadData();
+      showAlert('Datos restaurados desde copia local: ' + d.entries.length + ' jornadas');
+      rerender();
+    }
+  }catch(e){ console.warn('Restore from local backup failed:',e); }
+}
+
+// Descarga JSON de emergencia
+function emergencyExport(){
+  try{
+    const backup = {
+      exportedAt: new Date().toISOString(),
+      entries: S.entries,
+      tasks: S.tasks,
+      sites: S.sites,
+      workorders: S.workorders,
+      vehicles: S.vehicles,
+      workers, companies,
+      activeWorkerId, activeCompanyId
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'TimerPro_Backup_' + new Date().toISOString().slice(0,10) + '.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showAlert('Backup descargado: ' + S.entries.length + ' jornadas');
+  }catch(e){ showAlert('Error al exportar: ' + e.message, 'err'); }
+}
+
 // ── RELOJ ────────────────────────────────────────────────
 function startClock(){
   function tick(){
@@ -4209,6 +4309,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
   try {
     await openDB();
     await loadData();
+    await checkAndRestoreFromLocalBackup();
     // URL ya fija en el código - guardar en storage por si acaso
     try{
       localStorage.setItem('driveUrl', driveUrl);
