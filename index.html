@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779009558091 -->
+<!-- v1779024753019 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3574,69 +3574,65 @@ async function driveSync(){
   let data;
   try{ data=await buildSyncDataWithPhotos(); }catch(e){ _syncInProgress=false; return; }
   if(!data.entries.length && !data.workers.length){
+    _syncInProgress=false;
     showAlert('Sin datos que guardar','err');
-    _syncInProgress=false; return;
+    return;
   }
   syncStatus='syncing'; rerender();
 
-  const payload = JSON.stringify(data);
-  const breakdown = {
-    entries: JSON.stringify(data.entries).length,
-    workers: JSON.stringify(data.workers).length,
-    worker: JSON.stringify(data.worker).length,
-    companies: JSON.stringify(data.companies).length,
-    company: JSON.stringify(data.company).length,
-    tasks: JSON.stringify(data.tasks).length,
-    total: payload.length
+  // Build meta (small - only text fields, no photos)
+  const meta={
+    version:data.version, exportedAt:data.exportedAt,
+    tasks:data.tasks, sites:data.sites, workorders:data.workorders,
+    vehicles:data.vehicles, workers:data.workers, companies:data.companies,
+    activeWorkerId:data.activeWorkerId, activeCompanyId:data.activeCompanyId,
+    worker:data.worker, company:data.company
   };
-  console.log('BREAKDOWN:', JSON.stringify(breakdown));
-  // Show largest field
-  const largest = Object.entries(breakdown).filter(([k])=>k!=='total').sort(([,a],[,b])=>b-a)[0];
-  console.log('Largest field:', largest[0], largest[1], 'bytes');
 
-  // Try POST first (no URL size limit)
-  try{
-    const resp = await fetch(driveUrl, {
-      method:'POST',
-      headers:{'Content-Type':'application/x-www-form-urlencoded'},
-      body:'d='+encodeURIComponent(payload)
-    });
-    const text = await resp.text();
-    let result;
-    try{ result = JSON.parse(text.replace(/^[^(]+\(|\)$/g,'')); }
-    catch(e){ result = JSON.parse(text); }
-    if(result && result.ok){
-      _syncInProgress=false;
-      syncStatus='ok';
-      localStorage.setItem('lastDriveLoad', Date.now().toString());
-      showAlert('Drive guardado: '+data.entries.length+' jornadas');
+  const metaSize = JSON.stringify(meta).length;
+  console.log('Meta size:', metaSize, 'bytes');
+  showAlert('Guardando en Drive... ('+data.entries.length+' jornadas)');
+
+  // Step 1: save meta
+  jsonpGet('action=save_meta&d='+encodeURIComponent(JSON.stringify(meta)), (err,res)=>{
+    if(err||!res||!res.ok){
+      _syncInProgress=false; syncStatus='err';
+      showAlert('Error guardando meta: '+(err||res&&res.error||'timeout'),'err');
       rerender(); return;
     }
-  }catch(postErr){
-    console.log('POST failed, trying JSONP GET:', postErr.message);
-  }
-
-  // Fallback: JSONP GET (for small data only)
-  const encoded = encodeURIComponent(payload);
-  if(encoded.length > 7000){
-    _syncInProgress=false;
-    syncStatus='err';
-    showAlert('Datos demasiado grandes para sincronizar ('+Math.round(payload.length/1024)+'KB). Usa el backup JSON.','err');
-    rerender(); return;
-  }
-  jsonpGet('action=save&d='+encoded, (err,res)=>{
-    _syncInProgress=false;
-    if(!err && res && res.ok){
-      syncStatus='ok';
-      localStorage.setItem('lastDriveLoad', Date.now().toString());
-      showAlert('Drive guardado: '+data.entries.length+' jornadas');
-    } else {
-      syncStatus='err';
-      showAlert('Error Drive: '+(err||res&&res.error||'sin respuesta'),'err');
+    // Step 2: save entries one by one
+    let idx=0;
+    function sendNext(){
+      if(idx>=data.entries.length){
+        // Step 3: commit
+        jsonpGet('action=commit&total='+data.entries.length, (e2,r2)=>{
+          _syncInProgress=false;
+          if(!e2&&r2&&r2.ok){
+            syncStatus='ok';
+            localStorage.setItem('lastDriveLoad', Date.now().toString());
+            showAlert('Drive guardado: '+data.entries.length+' jornadas');
+          } else {
+            syncStatus='err';
+            showAlert('Error al confirmar','err');
+          }
+          rerender();
+        },30000);
+        return;
+      }
+      const entry=data.entries[idx];
+      jsonpGet('action=save_entry&idx='+idx+'&d='+encodeURIComponent(JSON.stringify(entry)), (e2,r2)=>{
+        if(e2||!r2||!r2.ok){
+          _syncInProgress=false; syncStatus='err';
+          showAlert('Error en jornada '+idx,'err');
+          rerender(); return;
+        }
+        idx++; sendNext();
+      },30000);
     }
-    rerender();
-  }, 30000);
+    sendNext();
+  },30000);
 }
+
 
 
 
