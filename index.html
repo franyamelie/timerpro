@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779042638101 -->
+<!-- v1779051747312 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -31,8 +31,15 @@
   --font:'Inter',system-ui,sans-serif;
 }
 .light{
-  --bg:#f5f5f5;--bg2:#ececec;--bg3:#e2e2e2;--surf:#fff;--surf2:#f8f8f8;--surf3:#eee;
-  --ink:#111;--ink2:#555;--ink3:#aaa;--brd:rgba(0,0,0,.1);
+  --bg:#c9e8f5;--bg2:#bde0ef;--bg3:#aed7eb;
+  --surf:#d8eef8;--surf2:#cce7f4;--surf3:#bfdfef;
+  --ink:#0d2d3d;--ink2:#2e5f78;--ink3:#5a8fa8;
+  --brd:rgba(30,100,140,.18);
+  --sh:0 2px 12px rgba(30,100,140,.15);
+  --acc:#22c55e;--acc2:#16a34a;--acc-lt:rgba(34,197,94,.15);
+  --red:#ef4444;--red-lt:rgba(239,68,68,.12);
+  --blu:#3b82f6;--blu-lt:rgba(59,130,246,.12);
+  --yel:#d97706;--yel-lt:rgba(217,119,6,.12);
 }
 html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px}
 #app{display:flex;flex-direction:column;height:100dvh;max-width:900px;margin:0 auto}
@@ -1548,143 +1555,193 @@ function filterTasks(){
 }
 
 function renderResumen(){
-  const entries = filterEntries();
-  const tasks = filterTasks();
+  // Date range
+  const from = S.resFrom||firstDayOfMonth();
+  const to   = S.resTo  ||today();
+  const entries = S.entries
+    .filter(e=>e.fecha>=from && e.fecha<=to && e.horasNormales+e.horasExtra+e.horasNocturnas+e.horasFestivas>0)
+    .sort((a,b)=>a.fecha.localeCompare(b.fecha));
 
-  const totals = entries.reduce((a,e)=>({
-    n: a.n+1,
-    hn: a.hn+(+e.horasNormales||0),
-    he: a.he+(+e.horasExtra||0),
-    hnoc: a.hnoc+(+e.horasNocturnas||0),
-    hf: a.hf+(+e.horasFestivas||0),
-    in: a.in+(+e.importeNormales||0),
-    ie: a.ie+(+e.importeExtra||0),
-    inoc: a.inoc+(+e.importeNocturnas||0),
-    if_: a.if_+(+e.importeFestivas||0),
-    diet: a.diet+(+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0)),
-    transp: a.transp+(+e.transporte||0),
-    otros: a.otros+((e.otrosConceptos||[]).reduce((x,c)=>x+(+c.importe||0),0)),
-  }),{n:0,hn:0,he:0,hnoc:0,hf:0,in:0,ie:0,inoc:0,if_:0,diet:0,transp:0,otros:0});
+  // Totals
+  const tot = entries.reduce((acc,e)=>({
+    hn: acc.hn+(e.horasNormales||0),
+    he: acc.he+(e.horasExtra||0),
+    hnoc: acc.hnoc+(e.horasNocturnas||0),
+    hfes: acc.hfes+(e.horasFestivas||0),
+    in: acc.in+(e.importeNormales||0),
+    ie: acc.ie+(e.importeExtra||0),
+    inoc: acc.inoc+(e.importeNocturnas||0),
+    ifes: acc.ifes+(e.importeFestivas||0),
+    diet: acc.diet+(e.dieta||0)+(e.dietasExtra||[]).reduce((s,d)=>s+(d.importe||0),0),
+    transp: acc.transp+(e.transporte||0),
+    otros: acc.otros+(e.otrosConceptos||[]).reduce((s,o)=>s+(o.importe||0),0),
+    km: acc.km+(e.journeys||[]).reduce((s,j)=>s+(j.km||0),0),
+    viajes: acc.viajes+(e.journeys||[]).reduce((s,j)=>s+(j.km||0)*(j.precioManual||0.19),0),
+    dias: acc.dias+1
+  }),{hn:0,he:0,hnoc:0,hfes:0,in:0,ie:0,inoc:0,ifes:0,diet:0,transp:0,otros:0,km:0,viajes:0,dias:0});
 
-  const totalH = totals.hn+totals.he+totals.hnoc+totals.hf;
-  const totalImp = totals.in+totals.ie+totals.inoc+totals.if_;
-  const totalViajes = entries.reduce((a,e)=>{
-    return a+((e.journeys||[]).reduce((b,j)=>{
-      const v=S.vehicles.find(x=>x.id==j.vehicleId);
-      return b+(j.km||0)*(v?+v.precioPorKm:+j.precioManual||0);
-    },0));
-  },0);
-  const totalOther = totals.diet+totals.transp+totals.otros+totalViajes;
-  const grandTotal = totalImp+totalOther;
+  const totalH = tot.hn+tot.he+tot.hnoc+tot.hfes;
+  const totalI = tot.in+tot.ie+tot.inoc+tot.ifes+tot.diet+tot.transp+tot.otros+tot.viajes;
 
-  const hasRange = filterFrom||filterTo||filterMonth;
-  const rangeLabel = filterFrom||filterTo
-    ? (filterFrom||'inicio')+' al '+(filterTo||'hoy')
-    : filterMonth ? MONTHS[parseInt(filterMonth.slice(5))-1]+' '+filterMonth.slice(0,4) : 'Todo el periodo';
+  // Weekly breakdown
+  function getWeekKey(fecha){
+    const d=new Date(fecha+'T00:00:00');
+    const day=d.getDay()===0?7:d.getDay();
+    const mon=new Date(d); mon.setDate(d.getDate()-(day-1));
+    return mon.toISOString().slice(0,10);
+  }
+  const weeks={};
+  entries.forEach(e=>{
+    const wk=getWeekKey(e.fecha);
+    if(!weeks[wk]) weeks[wk]={h:0,i:0,dias:0,label:''};
+    weeks[wk].h+=(e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
+    weeks[wk].i+=(e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0)+(e.dieta||0)+(e.transporte||0)+(e.journeys||[]).reduce((s,j)=>s+(j.km||0)*(j.precioManual||0.19),0);
+    weeks[wk].dias++;
+    const end2=new Date(wk+'T00:00:00'); end2.setDate(end2.getDate()+6);
+    weeks[wk].label='Sem '+wk.slice(8,10)+'/'+wk.slice(5,7);
+  });
+  const weekArr=Object.entries(weeks).sort(([a],[b])=>a.localeCompare(b));
+
+  // Bar chart helper
+  function barChart(items, valueKey, colorKey, labelKey, unit='h'){
+    const max=Math.max(...items.map(x=>x[valueKey]),0.1);
+    return h('div',{style:{display:'flex',alignItems:'flex-end',gap:'3px',height:'80px',padding:'.3rem 0'}},
+      ...items.map(x=>h('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',flex:1,gap:'2px'}},
+        h('div',{style:{fontSize:'5.5px',color:'var(--ink2)',writingMode:'vertical-rl',transform:'rotate(180deg)',maxHeight:'24px',overflow:'hidden'}},
+          Number(x[valueKey]).toFixed(unit==='€'?0:1)),
+        h('div',{style:{
+          width:'100%',background:x[colorKey]||'var(--acc)',borderRadius:'2px 2px 0 0',
+          height:Math.max(4,(x[valueKey]/max)*60)+'px',transition:'height .3s'
+        }}),
+        h('div',{style:{fontSize:'5.5px',color:'var(--ink2)',textAlign:'center',lineHeight:1.2}},x[labelKey])
+      ))
+    );
+  }
 
   return h('div',{},
-    // ── FILTROS ──
+    // Date filter
     h('div',{class:'card'},
-      h('div',{class:'sec-title'},'FILTRAR PERIODO'),
-      h('div',{class:'grid-2'},
-        h('div',{class:'field'},
-          h('label',{},'MES (rapido)'),
-          h('input',{type:'month',value:filterMonth,on:{change:ev=>{filterMonth=ev.target.value;filterFrom='';filterTo='';rerender();}}})
-        ),
-        h('div',{style:{display:'flex',alignItems:'flex-end',paddingBottom:'.7rem'}},
-          hasRange?h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{filterMonth='';filterFrom='';filterTo='';rerender();}}},'x Todo'):null
-        )
-      ),
-      h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.6rem',marginTop:'.3rem'}},
-        h('div',{style:{fontSize:'.7rem',fontWeight:700,color:'var(--ink2)',marginBottom:'.5rem'}},'RANGO PERSONALIZADO'),
-        h('div',{class:'grid-2'},
-          h('div',{class:'field',style:{margin:0}},
-            h('label',{},'DESDE'),
-            h('input',{type:'date',value:filterFrom,on:{change:ev=>{filterFrom=ev.target.value;filterMonth='';rerender();}}})
-          ),
-          h('div',{class:'field',style:{margin:0}},
-            h('label',{},'HASTA'),
-            h('input',{type:'date',value:filterTo,on:{change:ev=>{filterTo=ev.target.value;filterMonth='';rerender();}}})
-          )
-        )
-      ),
-      hasRange?h('div',{style:{marginTop:'.5rem',fontSize:'.75rem',color:'var(--acc)',fontWeight:700}},'Mostrando: '+rangeLabel):null
-    ),
-
-    // ── HORAS ──
-    h('div',{class:'card'},
-      h('div',{class:'sec-title'},'HORAS'),
-      sumRow('Normales',fmtH(totals.hn)),
-      sumRow('Extra',fmtH(totals.he)),
-      sumRow('Nocturnas',fmtH(totals.hnoc)),
-      sumRow('Festivas',fmtH(totals.hf)),
-      sumRow('TOTAL HORAS',fmtH(totalH),true)
-    ),
-
-    // ── IMPORTES ──
-    h('div',{class:'card'},
-      h('div',{class:'sec-title'},'IMPORTES'),
-      sumRow('Normales',eur(totals.in)),
-      sumRow('Extra',eur(totals.ie)),
-      sumRow('Nocturnas',eur(totals.inoc)),
-      sumRow('Festivas',eur(totals.if_)),
-      sumRow('Subtotal horas',eur(totalImp),true)
-    ),
-
-    // ── OTROS ──
-    h('div',{class:'card'},
-      h('div',{class:'sec-title'},'OTROS CONCEPTOS'),
-      sumRow('Dietas',eur(totals.diet)),
-      sumRow('Transporte',eur(totals.transp)),
-      sumRow('Viajes',eur(totalViajes)),
-      sumRow('Otros',eur(totals.otros)),
-      sumRow('Subtotal otros',eur(totalOther),true)
-    ),
-
-    // ── TOTAL ──
-    h('div',{class:'card'},
-      sumRow('TOTAL GENERAL',eur(grandTotal),true),
-      h('div',{style:{marginTop:'.5rem',fontSize:'.8rem',color:'var(--ink2)'}},
-        totals.n+' jornadas \u00b7 '+tasks.length+' tareas \u00b7 '+rangeLabel
+      h('div',{class:'sec-title'},'Filtro de fechas'),
+      h('div',{style:{display:'flex',gap:'.5rem',alignItems:'center',flexWrap:'wrap'}},
+        h('input',{type:'date',value:from,style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
+          on:{change:ev=>{S.resFrom=ev.target.value;rerender();}}}),
+        h('span',{style:{color:'var(--ink2)'}},'→'),
+        h('input',{type:'date',value:to,style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
+          on:{change:ev=>{S.resTo=ev.target.value;rerender();}}}),
+        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.resFrom=firstDayOfMonth();S.resTo=today();rerender();}}},'Este mes'),
+        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{
+          const d=new Date(); d.setMonth(d.getMonth()-1);
+          S.resFrom=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)+'-01';
+          const last=new Date(d.getFullYear(),d.getMonth()+1,0);
+          S.resTo=last.toISOString().slice(0,10); rerender();
+        }}},'Mes anterior')
       )
     ),
 
-    // ── GRAFICAS ──
-    h('div',{class:'card'},
-      h('div',{class:'sec-title'},'EVOLUCION MENSUAL'),
-      h('canvas',{id:'chart-horas',style:{width:'100%',height:'200px',display:'block'}}),
-      h('div',{style:{height:'8px'}}),
-      h('canvas',{id:'chart-import',style:{width:'100%',height:'200px',display:'block'}})
-    ),
+    entries.length===0
+      ? h('div',{class:'card'},h('div',{class:'empty'},'Sin jornadas en este periodo'))
+      : h('div',{},
 
-    // ── EXPORTAR desde RESUMEN ──
-    h('div',{class:'card'},
-      h('div',{class:'sec-title'},'EXPORTAR ESTE PERIODO: '+rangeLabel),
-      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.6rem'}},
-        h('button',{
-          class:'btn btn-full',
-          style:{background:'#dc2626',color:'#fff',padding:'1rem .5rem',flexDirection:'column',gap:'.3rem',display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'var(--r)'},
-          on:{click:()=>exportPDFReal(false)}
-        },h('span',{style:{fontSize:'1.5rem'}},'PDF'),h('span',{style:{fontWeight:700,fontSize:'.82rem'}},'PDF'),h('span',{style:{fontSize:'.67rem',opacity:.85}},'Con importes')),
-        h('button',{
-          class:'btn btn-full',
-          style:{background:'#f97316',color:'#fff',padding:'1rem .5rem',flexDirection:'column',gap:'.3rem',display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'var(--r)'},
-          on:{click:()=>exportPDFReal(true)}
-        },h('span',{style:{fontSize:'1.5rem'}},'PDF'),h('span',{style:{fontWeight:700,fontSize:'.82rem'}},'PDF'),h('span',{style:{fontSize:'.67rem',opacity:.85}},'Sin importes')),
-        h('button',{
-          class:'btn btn-full',
-          style:{background:'#16a34a',color:'#fff',padding:'1rem .5rem',flexDirection:'column',gap:'.3rem',display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'var(--r)'},
-          on:{click:()=>exportExcel(false)}
-        },h('span',{style:{fontSize:'1.5rem'}},'XLS'),h('span',{style:{fontWeight:700,fontSize:'.82rem'}},'Excel'),h('span',{style:{fontSize:'.67rem',opacity:.85}},'Con importes')),
-        h('button',{
-          class:'btn btn-full',
-          style:{background:'#0891b2',color:'#fff',padding:'1rem .5rem',flexDirection:'column',gap:'.3rem',display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'var(--r)'},
-          on:{click:()=>exportExcel(true)}
-        },h('span',{style:{fontSize:'1.5rem'}},'XLS'),h('span',{style:{fontWeight:700,fontSize:'.82rem'}},'Excel'),h('span',{style:{fontSize:'.67rem',opacity:.85}},'Sin importes'))
+      // KPIs principales
+      h('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'.5rem',marginBottom:'.5rem'}},
+        h('div',{class:'card',style:{textAlign:'center',padding:'.8rem .5rem',margin:0}},
+          h('div',{style:{fontSize:'1.6rem',fontWeight:800,color:'var(--acc)'}},(totalH).toFixed(1)+'h'),
+          h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'Total horas'),
+          h('div',{style:{fontSize:'.7rem',color:'var(--ink3)'}},tot.dias+' días trabajados')
+        ),
+        h('div',{class:'card',style:{textAlign:'center',padding:'.8rem .5rem',margin:0}},
+          h('div',{style:{fontSize:'1.6rem',fontWeight:800,color:'var(--acc)'}},totalI.toFixed(2)+'€'),
+          h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'Total importe'),
+          h('div',{style:{fontSize:'.7rem',color:'var(--ink3)'}},tot.km.toFixed(0)+' km recorridos')
+        )
+      ),
+
+      // Desglose horas
+      h('div',{class:'card'},
+        h('div',{class:'sec-title'},'Desglose de horas'),
+        h('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'.4rem',marginBottom:'.5rem'}},
+          ...[
+            ['Normales',tot.hn,'#22c55e',tot.in],
+            ['Extra',tot.he,'#f59e0b',tot.ie],
+            ['Nocturnas',tot.hnoc,'#6366f1',tot.inoc],
+            ['Festivas',tot.hfes,'#ef4444',tot.ifes]
+          ].filter(([,h])=>h>0).map(([label,h,color,imp])=>
+            h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.5rem',borderLeft:'3px solid '+color}},
+              h('div',{style:{fontWeight:700,fontSize:'1rem',color:color}},h.toFixed(1)+'h'),
+              h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},label),
+              h('div',{style:{fontSize:'.72rem',color:'var(--ink3)'}},imp.toFixed(2)+'€')
+            )
+          )
+        ),
+        // Gráfica horas por tipo
+        tot.hn+tot.he+tot.hnoc+tot.hfes>0?barChart(
+          [{valueKey:'v',colorKey:'c',labelKey:'l',v:tot.hn,c:'#22c55e',l:'Norm'},
+           {valueKey:'v',colorKey:'c',labelKey:'l',v:tot.he,c:'#f59e0b',l:'Extra'},
+           {valueKey:'v',colorKey:'c',labelKey:'l',v:tot.hnoc,c:'#6366f1',l:'Noc'},
+           {valueKey:'v',colorKey:'c',labelKey:'l',v:tot.hfes,c:'#ef4444',l:'Fest'}
+          ].filter(x=>x.v>0),
+          'v','c','l'
+        ):null
+      ),
+
+      // Desglose importe
+      h('div',{class:'card'},
+        h('div',{class:'sec-title'},'Desglose de importes'),
+        ...[
+          ['Horas normales', tot.in,'#22c55e'],
+          ['Horas extra', tot.ie,'#f59e0b'],
+          ['Horas nocturnas', tot.inoc,'#6366f1'],
+          ['Horas festivas', tot.ifes,'#ef4444'],
+          ['Dietas', tot.diet,'#06b6d4'],
+          ['Transporte', tot.transp,'#8b5cf6'],
+          ['Viajes (km)', tot.viajes,'#f97316'],
+          ['Otros', tot.otros,'#64748b']
+        ].filter(([,v])=>v>0).map(([label,v,color])=>
+          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'.35rem 0',borderBottom:'1px solid var(--brd)'}},
+            h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem'}},
+              h('div',{style:{width:'10px',height:'10px',borderRadius:'50%',background:color,flexShrink:0}}),
+              h('span',{style:{fontSize:'.82rem'}},label)
+            ),
+            h('span',{style:{fontWeight:700,fontSize:'.85rem'}},v.toFixed(2)+'€')
+          )
+        ),
+        h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.5rem 0',fontWeight:800,fontSize:'1rem',color:'var(--acc)'}},
+          h('span',{},'TOTAL'),h('span',{},totalI.toFixed(2)+'€')
+        )
+      ),
+
+      // Semanas
+      weekArr.length>1?h('div',{class:'card'},
+        h('div',{class:'sec-title'},'Por semanas'),
+        ...weekArr.map(([wk,wd])=>
+          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'.4rem 0',borderBottom:'1px solid var(--brd)'}},
+            h('div',{},
+              h('div',{style:{fontWeight:600,fontSize:'.82rem'}},wd.label),
+              h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},wd.dias+' días')
+            ),
+            h('div',{style:{textAlign:'right'}},
+              h('div',{style:{fontWeight:700,color:'var(--acc)'}},wd.h.toFixed(1)+'h'),
+              h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},wd.i.toFixed(2)+'€')
+            )
+          )
+        ),
+        barChart(weekArr.map(([,wd])=>({...wd,l:wd.label.replace('Sem ','')})),'h','#22c55e','l')
+      ):null,
+
+      // Export buttons
+      h('div',{class:'card'},
+        h('div',{class:'sec-title'},'Exportar'),
+        h('div',{class:'grid-2',style:{gap:'.5rem'}},
+          h('button',{class:'btn btn-g btn-full',on:{click:()=>openExportModal('con')}},'PDF con importes'),
+          h('button',{class:'btn btn-gh btn-full',on:{click:()=>openExportModal('sin')}},'PDF sin importes'),
+          h('button',{class:'btn btn-b btn-full',on:{click:()=>exportXLSX(true)}},'Excel con importes'),
+          h('button',{class:'btn btn-gh btn-full',on:{click:()=>exportXLSX(false)}},'Excel sin importes')
+        )
       )
     )
   );
 }
+
 
 function sumRow(label, val, total=false){
   return h('div',{class:'sum-row'},
