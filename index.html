@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779024753019 -->
+<!-- v1779025592911 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3589,8 +3589,13 @@ async function driveSync(){
     worker:data.worker, company:data.company
   };
 
+  // Log each meta field size
+  Object.entries(meta).forEach(([k,v])=>{
+    const s=JSON.stringify(v).length;
+    if(s>100) console.log('meta.'+k+':', s, 'bytes');
+  });
   const metaSize = JSON.stringify(meta).length;
-  console.log('Meta size:', metaSize, 'bytes');
+  console.log('Meta TOTAL:', metaSize, 'bytes');
   showAlert('Guardando en Drive... ('+data.entries.length+' jornadas)');
 
   // Step 1: save meta
