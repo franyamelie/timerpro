@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779033634933 -->
+<!-- v1779034914830 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -100,6 +100,10 @@ main{flex:1;overflow-y:auto;padding:1rem}
 .cal-day.today{background:var(--acc-lt);color:var(--acc);font-weight:700}
 .cal-day.selected{background:var(--acc);color:#000;font-weight:700}
 .cal-day.has-e::after{content:'';position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--acc)}
+.cal-day.worked{background:rgba(34,197,94,.2);color:var(--acc)}
+.cal-day.holiday{background:rgba(239,68,68,.15);color:var(--red)}
+.cal-day.holiday.worked{background:rgba(34,197,94,.25);color:var(--acc)}
+.cal-day.vacation{background:rgba(234,179,8,.2);color:var(--yel)}
 .cal-day.other-month{opacity:.3}
 .cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem}
 .cal-nav button{background:none;border:none;cursor:pointer;color:var(--ink);font-size:1.2rem;padding:.3rem}
@@ -213,7 +217,7 @@ const defEntry = () => ({
   otrosConceptos:[], notas:'', journeys:[], ubicacionEntrada:'', ubicacionSalida:'',
   entradaLocked:false, fotosGastos:[]
 });
-const defFichaje = () => ({_fid:Date.now(), entrada:'', salida:'', nota:'', editing:false});
+const defFichaje = () => ({_fid:Date.now(), entrada:'', salida:'', nota:'', editing:false, taskId:'', timerRunning:false, timerStart:null});
 const defTask = f => ({fecha:f||today(), titulo:'', horaInicio:nowTime(), horaFin:'', descripcion:'', siteId:'', workOrderId:'', otNumero:'', usaOT:false, fotos:[]});
 const defJourney = () => ({vehicleId:'', tipoManual:'coche', precioManual:0.19, origen:'', destino:'', km:0, horaInicio:nowTime(), horaFin:''});
 const defWorker = {nombre:'',apellidos:'',dni:'',cargo:'',departamento:'',email:'',telefono:'',numSS:'',fechaAlta:'',convenio:'',firma:'',foto:''};
@@ -268,7 +272,8 @@ let isOnline=navigator.onLine;
 let pendingSync=false;
 let timerRunning=false;
 let timerStart=null;
-let timerDeduct=30; // minutes to deduct
+let timerDeduct=30;
+let fichajeTimers={}; // {_fid: {running, start, elapsed}} // minutes to deduct
 let timerElapsed=0; // seconds elapsed
 let timerInterval=null;
 
@@ -524,40 +529,71 @@ function renderFichar(){
       )
     ):null,
 
-    // ── TEMPORIZADOR EN VIVO ──
-    h('div',{class:'card',style:{border:'2px solid '+(timerRunning?'var(--acc)':'var(--brd)')}},
-      h('div',{style:{display:'flex',alignItems:'center',gap:'.8rem',flexWrap:'wrap'}},
-        h('div',{style:{flex:1}},
-          h('div',{style:{fontSize:'.7rem',fontWeight:700,color:'var(--ink2)',letterSpacing:'.08em',textTransform:'uppercase',marginBottom:'.3rem'}},'Temporizador'),
-          h('div',{style:{
-            fontSize:'2.2rem',fontWeight:800,fontVariantNumeric:'tabular-nums',
-            color:timerRunning?'var(--acc)':'var(--ink)',letterSpacing:'-.02em'
-          }},timerRunning||timerElapsed>0 ? formatTimer(timerElapsed) : '00:00:00')
-        ),
-        h('div',{style:{display:'flex',flexDirection:'column',gap:'.4rem'}},
-          h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center'}},
-            h('span',{style:{fontSize:'.75rem',color:'var(--ink2)',whiteSpace:'nowrap'}},'Descanso:'),
-            h('input',{type:'number',min:'0',max:'120',value:timerDeduct,
-              style:{width:'60px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem .5rem',color:'var(--ink)',fontSize:'.85rem',textAlign:'center'},
-              on:{input:ev=>{timerDeduct=parseInt(ev.target.value)||0;}}}),
-            h('span',{style:{fontSize:'.75rem',color:'var(--ink2)'}},'min')
-          ),
-          h('div',{style:{display:'flex',gap:'.5rem'}},
-            !timerRunning
-              ? h('button',{class:'btn btn-g',style:{fontSize:'.8rem'},on:{click:startTimer}},
-                  timerElapsed>0 ? '▶ Continuar' : '▶ Iniciar jornada')
-              : h('button',{class:'btn btn-r',style:{fontSize:'.8rem'},on:{click:stopTimer}},'⏸ Pausar'),
-            timerElapsed>0
-              ? h('button',{class:'btn btn-g btn-sm',on:{click:finishTimer}},'✓ Finalizar y fichar')
-              : null,
-            timerElapsed>0
-              ? h('button',{class:'btn btn-gh btn-sm',on:{click:resetTimer}},'↺ Reset')
-              : null
-          )
+    // ── TEMPORIZADOR JORNADA ──
+    h('div',{class:'card',style:{border:'2px solid '+(timerRunning?'var(--acc)':'var(--brd)'),transition:'border .3s'}},
+      h('div',{class:'sec-title',style:{marginBottom:'.5rem'}},'Temporizador de Jornada'),
+      h('div',{style:{display:'flex',alignItems:'center',gap:'1rem',flexWrap:'wrap',marginBottom:'.6rem'}},
+        // Big timer display
+        h('div',{style:{
+          fontSize:'2rem',fontWeight:800,fontVariantNumeric:'tabular-nums',
+          color:timerRunning?'var(--acc)':'var(--ink)',flex:1,minWidth:'140px'
+        }},timerRunning||timerElapsed>0 ? formatTimer(timerElapsed) : '00:00:00'),
+        // Deduct
+        h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',fontSize:'.8rem',color:'var(--ink2)'}},
+          'Descanso:',
+          h('input',{type:'number',min:'0',max:'480',value:timerDeduct,
+            style:{width:'52px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.85rem',textAlign:'center'},
+            on:{input:ev=>{timerDeduct=parseInt(ev.target.value)||0;}}}),
+          'min'
         )
       ),
+      // Manual start/end times
+      h('div',{class:'grid-2',style:{marginBottom:'.6rem'}},
+        h('div',{class:'field',style:{margin:0}},
+          h('label',{},'HORA INICIO (manual o real)'),
+          h('div',{style:{display:'flex',gap:'.3rem'}},
+            h('input',{type:'time',id:'timer-start-manual',
+              value:timerStart?new Date(timerStart).toTimeString().slice(0,5):'',
+              style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem .5rem',color:'var(--ink)',fontSize:'.85rem'},
+              on:{change:ev=>{
+                if(ev.target.value && !timerRunning){
+                  const[h,m]=ev.target.value.split(':').map(Number);
+                  const d=new Date(); d.setHours(h,m,0,0);
+                  timerStart=d.getTime()-timerElapsed*1000;
+                }
+              }}}),
+            h('button',{class:'btn btn-gh btn-sm',title:'Poner hora actual',on:{click:()=>{
+              const now=new Date();
+              const inp=document.getElementById('timer-start-manual');
+              if(inp) inp.value=now.toTimeString().slice(0,5);
+              timerStart=Date.now()-timerElapsed*1000;
+              rerender();
+            }}},'Ahora')
+          )
+        ),
+        h('div',{class:'field',style:{margin:0}},
+          h('label',{},'HORA FIN (al finalizar)'),
+          h('input',{type:'time',id:'timer-end-manual',
+            style:{width:'100%',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem .5rem',color:'var(--ink)',fontSize:'.85rem'},
+            placeholder:'Se rellena al finalizar'})
+        )
+      ),
+      // Buttons
+      h('div',{style:{display:'flex',gap:'.5rem',flexWrap:'wrap'}},
+        !timerRunning
+          ? h('button',{class:'btn btn-g',on:{click:startTimer}},
+              timerElapsed>0?'▶ Continuar':'▶ Iniciar')
+          : h('button',{class:'btn btn-y',on:{click:stopTimer}},'⏸ Pausar'),
+        timerElapsed>0
+          ? h('button',{class:'btn btn-g',on:{click:finishTimer}},'✓ Crear fichaje')
+          : null,
+        timerElapsed>0
+          ? h('button',{class:'btn btn-gh btn-sm',on:{click:resetTimer}},'↺ Reset')
+          : null
+      ),
       timerElapsed>0&&timerDeduct>0
-        ? h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',marginTop:'.4rem'}},'Neto: '+formatTimer(Math.max(0,timerElapsed-timerDeduct*60))+' (descontando '+timerDeduct+'min)')
+        ? h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',marginTop:'.4rem'}},
+            'Neto: '+formatTimer(Math.max(0,timerElapsed-timerDeduct*60))+' (descontando '+timerDeduct+' min)')
         : null
     ),
 
@@ -841,17 +877,76 @@ function renderFichar(){
 }
 
 function renderFichaje(fj,i){
-  return h('div',{class:'fich-row'},
-    h('span',{style:{fontSize:'.75rem',color:'var(--ink2)',minWidth:'20px'}},i+1+'.'),
-    h('div',{class:'fich-time'},
-      h('input',{type:'time',value:fj.entrada,on:{change:e=>{fEntry.fichajes[i].entrada=e.target.value;scheduleDraftSave();}}}),
-      h('span',{style:{color:'var(--ink3)',margin:'0 .2rem'}},'-'),
-      h('input',{type:'time',value:fj.salida,on:{change:e=>{fEntry.fichajes[i].salida=e.target.value;scheduleDraftSave();}}})
+  const ftimer = fichajeTimers[fj._fid]||{running:false,elapsed:0};
+  // Update timer
+  if(ftimer.running && ftimer.start){
+    ftimer.elapsed = Math.floor((Date.now()-ftimer.start)/1000);
+  }
+  const taskOpts = [{id:'',titulo:'Sin tarea'},...S.tasks];
+
+  return h('div',{class:'fich-row',style:{flexDirection:'column',alignItems:'stretch',padding:'.6rem',gap:'.4rem'}},
+    // Row 1: numero + entrada + salida + duracion + borrar
+    h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem'}},
+      h('span',{style:{fontSize:'.75rem',color:'var(--ink2)',minWidth:'18px',fontWeight:700}},i+1+'.'),
+      h('div',{class:'fich-time',style:{display:'flex',alignItems:'center',gap:'.3rem',flex:1}},
+        h('input',{type:'time',value:fj.entrada,
+          style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.85rem',width:'90px'},
+          on:{change:e=>{fEntry.fichajes[i].entrada=e.target.value;scheduleDraftSave();}}}),
+        h('span',{style:{color:'var(--ink3)',fontSize:'.9rem'}},'→'),
+        h('input',{type:'time',value:fj.salida,
+          style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.85rem',width:'90px'},
+          on:{change:e=>{fEntry.fichajes[i].salida=e.target.value;scheduleDraftSave();}}}),
+        fj.entrada&&fj.salida?h('span',{class:'badge badge-g',style:{flexShrink:0}},fmtH(calcH(fj.entrada,fj.salida))):null
+      ),
+      // Live timer button for this fichaje
+      h('button',{
+        class:'btn btn-sm '+(ftimer.running?'btn-y':'btn-gh'),
+        style:{flexShrink:0,padding:'.3rem .5rem',fontSize:'.72rem'},
+        title:ftimer.running?'Pausar este fichaje':'Iniciar timer de este fichaje',
+        on:{click:()=>{
+          if(!fichajeTimers[fj._fid]) fichajeTimers[fj._fid]={running:false,elapsed:0,start:null};
+          const ft=fichajeTimers[fj._fid];
+          if(ft.running){
+            ft.running=false;
+            ft.elapsed=Math.floor((Date.now()-ft.start)/1000);
+            // Auto-fill salida
+            fEntry.fichajes[i].salida=nowTime();
+            scheduleDraftSave();
+          } else {
+            ft.running=true;
+            ft.start=Date.now()-ft.elapsed*1000;
+            // Auto-fill entrada if empty
+            if(!fEntry.fichajes[i].entrada) fEntry.fichajes[i].entrada=nowTime();
+          }
+          rerender();
+        }}
+      }, ftimer.running?'⏸':'▶'),
+      h('button',{class:'btn btn-r btn-sm',style:{flexShrink:0},
+        on:{click:()=>{
+          fEntry.fichajes=[...fEntry.fichajes.slice(0,i),...fEntry.fichajes.slice(i+1)];
+          delete fichajeTimers[fj._fid];
+          scheduleDraftSave();rerender();
+        }}},'✕')
     ),
-    fj.entrada&&fj.salida?h('span',{class:'badge badge-g'},fmtH(calcH(fj.entrada,fj.salida))):null,
-    h('button',{class:'btn btn-r btn-sm',on:{click:()=>{fEntry.fichajes=[...fEntry.fichajes.slice(0,i),...fEntry.fichajes.slice(i+1)];scheduleDraftSave();rerender();}}},'✕')
+    // Row 2: nota + tarea asociada
+    h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center'}},
+      h('input',{type:'text',placeholder:'Nota del fichaje...',value:fj.nota||'',
+        style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem .5rem',color:'var(--ink)',fontSize:'.8rem'},
+        on:{blur:e=>{fEntry.fichajes[i].nota=e.target.value;scheduleDraftSave();}}}),
+      h('select',{
+        style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.75rem',maxWidth:'130px'},
+        on:{change:ev=>{fEntry.fichajes[i].taskId=ev.target.value;scheduleDraftSave();}}
+      },
+        ...taskOpts.map(t=>h('option',{value:t.id||'',selected:(t.id||'')===(fj.taskId||'')?true:false},
+          t.id?(t.titulo||'Tarea').slice(0,20)+(t.otNumero?' ['+t.otNumero+']':''):'Sin tarea'
+        ))
+      )
+    ),
+    // Timer display if running
+    ftimer.running?h('div',{style:{fontSize:'.72rem',color:'var(--acc)',fontWeight:700}},'⏱ En curso: '+formatTimer(ftimer.elapsed)):null
   );
 }
+
 
 function renderJourney(j,i,ctx){
   const vehOpts = [{id:'',nombre:'Manual'},...S.vehicles];
@@ -1097,13 +1192,46 @@ function renderCalendario(){
           const isToday=ds===today();
           const isSel=ds===selDate;
           let cls='cal-day';
+          const isWorked = hasEntry;
+          const isHol = isHolidayES(ds);
+          const isVac = isVacacion(ds);
           if(isSel)cls+=' selected';
           else if(isToday)cls+=' today';
+          else if(isWorked)cls+=' worked';
+          else if(isHol)cls+=' holiday';
+          else if(isVac)cls+=' vacation';
           if(hasEntry||hasTasks)cls+=' has-e';
-          return h('div',{class:cls,on:{click:()=>{selDate=ds;rerender();}}},cell.d);
+          return h('div',{class:cls,
+            on:{
+              click:()=>{selDate=ds;rerender();},
+              contextmenu:ev=>{
+                ev.preventDefault();
+                // Right click = toggle vacation
+                if(!isWorked) toggleVacacion(ds);
+              }
+            },
+            title:isHol?'Festivo nacional'+(isWorked?' (trabajado)':''):isVac?'Vacaciones (clic derecho para quitar)':'Clic derecho para marcar vacaciones'
+          },cell.d);
         })
       )
     ),
+    // Leyenda
+    h('div',{style:{display:'flex',gap:'.8rem',flexWrap:'wrap',padding:'.5rem 0',fontSize:'.72rem'}},
+      h('div',{style:{display:'flex',alignItems:'center',gap:'.3rem'}},
+        h('div',{style:{width:'14px',height:'14px',borderRadius:'3px',background:'rgba(34,197,94,.3)'}}),
+        'Trabajado'
+      ),
+      h('div',{style:{display:'flex',alignItems:'center',gap:'.3rem'}},
+        h('div',{style:{width:'14px',height:'14px',borderRadius:'3px',background:'rgba(239,68,68,.2)'}}),
+        'Festivo'
+      ),
+      h('div',{style:{display:'flex',alignItems:'center',gap:'.3rem'}},
+        h('div',{style:{width:'14px',height:'14px',borderRadius:'3px',background:'rgba(234,179,8,.25)'}}),
+        'Vacaciones'
+      ),
+      h('span',{style:{color:'var(--ink3)'}}, '(Clic derecho en dia = marcar/desmarcar vacaciones)')
+    ),
+
     // Detalle del día seleccionado
     selDate?renderDayDetail(selDate):null
   );
@@ -1112,8 +1240,19 @@ function renderCalendario(){
 function renderDayDetail(ds){
   const entry=S.entries.find(e=>e.fecha===ds);
   const tasks=S.tasks.filter(t=>t.fecha===ds);
+  const isHol=isHolidayES(ds);
+  const isVac=isVacacion(ds);
   return h('div',{class:'card'},
-    h('div',{class:'sec-title'},`${cap(wday(ds))}, ${dlbl(ds)}`),
+    h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.5rem'}},
+      h('div',{class:'sec-title',style:{margin:0,flex:1}},cap(wday(ds))+', '+dlbl(ds)),
+      isHol?h('span',{class:'badge badge-r'},'Festivo'):null,
+      isVac?h('span',{class:'badge badge-y'},'Vacaciones'):null,
+      h('button',{
+        class:'btn btn-sm '+(isVac?'btn-y':'btn-gh'),
+        style:{fontSize:'.7rem'},
+        on:{click:()=>toggleVacacion(ds)}
+      },isVac?'✓ En vacaciones':'+ Marcar vacaciones')
+    ),
     entry
       ? h('div',{},
           h('div',{style:{fontSize:'.85rem',marginBottom:'.4rem'}},
@@ -4403,11 +4542,11 @@ function startTimer(){
   timerStart=Date.now()-timerElapsed*1000;
   timerInterval=setInterval(()=>{
     timerElapsed=Math.floor((Date.now()-timerStart)/1000);
-    // Update timer display without full rerender
-    const el=document.querySelector('.timer-display');
-    if(el) el.textContent=formatTimer(timerElapsed);
-    // Update page title
     updateTitle();
+    // Update any running fichaje timers display
+    let anyRunning=false;
+    Object.values(fichajeTimers).forEach(ft=>{ if(ft.running) anyRunning=true; });
+    if(anyRunning) rerender();
   },1000);
   rerender();
 }
@@ -4434,7 +4573,8 @@ function finishTimer(){
   const netHours=Math.round(netSecs/36)/100;
   // Create fichaje entry
   const now=new Date();
-  const endTime=pad(now.getHours())+':'+pad(now.getMinutes());
+  const manualEnd=document.getElementById('timer-end-manual')?.value;
+  const endTime=manualEnd||pad(now.getHours())+':'+pad(now.getMinutes());
   const startDate=new Date(timerStart+(timerDeduct*60*1000/2));
   const startTime=pad(startDate.getHours())+':'+pad(startDate.getMinutes());
   fEntry.fichajes.push({_fid:Date.now(),entrada:startTime,salida:endTime,nota:'Temporizador ('+timerDeduct+'min descanso)',editing:false});
@@ -4668,6 +4808,63 @@ function emergencyExport(){
   }catch(e){ showAlert('Error al exportar: ' + e.message, 'err'); }
 }
 
+
+// ── FESTIVOS Y VACACIONES ────────────────────────────────
+let vacaciones = []; // array of 'YYYY-MM-DD' strings
+
+function isHolidayES(dateStr){
+  // Festivos nacionales España (fijos)
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const fixed = [
+    `${y}-01-01`, // Año Nuevo
+    `${y}-01-06`, // Reyes
+    `${y}-05-01`, // Día del Trabajo
+    `${y}-08-15`, // Asunción
+    `${y}-10-12`, // Fiesta Nacional
+    `${y}-11-01`, // Todos los Santos
+    `${y}-12-06`, // Constitución
+    `${y}-12-08`, // Inmaculada
+    `${y}-12-25`, // Navidad
+    `${y}-12-26`, // San Esteban (Cataluña/otras)
+  ];
+  // Semana Santa (Viernes Santo) - aproximado
+  const easter = getEasterDate(y);
+  const goodFriday = new Date(easter); goodFriday.setDate(easter.getDate()-2);
+  fixed.push(goodFriday.toISOString().slice(0,10));
+  return fixed.includes(dateStr);
+}
+
+function getEasterDate(y){
+  // Algoritmo de Meeus/Jones/Butcher
+  const a=y%19,b=Math.floor(y/100),c=y%100;
+  const d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25);
+  const g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30;
+  const i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7;
+  const m2=Math.floor((a+11*h+22*l)/451);
+  const month=Math.floor((h+l-7*m2+114)/31);
+  const day=((h+l-7*m2+114)%31)+1;
+  return new Date(y,month-1,day);
+}
+
+function isVacacion(dateStr){ return vacaciones.includes(dateStr); }
+
+async function loadVacaciones(){
+  const s=(await dbAll(ST.settings))[0]||{};
+  vacaciones = s.vacaciones||[];
+}
+
+async function toggleVacacion(dateStr){
+  if(vacaciones.includes(dateStr)){
+    vacaciones=vacaciones.filter(d=>d!==dateStr);
+  } else {
+    vacaciones.push(dateStr);
+    vacaciones.sort();
+  }
+  const s=(await dbAll(ST.settings))[0]||{};
+  await dbPut(ST.settings,{...s,id:1,vacaciones});
+  rerender();
+}
+
 // ── RELOJ ────────────────────────────────────────────────
 function startClock(){
   function tick(){
@@ -4717,6 +4914,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     // Load Firebase config if saved
     const savedCfg=localStorage.getItem('fbConfig');
     if(savedCfg){ try{ fbConfig=JSON.parse(savedCfg); await initFirebase(); }catch(e){} }
+    await loadVacaciones();
     renderApp();
     startClock();
     updateTitle();
