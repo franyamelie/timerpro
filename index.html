@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779139204240 -->
+<!-- v1779139960679 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -5108,44 +5108,18 @@ function checkDriveForNewData(){
 
 
 // ── SERVICE WORKER (offline support) ─────────────────────
-const SW_CODE = `
-const CACHE = 'timerpro-v1779139182';
-self.addEventListener('install', e => {
-  self.skipWaiting();
-});
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys().then(keys => Promise.all(
-      keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))
-    )).then(()=>self.clients.claim())
-  );
-});
-self.addEventListener('fetch', e => {
-  // Network first - always try to get fresh content
-  if(e.request.method !== 'GET') return;
-  if(e.request.url.includes('script.google.com') ||
-     e.request.url.includes('googleapis') ||
-     e.request.url.includes('tile.openstreetmap') ||
-     e.request.url.includes('cdnjs') ||
-     e.request.url.includes('gstatic')) return;
-  e.respondWith(
-    fetch(e.request, {cache:'no-cache'}).then(r => {
-      if(r && r.status===200){
-        const clone=r.clone();
-        caches.open(CACHE).then(c=>c.put(e.request,clone));
-      }
-      return r;
-    }).catch(() => caches.match(e.request))
-  );
-});
-`;
-
+// ── SERVICE WORKER: Unregister all to prevent cache issues ──
 if('serviceWorker' in navigator){
-  try{
-    const blob = new Blob([SW_CODE], {type:'application/javascript'});
-    const swUrl = URL.createObjectURL(blob);
-    navigator.serviceWorker.register(swUrl).catch(()=>{});
-  }catch(e){}
+  navigator.serviceWorker.getRegistrations().then(regs=>{
+    regs.forEach(reg=>{
+      reg.unregister();
+      console.log('SW unregistered');
+    });
+  });
+  // Clear all caches
+  if('caches' in window){
+    caches.keys().then(keys=>keys.forEach(k=>caches.delete(k)));
+  }
 }
 
 // ── ONLINE/OFFLINE DETECTION ──────────────────────────────
@@ -5173,6 +5147,14 @@ window.addEventListener('offline', handleOffline);
 
 
 // ── TEMPORIZADOR ──────────────────────────────────────────
+
+
+function formatTimerFull(s){
+  if(!s||s<=0) return '00h 00m 00s';
+  const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60;
+  if(h>0) return pad(h)+'h '+pad(m)+'m '+pad(sec)+'s';
+  return pad(m)+'m '+pad(sec)+'s';
+}
 function formatTimer(secs){
   const h=Math.floor(secs/3600);
   const m=Math.floor((secs%3600)/60);
