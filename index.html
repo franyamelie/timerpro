@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779132785709 -->
+<!-- v1779133756169 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -310,6 +310,14 @@ function h(tag, attrs, ...children){
 }
 
 let renderScheduled = false;
+function rerenderSetNotas(){
+  setTimeout(()=>{
+    const el=document.getElementById('notas-editor');
+    if(el && el.contentEditable==='true' && document.activeElement!==el){
+      el.innerHTML=fEntry.notas||'';
+    }
+  },0);
+}
 function rerender(){
   if(renderScheduled)return;
   renderScheduled=true;
@@ -797,7 +805,32 @@ function renderFichar(){
 
     // Notas
     h('div',{class:'card'},
-      fieldArea('Nota de jornada',e.notas,v=>{fEntry.notas=v})
+      h('div',{class:'field'},
+        h('label',{},'NOTAS DE JORNADA'),
+        h('div',{style:{display:'flex',gap:'.3rem',marginBottom:'.3rem',flexWrap:'wrap'}},
+          h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontWeight:'bold'},title:'Negrita',
+            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('bold');}}},'N'),
+          h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontStyle:'italic'},title:'Cursiva',
+            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('italic');}}},'C'),
+          h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',textDecoration:'underline'},title:'Subrayado',
+            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('underline');}}},'S'),
+          h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontSize:'.7rem'},title:'Limpiar formato',
+            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('removeFormat');}}},'✕ Formato')
+        ),
+        h('div',{
+          id:'notas-editor',
+          contenteditable:'true',
+          spellcheck:true,
+          style:{
+            minHeight:'70px',background:'var(--surf2)',border:'1px solid var(--brd)',
+            borderRadius:'var(--r2)',padding:'.5rem .6rem',color:'var(--ink)',fontSize:'.85rem',
+            lineHeight:1.6,outline:'none',wordBreak:'break-word'
+          },
+          on:{
+            blur:ev=>{fEntry.notas=ev.target.innerHTML;scheduleDraftSave();},
+          }
+        })
+      )
     ),
 
     // Ubicación
@@ -2629,16 +2662,24 @@ async function captureGPS(tipo){
 
 async function saveEntry(){
   if(!fEntry.fecha){showAlert('Selecciona una fecha','err');return;}
-  // Read notas directly from DOM before saving
   const notasEl = document.querySelector('textarea');
   if(notasEl) fEntry.notas = notasEl.value;
   try{
+    // Check for duplicate date
+    const existing = S.entries.find(e=>e.fecha===fEntry.fecha && e.id!==fEntry.id);
+    if(existing){
+      if(!confirm('Ya existe una jornada para el '+fEntry.fecha+'. ¿Sobreescribir con los datos actuales?')) return;
+      // Merge: delete old, save new with old id
+      fEntry.id = existing.id;
+      editingEntry = true;
+    }
     if(editingEntry&&fEntry.id){
-      await dbPut(ST.entries,fEntry);
-      S.entries=S.entries.map(e=>e.id===fEntry.id?fEntry:e);
+      await dbPut(ST.entries,{...fEntry,_draft:false});
+      S.entries=S.entries.map(e=>e.id===fEntry.id?{...fEntry,_draft:false}:e);
     } else {
-      const id=await dbPut(ST.entries,fEntry);
-      S.entries.push({...fEntry,id});
+      const id=await dbPut(ST.entries,{...fEntry,_draft:false});
+      fEntry.id=id;
+      S.entries.push({...fEntry,id,_draft:false});
     }
     editingEntry=false;
     fEntry=defEntry();
@@ -2647,6 +2688,22 @@ async function saveEntry(){
     showAlert('Jornada guardada ✓');
     rerender();
   }catch(e){showAlert(e.message,'err');}
+}
+
+// Clean up any existing duplicates
+async function deduplicateEntries(){
+  const seen={};
+  const toDelete=[];
+  S.entries.sort((a,b)=>b.id-a.id); // keep newest
+  S.entries.forEach(e=>{
+    if(seen[e.fecha]) toDelete.push(e.id);
+    else seen[e.fecha]=true;
+  });
+  for(const id of toDelete){
+    await dbDelete(ST.entries,id);
+    S.entries=S.entries.filter(e=>e.id!==id);
+  }
+  if(toDelete.length) showAlert('Se eliminaron '+toDelete.length+' jornadas duplicadas');
 }
 
 function cancelEditing(){
@@ -5063,6 +5120,8 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
         });
       }catch(e){ syncStatus='ok'; }
     }
+    // Fix any existing duplicates on startup
+    await deduplicateEntries();
     // Restore timer state if was running
     const savedTimer=localStorage.getItem('timerState');
     if(savedTimer){
