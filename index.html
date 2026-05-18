@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779136761874 -->
+<!-- v1779137099629 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -43,13 +43,29 @@
   --blu:#1d6fa8;--blu-lt:rgba(29,111,168,.14);
   --yel:#b45309;--yel-lt:rgba(180,83,9,.14);
 }
+input[type="time"]{
+  cursor:pointer;
+  min-width:120px;
+}
 input[type="time"]::-webkit-calendar-picker-indicator{
+  background:none;
   filter:invert(var(--time-invert,0));
   cursor:pointer;
-  opacity:0.7;
-  padding:2px;
+  opacity:1;
+  padding:2px 4px;
+  font-size:1rem;
+  display:block !important;
 }
-input[type="time"]::-webkit-calendar-picker-indicator:hover{opacity:1;}
+input[type="time"]::-webkit-calendar-picker-indicator:hover{
+  background:var(--surf3);
+  border-radius:4px;
+}
+textarea[spellcheck="true"]:not(:focus),
+div[contenteditable="true"][spellcheck="true"]:not(:focus){
+  /* Browser handles spell check display */
+}
+/* Make spell check errors visible */
+:lang(es)::spelling-error { text-decoration: underline red; }
 html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px}
 #app{display:flex;flex-direction:column;height:100dvh;max-width:900px;margin:0 auto}
 nav{display:flex;align-items:center;justify-content:space-between;padding:.6rem 1rem;background:var(--surf);border-bottom:1px solid var(--brd);flex-shrink:0;gap:.5rem}
@@ -335,6 +351,45 @@ function initFieldAreas(){
       }
     });
     _fieldAreaData={};
+  });
+}
+
+
+// Attach direct DOM event listeners to fichaje inputs after each render
+// This is more reliable than virtual DOM events for critical form state
+function attachFichajeListeners(){
+  requestAnimationFrame(()=>{
+    document.querySelectorAll('.fich-row').forEach((row,i)=>{
+      if(!fEntry.fichajes[i]) return;
+      const times=row.querySelectorAll('input[type="time"]');
+      if(times[0]){
+        times[0].oninput=ev=>{
+          if(fEntry.fichajes[i]) fEntry.fichajes[i].entrada=ev.target.value;
+        };
+        times[0].onchange=ev=>{
+          if(fEntry.fichajes[i]){ fEntry.fichajes[i].entrada=ev.target.value; scheduleDraftSave(); }
+        };
+      }
+      if(times[1]){
+        times[1].oninput=ev=>{
+          if(fEntry.fichajes[i]) fEntry.fichajes[i].salida=ev.target.value;
+        };
+        times[1].onchange=ev=>{
+          if(fEntry.fichajes[i]){ fEntry.fichajes[i].salida=ev.target.value; scheduleDraftSave(); }
+        };
+      }
+      // Textarea for nota
+      const nota=row.querySelector('textarea');
+      if(nota){
+        nota.oninput=ev=>{ if(fEntry.fichajes[i]) fEntry.fichajes[i].nota=ev.target.value; };
+        nota.onblur=ev=>{ if(fEntry.fichajes[i]){ fEntry.fichajes[i].nota=ev.target.value; scheduleDraftSave(); } };
+      }
+    });
+    // Set spellcheck attribute explicitly on all textareas and contenteditable
+    document.querySelectorAll('textarea,div[contenteditable]').forEach(el=>{
+      el.setAttribute('spellcheck','true');
+      el.setAttribute('lang','es');
+    });
   });
 }
 
@@ -2773,7 +2828,15 @@ function showAlert(msg, type='ok'){
 }
 
 function openModal(m){ S.modal=m; rerender(); }
-function toggleDark(){ S.dark=!S.dark; rerender(); }
+function toggleDark(){
+  // Capture current form values BEFORE theme change destroys inputs
+  captureFormState();
+  S.dark=!S.dark;
+  // Apply theme class immediately without full rerender to avoid losing inputs
+  document.documentElement.classList.toggle('light',!S.dark);
+  // Now safe to rerender
+  rerender();
+}
 
 function addFichaje(){
   fEntry.fichajes.push(defFichaje());
@@ -4777,7 +4840,7 @@ function checkDriveForNewData(){
 
 // ── SERVICE WORKER (offline support) ─────────────────────
 const SW_CODE = `
-const CACHE = 'timerpro-v1779136761';
+const CACHE = 'timerpro-v1779137099';
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE).then(c => c.addAll([self.location.href.replace(/\\?.*$/,'')]))
