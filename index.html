@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779112624707 -->
+<!-- v1779132785709 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -4571,7 +4571,7 @@ function checkDriveForNewData(){
 
 // ── SERVICE WORKER (offline support) ─────────────────────
 const SW_CODE = `
-const CACHE = 'timerpro-v1';
+const CACHE = 'timerpro-v1779132785';
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE).then(c => c.addAll([self.location.href.replace(/\\?.*$/,'')]))
