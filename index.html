@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779137637149 -->
+<!-- v1779138645275 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1073,8 +1073,25 @@ function renderFichar(){
                   )
                 ),
                 h('div',{style:{display:'flex',gap:'.3rem'}},
-                  h('button',{class:'btn btn-b btn-sm',on:{click:ev=>{ev.stopPropagation();loadHistorial(en);}}},'✏️'),
-                  h('button',{class:'btn btn-r btn-sm',on:{click:ev=>{ev.stopPropagation();deleteEntry(en.id);}}},'🗑')
+                  h('button',{class:'btn btn-b btn-sm',title:'Editar jornada',on:{click:ev=>{ev.stopPropagation();loadHistorial(en);}}},'✏️'),
+                  h('button',{class:'btn btn-g btn-sm',title:'Guardar jornada actual en este día',on:{click:ev=>{
+                    ev.stopPropagation();
+                    if(!confirm('¿Guardar la jornada actual sobreescribiendo el día '+en.fecha+'?')) return;
+                    const saved={...fEntry,fecha:en.fecha,id:en.id};
+                    const notasEl=document.getElementById('notas-editor');
+                    if(notasEl) saved.notas=notasEl.innerHTML;
+                    captureFormState();
+                    dbPut(ST.entries,{...saved,_draft:false}).then(()=>{
+                      S.entries=S.entries.map(e=>e.id===en.id?{...saved}:e);
+                      showAlert('Jornada guardada ✓');
+                      rerender();
+                    });
+                  }}},'💾'),
+                  h('button',{class:'btn btn-r btn-sm',title:'Eliminar jornada',on:{click:ev=>{
+                    ev.stopPropagation();
+                    if(!confirm('¿Eliminar la jornada del '+en.fecha+'? Esta acción no se puede deshacer.')) return;
+                    deleteEntry(en.id);
+                  }}},'🗑')
                 )
               )
             )
@@ -2711,6 +2728,18 @@ function scheduleDraftSave(){
 
 let _draftSaving=false;
 async function saveDraft(){
+  // Always capture latest DOM values before saving
+  const notasEl=document.getElementById('notas-editor');
+  if(notasEl) fEntry.notas=notasEl.innerHTML||fEntry.notas;
+  const fichRows=document.querySelectorAll('.fich-row');
+  fichRows.forEach((row,i)=>{
+    if(!fEntry.fichajes[i]) return;
+    const times=row.querySelectorAll('input[type="time"]');
+    if(times[0]&&times[0].value) fEntry.fichajes[i].entrada=times[0].value;
+    if(times[1]&&times[1].value) fEntry.fichajes[i].salida=times[1].value;
+    const nota=row.querySelector('textarea');
+    if(nota) fEntry.fichajes[i].nota=nota.value;
+  });
   if(!fEntry.fecha||_draftSaving) return;
   _draftSaving=true;
   try{
@@ -2906,8 +2935,11 @@ async function captureGPS(tipo){
 
 async function saveEntry(){
   if(!fEntry.fecha){showAlert('Selecciona una fecha','err');return;}
-  const notasEl = document.querySelector('textarea');
-  if(notasEl) fEntry.notas = notasEl.value;
+  // Read notas from contenteditable div (not textarea)
+  const notasEl = document.getElementById('notas-editor');
+  if(notasEl) fEntry.notas = notasEl.innerHTML;
+  // Also capture all form inputs before saving
+  captureFormState();
   try{
     // Check for duplicate date
     const existing = S.entries.find(e=>e.fecha===fEntry.fecha && e.id!==fEntry.id);
@@ -5071,7 +5103,7 @@ function checkDriveForNewData(){
 
 // ── SERVICE WORKER (offline support) ─────────────────────
 const SW_CODE = `
-const CACHE = 'timerpro-v1779137637';
+const CACHE = 'timerpro-v1779138645';
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE).then(c => c.addAll([self.location.href.replace(/\\?.*$/,'')]))
@@ -5584,6 +5616,14 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     }
     // Fix any existing duplicates on startup
     await deduplicateEntries();
+    // Load most recent entry on boot
+    if(S.entries.length>0 && !editingEntry){
+      const lastEntry=[...S.entries].sort((a,b)=>b.fecha.localeCompare(a.fecha))[0];
+      if(lastEntry){
+        fEntry={...lastEntry,fichajes:[...(lastEntry.fichajes||[]).map(f=>({...f}))]};
+        editingEntry=!!lastEntry.id;
+      }
+    }
     // Restore timer state if was running
     const savedTimer=localStorage.getItem('timerState');
     if(savedTimer){
