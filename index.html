@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779136185346 -->
+<!-- v1779136462286 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -299,6 +299,7 @@ function h(tag, attrs, ...children){
     else if(k==='html') el.innerHTML=v;
     else if(k==='style'&&typeof v==='object') Object.assign(el.style,v);
     else if(k==='data') Object.entries(v).forEach(([dk,dv])=>el.dataset[dk]=dv);
+    else if(k==='spellcheck'){ el.spellcheck=(v===true||v===''||v==='true'); el.setAttribute('spellcheck',v?'true':'false'); }
     else if(BOOL.includes(k)){ el[k]=(v===true||v===''||v==='true'); }
     else if(v!==false&&v!==null&&v!==undefined) el.setAttribute(k,v);
   });
@@ -1018,7 +1019,7 @@ function renderFichaje(fj,i){
         if(el) el.value=t;
         scheduleDraftSave();
       }}
-    },'🕐')
+    },'Ahora')
   );
 
   return h('div',{class:'fich-row',style:{flexDirection:'column',alignItems:'stretch',padding:'.6rem',gap:'.4rem'}},
@@ -1063,7 +1064,7 @@ function renderFichaje(fj,i){
     // Row 2: nota + tarea asociada
     h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center'}},
       h('input',{
-        type:'text',spellcheck:true,
+        type:'text',spellcheck:true,lang:'es',
         placeholder:'Nota del fichaje...',value:fj.nota||'',
         style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',
                borderRadius:'var(--r2)',padding:'.3rem .5rem',color:'var(--ink)',fontSize:'.8rem'},
@@ -4759,7 +4760,7 @@ function checkDriveForNewData(){
 
 // ── SERVICE WORKER (offline support) ─────────────────────
 const SW_CODE = `
-const CACHE = 'timerpro-v1779132785';
+const CACHE = 'timerpro-v1779136462';
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE).then(c => c.addAll([self.location.href.replace(/\\?.*$/,'')]))
