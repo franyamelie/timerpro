@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779139960679 -->
+<!-- v1779140353128 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -721,6 +721,19 @@ function renderFichar(){
                   timerStart=d.getTime()-timerElapsed*1000;
                 }
               }}}),
+            h('button',{class:'btn btn-b btn-sm',title:'Abrir reloj',
+              style:{fontSize:'1.1rem',padding:'.3rem .5rem'},
+              on:{click:()=>{
+                const cur=document.getElementById('timer-start-manual')?.value||'';
+                showClockPicker(cur,v=>{
+                  const[h,m]=v.split(':').map(Number);
+                  const d=new Date(); d.setHours(h,m,0,0);
+                  timerStart=d.getTime()-timerElapsed*1000;
+                  const inp=document.getElementById('timer-start-manual');
+                  if(inp) inp.value=v;
+                  rerender();
+                });
+              }}},'🕐'),
             h('button',{class:'btn btn-gh btn-sm',title:'Poner hora actual',on:{click:()=>{
               const now=new Date();
               const inp=document.getElementById('timer-start-manual');
@@ -1124,9 +1137,9 @@ function renderFichaje(fj,i){
     }),
     // "Ahora" button - sets current time
     h('button',{
-      class:'btn btn-b btn-sm',
-      style:{padding:'.25rem .5rem',fontSize:'1rem',flexShrink:0},
-      title:'Abrir reloj',
+      class:'btn btn-b',
+      style:{padding:'.3rem .6rem',fontSize:'1.2rem',flexShrink:0,minWidth:'44px'},
+      title:'Abrir reloj para seleccionar hora',
       on:{click:()=>{
         showClockPicker(fEntry.fichajes[i][field]||'', v=>{
           fEntry.fichajes[i][field]=v;
