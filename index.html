@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779133756169 -->
+<!-- v1779135144578 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -310,13 +310,32 @@ function h(tag, attrs, ...children){
 }
 
 let renderScheduled = false;
+
+// Set innerHTML for all contenteditable fieldArea divs after render
+let _fieldAreaData = {};
+function registerFieldArea(id, html){
+  _fieldAreaData[id] = html;
+}
+function initFieldAreas(){
+  requestAnimationFrame(()=>{
+    Object.entries(_fieldAreaData).forEach(([id,html])=>{
+      const el=document.getElementById(id);
+      if(el && el.contentEditable==='true' && document.activeElement!==el){
+        if(el.innerHTML!==html) el.innerHTML=html||'';
+      }
+    });
+    _fieldAreaData={};
+  });
+}
+
 function rerenderSetNotas(){
-  setTimeout(()=>{
+  requestAnimationFrame(()=>{
+    // Update notas editor
     const el=document.getElementById('notas-editor');
     if(el && el.contentEditable==='true' && document.activeElement!==el){
-      el.innerHTML=fEntry.notas||'';
+      if(el.innerHTML!==(fEntry.notas||'')) el.innerHTML=fEntry.notas||'';
     }
-  },0);
+  });
 }
 function rerender(){
   if(renderScheduled)return;
@@ -1211,7 +1230,26 @@ function renderWeekView(){
             cursor:'pointer',minHeight:'80px',fontSize:'.75rem',
             border:'1px solid '+(isSel?'var(--acc)':'var(--brd)')
           },
-          on:{click:()=>{selDate=ds;rerender();}}
+          on:{
+  click:()=>{selDate=ds;rerender();},
+  dblclick:()=>{
+    // Double click: go directly to that day's ficha
+    selDate=ds;
+    const existing=S.entries.find(e=>e.fecha===ds);
+    if(existing){
+      // Load existing entry
+      fEntry={...existing};
+      editingEntry=true;
+    } else {
+      // Create new entry for that day
+      fEntry={...defEntry(),fecha:ds};
+      editingEntry=false;
+    }
+    S.tab='fichar';
+    rerender();
+    showAlert('Ficha del '+ds);
+  }
+}
         },
           h('div',{style:{fontWeight:700,fontSize:'.8rem',marginBottom:'.2rem'}},
             WSHORT[days.indexOf(ds)]+' '+parseInt(ds.slice(8))
@@ -2400,15 +2438,43 @@ function field(label, type, value, onChange, attrs={}, placeholder=''){
   return el;
 }
 
-function fieldArea(label, value, onChange){
+function fieldArea(label,val,cb,opts={}){
+  const uid='fa-'+Math.random().toString(36).slice(2,7);
+  const withFormat=opts.format!==false;
+  const fmtBtn=(cmd,lbl,style={})=>h('button',{
+    class:'btn btn-gh',style:{padding:'.15rem .4rem',fontSize:'.72rem',...style},
+    title:cmd,
+    on:{mousedown:ev=>{
+      ev.preventDefault();
+      const el=document.getElementById(uid);
+      if(el){el.focus();document.execCommand(cmd);}
+    }}
+  },lbl);
   return h('div',{class:'field'},
     h('label',{},label),
-    h('textarea',{
-      on:{
-        blur:e=>{onChange(e.target.value);scheduleDraftSave();},
-        input:e=>onChange(e.target.value)  // capture every keystroke
-      }
-    },value||'')
+    withFormat?h('div',{style:{display:'flex',gap:'.25rem',marginBottom:'.25rem',flexWrap:'wrap'}},
+      fmtBtn('bold','N',{fontWeight:'bold'}),
+      fmtBtn('italic','C',{fontStyle:'italic'}),
+      fmtBtn('underline','S',{textDecoration:'underline'}),
+      fmtBtn('removeFormat','✕',{fontSize:'.65rem'})
+    ):null,
+    (() => {
+      registerFieldArea(uid, String(val||''));
+      return h('div',{
+        id:uid, contenteditable:'true', spellcheck:true,
+        style:{
+          width:'100%',minHeight:opts.minHeight||'60px',
+          background:'var(--surf2)',border:'1px solid var(--brd)',
+          borderRadius:'var(--r2)',padding:'.4rem .5rem',
+          color:'var(--ink)',fontSize:'.85rem',lineHeight:1.5,
+          outline:'none',wordBreak:'break-word',boxSizing:'border-box'
+        },
+        on:{
+          blur:ev=>{cb&&cb(ev.target.innerHTML);},
+          input:ev=>{cb&&cb(ev.target.innerHTML);}
+        }
+      });
+    })()
   );
 }
 
@@ -2484,38 +2550,47 @@ function scheduleDraftSave(){
   draftSaveTimer = setTimeout(saveDraft, 2000);
 }
 
+let _draftSaving=false;
 async function saveDraft(){
-  if(!fEntry.fecha) return;
+  if(!fEntry.fecha||_draftSaving) return;
+  _draftSaving=true;
   try{
-    // Save as draft (with _draft flag so we know it's not finalized)
-    const draft={...fEntry, _draft:true, _savedAt:new Date().toISOString()};
-    // Check if entry already exists
-    const existing = S.entries.find(e=>e.fecha===fEntry.fecha && !e._draft);
-    if(existing){
-      // Update existing entry automatically
-      draft.id = existing.id;
-      draft._draft = false;
-      await dbPut(ST.entries, draft);
-      S.entries = S.entries.map(e=>e.id===existing.id ? draft : e);
-    } else if(fEntry.id){
-      // Has ID, update it
-      await dbPut(ST.entries, draft);
-      S.entries = S.entries.map(e=>e.id===fEntry.id ? draft : e);
-    } else {
-      // Save as new draft entry
-      const existing_draft = S.entries.find(e=>e.fecha===fEntry.fecha && e._draft);
-      if(existing_draft){
-        draft.id = existing_draft.id;
-        await dbPut(ST.entries, draft);
-        S.entries = S.entries.map(e=>e.id===existing_draft.id ? draft : e);
-      } else {
-        const id = await dbPut(ST.entries, draft);
-        fEntry.id = id;
-        S.entries.push({...draft, id});
+    const draft={...fEntry,_draft:true,_savedAt:new Date().toISOString()};
+    // Find ANY existing entry for this date (draft or not)
+    const allForDate=S.entries.filter(e=>e.fecha===fEntry.fecha);
+    const finalized=allForDate.find(e=>!e._draft);
+    const draftEntry=allForDate.find(e=>e._draft);
+    // Remove duplicate entries for same date (keep newest)
+    if(allForDate.length>1){
+      const keep=finalized||draftEntry;
+      for(const e of allForDate){
+        if(e!==keep && e.id && e.id!==fEntry.id){
+          await dbDelete(ST.entries,e.id);
+          S.entries=S.entries.filter(x=>x.id!==e.id);
+        }
       }
     }
-    localStorage.setItem('lastSave', new Date().toISOString());
-  }catch(e){ console.warn('Draft save failed:', e); }
+    if(fEntry.id){
+      // We have an ID - just update
+      await dbPut(ST.entries,draft);
+      S.entries=S.entries.map(e=>e.id===fEntry.id?{...draft}:e);
+      if(!S.entries.find(e=>e.id===fEntry.id)) S.entries.push({...draft});
+    } else if(finalized){
+      // Don't overwrite a finalized entry with a draft
+      fEntry.id=finalized.id;
+    } else if(draftEntry){
+      draft.id=draftEntry.id;
+      fEntry.id=draftEntry.id;
+      await dbPut(ST.entries,draft);
+      S.entries=S.entries.map(e=>e.id===draftEntry.id?{...draft}:e);
+    } else {
+      const id=await dbPut(ST.entries,draft);
+      fEntry.id=id;
+      S.entries.push({...draft,id});
+    }
+    localStorage.setItem('lastSave',new Date().toISOString());
+  }catch(e){console.warn('Draft save:',e);}
+  finally{_draftSaving=false;}
 }
 
 function captureFormValues(){
@@ -5084,31 +5159,50 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
           window[cb]=async function(result){
             done=true; delete window[cb]; sc.remove();
             if(result&&result.ok&&result.data){
-              // Silent boot load - no alert, no snapshot
+              // Silent boot load - MERGE, never lose local data
               const d=result.data;
               try{
-                // Preserve local photos
-                const lWorkerMap={}; workers.forEach(w=>{if(w.id)lWorkerMap[w.id]=w;});
-                const lCompanyMap={}; companies.forEach(c=>{if(c.id)lCompanyMap[c.id]=c;});
-                const lEntryMap={}; S.entries.forEach(e=>{if(e.fecha)lEntryMap[e.fecha]={fotosGastos:e.fotosGastos||[]};});
-                const lTaskMap={}; S.tasks.forEach(t=>{if(t.id)lTaskMap[t.id]={fotos:t.fotos||[]};});
+                // Only load if Drive has data and is not obviously older
+                const driveTs = new Date(d.exportedAt||0).getTime();
+                const localTs = parseInt(localStorage.getItem('lastDriveLoad')||'0');
+                // Build local maps for merging
                 const savedFoto=fWorker.foto||'', savedFirma=fWorker.firma||'', savedLogo=fCompany.logo||'';
-                await Promise.all(Object.values(ST).filter(s=>s!=='snapshots').map(s=>dbClear(s)));
-                for(const e of(d.entries||[])){ await dbPut(ST.entries,{...e,fotosGastos:e.fotosGastos?.length?e.fotosGastos:(lEntryMap[e.fecha]?.fotosGastos||[])}); }
-                for(const t of(d.tasks||[])){ await dbPut(ST.tasks,{...t,fotos:t.fotos?.length?t.fotos:(lTaskMap[t.id]?.fotos||[])}); }
-                for(const s of(d.sites||[])) await dbPut(ST.sites,s);
-                for(const w of(d.workorders||[])) await dbPut(ST.workorders,w);
-                for(const v of(d.vehicles||[])) await dbPut(ST.vehicles,v);
-                for(const w of(d.workers||[])){ const lw=lWorkerMap[w.id]||{}; await dbPut(ST.workers,{...w,foto:w.foto||lw.foto||'',firma:w.firma||lw.firma||''}); }
-                for(const co of(d.companies||[])){ const lc=lCompanyMap[co.id]||{}; await dbPut(ST.companies,{...co,logo:co.logo||lc.logo||''}); }
-                if(d.worker) fWorker={...defWorker,...d.worker,foto:d.worker.foto||savedFoto,firma:d.worker.firma||savedFirma};
-                if(d.company) fCompany={...defCompany,...d.company,logo:d.company.logo||savedLogo};
-                activeWorkerId=d.activeWorkerId||null;
-                activeCompanyId=d.activeCompanyId||null;
+                const localEntryMap={}; S.entries.forEach(e=>{localEntryMap[e.fecha]=e;});
+                const localWorkerMap={}; workers.forEach(w=>{if(w.id)localWorkerMap[w.id]=w;});
+                const localCompanyMap={}; companies.forEach(c=>{if(c.id)localCompanyMap[c.id]=c;});
+
+                // MERGE entries: keep local if newer or not in Drive
+                const driveEntryMap={};
+                (d.entries||[]).forEach(e=>{driveEntryMap[e.fecha]=e;});
+                // Add/update entries from Drive that don't exist locally or are newer
+                for(const [fecha,de] of Object.entries(driveEntryMap)){
+                  const le=localEntryMap[fecha];
+                  if(!le){
+                    // Drive has entry we don't have locally - add it
+                    await dbPut(ST.entries,{...de,fotosGastos:de.fotosGastos||[]});
+                    S.entries.push({...de});
+                  } else if(!le._draft && driveTs > localTs){
+                    // Drive data is newer than last load - update
+                    await dbPut(ST.entries,{...de,id:le.id,fotosGastos:le.fotosGastos||de.fotosGastos||[]});
+                    S.entries=S.entries.map(e=>e.fecha===fecha?{...de,id:le.id,fotosGastos:le.fotosGastos||[]}:e);
+                  }
+                  // If local has a draft or is newer - keep local
+                }
+                // Merge other collections (replace if Drive has them)
+                if((d.tasks||[]).length>0){ await dbClear(ST.tasks); for(const t of d.tasks) await dbPut(ST.tasks,t); }
+                if((d.sites||[]).length>0){ await dbClear(ST.sites); for(const s of d.sites) await dbPut(ST.sites,s); }
+                if((d.workorders||[]).length>0){ await dbClear(ST.workorders); for(const w of d.workorders) await dbPut(ST.workorders,w); }
+                if((d.vehicles||[]).length>0){ await dbClear(ST.vehicles); for(const v of d.vehicles) await dbPut(ST.vehicles,v); }
+                if((d.workers||[]).length>0){ await dbClear(ST.workers); for(const w of d.workers){ const lw=localWorkerMap[w.id]||{}; await dbPut(ST.workers,{...w,foto:lw.foto||savedFoto,firma:w.firma||lw.firma||savedFirma}); } }
+                if((d.companies||[]).length>0){ await dbClear(ST.companies); for(const co of d.companies){ const lc=localCompanyMap[co.id]||{}; await dbPut(ST.companies,{...co,logo:lc.logo||savedLogo}); } }
+                if(d.worker&&d.worker.nombre) fWorker={...defWorker,...d.worker,foto:savedFoto,firma:d.worker.firma||savedFirma};
+                if(d.company&&d.company.nombre) fCompany={...defCompany,...d.company,logo:savedLogo};
+                if(d.activeWorkerId) activeWorkerId=d.activeWorkerId;
+                if(d.activeCompanyId) activeCompanyId=d.activeCompanyId;
                 await loadData();
                 localStorage.setItem('lastDriveLoad', Date.now().toString());
                 syncStatus='ok';
-              }catch(e){ syncStatus='ok'; }
+              }catch(e){ console.warn('Boot load error:',e); syncStatus='ok'; }
             } else {
               syncStatus='ok';
             }
