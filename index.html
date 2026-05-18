@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779137099629 -->
+<!-- v1779137637149 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -173,6 +173,34 @@ main{flex:1;overflow-y:auto;padding:1rem}
 .locked-badge{display:inline-flex;align-items:center;gap:.3rem;background:var(--acc-lt);color:var(--acc);padding:.2rem .6rem;border-radius:20px;font-size:.72rem;font-weight:700}
 .sep{height:1px;background:var(--brd);margin:.8rem 0}
 @media(min-width:720px){main{padding:1.2rem 1.5rem}.grid-2{grid-template-columns:repeat(2,1fr)}}
+
+/* ── RELOJ SELECTOR ── */
+.clock-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;display:flex;align-items:center;justify-content:center;}
+.clock-box{background:var(--surf);border-radius:20px;padding:1.5rem;width:300px;max-width:95vw;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.4);}
+.clock-title{font-size:.85rem;color:var(--ink2);margin-bottom:.8rem;text-transform:uppercase;letter-spacing:.05em;}
+.clock-display{display:flex;align-items:center;justify-content:center;gap:.3rem;margin-bottom:1rem;}
+.clock-display-h,.clock-display-m{
+  font-size:2.8rem;font-weight:800;padding:.3rem .7rem;border-radius:10px;
+  cursor:pointer;background:var(--surf2);color:var(--ink);min-width:72px;
+  transition:background .15s;
+}
+.clock-display-h.active,.clock-display-m.active{background:var(--acc);color:#fff;}
+.clock-display-sep{font-size:2.5rem;font-weight:800;color:var(--ink);padding-bottom:.2rem;}
+.clock-face{position:relative;width:220px;height:220px;border-radius:50%;background:var(--surf2);margin:0 auto .8rem;touch-action:none;}
+.clock-face-num{
+  position:absolute;width:36px;height:36px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.82rem;font-weight:600;cursor:pointer;
+  transform:translate(-50%,-50%);transition:background .1s,color .1s;
+  color:var(--ink);
+}
+.clock-face-num:hover{background:var(--surf3);}
+.clock-face-num.selected{background:var(--acc);color:#fff;}
+.clock-hand{position:absolute;bottom:50%;left:50%;transform-origin:bottom center;
+  width:2px;background:var(--acc);border-radius:2px;transform:translateX(-50%);}
+.clock-center{position:absolute;top:50%;left:50%;width:8px;height:8px;
+  border-radius:50%;background:var(--acc);transform:translate(-50%,-50%);}
+.clock-btns{display:flex;gap:.5rem;justify-content:space-between;margin-top:.5rem;}
 </style>
 </head>
 <body>
@@ -550,7 +578,7 @@ function renderNav(){
         h('span',{class:'sync-dot '+syncDot}),
         'Drive'
       ),
-      h('button',{class:'nav-btn',title:'Modo oscuro/claro',on:{click:toggleDark}},S.dark?'☀️':'🌙'),
+      h('button',{class:'nav-btn',title:'Modo oscuro/claro',on:{click:toggleDark},'data-theme-icon':''},S.dark?'☀️':'🌙'),
       deferredInstall?h('button',{class:'nav-btn',title:'Instalar app',on:{click:async()=>{if(deferredInstall){deferredInstall.prompt();const r=await deferredInstall.userChoice;if(r.outcome==='accepted')deferredInstall=null;rerender();}}}},'+📲'):null,
       h('button',{class:'nav-btn',title:'Exportar',on:{click:()=>openModal('export')}},'📤'),
       h('button',{class:'nav-btn',title:pinCode?'PIN activo':'Activar PIN',on:{click:setupPIN}},pinCode?'🔐':'🔓'),
@@ -1079,17 +1107,19 @@ function renderFichaje(fj,i){
     }),
     // "Ahora" button - sets current time
     h('button',{
-      class:'btn btn-gh btn-sm',
-      style:{padding:'.25rem .5rem',fontSize:'.72rem',flexShrink:0,whiteSpace:'nowrap'},
-      title:'Usar hora actual',
+      class:'btn btn-b btn-sm',
+      style:{padding:'.25rem .5rem',fontSize:'1rem',flexShrink:0},
+      title:'Abrir reloj',
       on:{click:()=>{
-        const t=nowTime();
-        fEntry.fichajes[i][field]=t;
-        const el=document.getElementById('fich-'+fidPart+'-'+fj._fid);
-        if(el){el.value=t;el.dispatchEvent(new Event('change'));}
-        scheduleDraftSave();
+        showClockPicker(fEntry.fichajes[i][field]||'', v=>{
+          fEntry.fichajes[i][field]=v;
+          const el=document.getElementById('fich-'+fidPart+'-'+fj._fid);
+          if(el) el.value=v;
+          scheduleDraftSave();
+          rerender();
+        });
       }}
-    },'⏱ Ahora')
+    },'🕐')
   );
 
   return h('div',{class:'fich-row',style:{flexDirection:'column',alignItems:'stretch',padding:'.6rem',gap:'.4rem'}},
@@ -2829,13 +2859,15 @@ function showAlert(msg, type='ok'){
 
 function openModal(m){ S.modal=m; rerender(); }
 function toggleDark(){
-  // Capture current form values BEFORE theme change destroys inputs
-  captureFormState();
+  captureFormState(); // save all current input values first
   S.dark=!S.dark;
-  // Apply theme class immediately without full rerender to avoid losing inputs
+  localStorage.setItem('darkMode', S.dark?'1':'0');
+  // Only change CSS class - DO NOT rerender (avoids destroying form inputs)
   document.documentElement.classList.toggle('light',!S.dark);
-  // Now safe to rerender
-  rerender();
+  // Update only the theme icon in the nav bar, not the whole DOM
+  document.querySelectorAll('[data-theme-icon]').forEach(el=>{
+    el.textContent=S.dark?'☀️':'🌙';
+  });
 }
 
 function addFichaje(){
@@ -3547,6 +3579,149 @@ async function downloadPDFTemplate(){
   }
 }
 
+
+// ── RELOJ SELECTOR DE HORA ────────────────────────────
+let _clockState = null;
+
+function showClockPicker(currentVal, onConfirm){
+  const parts=(currentVal||'00:00').split(':');
+  _clockState={
+    hour:parseInt(parts[0])||0,
+    minute:parseInt(parts[1])||0,
+    mode:'hour', // 'hour' or 'minute'
+    onConfirm
+  };
+  renderClock();
+}
+
+function renderClock(){
+  document.querySelectorAll('.clock-modal').forEach(e=>e.remove());
+  if(!_clockState) return;
+  const{hour,minute,mode}=_clockState;
+
+  const nums = mode==='hour'
+    ? [12,1,2,3,4,5,6,7,8,9,10,11,0,13,14,15,16,17,18,19,20,21,22,23]
+    : [0,5,10,15,20,25,30,35,40,45,50,55];
+
+  const modal=document.createElement('div');
+  modal.className='clock-modal';
+  modal.onclick=ev=>{if(ev.target===modal){_clockState=null;modal.remove();}};
+
+  const box=document.createElement('div');
+  box.className='clock-box';
+
+  // Title
+  const title=document.createElement('div');
+  title.className='clock-title';
+  title.textContent='Seleccionar hora';
+  box.appendChild(title);
+
+  // Display
+  const display=document.createElement('div');
+  display.className='clock-display';
+
+  const dh=document.createElement('div');
+  dh.className='clock-display-h'+(mode==='hour'?' active':'');
+  dh.textContent=String(hour).padStart(2,'0');
+  dh.onclick=()=>{_clockState.mode='hour';renderClock();};
+
+  const sep=document.createElement('div');
+  sep.className='clock-display-sep';
+  sep.textContent=':';
+
+  const dm=document.createElement('div');
+  dm.className='clock-display-m'+(mode==='minute'?' active':'');
+  dm.textContent=String(minute).padStart(2,'0');
+  dm.onclick=()=>{_clockState.mode='minute';renderClock();};
+
+  display.appendChild(dh);display.appendChild(sep);display.appendChild(dm);
+  box.appendChild(display);
+
+  // Clock face
+  const face=document.createElement('div');
+  face.className='clock-face';
+
+  const radius=88;
+  const cx=110,cy=110;
+  const count=mode==='hour'?24:12;
+
+  nums.forEach((num,idx)=>{
+    const angle=(idx/count)*2*Math.PI - Math.PI/2;
+    const r=mode==='hour'?(idx>=12?radius*0.6:radius*0.88):radius*0.88;
+    const x=cx+r*Math.cos(angle);
+    const y=cy+r*Math.sin(angle);
+    const el=document.createElement('div');
+    el.className='clock-face-num';
+    el.style.left=x+'px';
+    el.style.top=y+'px';
+    el.textContent=String(num).padStart(mode==='hour'?2:2,'0');
+    const isSelected=mode==='hour'?num===hour:num===Math.round(minute/5)*5;
+    if(isSelected) el.className+=' selected';
+    el.onclick=()=>{
+      if(mode==='hour'){
+        _clockState.hour=num;
+        _clockState.mode='minute';
+      } else {
+        _clockState.minute=num;
+        // Auto-confirm after minute selection
+        const v=String(_clockState.hour).padStart(2,'0')+':'+String(_clockState.minute).padStart(2,'0');
+        if(_clockState.onConfirm) _clockState.onConfirm(v);
+        _clockState=null;
+        modal.remove();
+        return;
+      }
+      renderClock();
+    };
+    face.appendChild(el);
+  });
+
+  // Hand
+  const handAngle=mode==='hour'
+    ?(hour%12/12)*360-90
+    :(minute/60)*360-90;
+  const handLen=mode==='hour'?60:80;
+  const hand=document.createElement('div');
+  hand.className='clock-hand';
+  hand.style.height=handLen+'px';
+  hand.style.left=cx+'px';
+  hand.style.top=(cy-handLen)+'px';
+  hand.style.transform=`translateX(-50%) rotate(${handAngle+90}deg)`;
+  hand.style.transformOrigin='bottom center';
+  hand.style.position='absolute';
+  face.appendChild(hand);
+
+  const center=document.createElement('div');
+  center.className='clock-center';
+  face.appendChild(center);
+  box.appendChild(face);
+
+  // Buttons row
+  const btns=document.createElement('div');
+  btns.className='clock-btns';
+
+  const btnAhora=document.createElement('button');
+  btnAhora.className='btn btn-gh';btnAhora.textContent='Ahora';
+  btnAhora.onclick=()=>{
+    const now=new Date();
+    const v=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+    if(_clockState.onConfirm) _clockState.onConfirm(v);
+    _clockState=null;modal.remove();
+  };
+
+  const btnOK=document.createElement('button');
+  btnOK.className='btn btn-g';btnOK.textContent='Aceptar';
+  btnOK.onclick=()=>{
+    const v=String(hour).padStart(2,'0')+':'+String(minute).padStart(2,'0');
+    if(_clockState.onConfirm) _clockState.onConfirm(v);
+    _clockState=null;modal.remove();
+  };
+
+  btns.appendChild(btnAhora);btns.appendChild(btnOK);
+  box.appendChild(btns);
+  modal.appendChild(box);
+  document.body.appendChild(modal);
+}
+
 // ── IMPORTAR DESDE PDF PLANTILLA ─────────────────────────
 async function importFromPDF(file){
   if(!file) return;
@@ -4045,7 +4220,35 @@ async function exportPDF(){
   const entries=filterMonth?S.entries.filter(e=>e.fecha.startsWith(filterMonth)):S.entries;
   const tasks=filterMonth?S.tasks.filter(t=>t.fecha.startsWith(filterMonth)):S.tasks;
   const css=`body{font-family:Arial,sans-serif;font-size:10px;color:#333}h1{font-size:16px}h2{font-size:12px;border-bottom:1px solid #ddd;padding-bottom:4px}.pill{display:inline-block;background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:20px;font-weight:700;margin-bottom:8px}table{width:100%;border-collapse:collapse;margin-bottom:12px}th{background:#f5f5f5;font-weight:700;text-align:left}td,th{border:1px solid #ddd;padding:3px 5px;font-size:9px}.sig{max-height:60px;border:1px solid #ddd}`;
-  let html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Informe TimerPro</title><style>${css}</style><style>
+  let html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Informe TimerPro</title><style>${css}
+/* ── RELOJ SELECTOR ── */
+.clock-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;display:flex;align-items:center;justify-content:center;}
+.clock-box{background:var(--surf);border-radius:20px;padding:1.5rem;width:300px;max-width:95vw;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.4);}
+.clock-title{font-size:.85rem;color:var(--ink2);margin-bottom:.8rem;text-transform:uppercase;letter-spacing:.05em;}
+.clock-display{display:flex;align-items:center;justify-content:center;gap:.3rem;margin-bottom:1rem;}
+.clock-display-h,.clock-display-m{
+  font-size:2.8rem;font-weight:800;padding:.3rem .7rem;border-radius:10px;
+  cursor:pointer;background:var(--surf2);color:var(--ink);min-width:72px;
+  transition:background .15s;
+}
+.clock-display-h.active,.clock-display-m.active{background:var(--acc);color:#fff;}
+.clock-display-sep{font-size:2.5rem;font-weight:800;color:var(--ink);padding-bottom:.2rem;}
+.clock-face{position:relative;width:220px;height:220px;border-radius:50%;background:var(--surf2);margin:0 auto .8rem;touch-action:none;}
+.clock-face-num{
+  position:absolute;width:36px;height:36px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.82rem;font-weight:600;cursor:pointer;
+  transform:translate(-50%,-50%);transition:background .1s,color .1s;
+  color:var(--ink);
+}
+.clock-face-num:hover{background:var(--surf3);}
+.clock-face-num.selected{background:var(--acc);color:#fff;}
+.clock-hand{position:absolute;bottom:50%;left:50%;transform-origin:bottom center;
+  width:2px;background:var(--acc);border-radius:2px;transform:translateX(-50%);}
+.clock-center{position:absolute;top:50%;left:50%;width:8px;height:8px;
+  border-radius:50%;background:var(--acc);transform:translate(-50%,-50%);}
+.clock-btns{display:flex;gap:.5rem;justify-content:space-between;margin-top:.5rem;}
+</style><style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Helvetica Neue',Arial,sans-serif;font-size:10.5px;color:#111;margin:18px;line-height:1.4}
     .ph{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:10px;border-bottom:3px solid #c84b2f;margin-bottom:12px}
@@ -4078,7 +4281,35 @@ async function exportPDF(){
     .fb{margin-top:28px;display:flex;justify-content:flex-end}
     .fb-box{border-top:1px solid #999;padding-top:6px;width:220px;text-align:center;font-size:9px;color:#666}
     @media print{body{margin:0}.db{page-break-inside:avoid}}
-  </style>
+  
+/* ── RELOJ SELECTOR ── */
+.clock-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;display:flex;align-items:center;justify-content:center;}
+.clock-box{background:var(--surf);border-radius:20px;padding:1.5rem;width:300px;max-width:95vw;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.4);}
+.clock-title{font-size:.85rem;color:var(--ink2);margin-bottom:.8rem;text-transform:uppercase;letter-spacing:.05em;}
+.clock-display{display:flex;align-items:center;justify-content:center;gap:.3rem;margin-bottom:1rem;}
+.clock-display-h,.clock-display-m{
+  font-size:2.8rem;font-weight:800;padding:.3rem .7rem;border-radius:10px;
+  cursor:pointer;background:var(--surf2);color:var(--ink);min-width:72px;
+  transition:background .15s;
+}
+.clock-display-h.active,.clock-display-m.active{background:var(--acc);color:#fff;}
+.clock-display-sep{font-size:2.5rem;font-weight:800;color:var(--ink);padding-bottom:.2rem;}
+.clock-face{position:relative;width:220px;height:220px;border-radius:50%;background:var(--surf2);margin:0 auto .8rem;touch-action:none;}
+.clock-face-num{
+  position:absolute;width:36px;height:36px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.82rem;font-weight:600;cursor:pointer;
+  transform:translate(-50%,-50%);transition:background .1s,color .1s;
+  color:var(--ink);
+}
+.clock-face-num:hover{background:var(--surf3);}
+.clock-face-num.selected{background:var(--acc);color:#fff;}
+.clock-hand{position:absolute;bottom:50%;left:50%;transform-origin:bottom center;
+  width:2px;background:var(--acc);border-radius:2px;transform:translateX(-50%);}
+.clock-center{position:absolute;top:50%;left:50%;width:8px;height:8px;
+  border-radius:50%;background:var(--acc);transform:translate(-50%,-50%);}
+.clock-btns{display:flex;gap:.5rem;justify-content:space-between;margin-top:.5rem;}
+</style>
 </head><body>`;
   html+=`<h1>INFORME DE CONTROL HORARIO</h1>`;
   html+=`<div class="pill">${filterMonth?MONTHS[parseInt(filterMonth.slice(5))-1]+' '+filterMonth.slice(0,4):'Período completo'}</div>`;
@@ -4840,7 +5071,7 @@ function checkDriveForNewData(){
 
 // ── SERVICE WORKER (offline support) ─────────────────────
 const SW_CODE = `
-const CACHE = 'timerpro-v1779137099';
+const CACHE = 'timerpro-v1779137637';
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE).then(c => c.addAll([self.location.href.replace(/\\?.*$/,'')]))
