@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779052800753 -->
+<!-- v1779112624707 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -31,15 +31,15 @@
   --font:'Inter',system-ui,sans-serif;
 }
 .light{
-  --bg:#c9e8f5;--bg2:#bde0ef;--bg3:#aed7eb;
-  --surf:#d8eef8;--surf2:#cce7f4;--surf3:#bfdfef;
-  --ink:#0d2d3d;--ink2:#2e5f78;--ink3:#5a8fa8;
-  --brd:rgba(30,100,140,.18);
-  --sh:0 2px 12px rgba(30,100,140,.15);
-  --acc:#22c55e;--acc2:#16a34a;--acc-lt:rgba(34,197,94,.15);
-  --red:#ef4444;--red-lt:rgba(239,68,68,.12);
-  --blu:#3b82f6;--blu-lt:rgba(59,130,246,.12);
-  --yel:#d97706;--yel-lt:rgba(217,119,6,.12);
+  --bg:#b8d4e8;--bg2:#a8c8e0;--bg3:#98bcd8;
+  --surf:#cfe2f0;--surf2:#c0d8ec;--surf3:#b0cce4;
+  --ink:#071e2c;--ink2:#1a4a66;--ink3:#2e7aaa;
+  --brd:rgba(10,60,100,.25);
+  --sh:0 2px 12px rgba(10,60,100,.2);
+  --acc:#16a34a;--acc2:#15803d;--acc-lt:rgba(22,163,74,.18);
+  --red:#dc2626;--red-lt:rgba(220,38,38,.14);
+  --blu:#1d6fa8;--blu-lt:rgba(29,111,168,.14);
+  --yel:#b45309;--yel-lt:rgba(180,83,9,.14);
 }
 html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px}
 #app{display:flex;flex-direction:column;height:100dvh;max-width:900px;margin:0 auto}
@@ -164,6 +164,7 @@ main{flex:1;overflow-y:auto;padding:1rem}
 // ── UTILIDADES ──────────────────────────────────────────
 const pad = n => String(n).padStart(2,'0');
 const today = () => { const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
+const firstDayOfMonth = () => { const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-01`; };
 const nowTime = () => { const d=new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const fmtTime = t => t||'—';
 const calcH = (a,b) => { if(!a||!b)return 0; const [ah,am]=a.split(':').map(Number),[bh,bm]=b.split(':').map(Number); let d=(bh*60+bm)-(ah*60+am); if(d<0)d+=1440; return Math.round(d*100/60)/100; };
@@ -596,15 +597,38 @@ function renderFichar(){
               timerElapsed>0?'▶ Continuar':'▶ Iniciar')
           : h('button',{class:'btn btn-y',on:{click:stopTimer}},'⏸ Pausar'),
         timerElapsed>0
-          ? h('button',{class:'btn btn-g',on:{click:finishTimer}},'✓ Crear fichaje')
+          ? h('button',{class:'btn btn-g',on:{click:finishTimer}},'✓ Finalizar y registrar')
           : null,
         timerElapsed>0
           ? h('button',{class:'btn btn-gh btn-sm',on:{click:resetTimer}},'↺ Reset')
           : null
       ),
-      timerElapsed>0&&timerDeduct>0
-        ? h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',marginTop:'.4rem'}},
-            'Neto: '+formatTimer(Math.max(0,timerElapsed-timerDeduct*60))+' (descontando '+timerDeduct+' min)')
+      // Totals summary when timer has time
+      timerElapsed>0
+        ? h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.6rem .8rem',marginTop:'.5rem',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.3rem'}},
+            h('div',{style:{display:'flex',flexDirection:'column'}},
+              h('span',{style:{fontSize:'.65rem',color:'var(--ink3)',textTransform:'uppercase',letterSpacing:'.04em'}},'Tiempo total'),
+              h('span',{style:{fontWeight:800,fontSize:'1.1rem',color:'var(--acc)',fontVariantNumeric:'tabular-nums'}},formatTimerFull(timerElapsed))
+            ),
+            h('div',{style:{display:'flex',flexDirection:'column'}},
+              h('span',{style:{fontSize:'.65rem',color:'var(--ink3)',textTransform:'uppercase',letterSpacing:'.04em'}},'Tiempo neto'),
+              h('span',{style:{fontWeight:800,fontSize:'1.1rem',color:'#f59e0b',fontVariantNumeric:'tabular-nums'}},
+                formatTimerFull(Math.max(0,timerElapsed-timerDeduct*60)))
+            ),
+            h('div',{style:{display:'flex',flexDirection:'column'}},
+              h('span',{style:{fontSize:'.65rem',color:'var(--ink3)',textTransform:'uppercase',letterSpacing:'.04em'}},'Horas decimales'),
+              h('span',{style:{fontWeight:700,fontSize:'.9rem'}},
+                (Math.max(0,timerElapsed-timerDeduct*60)/3600).toFixed(2)+'h')
+            ),
+            timerStart?h('div',{style:{display:'flex',flexDirection:'column'}},
+              h('span',{style:{fontSize:'.65rem',color:'var(--ink3)',textTransform:'uppercase',letterSpacing:'.04em'}},'Inicio'),
+              h('span',{style:{fontWeight:700,fontSize:'.9rem'}},
+                new Date(timerStart+(timerDeduct*60*1000/2)).toTimeString().slice(0,5))
+            ):null,
+            timerDeduct>0?h('div',{style:{gridColumn:'1/-1',fontSize:'.72rem',color:'var(--ink2)',borderTop:'1px solid var(--brd)',paddingTop:'.3rem',marginTop:'.1rem'}},
+              '⏷ Descontando '+timerDeduct+' min de descanso'
+            ):null
+          )
         : null
     ),
 
@@ -1603,17 +1627,17 @@ function renderResumen(){
   const weekArr=Object.entries(weeks).sort(([a],[b])=>a.localeCompare(b));
 
   // Bar chart helper
-  function barChart(items, valueKey, colorKey, labelKey, unit='h'){
-    const max=Math.max(...items.map(x=>x[valueKey]),0.1);
-    return h('div',{style:{display:'flex',alignItems:'flex-end',gap:'3px',height:'80px',padding:'.3rem 0'}},
+  function barChart(items, vk, ck, lk){
+    const max=Math.max(...items.map(x=>x[vk]),0.1);
+    return h('div',{style:{display:'flex',alignItems:'flex-end',gap:'3px',height:'80px',padding:'.3rem 0',marginTop:'.3rem'}},
       ...items.map(x=>h('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',flex:1,gap:'2px'}},
-        h('div',{style:{fontSize:'5.5px',color:'var(--ink2)',writingMode:'vertical-rl',transform:'rotate(180deg)',maxHeight:'24px',overflow:'hidden'}},
-          Number(x[valueKey]).toFixed(unit==='€'?0:1)),
+        h('div',{style:{fontSize:'6px',color:'var(--ink2)',writingMode:'vertical-rl',transform:'rotate(180deg)',maxHeight:'24px',overflow:'hidden'}},
+          Number(x[vk]).toFixed(1)),
         h('div',{style:{
-          width:'100%',background:x[colorKey]||'var(--acc)',borderRadius:'2px 2px 0 0',
-          height:Math.max(4,(x[valueKey]/max)*60)+'px',transition:'height .3s'
+          width:'100%',background:x[ck]||'var(--acc)',borderRadius:'2px 2px 0 0',
+          height:Math.max(4,(x[vk]/max)*60)+'px',transition:'height .3s'
         }}),
-        h('div',{style:{fontSize:'5.5px',color:'var(--ink2)',textAlign:'center',lineHeight:1.2}},x[labelKey])
+        h('div',{style:{fontSize:'6px',color:'var(--ink2)',textAlign:'center',lineHeight:1.2}},x[lk])
       ))
     );
   }
@@ -1665,9 +1689,9 @@ function renderResumen(){
             ['Extra',tot.he,'#f59e0b',tot.ie],
             ['Nocturnas',tot.hnoc,'#6366f1',tot.inoc],
             ['Festivas',tot.hfes,'#ef4444',tot.ifes]
-          ].filter(([,h])=>h>0).map(([label,h,color,imp])=>
+          ].filter(([,hrs])=>hrs>0).map(([label,hrs,color,imp])=>
             h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.5rem',borderLeft:'3px solid '+color}},
-              h('div',{style:{fontWeight:700,fontSize:'1rem',color:color}},h.toFixed(1)+'h'),
+              h('div',{style:{fontWeight:700,fontSize:'1rem',color:color}},hrs.toFixed(1)+'h'),
               h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},label),
               h('div',{style:{fontSize:'.72rem',color:'var(--ink3)'}},imp.toFixed(2)+'€')
             )
@@ -1675,10 +1699,10 @@ function renderResumen(){
         ),
         // Gráfica horas por tipo
         tot.hn+tot.he+tot.hnoc+tot.hfes>0?barChart(
-          [{valueKey:'v',colorKey:'c',labelKey:'l',v:tot.hn,c:'#22c55e',l:'Norm'},
-           {valueKey:'v',colorKey:'c',labelKey:'l',v:tot.he,c:'#f59e0b',l:'Extra'},
-           {valueKey:'v',colorKey:'c',labelKey:'l',v:tot.hnoc,c:'#6366f1',l:'Noc'},
-           {valueKey:'v',colorKey:'c',labelKey:'l',v:tot.hfes,c:'#ef4444',l:'Fest'}
+          [{v:tot.hn,c:'#22c55e',l:'Norm'},
+           {v:tot.he,c:'#f59e0b',l:'Extra'},
+           {v:tot.hnoc,c:'#6366f1',l:'Noc'},
+           {v:tot.hfes,c:'#ef4444',l:'Fest'}
           ].filter(x=>x.v>0),
           'v','c','l'
         ):null
@@ -1725,7 +1749,7 @@ function renderResumen(){
             )
           )
         ),
-        barChart(weekArr.map(([,wd])=>({...wd,l:wd.label.replace('Sem ','')})),'h','#22c55e','l')
+        barChart(weekArr.map(([,wd])=>({v:wd.h,c:'#22c55e',l:wd.label.replace('Sem ','')})),'v','c','l')
       ):null,
 
       // Export buttons
@@ -4624,10 +4648,13 @@ function startTimer(){
   if(timerRunning) return;
   timerRunning=true;
   timerStart=Date.now()-timerElapsed*1000;
+  // Persist to localStorage so survives page reload
+  localStorage.setItem('timerState', JSON.stringify({
+    running:true, start:timerStart, fecha:fEntry.fecha||today(), deduct:timerDeduct
+  }));
   timerInterval=setInterval(()=>{
     timerElapsed=Math.floor((Date.now()-timerStart)/1000);
     updateTitle();
-    // Update any running fichaje timers display
     let anyRunning=false;
     Object.values(fichajeTimers).forEach(ft=>{ if(ft.running) anyRunning=true; });
     if(anyRunning) rerender();
@@ -4638,6 +4665,7 @@ function startTimer(){
 function stopTimer(){
   if(!timerRunning) return;
   timerRunning=false;
+  localStorage.setItem('timerState', JSON.stringify({running:false,start:timerStart,fecha:fEntry.fecha||today(),deduct:timerDeduct}));
   clearInterval(timerInterval);
   timerInterval=null;
   rerender();
@@ -4651,25 +4679,32 @@ function resetTimer(){
 }
 
 function finishTimer(){
-  stopTimer();
-  // Calculate net seconds (minus deduction)
+  const totalSecs=timerElapsed;
   const netSecs=Math.max(0,timerElapsed-timerDeduct*60);
   const netHours=Math.round(netSecs/36)/100;
-  // Create fichaje entry
   const now=new Date();
   const manualEnd=document.getElementById('timer-end-manual')?.value;
   const endTime=manualEnd||pad(now.getHours())+':'+pad(now.getMinutes());
-  const startDate=new Date(timerStart+(timerDeduct*60*1000/2));
+  const startTs=timerStart+(timerDeduct*60*1000/2);
+  const startDate=new Date(startTs);
   const startTime=pad(startDate.getHours())+':'+pad(startDate.getMinutes());
-  fEntry.fichajes.push({_fid:Date.now(),entrada:startTime,salida:endTime,nota:'Temporizador ('+timerDeduct+'min descanso)',editing:false});
-  // Auto-fill hours normales if empty
-  if(!fEntry.horasNormales){
+  stopTimer();
+  // Add fichaje
+  fEntry.fichajes.push({
+    _fid:Date.now(),entrada:startTime,salida:endTime,
+    nota:'⏱ '+formatTimerFull(totalSecs)+(timerDeduct>0?' (-'+timerDeduct+'min descanso)':''),
+    editing:false,taskId:''
+  });
+  // Auto-fill horas normales
+  if(!fEntry.horasNormales||fEntry.horasNormales===0){
     fEntry.horasNormales=netHours;
-    if(fEntry.precioHoraNormal) fEntry.importeNormales=Math.round(netHours*fEntry.precioHoraNormal*100)/100;
+    if(fEntry.precioHoraNormal>0) fEntry.importeNormales=Math.round(netHours*fEntry.precioHoraNormal*100)/100;
   }
+  localStorage.removeItem('timerState');
   resetTimer();
-  showAlert('Fichaje registrado: '+fmtH(netHours)+' netas');
+  showAlert('✅ '+startTime+' → '+endTime+' | Total: '+formatTimerFull(totalSecs)+' | Neto: '+fmtH(netHours));
   scheduleDraftSave();
+  rerender();
 }
 
 // ── TITULO DINAMICO (widget aproximado) ──────────────────
@@ -5027,6 +5062,24 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
           document.body.appendChild(sc);
         });
       }catch(e){ syncStatus='ok'; }
+    }
+    // Restore timer state if was running
+    const savedTimer=localStorage.getItem('timerState');
+    if(savedTimer){
+      try{
+        const ts=JSON.parse(savedTimer);
+        if(ts.running && ts.start){
+          timerStart=ts.start;
+          timerElapsed=Math.floor((Date.now()-ts.start)/1000);
+          timerDeduct=ts.deduct||30;
+          timerRunning=true;
+          timerInterval=setInterval(()=>{
+            timerElapsed=Math.floor((Date.now()-timerStart)/1000);
+            updateTitle();
+          },1000);
+          showAlert('⏱ Jornada en curso desde '+new Date(ts.start).toTimeString().slice(0,5));
+        }
+      }catch(e){}
     }
     // Restore draft if exists for today
     const todayDraft = S.entries.find(e=>e.fecha===today()&&e._draft);
