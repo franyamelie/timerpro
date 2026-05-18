@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779136462286 -->
+<!-- v1779136761874 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -19,6 +19,7 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
+  --time-invert:1;
   --bg:#0a0a0a;--bg2:#141414;--bg3:#1e1e1e;--surf:#1a1a1a;--surf2:#222;--surf3:#2a2a2a;
   --ink:#f0f0f0;--ink2:#999;--ink3:#555;
   --acc:#22c55e;--acc2:#16a34a;--acc-lt:rgba(34,197,94,.12);
@@ -31,6 +32,7 @@
   --font:'Inter',system-ui,sans-serif;
 }
 .light{
+  --time-invert:0;
   --bg:#b8d4e8;--bg2:#a8c8e0;--bg3:#98bcd8;
   --surf:#cfe2f0;--surf2:#c0d8ec;--surf3:#b0cce4;
   --ink:#071e2c;--ink2:#1a4a66;--ink3:#2e7aaa;
@@ -41,6 +43,13 @@
   --blu:#1d6fa8;--blu-lt:rgba(29,111,168,.14);
   --yel:#b45309;--yel-lt:rgba(180,83,9,.14);
 }
+input[type="time"]::-webkit-calendar-picker-indicator{
+  filter:invert(var(--time-invert,0));
+  cursor:pointer;
+  opacity:0.7;
+  padding:2px;
+}
+input[type="time"]::-webkit-calendar-picker-indicator:hover{opacity:1;}
 html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px}
 #app{display:flex;flex-direction:column;height:100dvh;max-width:900px;margin:0 auto}
 nav{display:flex;align-items:center;justify-content:space-between;padding:.6rem 1rem;background:var(--surf);border-bottom:1px solid var(--brd);flex-shrink:0;gap:.5rem}
@@ -355,8 +364,8 @@ function captureFormState(){
       const timeInputs=row.querySelectorAll('input[type="time"]');
       if(timeInputs[0]&&timeInputs[0].value) fEntry.fichajes[i].entrada=timeInputs[0].value;
       if(timeInputs[1]&&timeInputs[1].value) fEntry.fichajes[i].salida=timeInputs[1].value;
-      const nota=row.querySelector('input[type="text"]');
-      if(nota) fEntry.fichajes[i].nota=nota.value;
+      const nota=row.querySelector('input[type="text"],textarea');
+      if(nota) fEntry.fichajes[i].nota=nota.value||nota.textContent||'';
     });
     const notasEl=document.getElementById('notas-editor');
     if(notasEl) fEntry.notas=notasEl.innerHTML||fEntry.notas;
@@ -996,30 +1005,36 @@ function renderFichaje(fj,i){
   if(ftimer.running && ftimer.start) ftimer.elapsed=Math.floor((Date.now()-ftimer.start)/1000);
   const taskOpts=[{id:'',titulo:'Sin tarea'},...S.tasks];
 
-  const timeInput=(field,fidPart)=>h('div',{style:{display:'flex',alignItems:'center',gap:'.2rem'}},
+  const timeInput=(field,fidPart)=>h('div',{style:{display:'flex',alignItems:'center',gap:'.3rem'}},
+    // Native time input - shows clock picker on mobile, spinner on desktop
     h('input',{
       type:'time',
       id:'fich-'+fidPart+'-'+fj._fid,
       value:fj[field]||'',
-      style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
-             padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.85rem',width:'90px'},
+      style:{
+        background:'var(--surf2)',border:'1.5px solid var(--brd)',
+        borderRadius:'var(--r2)',padding:'.35rem .5rem',
+        color:'var(--ink)',fontSize:'.9rem',width:'120px',
+        cursor:'pointer',fontFamily:'inherit'
+      },
       on:{
         input:ev=>{fEntry.fichajes[i][field]=ev.target.value;},
         change:ev=>{fEntry.fichajes[i][field]=ev.target.value;scheduleDraftSave();}
       }
     }),
+    // "Ahora" button - sets current time
     h('button',{
-      class:'btn btn-gh',
-      style:{padding:'.2rem .35rem',fontSize:'.7rem',flexShrink:0},
-      title:'Poner hora actual',
+      class:'btn btn-gh btn-sm',
+      style:{padding:'.25rem .5rem',fontSize:'.72rem',flexShrink:0,whiteSpace:'nowrap'},
+      title:'Usar hora actual',
       on:{click:()=>{
         const t=nowTime();
         fEntry.fichajes[i][field]=t;
         const el=document.getElementById('fich-'+fidPart+'-'+fj._fid);
-        if(el) el.value=t;
+        if(el){el.value=t;el.dispatchEvent(new Event('change'));}
         scheduleDraftSave();
       }}
-    },'Ahora')
+    },'⏱ Ahora')
   );
 
   return h('div',{class:'fich-row',style:{flexDirection:'column',alignItems:'stretch',padding:'.6rem',gap:'.4rem'}},
@@ -1063,16 +1078,18 @@ function renderFichaje(fj,i){
     ),
     // Row 2: nota + tarea asociada
     h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center'}},
-      h('input',{
-        type:'text',spellcheck:true,lang:'es',
-        placeholder:'Nota del fichaje...',value:fj.nota||'',
+      h('textarea',{
+        spellcheck:true,lang:'es',rows:1,
+        placeholder:'Nota del fichaje...',
         style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',
-               borderRadius:'var(--r2)',padding:'.3rem .5rem',color:'var(--ink)',fontSize:'.8rem'},
+               borderRadius:'var(--r2)',padding:'.3rem .5rem',color:'var(--ink)',
+               fontSize:'.8rem',resize:'vertical',fontFamily:'inherit',
+               minHeight:'30px',maxHeight:'80px'},
         on:{
           input:ev=>{fEntry.fichajes[i].nota=ev.target.value;},
           blur:ev=>{fEntry.fichajes[i].nota=ev.target.value;scheduleDraftSave();}
         }
-      }),
+      },fj.nota||''),
       h('select',{
         style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
                padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.75rem',maxWidth:'130px'},
@@ -4760,7 +4777,7 @@ function checkDriveForNewData(){
 
 // ── SERVICE WORKER (offline support) ─────────────────────
 const SW_CODE = `
-const CACHE = 'timerpro-v1779136462';
+const CACHE = 'timerpro-v1779136761';
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE).then(c => c.addAll([self.location.href.replace(/\\?.*$/,'')]))
