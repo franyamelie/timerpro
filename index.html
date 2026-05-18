@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779135144578 -->
+<!-- v1779136185346 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -292,7 +292,7 @@ let timerInterval=null;
 // ── RENDER ENGINE ────────────────────────────────────────
 function h(tag, attrs, ...children){
   const el = document.createElement(tag);
-  const BOOL=['selected','checked','disabled','multiple','readonly','required','autofocus'];
+  const BOOL=['selected','checked','disabled','multiple','readonly','required','autofocus','spellcheck'];
   if(attrs) Object.entries(attrs).forEach(([k,v])=>{
     if(k==='on') Object.entries(v).forEach(([ev,fn])=>el.addEventListener(ev,fn));
     else if(k==='class') el.className=v;
@@ -343,7 +343,34 @@ function rerender(){
   requestAnimationFrame(()=>{ renderScheduled=false; renderApp(); });
 }
 
+
+// Capture ALL current DOM input values into fEntry before each render
+// This prevents data loss when theme changes, tab switches, or auto-rerenders happen
+function captureFormState(){
+  try{
+    const fichRows = document.querySelectorAll('.fich-row');
+    fichRows.forEach((row,i)=>{
+      if(!fEntry.fichajes[i]) return;
+      const timeInputs=row.querySelectorAll('input[type="time"]');
+      if(timeInputs[0]&&timeInputs[0].value) fEntry.fichajes[i].entrada=timeInputs[0].value;
+      if(timeInputs[1]&&timeInputs[1].value) fEntry.fichajes[i].salida=timeInputs[1].value;
+      const nota=row.querySelector('input[type="text"]');
+      if(nota) fEntry.fichajes[i].nota=nota.value;
+    });
+    const notasEl=document.getElementById('notas-editor');
+    if(notasEl) fEntry.notas=notasEl.innerHTML||fEntry.notas;
+    // Capture numeric fields
+    ['horasNormales','precioHoraNormal','horasExtra','precioHoraExtra',
+     'horasNocturnas','precioHoraNocturna','horasFestivas','precioHoraFestiva',
+     'dieta','transporte'].forEach(f=>{
+      const el=document.querySelector('[data-field="'+f+'"]');
+      if(el&&el.value!=='') fEntry[f]=parseFloat(el.value)||0;
+    });
+  }catch(e){}
+}
+
 function renderApp(){
+  captureFormState();
   try {
     const app = document.getElementById('app');
     if(!app) return;
@@ -965,63 +992,89 @@ function renderFichar(){
 
 function renderFichaje(fj,i){
   const ftimer = fichajeTimers[fj._fid]||{running:false,elapsed:0};
-  // Update timer
-  if(ftimer.running && ftimer.start){
-    ftimer.elapsed = Math.floor((Date.now()-ftimer.start)/1000);
-  }
-  const taskOpts = [{id:'',titulo:'Sin tarea'},...S.tasks];
+  if(ftimer.running && ftimer.start) ftimer.elapsed=Math.floor((Date.now()-ftimer.start)/1000);
+  const taskOpts=[{id:'',titulo:'Sin tarea'},...S.tasks];
+
+  const timeInput=(field,fidPart)=>h('div',{style:{display:'flex',alignItems:'center',gap:'.2rem'}},
+    h('input',{
+      type:'time',
+      id:'fich-'+fidPart+'-'+fj._fid,
+      value:fj[field]||'',
+      style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
+             padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.85rem',width:'90px'},
+      on:{
+        input:ev=>{fEntry.fichajes[i][field]=ev.target.value;},
+        change:ev=>{fEntry.fichajes[i][field]=ev.target.value;scheduleDraftSave();}
+      }
+    }),
+    h('button',{
+      class:'btn btn-gh',
+      style:{padding:'.2rem .35rem',fontSize:'.7rem',flexShrink:0},
+      title:'Poner hora actual',
+      on:{click:()=>{
+        const t=nowTime();
+        fEntry.fichajes[i][field]=t;
+        const el=document.getElementById('fich-'+fidPart+'-'+fj._fid);
+        if(el) el.value=t;
+        scheduleDraftSave();
+      }}
+    },'🕐')
+  );
 
   return h('div',{class:'fich-row',style:{flexDirection:'column',alignItems:'stretch',padding:'.6rem',gap:'.4rem'}},
-    // Row 1: numero + entrada + salida + duracion + borrar
-    h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem'}},
-      h('span',{style:{fontSize:'.75rem',color:'var(--ink2)',minWidth:'18px',fontWeight:700}},i+1+'.'),
-      h('div',{class:'fich-time',style:{display:'flex',alignItems:'center',gap:'.3rem',flex:1}},
-        h('input',{type:'time',value:fj.entrada,
-          style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.85rem',width:'90px'},
-          on:{change:e=>{fEntry.fichajes[i].entrada=e.target.value;scheduleDraftSave();}}}),
-        h('span',{style:{color:'var(--ink3)',fontSize:'.9rem'}},'→'),
-        h('input',{type:'time',value:fj.salida,
-          style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.85rem',width:'90px'},
-          on:{change:e=>{fEntry.fichajes[i].salida=e.target.value;scheduleDraftSave();}}}),
-        fj.entrada&&fj.salida?h('span',{class:'badge badge-g',style:{flexShrink:0}},fmtH(calcH(fj.entrada,fj.salida))):null
+    // Row 1: numero + entrada + salida + duracion + timer + borrar
+    h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',flexWrap:'wrap'}},
+      h('span',{style:{fontSize:'.75rem',color:'var(--ink2)',minWidth:'16px',fontWeight:700}},i+1+'.'),
+      h('div',{style:{display:'flex',alignItems:'center',gap:'.3rem',flex:1,flexWrap:'wrap'}},
+        timeInput('entrada','ent'),
+        h('span',{style:{color:'var(--ink3)'}},'→'),
+        timeInput('salida','sal'),
+        fj.entrada&&fj.salida
+          ? h('span',{class:'badge badge-g',style:{flexShrink:0}},fmtH(calcH(fj.entrada,fj.salida)))
+          : null
       ),
-      // Live timer button for this fichaje
+      // Live timer button
       h('button',{
         class:'btn btn-sm '+(ftimer.running?'btn-y':'btn-gh'),
-        style:{flexShrink:0,padding:'.3rem .5rem',fontSize:'.72rem'},
-        title:ftimer.running?'Pausar este fichaje':'Iniciar timer de este fichaje',
+        style:{flexShrink:0,padding:'.25rem .4rem',fontSize:'.7rem'},
+        title:ftimer.running?'Pausar':'Iniciar timer',
         on:{click:()=>{
           if(!fichajeTimers[fj._fid]) fichajeTimers[fj._fid]={running:false,elapsed:0,start:null};
           const ft=fichajeTimers[fj._fid];
           if(ft.running){
-            ft.running=false;
-            ft.elapsed=Math.floor((Date.now()-ft.start)/1000);
-            // Auto-fill salida
+            ft.running=false; ft.elapsed=Math.floor((Date.now()-ft.start)/1000);
             fEntry.fichajes[i].salida=nowTime();
             scheduleDraftSave();
           } else {
-            ft.running=true;
-            ft.start=Date.now()-ft.elapsed*1000;
-            // Auto-fill entrada if empty
+            ft.running=true; ft.start=Date.now()-ft.elapsed*1000;
             if(!fEntry.fichajes[i].entrada) fEntry.fichajes[i].entrada=nowTime();
           }
           rerender();
         }}
-      }, ftimer.running?'⏸':'▶'),
+      },ftimer.running?'⏸':'▶'),
+      // Delete button
       h('button',{class:'btn btn-r btn-sm',style:{flexShrink:0},
         on:{click:()=>{
           fEntry.fichajes=[...fEntry.fichajes.slice(0,i),...fEntry.fichajes.slice(i+1)];
           delete fichajeTimers[fj._fid];
-          scheduleDraftSave();rerender();
+          scheduleDraftSave(); rerender();
         }}},'✕')
     ),
     // Row 2: nota + tarea asociada
     h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center'}},
-      h('input',{type:'text',placeholder:'Nota del fichaje...',value:fj.nota||'',
-        style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem .5rem',color:'var(--ink)',fontSize:'.8rem'},
-        on:{blur:e=>{fEntry.fichajes[i].nota=e.target.value;scheduleDraftSave();}}}),
+      h('input',{
+        type:'text',spellcheck:true,
+        placeholder:'Nota del fichaje...',value:fj.nota||'',
+        style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',
+               borderRadius:'var(--r2)',padding:'.3rem .5rem',color:'var(--ink)',fontSize:'.8rem'},
+        on:{
+          input:ev=>{fEntry.fichajes[i].nota=ev.target.value;},
+          blur:ev=>{fEntry.fichajes[i].nota=ev.target.value;scheduleDraftSave();}
+        }
+      }),
       h('select',{
-        style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.75rem',maxWidth:'130px'},
+        style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
+               padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.75rem',maxWidth:'130px'},
         on:{change:ev=>{fEntry.fichajes[i].taskId=ev.target.value;scheduleDraftSave();}}
       },
         ...taskOpts.map(t=>h('option',{value:t.id||'',selected:(t.id||'')===(fj.taskId||'')?true:false},
@@ -1029,10 +1082,13 @@ function renderFichaje(fj,i){
         ))
       )
     ),
-    // Timer display if running
-    ftimer.running?h('div',{style:{fontSize:'.72rem',color:'var(--acc)',fontWeight:700}},'⏱ En curso: '+formatTimer(ftimer.elapsed)):null
+    ftimer.running
+      ? h('div',{style:{fontSize:'.72rem',color:'var(--acc)',fontWeight:700}},
+          '⏱ En curso: '+formatTimer(ftimer.elapsed))
+      : null
   );
 }
+
 
 
 function renderJourney(j,i,ctx){
@@ -5238,6 +5294,12 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     const todayDraft = S.entries.find(e=>e.fecha===today()&&e._draft);
     if(todayDraft){ fEntry={...todayDraft}; editingEntry=true; }
     if(driveUrl && syncStatus!=='ok') syncStatus='ok';
+    // Auto sync to Drive every 30 min
+    if(driveUrl){
+      setInterval(async()=>{
+        if(!_syncInProgress && isOnline && driveUrl) driveSync();
+      }, 30*60*1000);
+    }
     // Auto backup weekly
     if(driveUrl){
       const lastBackup=localStorage.getItem('lastBackup')||'';
