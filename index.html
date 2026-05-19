@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779221680246 -->
+<!-- v1779232178688 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -375,7 +375,10 @@ function initFieldAreas(){
   requestAnimationFrame(()=>{
     Object.entries(_fieldAreaData).forEach(([id,html])=>{
       const el=document.getElementById(id);
-      if(el && el.contentEditable==='true' && document.activeElement!==el){
+      if(!el || document.activeElement===el) return;
+      if(el.tagName==='TEXTAREA'){
+        if(el.value!==html) el.value=html||'';
+      } else if(el.contentEditable==='true'){
         if(el.innerHTML!==html) el.innerHTML=html||'';
       }
     });
@@ -423,18 +426,8 @@ function attachFichajeListeners(){
 }
 
 function rerenderSetNotas(){
-  requestAnimationFrame(()=>{
-    const el=document.getElementById('notas-editor');
-    if(el && el.contentEditable==='true'){
-      // Always sync innerHTML with fEntry.notas unless user is actively typing
-      const isFocused = document.activeElement===el;
-      if(!isFocused){
-        // Coming back to this field - restore saved content
-        const saved = fEntry.notas||'';
-        if(el.innerHTML !== saved) el.innerHTML = saved;
-      }
-    }
-  });
+  // textarea: value is set by virtual DOM on each render via fEntry.notas
+  // No extra handling needed
 }
 function rerender(){
   if(renderScheduled)return;
@@ -457,7 +450,7 @@ function captureFormState(){
       if(nota) fEntry.fichajes[i].nota=nota.value||nota.textContent||'';
     });
     const notasEl=document.getElementById('notas-editor');
-    if(notasEl) fEntry.notas=notasEl.innerHTML||fEntry.notas;
+    if(notasEl) fEntry.notas=notasEl.value||fEntry.notas||'';
     // Capture numeric fields
     ['horasNormales','precioHoraNormal','horasExtra','precioHoraExtra',
      'horasNocturnas','precioHoraNocturna','horasFestivas','precioHoraFestiva',
@@ -986,21 +979,22 @@ function renderFichar(){
           h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontSize:'.7rem'},title:'Limpiar formato',
             on:{mousedown:ev=>{ev.preventDefault();document.execCommand('removeFormat');}}},'✕ Formato')
         ),
-        h('div',{
+        h('textarea',{
           id:'notas-editor',
-          contenteditable:'true',
-          spellcheck:true,
+          spellcheck:true, lang:'es', rows:4,
+          placeholder:'Escribe las notas de la jornada...',
           style:{
-            minHeight:'70px',background:'var(--surf2)',border:'1px solid var(--brd)',
-            borderRadius:'var(--r2)',padding:'.5rem .6rem',color:'var(--ink)',fontSize:'.85rem',
-            lineHeight:1.6,outline:'none',wordBreak:'break-word'
+            width:'100%',minHeight:'80px',background:'var(--surf2)',
+            border:'1px solid var(--brd)',borderRadius:'var(--r2)',
+            padding:'.5rem .6rem',color:'var(--ink)',fontSize:'.85rem',
+            lineHeight:1.6,resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'
           },
           on:{
-            input:ev=>{fEntry.notas=ev.target.innerHTML;},
-            blur:ev=>{fEntry.notas=ev.target.innerHTML;scheduleDraftSave();},
-            keyup:ev=>{fEntry.notas=ev.target.innerHTML;}
+            input:ev=>{fEntry.notas=ev.target.value;},
+            change:ev=>{fEntry.notas=ev.target.value;scheduleDraftSave();},
+            keyup:ev=>{fEntry.notas=ev.target.value;}
           }
-        })
+        },fEntry.notas||'')
       )
     ),
 
@@ -1345,7 +1339,7 @@ function renderTareas(){
   return h('div',{},
     // Formulario nueva tarea
     h('div',{class:'card'},
-      h('div',{class:'sec-title'},'Nueva Tarea'),
+      h('div',{class:'sec-title'},editTaskId?'✏️ Editar Tarea':'➕ Nueva Tarea'),
       h('div',{class:'grid-2'},
         field('Fecha','date',fTask.fecha,v=>{fTask.fecha=v;}),
         field('Título','text',fTask.titulo,v=>{fTask.titulo=v;},{},'Título de la tarea')
@@ -1444,7 +1438,7 @@ function renderTaskCard(t){
       wo?h('span',{class:'badge badge-y'},`🔧 ${wo.codigo}`):''
     ),
     t.otNumero?h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.3rem'}},`Nº O.T.: ${t.otNumero}`):null,
-    t.descripcion?h('div',{style:{fontSize:'.8rem',color:'var(--ink2)',marginBottom:'.4rem'}},t.descripcion):null,
+    t.descripcion?h('div',{style:{fontSize:'.8rem',color:'var(--ink2)',marginBottom:'.4rem'},html:t.descripcion.replace(/<[^>]*>/g,'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&')}):null,
     (t.fotos||[]).length>0
       ? h('div',{class:'photo-grid'},...t.fotos.map(f=>h('img',{src:f,class:'photo-thumb'})))
       : null,
@@ -2835,7 +2829,7 @@ function scheduleDraftSave(){
   if(draftSaveTimer) clearTimeout(draftSaveTimer);
   draftSaveTimer = setTimeout(()=>{
     const notasEl=document.getElementById('notas-editor');
-    if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
+    if(notasEl) fEntry.notas=notasEl.value||notasEl.innerHTML||fEntry.notas||'';
     saveDraft();
   }, 1500);
 }
@@ -2844,7 +2838,7 @@ let _draftSaving=false;
 async function saveDraft(){
   // Always capture latest DOM values before saving
   const notasEl=document.getElementById('notas-editor');
-  if(notasEl && notasEl.innerHTML) fEntry.notas=notasEl.innerHTML;
+  if(notasEl) fEntry.notas=notasEl.value||notasEl.innerHTML||fEntry.notas||'';
   const notasEditors=document.querySelectorAll('[contenteditable="true"]');
   notasEditors.forEach(el=>{
     if(el.id==='notas-editor' && el.innerHTML) fEntry.notas=el.innerHTML;
@@ -3055,7 +3049,7 @@ async function saveEntry(){
   if(!fEntry.fecha){showAlert('Selecciona una fecha','err');return;}
   // Read notas from contenteditable div (not textarea)
   const notasEl = document.getElementById('notas-editor');
-  if(notasEl && notasEl.innerHTML.trim()) fEntry.notas = notasEl.innerHTML;
+  if(notasEl) fEntry.notas = notasEl.value||notasEl.innerHTML||fEntry.notas||'';
   // Also capture all form inputs before saving
   captureFormState();
   // Extra safety: read any focused contenteditable
@@ -3254,9 +3248,14 @@ async function saveTask(){
 
 function editTask(t){
   fTask={...t,fotos:[...(t.fotos||[])],journeys:[...(t.journeys||[])]};
+  editTaskId=t.id; // mark as editing
   S.tab='tareas';
   rerender();
-  setTimeout(()=>document.querySelector('main')?.scrollTo({top:0,behavior:'smooth'}),50);
+  // Scroll to form top
+  setTimeout(()=>{
+    const el=document.querySelector('.card');
+    if(el) el.scrollIntoView({behavior:'smooth'});
+  },100);
 }
 
 function copyTask(t){
