@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779166533876 -->
+<!-- v1779213715111 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -602,7 +602,7 @@ const TABS = [
 ];
 function renderTabs(){
   return h('div',{class:'tabs'},
-    ...TABS.map(t=>h('button',{class:'tab'+(S.tab===t.id?' active':''),on:{click:()=>{S.tab=t.id;rerender()}}},
+    ...TABS.map(t=>h('button',{class:'tab'+(S.tab===t.id?' active':''),on:{click:()=>{captureFormState();S.tab=t.id;rerender()}}},
       h('span',{class:'tab-icon'},t.icon),t.label
     ))
   );
@@ -990,13 +990,60 @@ function renderFichar(){
             lineHeight:1.6,outline:'none',wordBreak:'break-word'
           },
           on:{
+            input:ev=>{fEntry.notas=ev.target.innerHTML;},
             blur:ev=>{fEntry.notas=ev.target.innerHTML;scheduleDraftSave();},
+            keyup:ev=>{fEntry.notas=ev.target.innerHTML;}
           }
         })
       )
     ),
 
     // Ubicación
+    // Tareas del día actual - shown in Fichar
+    (() => {
+      const dayTasks = S.tasks.filter(t => t.fecha === (e.fecha||today()));
+      if(!dayTasks.length) return h('div',{class:'card',style:{cursor:'pointer'},
+        on:{click:()=>{
+          fTask={...defTask(e.fecha||today())};editTaskId=null;
+          S.tab='tareas';rerender();
+        }}
+      },
+        h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',color:'var(--ink2)',fontSize:'.82rem'}},
+          h('span',{style:{fontSize:'1.2rem'}},'📝'),
+          h('span',{},'Sin tareas para este día — pulsa para añadir')
+        )
+      );
+      return h('div',{class:'card'},
+        h('div',{class:'sec-title',style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'.5rem'}},
+          h('span',{},'📝 Tareas del día ('+dayTasks.length+')'),
+          h('button',{class:'btn btn-b btn-sm',on:{click:()=>{
+            fTask={...defTask(e.fecha||today())};editTaskId=null;
+            S.tab='tareas';rerender();
+          }}},'+ Nueva')
+        ),
+        ...dayTasks.map(t=>h('div',{
+          style:{padding:'.5rem 0',borderBottom:'1px solid var(--brd)',display:'flex',gap:'.5rem',alignItems:'flex-start',cursor:'pointer'},
+          on:{click:()=>{fTask={...t};editTaskId=t.id;S.tab='tareas';rerender();}}
+        },
+          h('div',{style:{flex:1}},
+            h('div',{style:{fontWeight:700,fontSize:'.85rem',display:'flex',alignItems:'center',gap:'.3rem',flexWrap:'wrap'}},
+              h('span',{},t.titulo||'Sin título'),
+              t.usaOT?h('span',{class:'badge badge-b',style:{fontSize:'.6rem'}},'OT'+(t.otNumero?' '+t.otNumero:'')):null
+            ),
+            t.horaInicio||t.horaFin
+              ? h('div',{style:{fontSize:'.75rem',color:'var(--ink2)'}},(t.horaInicio||'--')+' → '+(t.horaFin||'--'))
+              : null,
+            t.descripcion
+              ? h('div',{style:{fontSize:'.73rem',color:'var(--ink3)',marginTop:'.15rem'}},
+                  t.descripcion.replace(/<[^>]*>/g,'').slice(0,60)+(t.descripcion.length>60?'...':''))
+              : null
+          ),
+          h('button',{class:'btn btn-gh btn-sm',style:{flexShrink:0},
+            on:{click:ev=>{ev.stopPropagation();fTask={...t};editTaskId=t.id;S.tab='tareas';rerender();}}},'✏️')
+        ))
+      );
+    })(),
+
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'Ubicación'),
       // Ubicacion Entrada
@@ -2702,8 +2749,9 @@ function fieldArea(label,val,cb,opts={}){
           outline:'none',wordBreak:'break-word',boxSizing:'border-box'
         },
         on:{
-          blur:ev=>{cb&&cb(ev.target.innerHTML);},
-          input:ev=>{cb&&cb(ev.target.innerHTML);}
+          input:ev=>{cb&&cb(ev.target.innerHTML);},
+          keyup:ev=>{cb&&cb(ev.target.innerHTML);},
+          blur:ev=>{cb&&cb(ev.target.innerHTML);}
         }
       });
     })()
