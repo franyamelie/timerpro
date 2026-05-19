@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779140616276 -->
+<!-- v1779166533876 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1432,23 +1432,7 @@ function renderWeekView(){
           },
           on:{
   click:()=>{selDate=ds;rerender();},
-  dblclick:()=>{
-    // Double click: go directly to that day's ficha
-    selDate=ds;
-    const existing=S.entries.find(e=>e.fecha===ds);
-    if(existing){
-      // Load existing entry
-      fEntry={...existing};
-      editingEntry=true;
-    } else {
-      // Create new entry for that day
-      fEntry={...defEntry(),fecha:ds};
-      editingEntry=false;
-    }
-    S.tab='fichar';
-    rerender();
-    showAlert('Ficha del '+ds);
-  }
+  dblclick:()=>goToDay(ds)
 }
         },
           h('div',{style:{fontWeight:700,fontSize:'.8rem',marginBottom:'.2rem'}},
@@ -1548,42 +1532,90 @@ function renderCalendario(){
   );
 }
 
+function goToDay(ds){
+  // Navigate to Fichar tab for specific date
+  const existing=S.entries.find(e=>e.fecha===ds);
+  if(existing){
+    fEntry={...existing, fichajes:[...(existing.fichajes||[]).map(f=>({...f}))]};
+    editingEntry=true;
+  } else {
+    fEntry={...defEntry(), fecha:ds};
+    editingEntry=false;
+  }
+  selDate=null;
+  S.tab='fichar';
+  rerender();
+  // Scroll to top
+  window.scrollTo(0,0);
+}
+
 function renderDayDetail(ds){
   const entry=S.entries.find(e=>e.fecha===ds);
   const tasks=S.tasks.filter(t=>t.fecha===ds);
   const isHol=isHolidayES(ds);
   const isVac=isVacacion(ds);
-  return h('div',{class:'card'},
-    h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.5rem'}},
-      h('div',{class:'sec-title',style:{margin:0,flex:1}},cap(wday(ds))+', '+dlbl(ds)),
+  const isToday2=ds===today();
+
+  return h('div',{class:'card',style:{border:'2px solid var(--acc)',marginTop:'.5rem'}},
+    // Header: date + badges
+    h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',marginBottom:'.6rem',flexWrap:'wrap'}},
+      h('div',{style:{fontWeight:800,fontSize:.95+'rem',flex:1}},
+        cap(wday(ds))+', '+dlbl(ds)+(isToday2?' (Hoy)':'')
+      ),
       isHol?h('span',{class:'badge badge-r'},'Festivo'):null,
-      isVac?h('span',{class:'badge badge-y'},'Vacaciones'):null,
+      isVac?h('span',{class:'badge badge-y'},'Vacaciones'):null
+    ),
+
+    // Entry summary if exists
+    entry
+      ? h('div',{style:{marginBottom:'.5rem'}},
+          h('div',{style:{fontSize:'.85rem',fontWeight:600,color:'var(--acc)',marginBottom:'.3rem'}},
+            '⏱ '+fmtH((entry.horasNormales||0)+(entry.horasExtra||0)+(entry.horasNocturnas||0)+(entry.horasFestivas||0))+' trabajadas'
+          ),
+          ...(entry.fichajes||[]).map(fj=>h('div',{style:{fontSize:'.78rem',color:'var(--ink2)',paddingLeft:'.5rem'}},
+            '▶ '+(fj.entrada||'—')+' → '+(fj.salida||'—')+(fj.nota?' · '+fj.nota.slice(0,20):'')
+          )),
+          entry.notas?h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',marginTop:'.2rem',fontStyle:'italic'}},
+            '"'+entry.notas.replace(/<[^>]*>/g,'').slice(0,50)+'"'
+          ):null
+        )
+      : h('div',{style:{color:'var(--ink3)',fontSize:'.82rem',marginBottom:'.5rem',fontStyle:'italic'}},
+          'Día sin jornada registrada'
+        ),
+
+    // Tasks
+    tasks.length>0
+      ? h('div',{style:{marginBottom:'.5rem'}},
+          h('div',{style:{fontSize:'.75rem',fontWeight:700,color:'var(--ink2)',marginBottom:'.2rem'}},
+            '📝 '+tasks.length+' tarea(s)'
+          ),
+          ...tasks.map(t=>h('div',{style:{fontSize:'.78rem',color:'var(--ink2)',paddingLeft:'.5rem'}},'· '+(t.titulo||'Sin título')))
+        )
+      : null,
+
+    // Action buttons
+    h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.3rem'}},
+      // Main action: go to this day
+      h('button',{
+        class:'btn btn-g',
+        style:{flex:1,fontWeight:700},
+        on:{click:()=>goToDay(ds)}
+      }, entry?'✏️ Ir y editar día':'📋 Ir a este día'),
+
+      // Vacations toggle
       h('button',{
         class:'btn btn-sm '+(isVac?'btn-y':'btn-gh'),
-        style:{fontSize:'.7rem'},
         on:{click:()=>toggleVacacion(ds)}
-      },isVac?'✓ En vacaciones':'+ Marcar vacaciones')
-    ),
-    entry
-      ? h('div',{},
-          h('div',{style:{fontSize:'.85rem',marginBottom:'.4rem'}},
-            `⏱ ${fmtH((entry.horasNormales||0)+(entry.horasExtra||0)+(entry.horasNocturnas||0)+(entry.horasFestivas||0))} trabajadas`
-          ),
-          (entry.fichajes||[]).map(fj=>h('div',{style:{fontSize:'.8rem',color:'var(--ink2)'}},
-            `▶ ${fj.entrada||'—'} — ${fj.salida||'—'}`
-          )),
-          h('div',{class:'btn-row',style:{marginTop:'.5rem'}},
-            h('button',{class:'btn btn-b btn-sm',on:{click:()=>loadHistorial(entry)}},'✏️ Editar'),
-            h('button',{class:'btn btn-r btn-sm',on:{click:()=>deleteEntry(entry.id)}},'🗑 Eliminar')
-          )
-        )
-      : h('div',{style:{color:'var(--ink2)',fontSize:'.82rem'}},'Sin jornada registrada'),
-    tasks.length>0
-      ? h('div',{style:{marginTop:'.5rem'}},
-          h('div',{style:{fontSize:'.75rem',fontWeight:700,color:'var(--ink2)',marginBottom:'.3rem'}},`📝 ${tasks.length} tarea(s)`),
-          ...tasks.map(t=>h('div',{style:{fontSize:'.8rem',color:'var(--ink2)'}},`· ${t.titulo||'Sin título'}`))
-        )
-      : null
+      }, isVac?'☀ Quitar vacaciones':'☀ Vacaciones'),
+
+      // Delete if entry exists
+      entry
+        ? h('button',{class:'btn btn-r btn-sm',on:{click:()=>deleteEntry(entry.id)}},'🗑')
+        : null,
+
+      // Close detail
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{selDate=null;rerender();}}},'✕')
+    )
   );
 }
 
@@ -2754,7 +2786,11 @@ let _draftSaving=false;
 async function saveDraft(){
   // Always capture latest DOM values before saving
   const notasEl=document.getElementById('notas-editor');
-  if(notasEl) fEntry.notas=notasEl.innerHTML||fEntry.notas;
+  if(notasEl && notasEl.innerHTML) fEntry.notas=notasEl.innerHTML;
+  const notasEditors=document.querySelectorAll('[contenteditable="true"]');
+  notasEditors.forEach(el=>{
+    if(el.id==='notas-editor' && el.innerHTML) fEntry.notas=el.innerHTML;
+  });
   const fichRows=document.querySelectorAll('.fich-row');
   fichRows.forEach((row,i)=>{
     if(!fEntry.fichajes[i]) return;
@@ -2961,9 +2997,13 @@ async function saveEntry(){
   if(!fEntry.fecha){showAlert('Selecciona una fecha','err');return;}
   // Read notas from contenteditable div (not textarea)
   const notasEl = document.getElementById('notas-editor');
-  if(notasEl) fEntry.notas = notasEl.innerHTML;
+  if(notasEl && notasEl.innerHTML.trim()) fEntry.notas = notasEl.innerHTML;
   // Also capture all form inputs before saving
   captureFormState();
+  // Extra safety: read any focused contenteditable
+  if(document.activeElement && document.activeElement.contentEditable==='true'){
+    if(document.activeElement.id==='notas-editor') fEntry.notas=document.activeElement.innerHTML;
+  }
   try{
     // Check for duplicate date
     const existing = S.entries.find(e=>e.fecha===fEntry.fecha && e.id!==fEntry.id);
@@ -5043,6 +5083,7 @@ async function loadData(){
 // ── AUTO-UPDATE ─────────────────────────────────────────
 // Checks GitHub for new version every time app opens
 async function checkForUpdate(){
+  if(Date.now() - lastActivity < 60000) return; // wait 60s inactivity before showing update
   try{
     const baseUrl = location.href.split('?')[0];
     const r = await fetch(baseUrl + '?t=' + Date.now(), {cache:'no-store'});
@@ -5093,6 +5134,8 @@ localStorage.setItem('appVersion', '1779004086714');
 
 // ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
 function checkDriveForNewData(){
+  // Only run if user has been idle for at least 10 seconds
+  if(Date.now() - lastActivity < 10000) return;
   if(!driveUrl) return;
   const cbName='chk_'+Date.now();
   const s=document.createElement('script');
@@ -5576,9 +5619,15 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
               // Silent boot load - MERGE, never lose local data
               const d=result.data;
               try{
-                // Only load if Drive has data and is not obviously older
                 const driveTs = new Date(d.exportedAt||0).getTime();
                 const localTs = parseInt(localStorage.getItem('lastDriveLoad')||'0');
+                const lastSaveTs = new Date(localStorage.getItem('lastSave')||0).getTime();
+                // Skip boot load if user saved locally AFTER last drive load
+                // This means they have newer local data than Drive
+                if(lastSaveTs > localTs && S.entries.length > 0){
+                  console.log('Skipping boot load: local data is newer than last Drive sync');
+                  syncStatus='ok'; rerender(); res(); return;
+                }
                 // Build local maps for merging
                 const savedFoto=fWorker.foto||'', savedFirma=fWorker.firma||'', savedLogo=fCompany.logo||'';
                 const localEntryMap={}; S.entries.forEach(e=>{localEntryMap[e.fecha]=e;});
@@ -5660,12 +5709,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     const todayDraft = S.entries.find(e=>e.fecha===today()&&e._draft);
     if(todayDraft){ fEntry={...todayDraft}; editingEntry=true; }
     if(driveUrl && syncStatus!=='ok') syncStatus='ok';
-    // Auto sync to Drive every 30 min
-    if(driveUrl){
-      setInterval(async()=>{
-        if(!_syncInProgress && isOnline && driveUrl) driveSync();
-      }, 30*60*1000);
-    }
+    // Auto sync: idle-based (see trackActivity above)
     // Auto backup weekly
     if(driveUrl){
       const lastBackup=localStorage.getItem('lastBackup')||'';
@@ -5689,19 +5733,34 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     setInterval(checkForUpdate, 5 * 60 * 1000);
     // Adaptive Drive check: 30s active, 8s inactive (>10s idle)
     let lastActivity = Date.now();
-    function trackActivity(){lastActivity = Date.now();}
-    ['click','touchstart','keydown','scroll','input'].forEach(ev=>
+    let _idleSyncTimer = null;
+    let _idleCheckTimer = null;
+    const IDLE_MS = 30000; // 30 seconds
+
+    function trackActivity(){
+      lastActivity = Date.now();
+      // Reset idle timers on any user action
+      clearTimeout(_idleSyncTimer);
+      clearTimeout(_idleCheckTimer);
+      // Schedule auto-sync after 30s idle
+      _idleSyncTimer = setTimeout(()=>{
+        if(!_syncInProgress && isOnline && driveUrl){
+          console.log('Auto-sync: 30s idle');
+          driveSync();
+        }
+      }, IDLE_MS);
+      // Schedule drive check after 35s idle
+      _idleCheckTimer = setTimeout(()=>{
+        checkDriveForNewData();
+      }, IDLE_MS + 5000);
+    }
+
+    // Track all user interactions
+    ['click','touchstart','keydown','scroll','input','mousedown'].forEach(ev=>
       document.addEventListener(ev, trackActivity, {passive:true})
     );
-
-    function adaptiveDriveCheck(){
-      const idle = Date.now() - lastActivity;
-      checkDriveForNewData();
-      // Schedule next check based on activity
-      const nextIn = idle > 10000 ? 8000 : 30000;
-      setTimeout(adaptiveDriveCheck, nextIn);
-    }
-    setTimeout(adaptiveDriveCheck, 10000);
+    // Start first idle timer
+    trackActivity();
   } catch(e) {
     document.getElementById('app').innerHTML = 
       '<div style="color:red;padding:20px;font-family:monospace">Error: ' + e.message + '<br>' + e.stack + '</div>';
