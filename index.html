@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779213715111 -->
+<!-- v1779220830884 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -336,6 +336,7 @@ let pinLocked=false,pinEntered='',pinCode='';
 let isOnline=navigator.onLine;
 let pendingSync=false;
 let timerRunning=false;
+let lastActivity=Date.now(); // declared globally so all functions can access it
 let timerStart=null;
 let timerDeduct=30;
 let fichajeTimers={}; // {_fid: {running, start, elapsed}} // minutes to deduct
@@ -423,10 +424,15 @@ function attachFichajeListeners(){
 
 function rerenderSetNotas(){
   requestAnimationFrame(()=>{
-    // Update notas editor
     const el=document.getElementById('notas-editor');
-    if(el && el.contentEditable==='true' && document.activeElement!==el){
-      if(el.innerHTML!==(fEntry.notas||'')) el.innerHTML=fEntry.notas||'';
+    if(el && el.contentEditable==='true'){
+      // Always sync innerHTML with fEntry.notas unless user is actively typing
+      const isFocused = document.activeElement===el;
+      if(!isFocused){
+        // Coming back to this field - restore saved content
+        const saved = fEntry.notas||'';
+        if(el.innerHTML !== saved) el.innerHTML = saved;
+      }
     }
   });
 }
@@ -750,7 +756,7 @@ function renderFichar(){
               style:{flex:1,background:'var(--surf2)',border:'1.5px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem .5rem',color:'var(--ink)',fontSize:'.9rem'},
               placeholder:'Se rellena al finalizar'}),
             h('button',{class:'btn btn-b btn-sm',style:{fontSize:'1.1rem',padding:'.3rem .5rem'},
-              title:'Abrir reloj',
+              title:'Abrir reloj para hora fin',
               on:{click:()=>{
                 const cur=document.getElementById('timer-end-manual')?.value||'';
                 showClockPicker(cur,v=>{
@@ -4849,12 +4855,15 @@ async function driveSync(){
   showAlert('Guardando en Drive... ('+data.entries.length+' jornadas)');
 
   // Step 1: save meta
-  jsonpGet('action=save_meta&d='+encodeURIComponent(JSON.stringify(meta)), (err,res)=>{
-    if(err||!res||!res.ok){
-      _syncInProgress=false; syncStatus='err';
-      showAlert('Error guardando meta: '+(err||res&&res.error||'timeout'),'err');
-      rerender(); return;
-    }
+  let _metaRetries=0;
+  function trySaveMeta(){
+    jsonpGet('action=save_meta&d='+encodeURIComponent(JSON.stringify(meta)), (err,res)=>{
+      if(err||!res||!res.ok){
+        if(_metaRetries<2){ _metaRetries++; setTimeout(trySaveMeta,3000); return; }
+        _syncInProgress=false; syncStatus='err';
+        showAlert('Error guardando meta ('+_metaRetries+' intentos)','err');
+        rerender(); return;
+      }
     // Step 2: save entries one by one
     let idx=0;
     function sendNext(){
@@ -4885,7 +4894,9 @@ async function driveSync(){
       },30000);
     }
     sendNext();
-  },30000);
+  },60000);
+  } // end trySaveMeta
+  trySaveMeta();
 }
 
 
@@ -5780,7 +5791,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     setTimeout(checkForUpdate, 10000);
     setInterval(checkForUpdate, 5 * 60 * 1000);
     // Adaptive Drive check: 30s active, 8s inactive (>10s idle)
-    let lastActivity = Date.now();
+    lastActivity = Date.now(); // reset on startup
     let _idleSyncTimer = null;
     let _idleCheckTimer = null;
     const IDLE_MS = 30000; // 30 seconds
