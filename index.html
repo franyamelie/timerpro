@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779220830884 -->
+<!-- v1779221680246 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2833,7 +2833,11 @@ function textToLoc(text){
 // Auto-save current entry draft to IndexedDB every 10 seconds
 function scheduleDraftSave(){
   if(draftSaveTimer) clearTimeout(draftSaveTimer);
-  draftSaveTimer = setTimeout(saveDraft, 2000);
+  draftSaveTimer = setTimeout(()=>{
+    const notasEl=document.getElementById('notas-editor');
+    if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
+    saveDraft();
+  }, 1500);
 }
 
 let _draftSaving=false;
@@ -4819,85 +4823,59 @@ let _syncInProgress=false;
 async function driveSync(){
   if(!driveUrl||_syncInProgress) return;
   _syncInProgress=true;
-  // Capture latest notas and form data before sync
-  const notasEl=document.getElementById('notas-editor');
-  if(notasEl && fEntry.fecha) fEntry.notas=notasEl.innerHTML||fEntry.notas;
+
+  // Capture all current form data
   captureFormState();
-  // Save current entry draft before syncing
+  const notasEl=document.getElementById('notas-editor');
+  if(notasEl&&notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
   if(fEntry.fecha) await saveDraft();
-  // Save current form data before syncing
-  if(fEntry.fecha) await saveDraft();
+
   let data;
-  try{ data=await buildSyncDataWithPhotos(); }catch(e){ _syncInProgress=false; return; }
-  if(!data.entries.length && !data.workers.length){
-    _syncInProgress=false;
-    showAlert('Sin datos que guardar','err');
-    return;
-  }
+  try{ data=await buildSyncDataWithPhotos(); }
+  catch(e){ _syncInProgress=false; return; }
+
   syncStatus='syncing'; rerender();
 
-  // Build meta (small - only text fields, no photos)
-  const meta={
-    version:data.version, exportedAt:data.exportedAt,
-    tasks:data.tasks, sites:data.sites, workorders:data.workorders,
-    vehicles:data.vehicles, workers:data.workers, companies:data.companies,
-    activeWorkerId:data.activeWorkerId, activeCompanyId:data.activeCompanyId,
-    worker:data.worker, company:data.company
+  // Build combined payload - strip HTML from descriptions
+  const stripHtml=s=>(s||'').replace(/<[^>]*>/g,'').slice(0,300);
+  const payload={
+    version:data.version,
+    exportedAt:new Date().toISOString(),
+    workers:data.workers,
+    companies:data.companies,
+    activeWorkerId:data.activeWorkerId,
+    activeCompanyId:data.activeCompanyId,
+    worker:data.worker,
+    company:data.company,
+    tasks:(data.tasks||[]).map(t=>({...t,descripcion:stripHtml(t.descripcion),fotos:[]})),
+    sites:data.sites,
+    workorders:data.workorders,
+    vehicles:data.vehicles,
+    entries:(data.entries||[]).map(e=>({...e,fotosGastos:[]})),
+    lastSync:new Date().toISOString()
   };
 
-  // Log each meta field size
-  Object.entries(meta).forEach(([k,v])=>{
-    const s=JSON.stringify(v).length;
-    if(s>100) console.log('meta.'+k+':', s, 'bytes');
-  });
-  const metaSize = JSON.stringify(meta).length;
-  console.log('Meta TOTAL:', metaSize, 'bytes');
-  showAlert('Guardando en Drive... ('+data.entries.length+' jornadas)');
+  const payloadStr=JSON.stringify(payload);
+  const encoded=encodeURIComponent(payloadStr);
 
-  // Step 1: save meta
-  let _metaRetries=0;
-  function trySaveMeta(){
-    jsonpGet('action=save_meta&d='+encodeURIComponent(JSON.stringify(meta)), (err,res)=>{
-      if(err||!res||!res.ok){
-        if(_metaRetries<2){ _metaRetries++; setTimeout(trySaveMeta,3000); return; }
-        _syncInProgress=false; syncStatus='err';
-        showAlert('Error guardando meta ('+_metaRetries+' intentos)','err');
-        rerender(); return;
-      }
-    // Step 2: save entries one by one
-    let idx=0;
-    function sendNext(){
-      if(idx>=data.entries.length){
-        // Step 3: commit
-        jsonpGet('action=commit&total='+data.entries.length, (e2,r2)=>{
-          _syncInProgress=false;
-          if(!e2&&r2&&r2.ok){
-            syncStatus='ok';
-            localStorage.setItem('lastDriveLoad', Date.now().toString());
-            showAlert('Drive guardado: '+data.entries.length+' jornadas');
-          } else {
-            syncStatus='err';
-            showAlert('Error al confirmar','err');
-          }
-          rerender();
-        },30000);
-        return;
-      }
-      const entry=data.entries[idx];
-      jsonpGet('action=save_entry&idx='+idx+'&d='+encodeURIComponent(JSON.stringify(entry)), (e2,r2)=>{
-        if(e2||!r2||!r2.ok){
-          _syncInProgress=false; syncStatus='err';
-          showAlert('Error en jornada '+idx,'err');
-          rerender(); return;
-        }
-        idx++; sendNext();
-      },30000);
+  console.log('Sync payload:',payloadStr.length,'bytes, encoded:',encoded.length);
+
+  // Use direct save action (writes to main file, more reliable)
+  jsonpGet('action=save&d='+encoded,(err,res)=>{
+    _syncInProgress=false;
+    if(!err&&res&&res.ok){
+      syncStatus='ok';
+      localStorage.setItem('lastDriveLoad',Date.now().toString());
+      localStorage.setItem('lastSave',new Date().toISOString());
+      showAlert('✅ Guardado en Drive: '+payload.entries.length+' jornadas');
+    } else {
+      syncStatus='err';
+      showAlert('Error Drive: '+(err||res&&res.error||'timeout'),'err');
     }
-    sendNext();
-  },60000);
-  } // end trySaveMeta
-  trySaveMeta();
+    rerender();
+  }, 60000);
 }
+
 
 
 
@@ -4936,7 +4914,7 @@ function buildSyncData(){
     version:2,
     exportedAt:new Date().toISOString(),
     entries:entries.map(e=>({...e,fotosGastos:[]})),
-    tasks:S.tasks.map(t=>({...t,fotos:[]})),
+    tasks:S.tasks.map(t=>({...t,fotos:[],descripcion:(t.descripcion||'').replace(/<[^>]*>/g,'').slice(0,500)})),
     sites:S.sites,
     workorders:S.workorders,
     vehicles:S.vehicles,
