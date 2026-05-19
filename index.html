@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779232178688 -->
+<!-- v1779232687902 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -359,7 +359,11 @@ function h(tag, attrs, ...children){
   });
   children.flat(Infinity).forEach(c=>{
     if(c===null||c===undefined||c===false)return;
-    el.appendChild(typeof c==='string'||typeof c==='number' ? document.createTextNode(c) : c);
+    if(el.tagName==='TEXTAREA'&&(typeof c==='string'||typeof c==='number')){
+      el.value=String(c); // textarea uses .value not textNode
+    } else {
+      el.appendChild(typeof c==='string'||typeof c==='number' ? document.createTextNode(c) : c);
+    }
   });
   return el;
 }
@@ -3240,6 +3244,7 @@ async function saveTask(){
       S.tasks.push({...fTask,id});
     }
     fTask=defTask();
+    editTaskId=null;
     showAlert('Tarea guardada ✓');
     rerender();
     scheduleSync();
