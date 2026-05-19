@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779232687902 -->
+<!-- v1779233015090 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -299,6 +299,7 @@ let fCompany = {...defCompany};
 let fSite = {...defSite};
 let fWO = {...defWO};
 let fVehicle = {...defVehicle};
+let editTaskId = null;
 let editSiteId = null, editWOId = null, editVehId = null;
 let showSiteF = false, showWOF = false, showVehF = false;
 let editingEntry = false;
@@ -360,7 +361,7 @@ function h(tag, attrs, ...children){
   children.flat(Infinity).forEach(c=>{
     if(c===null||c===undefined||c===false)return;
     if(el.tagName==='TEXTAREA'&&(typeof c==='string'||typeof c==='number')){
-      el.value=String(c); // textarea uses .value not textNode
+      el.value=String(c);
     } else {
       el.appendChild(typeof c==='string'||typeof c==='number' ? document.createTextNode(c) : c);
     }
@@ -430,8 +431,13 @@ function attachFichajeListeners(){
 }
 
 function rerenderSetNotas(){
-  // textarea: value is set by virtual DOM on each render via fEntry.notas
-  // No extra handling needed
+  requestAnimationFrame(()=>{
+    const el=document.getElementById('notas-editor');
+    if(el && el.contentEditable==='true' && document.activeElement!==el){
+      const val=fEntry.notas||'';
+      if(el.innerHTML!==val) el.innerHTML=val;
+    }
+  });
 }
 function rerender(){
   if(renderScheduled)return;
@@ -454,7 +460,7 @@ function captureFormState(){
       if(nota) fEntry.fichajes[i].nota=nota.value||nota.textContent||'';
     });
     const notasEl=document.getElementById('notas-editor');
-    if(notasEl) fEntry.notas=notasEl.value||fEntry.notas||'';
+    if(notasEl) fEntry.notas = (notasEl.value||notasEl.innerHTML||'') || fEntry.notas || '';
     // Capture numeric fields
     ['horasNormales','precioHoraNormal','horasExtra','precioHoraExtra',
      'horasNocturnas','precioHoraNocturna','horasFestivas','precioHoraFestiva',
@@ -983,22 +989,21 @@ function renderFichar(){
           h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontSize:'.7rem'},title:'Limpiar formato',
             on:{mousedown:ev=>{ev.preventDefault();document.execCommand('removeFormat');}}},'✕ Formato')
         ),
-        h('textarea',{
+        h('div',{
           id:'notas-editor',
-          spellcheck:true, lang:'es', rows:4,
-          placeholder:'Escribe las notas de la jornada...',
+          contenteditable:'true',
+          spellcheck:true, lang:'es',
           style:{
-            width:'100%',minHeight:'80px',background:'var(--surf2)',
-            border:'1px solid var(--brd)',borderRadius:'var(--r2)',
-            padding:'.5rem .6rem',color:'var(--ink)',fontSize:'.85rem',
-            lineHeight:1.6,resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'
+            minHeight:'80px',background:'var(--surf2)',border:'1px solid var(--brd)',
+            borderRadius:'var(--r2)',padding:'.5rem .6rem',color:'var(--ink)',
+            fontSize:'.85rem',lineHeight:1.6,outline:'none',wordBreak:'break-word',
+            boxSizing:'border-box'
           },
           on:{
-            input:ev=>{fEntry.notas=ev.target.value;},
-            change:ev=>{fEntry.notas=ev.target.value;scheduleDraftSave();},
-            keyup:ev=>{fEntry.notas=ev.target.value;}
+            input:ev=>{fEntry.notas=ev.target.innerHTML;scheduleDraftSave();},
+            keyup:ev=>{fEntry.notas=ev.target.innerHTML;}
           }
-        },fEntry.notas||'')
+        })
       )
     ),
 
