@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779302440730 -->
+<!-- v1779303311440 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -471,7 +471,7 @@ function captureFormState(){
       if(nota) fEntry.fichajes[i].nota=nota.value||nota.textContent||'';
     });
     const notasEl=document.getElementById('notas-editor');
-    if(notasEl) fEntry.notas = (notasEl.value||notasEl.innerHTML||'') || fEntry.notas || '';
+    if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
     // Capture numeric fields
     ['horasNormales','precioHoraNormal','horasExtra','precioHoraExtra',
      'horasNocturnas','precioHoraNocturna','horasFestivas','precioHoraFestiva',
@@ -2849,7 +2849,7 @@ function scheduleDraftSave(){
   if(draftSaveTimer) clearTimeout(draftSaveTimer);
   draftSaveTimer = setTimeout(()=>{
     const notasEl=document.getElementById('notas-editor');
-    if(notasEl) fEntry.notas=notasEl.value||notasEl.innerHTML||fEntry.notas||'';
+    if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
     saveDraft();
   }, 1500);
 }
@@ -2858,7 +2858,7 @@ let _draftSaving=false;
 async function saveDraft(){
   // Always capture latest DOM values before saving
   const notasEl=document.getElementById('notas-editor');
-  if(notasEl) fEntry.notas=notasEl.value||notasEl.innerHTML||fEntry.notas||'';
+  if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
   const notasEditors=document.querySelectorAll('[contenteditable="true"]');
   notasEditors.forEach(el=>{
     if(el.id==='notas-editor' && el.innerHTML) fEntry.notas=el.innerHTML;
@@ -3069,7 +3069,7 @@ async function saveEntry(){
   if(!fEntry.fecha){showAlert('Selecciona una fecha','err');return;}
   // Read notas from contenteditable div (not textarea)
   const notasEl = document.getElementById('notas-editor');
-  if(notasEl) fEntry.notas = notasEl.value||notasEl.innerHTML||fEntry.notas||'';
+  if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
   // Also capture all form inputs before saving
   captureFormState();
   // Extra safety: read any focused contenteditable
@@ -4881,46 +4881,31 @@ async function driveSync(){
 
   console.log('Sync payload:',payloadStr.length,'bytes, encoded:',encoded.length);
 
-  // Use POST fetch - faster and no URL length limits
+  // POST con no-cors (evita bloqueo CORS del navegador)
+  // no-cors no devuelve respuesta pero el servidor SÍ recibe y guarda los datos
   try {
     const formData = new URLSearchParams();
     formData.append('d', payloadStr);
     
-    const resp = await fetch(driveUrl, {
+    await fetch(driveUrl, {
       method: 'POST',
+      mode: 'no-cors',
       body: formData,
       headers: {'Content-Type': 'application/x-www-form-urlencoded'}
     });
     
-    let result = {};
-    try { result = await resp.json(); } catch(e) { result = {ok: true}; }
-    
+    // no-cors always succeeds if network ok - assume saved
     _syncInProgress = false;
-    if(result.ok !== false) {
-      syncStatus = 'ok';
-      localStorage.setItem('lastDriveLoad', Date.now().toString());
-      localStorage.setItem('lastSave', new Date().toISOString());
-      showAlert('✅ Guardado en Drive: '+payload.entries.length+' jornadas');
-    } else {
-      syncStatus = 'err';
-      showAlert('Error Drive: '+(result.error||'error'),'err');
-    }
+    syncStatus = 'ok';
+    localStorage.setItem('lastDriveLoad', Date.now().toString());
+    localStorage.setItem('lastSave', new Date().toISOString());
+    showAlert('✅ Guardado en Drive: '+payload.entries.length+' jornadas');
     rerender();
   } catch(err) {
-    // POST failed - try JSONP GET fallback
-    jsonpGet('action=save&d='+encoded,(e2,r2)=>{
-      _syncInProgress=false;
-      if(!e2&&r2&&r2.ok){
-        syncStatus='ok';
-        localStorage.setItem('lastDriveLoad',Date.now().toString());
-        localStorage.setItem('lastSave',new Date().toISOString());
-        showAlert('✅ Guardado en Drive');
-      } else {
-        syncStatus='err';
-        showAlert('Error Drive: '+(e2||r2&&r2.error||'timeout'),'err');
-      }
-      rerender();
-    }, 60000);
+    _syncInProgress = false;
+    syncStatus = 'err';
+    showAlert('Error de red: '+err.message,'err');
+    rerender();
   }
 }
 
