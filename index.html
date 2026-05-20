@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779309432360 -->
+<!-- v1779309826385 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -470,7 +470,10 @@ function rerenderSetNotas(){
   requestAnimationFrame(()=>{
     const el=document.getElementById('notas-editor');
     if(el && el.contentEditable==='true' && document.activeElement!==el){
-      const val=fEntry.notas||'';
+      // Read from localStorage first (most up to date), then fEntry
+      const localVal = localStorage.getItem('notas_'+fEntry.fecha)||'';
+      const val = localVal || fEntry.notas || '';
+      if(localVal) fEntry.notas = localVal; // sync back to fEntry
       if(el.innerHTML!==val) el.innerHTML=val;
     }
   });
@@ -497,7 +500,13 @@ function captureFormState(){
       if(nota) fEntry.fichajes[i].nota=nota.value||nota.textContent||'';
     });
     const notasEl=document.getElementById('notas-editor');
-    if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
+    if(notasEl && notasEl.innerHTML.trim()){
+      fEntry.notas=notasEl.innerHTML;
+      localStorage.setItem('notas_'+fEntry.fecha, notasEl.innerHTML);
+    } else {
+      const savedNotas=localStorage.getItem('notas_'+fEntry.fecha);
+      if(savedNotas) fEntry.notas=savedNotas;
+    }
     // Capture numeric fields
     ['horasNormales','precioHoraNormal','horasExtra','precioHoraExtra',
      'horasNocturnas','precioHoraNocturna','horasFestivas','precioHoraFestiva',
@@ -1049,7 +1058,7 @@ function renderFichar(){
             boxSizing:'border-box'
           },
           on:{
-            input:ev=>{fEntry.notas=ev.target.innerHTML;persistEntry();scheduleDraftSave();},
+            input:ev=>{fEntry.notas=ev.target.innerHTML;localStorage.setItem('notas_'+fEntry.fecha,ev.target.innerHTML);persistEntry();scheduleDraftSave();},
             keyup:ev=>{fEntry.notas=ev.target.innerHTML;}
           }
         })
@@ -2887,7 +2896,13 @@ function scheduleDraftSave(){
   if(draftSaveTimer) clearTimeout(draftSaveTimer);
   draftSaveTimer = setTimeout(()=>{
     const notasEl=document.getElementById('notas-editor');
-    if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
+    if(notasEl && notasEl.innerHTML.trim()){
+      fEntry.notas=notasEl.innerHTML;
+      localStorage.setItem('notas_'+fEntry.fecha, notasEl.innerHTML);
+    } else {
+      const savedNotas=localStorage.getItem('notas_'+fEntry.fecha);
+      if(savedNotas) fEntry.notas=savedNotas;
+    }
     saveDraft();
   }, 1500);
 }
