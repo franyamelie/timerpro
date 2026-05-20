@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779304112430 -->
+<!-- v1779304658033 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -5846,6 +5846,37 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     );
     // Start first idle timer
     trackActivity();
+
+    // ── CONTINUOUS FORM SAVE (every 500ms) ──────────────
+    // Saves ALL visible form field values to fEntry/fTask
+    // regardless of events - prevents ANY data loss on tab switch
+    setInterval(()=>{
+      // Save notas de jornada
+      const notasEl = document.getElementById('notas-editor');
+      if(notasEl && notasEl.innerHTML.trim()) {
+        fEntry.notas = notasEl.innerHTML;
+      }
+      // Save fichaje time inputs
+      document.querySelectorAll('.fich-row').forEach((row, i) => {
+        if(!fEntry.fichajes[i]) return;
+        const times = row.querySelectorAll('input[type="time"]');
+        if(times[0] && times[0].value) fEntry.fichajes[i].entrada = times[0].value;
+        if(times[1] && times[1].value) fEntry.fichajes[i].salida = times[1].value;
+        const nota = row.querySelector('textarea');
+        if(nota) fEntry.fichajes[i].nota = nota.value;
+      });
+      // Save numeric inputs by data-field attribute
+      document.querySelectorAll('input[data-field]').forEach(el => {
+        const f = el.dataset.field;
+        if(f && el.value !== '') fEntry[f] = parseFloat(el.value) || 0;
+      });
+      // Save task form if on tareas tab
+      if(S.tab === 'tareas') {
+        const taskTitle = document.querySelector('input[placeholder="Título de la tarea"]');
+        if(taskTitle && taskTitle.value) fTask.titulo = taskTitle.value;
+      }
+    }, 500);
+
   } catch(e) {
     document.getElementById('app').innerHTML = 
       '<div style="color:red;padding:20px;font-family:monospace">Error: ' + e.message + '<br>' + e.stack + '</div>';
