@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779310129032 -->
+<!-- v1779310368411 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -864,7 +864,7 @@ function renderFichar(){
         ? h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.6rem .8rem',marginTop:'.5rem',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.3rem'}},
             h('div',{style:{display:'flex',flexDirection:'column'}},
               h('span',{style:{fontSize:'.65rem',color:'var(--ink3)',textTransform:'uppercase',letterSpacing:'.04em'}},'Tiempo total'),
-              h('span',{style:{fontWeight:800,fontSize:'1.1rem',color:'var(--acc)',fontVariantNumeric:'tabular-nums'}},formatTimerFull(timerElapsed))
+              h('span',{id:'timer-display',style:{fontWeight:800,fontSize:'1.1rem',color:'var(--acc)',fontVariantNumeric:'tabular-nums'}},formatTimerFull(timerElapsed))
             ),
             h('div',{style:{display:'flex',flexDirection:'column'}},
               h('span',{style:{fontSize:'.65rem',color:'var(--ink3)',textTransform:'uppercase',letterSpacing:'.04em'}},'Tiempo neto'),
@@ -1359,7 +1359,7 @@ function renderFichaje(fj,i){
       )
     ),
     ftimer.running
-      ? h('div',{style:{fontSize:'.72rem',color:'var(--acc)',fontWeight:700}},
+      ? h('div',{id:'fichaje-timer-'+fj._fid,style:{fontSize:'.72rem',color:'var(--acc)',fontWeight:700}},
           '⏱ En curso: '+formatTimer(ftimer.elapsed))
       : null
   );
