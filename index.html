@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779303311440 -->
+<!-- v1779304112430 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -622,7 +622,18 @@ const TABS = [
 ];
 function renderTabs(){
   return h('div',{class:'tabs'},
-    ...TABS.map(t=>h('button',{class:'tab'+(S.tab===t.id?' active':''),on:{click:()=>{captureFormState();if(t.id==='tareas')loadFTaskDraft();S.tab=t.id;rerender()}}},
+    ...TABS.map(t=>h('button',{class:'tab'+(S.tab===t.id?' active':''),on:{click:()=>{(()=>{
+        // Force save current field before tab switch
+        if(document.activeElement && document.activeElement !== document.body){
+          document.activeElement.blur();
+        }
+        captureFormState();
+        const notasEl=document.getElementById('notas-editor');
+        if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
+        if(t.id==='tareas') loadFTaskDraft();
+        S.tab=t.id;
+        rerender();
+      })()}}},
       h('span',{class:'tab-icon'},t.icon),t.label
     ))
   );
