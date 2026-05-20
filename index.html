@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779309826385 -->
+<!-- v1779310129032 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -658,18 +658,18 @@ const TABS = [
 ];
 function renderTabs(){
   return h('div',{class:'tabs'},
-    ...TABS.map(t=>h('button',{class:'tab'+(S.tab===t.id?' active':''),on:{click:()=>{(()=>{
-        // Force save current field before tab switch
-        if(document.activeElement && document.activeElement !== document.body){
-          document.activeElement.blur();
-        }
-        captureFormState();
-        const notasEl=document.getElementById('notas-editor');
-        if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
-        if(t.id==='tareas') loadFTaskDraft();
+    ...TABS.map(t=>h('button',{class:'tab'+(S.tab===t.id?' active':''),'data-tabId':t.id,on:{click:()=>{
         S.tab=t.id;
-        rerender();
-      })()}}},
+        // Show/hide tab sections without full DOM rebuild
+        document.querySelectorAll('[data-tab]').forEach(el=>{
+          el.style.display = el.dataset.tab===t.id?'':'none';
+        });
+        // Update active tab style
+        document.querySelectorAll('.tab').forEach(el=>{
+          el.classList.toggle('active', el.dataset.tabId===t.id);
+        });
+        trackActivity();
+      }}},
       h('span',{class:'tab-icon'},t.icon),t.label
     ))
   );
@@ -677,19 +677,37 @@ function renderTabs(){
 
 // ── MAIN ─────────────────────────────────────────────────
 function renderMain(){
-  switch(S.tab){
-    case 'fichar':     return renderFichar();
-    case 'tareas':     return renderTareas();
-    case 'calendario': return renderCalendario();
-    case 'sitios':     return renderSitios();
-    case 'ordenes':    return renderOrdenes();
-    case 'vehiculos':  return renderVehiculos();
-    case 'resumen':    return renderResumen();
-    case 'sincronizar':return renderSincronizar();
-    case 'trabajador': return renderTrabajador();
-    case 'empresa':    return renderEmpresa();
-    default: return h('div',{},'');
-  }
+  // Render ALL tabs but only show the active one
+  // This preserves form inputs - they are NEVER destroyed on tab switch
+  const tabs = [
+    {id:'fichar',     fn:renderFichar},
+    {id:'tareas',     fn:renderTareas},
+    {id:'calendario', fn:renderCalendario},
+    {id:'sitios',     fn:renderSitios},
+    {id:'ordenes',    fn:renderOrdenes},
+    {id:'vehiculos',  fn:renderVehiculos},
+    {id:'resumen',    fn:renderResumen},
+    {id:'sincronizar',fn:renderSincronizar},
+    {id:'trabajador', fn:renderTrabajador},
+    {id:'empresa',    fn:renderEmpresa},
+  ];
+  const wrapper = document.createElement('div');
+  tabs.forEach(t=>{
+    try{
+      const section = document.createElement('div');
+      section.dataset.tab = t.id;
+      section.style.display = S.tab===t.id ? '' : 'none';
+      const content = t.fn();
+      if(content) section.appendChild(content);
+      wrapper.appendChild(section);
+    }catch(e){
+      const err = document.createElement('div');
+      err.style.cssText='color:red;padding:20px';
+      err.textContent='Error en '+t.id+': '+e.message;
+      wrapper.appendChild(err);
+    }
+  });
+  return wrapper;
 }
 
 // ══════════════════════════════════════════════════════════
