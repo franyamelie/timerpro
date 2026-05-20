@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779309139648 -->
+<!-- v1779309432360 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -310,6 +310,31 @@ function loadFTaskDraft(){
     if(d){ const t=JSON.parse(d); if(t&&t.titulo!==undefined) fTask={...t}; }
   }catch(e){}
 }
+
+// ── PERSISTENT FORM STATE ──────────────────────────
+// Save/restore entire fEntry to localStorage so data
+// survives tab switches, rerenders, and sync operations
+function persistEntry(){
+  try{ localStorage.setItem('_fEntry', JSON.stringify(fEntry)); }catch(e){}
+}
+function restoreEntry(){
+  try{
+    const saved = localStorage.getItem('_fEntry');
+    if(!saved) return;
+    const e = JSON.parse(saved);
+    // Only restore if same date
+    if(e && e.fecha && e.fecha === fEntry.fecha){
+      // Merge: keep non-empty values from saved
+      if(e.notas) fEntry.notas = e.notas;
+      if(e.fichajes && e.fichajes.length) fEntry.fichajes = e.fichajes;
+      if(e.horasNormales) fEntry.horasNormales = e.horasNormales;
+      if(e.precioHoraNormal) fEntry.precioHoraNormal = e.precioHoraNormal;
+      if(e.horasExtra) fEntry.horasExtra = e.horasExtra;
+      if(e.dieta) fEntry.dieta = e.dieta;
+      if(e.transporte) fEntry.transporte = e.transporte;
+    }
+  }catch(e){}
+}
 let editTaskId = null;
 let editSiteId = null, editWOId = null, editVehId = null;
 let showSiteF = false, showWOF = false, showVehF = false;
@@ -461,6 +486,7 @@ function rerender(){
 // This prevents data loss when theme changes, tab switches, or auto-rerenders happen
 function captureFormState(){
   try{
+    persistEntry(); // save to localStorage immediately
     const fichRows = document.querySelectorAll('.fich-row');
     fichRows.forEach((row,i)=>{
       if(!fEntry.fichajes[i]) return;
@@ -484,6 +510,7 @@ function captureFormState(){
 
 function renderApp(){
   captureFormState();
+  restoreEntry(); // ensure fEntry has latest data
   try {
     const app = document.getElementById('app');
     if(!app) return;
@@ -1022,7 +1049,7 @@ function renderFichar(){
             boxSizing:'border-box'
           },
           on:{
-            input:ev=>{fEntry.notas=ev.target.innerHTML;scheduleDraftSave();},
+            input:ev=>{fEntry.notas=ev.target.innerHTML;persistEntry();scheduleDraftSave();},
             keyup:ev=>{fEntry.notas=ev.target.innerHTML;}
           }
         })
@@ -3105,6 +3132,7 @@ async function saveEntry(){
       S.entries.push({...fEntry,id,_draft:false});
     }
     editingEntry=false;
+    localStorage.removeItem('_fEntry');
     fEntry=defEntry();
     localStorage.setItem('lastSave',new Date().toISOString());
     saveLocalBackup();
