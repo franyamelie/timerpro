@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779233015090 -->
+<!-- v1779234113185 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -299,6 +299,17 @@ let fCompany = {...defCompany};
 let fSite = {...defSite};
 let fWO = {...defWO};
 let fVehicle = {...defVehicle};
+
+// Save task form draft to localStorage so it survives tab switches
+function saveFTaskDraft(){
+  try{ localStorage.setItem('fTaskDraft', JSON.stringify(fTask)); }catch(e){}
+}
+function loadFTaskDraft(){
+  try{
+    const d=localStorage.getItem('fTaskDraft');
+    if(d){ const t=JSON.parse(d); if(t&&t.titulo!==undefined) fTask={...t}; }
+  }catch(e){}
+}
 let editTaskId = null;
 let editSiteId = null, editWOId = null, editVehId = null;
 let showSiteF = false, showWOF = false, showVehF = false;
@@ -611,7 +622,7 @@ const TABS = [
 ];
 function renderTabs(){
   return h('div',{class:'tabs'},
-    ...TABS.map(t=>h('button',{class:'tab'+(S.tab===t.id?' active':''),on:{click:()=>{captureFormState();S.tab=t.id;rerender()}}},
+    ...TABS.map(t=>h('button',{class:'tab'+(S.tab===t.id?' active':''),on:{click:()=>{captureFormState();if(t.id==='tareas')loadFTaskDraft();S.tab=t.id;rerender()}}},
       h('span',{class:'tab-icon'},t.icon),t.label
     ))
   );
@@ -1350,8 +1361,8 @@ function renderTareas(){
     h('div',{class:'card'},
       h('div',{class:'sec-title'},editTaskId?'✏️ Editar Tarea':'➕ Nueva Tarea'),
       h('div',{class:'grid-2'},
-        field('Fecha','date',fTask.fecha,v=>{fTask.fecha=v;}),
-        field('Título','text',fTask.titulo,v=>{fTask.titulo=v;},{},'Título de la tarea')
+        field('Fecha','date',fTask.fecha,v=>{fTask.fecha=v;saveFTaskDraft();}),
+        field('Título','text',fTask.titulo,v=>{fTask.titulo=v;saveFTaskDraft();},{},'Título de la tarea')
       ),
       h('div',{class:'grid-2'},
         field('Hora inicio','time',fTask.horaInicio,v=>{fTask.horaInicio=v;}),
@@ -3250,6 +3261,7 @@ async function saveTask(){
     }
     fTask=defTask();
     editTaskId=null;
+    localStorage.removeItem('fTaskDraft');
     showAlert('Tarea guardada ✓');
     rerender();
     scheduleSync();
@@ -5668,10 +5680,12 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
                 const driveTs = new Date(d.exportedAt||0).getTime();
                 const localTs = parseInt(localStorage.getItem('lastDriveLoad')||'0');
                 const lastSaveTs = new Date(localStorage.getItem('lastSave')||0).getTime();
-                // Skip boot load if user saved locally AFTER last drive load
-                // This means they have newer local data than Drive
-                if(lastSaveTs > localTs && S.entries.length > 0){
-                  console.log('Skipping boot load: local data is newer than last Drive sync');
+                // STRICT: Skip boot load if we have ANY local entries
+                // Only load from Drive if this is a fresh install (no local data)
+                if(S.entries.length > 0){
+                  console.log('Skipping boot load: local data exists ('+S.entries.length+' entries)');
+                  // Just show notification if Drive has newer data
+                  if(driveTs > localTs + 5000) driveHasNew=true;
                   syncStatus='ok'; rerender(); res(); return;
                 }
                 // Build local maps for merging
@@ -5725,6 +5739,8 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     }
     // Fix any existing duplicates on startup
     await deduplicateEntries();
+    // Load task draft if any
+    loadFTaskDraft();
     // Load most recent entry on boot
     if(S.entries.length>0 && !editingEntry){
       const lastEntry=[...S.entries].sort((a,b)=>b.fecha.localeCompare(a.fecha))[0];
