@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779304658033 -->
+<!-- v1779305013666 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -4746,8 +4746,7 @@ async function driveAutoLoad(force){
       syncStatus='ok';
       lastSync=new Date().toLocaleTimeString('es-ES');
       localStorage.setItem('lastSync',lastSync);
-      // Reset active entry to show fresh data
-      if(!editingEntry) fEntry=defEntry();
+      // Keep current form data - do NOT reset fEntry
       showAlert('☁️ Datos actualizados desde Drive ('+S.entries.length+' jornadas, '+S.tasks.length+' tareas)');
       rerender();
     }catch(e){ console.error('Import error:',e); showAlert('Error importando: '+e.message,'err'); }
@@ -5077,7 +5076,7 @@ async function importDriveData(d, verifyMode){
     lastSync=new Date().toLocaleTimeString('es-ES');
     localStorage.setItem('lastSync',lastSync);
     driveHasNew=false; // cleared after loading
-    if(!editingEntry) fEntry=defEntry();
+    // Do NOT reset fEntry - keep current form data
     if(verifyMode){
       showAlert('✅ Drive OK: '+S.entries.length+' jornadas guardadas correctamente');
     } else {
