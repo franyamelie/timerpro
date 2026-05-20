@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779305013666 -->
+<!-- v1779309139648 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -4869,6 +4869,19 @@ async function driveSync(){
 
   // Build combined payload - strip HTML from descriptions
   const stripHtml=s=>(s||'').replace(/<[^>]*>/g,'').slice(0,300);
+  // Strip all large/unnecessary fields to keep payload small for JSONP GET
+  const cleanEntry = e => ({
+    id:e.id, fecha:e.fecha, _draft:e._draft||false,
+    fichajes:(e.fichajes||[]).map(f=>({entrada:f.entrada,salida:f.salida,nota:f.nota||'',taskId:f.taskId||''})),
+    horasNormales:e.horasNormales||0, precioHoraNormal:e.precioHoraNormal||0,
+    horasExtra:e.horasExtra||0, precioHoraExtra:e.precioHoraExtra||0,
+    horasNocturnas:e.horasNocturnas||0, precioHoraNocturna:e.precioHoraNocturna||0,
+    horasFestivas:e.horasFestivas||0, precioHoraFestiva:e.precioHoraFestiva||0,
+    dieta:e.dieta||0, transporte:e.transporte||0,
+    notas:e.notas||'',
+    ubicacionEntrada:typeof e.ubicacionEntrada==='string'?e.ubicacionEntrada.slice(0,100):'',
+    ubicacionSalida:typeof e.ubicacionSalida==='string'?e.ubicacionSalida.slice(0,100):'',
+  });
   const payload={
     version:data.version,
     exportedAt:new Date().toISOString(),
@@ -4878,11 +4891,11 @@ async function driveSync(){
     activeCompanyId:data.activeCompanyId,
     worker:data.worker,
     company:data.company,
-    tasks:(data.tasks||[]).map(t=>({...t,descripcion:stripHtml(t.descripcion),fotos:[]})),
-    sites:data.sites,
-    workorders:data.workorders,
-    vehicles:data.vehicles,
-    entries:(data.entries||[]).map(e=>({...e,fotosGastos:[]})),
+    tasks:(data.tasks||[]).map(t=>({id:t.id,titulo:t.titulo,fecha:t.fecha,horaInicio:t.horaInicio,horaFin:t.horaFin,descripcion:stripHtml(t.descripcion),siteId:t.siteId,usaOT:t.usaOT,otNumero:t.otNumero})),
+    sites:(data.sites||[]).map(s=>({id:s.id,nombre:s.nombre,direccion:s.direccion})),
+    workorders:data.workorders||[],
+    vehicles:(data.vehicles||[]).map(v=>({id:v.id,nombre:v.nombre,matricula:v.matricula})),
+    entries:(data.entries||[]).map(cleanEntry),
     lastSync:new Date().toISOString()
   };
 
@@ -4891,32 +4904,20 @@ async function driveSync(){
 
   console.log('Sync payload:',payloadStr.length,'bytes, encoded:',encoded.length);
 
-  // POST con no-cors (evita bloqueo CORS del navegador)
-  // no-cors no devuelve respuesta pero el servidor SÍ recibe y guarda los datos
-  try {
-    const formData = new URLSearchParams();
-    formData.append('d', payloadStr);
-    
-    await fetch(driveUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      body: formData,
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'}
-    });
-    
-    // no-cors always succeeds if network ok - assume saved
-    _syncInProgress = false;
-    syncStatus = 'ok';
-    localStorage.setItem('lastDriveLoad', Date.now().toString());
-    localStorage.setItem('lastSave', new Date().toISOString());
-    showAlert('✅ Guardado en Drive: '+payload.entries.length+' jornadas');
+  // JSONP GET - the only method that works reliably with Apps Script
+  jsonpGet('action=save&d='+encoded, (err,res)=>{
+    _syncInProgress=false;
+    if(!err && res && res.ok){
+      syncStatus='ok';
+      localStorage.setItem('lastDriveLoad', Date.now().toString());
+      localStorage.setItem('lastSave', new Date().toISOString());
+      showAlert('✅ Guardado en Drive: '+payload.entries.length+' jornadas');
+    } else {
+      syncStatus='err';
+      showAlert('Error Drive: '+(err||res&&res.error||'timeout'),'err');
+    }
     rerender();
-  } catch(err) {
-    _syncInProgress = false;
-    syncStatus = 'err';
-    showAlert('Error de red: '+err.message,'err');
-    rerender();
-  }
+  }, 60000);
 }
 
 
