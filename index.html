@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779310924940 -->
+<!-- v1779395129148 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -483,6 +483,12 @@ function rerender(){
 // This prevents data loss when theme changes, tab switches, or auto-rerenders happen
 function captureFormState(){
   try{
+    // Read notas FIRST before persisting (fix: was saving stale data)
+    const notasElFirst=document.getElementById('notas-editor');
+    if(notasElFirst && notasElFirst.innerHTML.trim()){
+      fEntry.notas=notasElFirst.innerHTML;
+      localStorage.setItem('notas_'+fEntry.fecha, notasElFirst.innerHTML);
+    }
     persistEntry(); // save to localStorage immediately
     const fichRows = document.querySelectorAll('.fich-row');
     fichRows.forEach((row,i)=>{
@@ -513,7 +519,9 @@ function captureFormState(){
 
 function renderApp(){
   captureFormState();
+  const _notasBeforeRestore = fEntry.notas; // preserve notas captured from DOM
   restoreEntry(); // ensure fEntry has latest data
+  if(_notasBeforeRestore) fEntry.notas = _notasBeforeRestore; // don't let restoreEntry wipe notas
   try {
     const app = document.getElementById('app');
     if(!app) return;
@@ -3022,17 +3030,15 @@ function gpsDisplay(loc){
     const d=JSON.parse(loc);
     const lat=parseFloat(d.lat),lng=parseFloat(d.lng);
     if(!lat||!lng) throw new Error('no coords');
-    const zoom=16,tile=latLngToTile(lat,lng,zoom);
-    const t0='https://tile.openstreetmap.org/'+zoom+'/'+(tile.x-1)+'/'+tile.y+'.png';
-    const t1='https://tile.openstreetmap.org/'+zoom+'/'+tile.x+'/'+tile.y+'.png';
-    const t2='https://tile.openstreetmap.org/'+zoom+'/'+(tile.x+1)+'/'+tile.y+'.png';
+    const mapImgUrl = d.mapImg || ('https://staticmap.openstreetmap.de/staticmap.php?center='+lat+','+lng+'&zoom=16&size=300x130&markers='+lat+','+lng+',red-pushpin');
     return h('div',{style:{marginTop:'.4rem'}},
       h('a',{href:d.url,target:'_blank',rel:'noopener',style:{display:'block',textDecoration:'none'}},
         h('div',{style:{position:'relative',borderRadius:'var(--r)',overflow:'hidden',border:'2px solid var(--acc)',maxWidth:'300px',cursor:'pointer',boxShadow:'var(--sh)',height:'130px',backgroundColor:'#e8f4f8'}},
-          h('div',{style:{position:'absolute',top:0,left:0,right:0,bottom:0,display:'flex'}},
-            h('img',{src:t0,style:{flex:1,objectFit:'cover'}}),
-            h('img',{src:t1,style:{flex:1,objectFit:'cover'}}),
-            h('img',{src:t2,style:{flex:1,objectFit:'cover'}})
+          h('img',{src:mapImgUrl,style:{width:'100%',height:'100%',objectFit:'cover'},
+            onerror:"this.style.display='none';this.nextSibling.style.display='flex'"}),
+          h('div',{style:{display:'none',position:'absolute',inset:0,alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'.3rem',color:'var(--ink2)',fontSize:'.75rem'}},
+            h('span',{style:{fontSize:'1.5rem'}},'🗺️'),
+            h('span',{},'Ver en Google Maps')
           ),
           h('div',{style:{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-100%)',fontSize:'2rem',lineHeight:1,filter:'drop-shadow(0 2px 4px rgba(0,0,0,.5))'}},"\u{1F4CD}"),
           h('div',{style:{position:'absolute',bottom:'0',left:'0',right:'0',background:'rgba(0,0,0,.75)',color:'#fff',padding:'.35rem .6rem',fontSize:'.72rem',display:'flex',alignItems:'center',gap:'.4rem'}},
@@ -3096,7 +3102,7 @@ async function captureGPS(tipo){
       // Static map preview using OpenStreetMap (free, no API key)
       const mapImg='https://staticmap.openstreetmap.de/staticmap.php?center='+lat+','+lng+'&zoom=16&size=300x150&markers='+lat+','+lng+',red-pushpin';
       const mapsUrl='https://www.google.com/maps?q='+lat+','+lng;
-      const loc=JSON.stringify({lat,lng,url:mapsUrl,label:lat+', '+lng,acc});
+      const loc=JSON.stringify({lat,lng,url:mapsUrl,label:lat+', '+lng,acc,mapImg});
       if(tipo==='entrada')fEntry.ubicacionEntrada=loc;
       else fEntry.ubicacionSalida=loc;
       showAlert('✅ Ubicación capturada (±'+acc+'m)');
