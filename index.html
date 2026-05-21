@@ -324,14 +324,8 @@ function restoreEntry(){
     const e = JSON.parse(saved);
     // Only restore if same date
     if(e && e.fecha && e.fecha === fEntry.fecha){
-      // Merge: keep non-empty values from saved
-      if(e.notas) fEntry.notas = e.notas;
-      if(e.fichajes && e.fichajes.length) fEntry.fichajes = e.fichajes;
-      if(e.horasNormales) fEntry.horasNormales = e.horasNormales;
-      if(e.precioHoraNormal) fEntry.precioHoraNormal = e.precioHoraNormal;
-      if(e.horasExtra) fEntry.horasExtra = e.horasExtra;
-      if(e.dieta) fEntry.dieta = e.dieta;
-      if(e.transporte) fEntry.transporte = e.transporte;
+      // Restaura todos los campos guardados — merge completo sobre fEntry
+      fEntry = {...fEntry, ...e};
     }
   }catch(e){}
 }
@@ -540,6 +534,9 @@ function renderApp(){
     if(m) m.scrollTop=scrollTop;
     document.documentElement.classList.toggle('light',!S.dark);
   updateTitle();
+  // ── POST-RENDER HOOKS ── restituye valores de formulario tras cada render
+  if(S.tab==='fichar'){ rerenderSetNotas(); attachFichajeListeners(); }
+  initFieldAreas();
   } catch(e) {
     console.error('renderApp error:',e);
     const app=document.getElementById('app');
@@ -1044,6 +1041,7 @@ function renderFichar(){
         h('div',{
           id:'notas-editor',
           contenteditable:'true',
+          html:fEntry.notas||'',
           spellcheck:true, lang:'es',
           style:{
             minHeight:'80px',background:'var(--surf2)',border:'1px solid var(--brd)',
