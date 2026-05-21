@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779396958992 -->
+<!-- v1779397430829 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -4977,11 +4977,13 @@ async function driveSync(){
   const MAX_RETRIES = 3;
 
   function attemptSync(){
-    const timeoutMs = 50000 + (_retries * 10000); // 50s, 60s, 70s
+    const timeoutMs = 55000 + (_retries * 15000); // 55s, 70s, 85s
     jsonpGet('action=save&d='+encoded, (err,res)=>{
       if(!err && res && res.ok){
         _syncInProgress=false;
         syncStatus='ok';
+        _warmupDone=true;
+        if(window._driveRetryTimer){clearInterval(window._driveRetryTimer);window._driveRetryTimer=null;}
         localStorage.setItem('lastDriveLoad', Date.now().toString());
         localStorage.setItem('lastSave', new Date().toISOString());
         lastSync = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
@@ -4990,17 +4992,26 @@ async function driveSync(){
         rerender();
       } else if(_retries < MAX_RETRIES){
         _retries++;
-        console.log('Drive reintento',_retries,'por:',err||res?.error);
-        // Don't show error yet, just update status quietly
+        console.log('Drive reintento',_retries,'de',MAX_RETRIES,'por:',err||res?.error);
         syncStatus='syncing';
-        setTimeout(attemptSync, 4000 * _retries);
-      } else {
-        _syncInProgress=false;
-        syncStatus='err';
-        _warmupDone=false; // reset so next attempt re-warms
-        // Data is safe locally - just inform user
-        showAlert('⚠️ Drive no responde. Datos guardados localmente — pulsa ☁️ para reintentar.','err');
         rerender();
+        setTimeout(attemptSync, 5000);
+      } else {
+        // All retries failed — schedule silent background retry every 2 min
+        _syncInProgress=false;
+        _warmupDone=false;
+        syncStatus='err';
+        rerender();
+        // Schedule silent background retry — no popup, no interruption
+        if(!window._driveRetryTimer){
+          window._driveRetryTimer = setInterval(()=>{
+            if(syncStatus==='ok'){ clearInterval(window._driveRetryTimer); window._driveRetryTimer=null; return; }
+            console.log('Drive: reintento automático en background...');
+            clearInterval(window._driveRetryTimer);
+            window._driveRetryTimer=null;
+            driveSync();
+          }, 120000); // retry every 2 minutes silently
+        }
       }
     }, timeoutMs);
   }
@@ -5918,7 +5929,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
       // Schedule auto-sync after 30s idle
       _idleSyncTimer = setTimeout(()=>{
         if(!_syncInProgress && isOnline && driveUrl){
-          console.log('Auto-sync: 30s idle');
+          console.log('Auto-sync: 90s idle');
           driveSync();
         }
       }, IDLE_MS);
