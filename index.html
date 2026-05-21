@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779395129148 -->
+<!-- v1779395808155 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -4911,6 +4911,17 @@ async function driveSync(){
   // Build combined payload - strip HTML from descriptions
   const stripHtml=s=>(s||'').replace(/<[^>]*>/g,'').slice(0,300);
   // Strip all large/unnecessary fields to keep payload small for JSONP GET
+  // compactLoc: extract lat/lng/url for sync without mapImg (saves space, preserves GPS)
+  const compactLoc = loc => {
+    if(!loc) return '';
+    try{
+      const d=JSON.parse(loc);
+      if(d.lat && d.lng) return JSON.stringify({lat:d.lat,lng:d.lng,url:d.url||'',label:d.label||'',acc:d.acc||0});
+      return loc.slice(0,200);
+    }catch(e){ return (loc||'').slice(0,200); }
+  };
+  const stripHtmlNotas = n => (n||'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,500);
+
   const cleanEntry = e => ({
     id:e.id, fecha:e.fecha, _draft:e._draft||false,
     fichajes:(e.fichajes||[]).map(f=>({entrada:f.entrada,salida:f.salida,nota:f.nota||'',taskId:f.taskId||''})),
@@ -4919,9 +4930,9 @@ async function driveSync(){
     horasNocturnas:e.horasNocturnas||0, precioHoraNocturna:e.precioHoraNocturna||0,
     horasFestivas:e.horasFestivas||0, precioHoraFestiva:e.precioHoraFestiva||0,
     dieta:e.dieta||0, transporte:e.transporte||0,
-    notas:e.notas||'',
-    ubicacionEntrada:typeof e.ubicacionEntrada==='string'?e.ubicacionEntrada.slice(0,100):'',
-    ubicacionSalida:typeof e.ubicacionSalida==='string'?e.ubicacionSalida.slice(0,100):'',
+    notas:stripHtmlNotas(e.notas),
+    ubicacionEntrada:compactLoc(e.ubicacionEntrada),
+    ubicacionSalida:compactLoc(e.ubicacionSalida),
   });
   const payload={
     version:data.version,
@@ -4945,20 +4956,34 @@ async function driveSync(){
 
   console.log('Sync payload:',payloadStr.length,'bytes, encoded:',encoded.length);
 
-  // JSONP GET - the only method that works reliably with Apps Script
-  jsonpGet('action=save&d='+encoded, (err,res)=>{
-    _syncInProgress=false;
-    if(!err && res && res.ok){
-      syncStatus='ok';
-      localStorage.setItem('lastDriveLoad', Date.now().toString());
-      localStorage.setItem('lastSave', new Date().toISOString());
-      showAlert('✅ Guardado en Drive: '+payload.entries.length+' jornadas');
-    } else {
-      syncStatus='err';
-      showAlert('Error Drive: '+(err||res&&res.error||'timeout'),'err');
-    }
-    rerender();
-  }, 60000);
+  let _retries = 0;
+  const MAX_RETRIES = 2;
+
+  function attemptSync(){
+    jsonpGet('action=save&d='+encoded, (err,res)=>{
+      if(!err && res && res.ok){
+        _syncInProgress=false;
+        syncStatus='ok';
+        localStorage.setItem('lastDriveLoad', Date.now().toString());
+        localStorage.setItem('lastSave', new Date().toISOString());
+        showAlert('✅ Guardado en Drive: '+payload.entries.length+' jornadas');
+        rerender();
+      } else if(_retries < MAX_RETRIES){
+        _retries++;
+        console.log('Drive retry',_retries,'after error:',err||res?.error);
+        setTimeout(attemptSync, 3000 * _retries);
+      } else {
+        _syncInProgress=false;
+        syncStatus='err';
+        const errMsg = err==='timeout'
+          ? 'Timeout - verifica que el script de Drive está desplegado como "Cualquier persona"'
+          : (err||res&&res.error||'Error desconocido');
+        showAlert('Error Drive: '+errMsg,'err');
+        rerender();
+      }
+    }, 45000);
+  }
+  attemptSync();
 }
 
 
