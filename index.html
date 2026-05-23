@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779565595105 -->
+<!-- v1779566623049 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -325,14 +325,18 @@ function restoreEntry(){
     const e = JSON.parse(saved);
     // Only restore if same date
     if(e && e.fecha && e.fecha === fEntry.fecha){
-      // Merge but keep current fichajes (user may have typed times)
-      // and keep current notas (already captured from DOM)
-      const currentFichajes = fEntry.fichajes;
-      const currentNotas = fEntry.notas;
+      // Preserve current in-memory arrays and notas before merge
+      const cur = {
+        fichajes: fEntry.fichajes,
+        notas: fEntry.notas,
+        dietasExtra: fEntry.dietasExtra,
+        otrosConceptos: fEntry.otrosConceptos,
+        journeys: fEntry.journeys
+      };
       fEntry = {...fEntry, ...e};
-      // Restore fichajes: merge saved times only if current is empty
-      if(currentFichajes && currentFichajes.length > 0){
-        fEntry.fichajes = currentFichajes.map((cf, i) => {
+      // Restore fichajes: prefer current (user may have typed times)
+      if(cur.fichajes && cur.fichajes.length > 0){
+        fEntry.fichajes = cur.fichajes.map((cf, i) => {
           const sf = e.fichajes && e.fichajes[i];
           if(!sf) return cf;
           return {
@@ -343,8 +347,15 @@ function restoreEntry(){
           };
         });
       }
-      // Keep current notas if we have them
-      if(currentNotas) fEntry.notas = currentNotas;
+      // Prefer current arrays if they have more data
+      if(cur.dietasExtra && cur.dietasExtra.length >= (e.dietasExtra||[]).length)
+        fEntry.dietasExtra = cur.dietasExtra;
+      if(cur.otrosConceptos && cur.otrosConceptos.length >= (e.otrosConceptos||[]).length)
+        fEntry.otrosConceptos = cur.otrosConceptos;
+      if(cur.journeys && cur.journeys.length >= (e.journeys||[]).length)
+        fEntry.journeys = cur.journeys;
+      // Keep current notas
+      if(cur.notas) fEntry.notas = cur.notas;
     }
   }catch(e){}
 }
@@ -1675,7 +1686,7 @@ function goToDay(ds){
   // Navigate to Fichar tab for specific date
   const existing=S.entries.find(e=>e.fecha===ds);
   if(existing){
-    fEntry={...existing, fichajes:[...(existing.fichajes||[]).map(f=>({...f}))]};
+    fEntry={...existing, fichajes:[...(existing.fichajes||[]).map(f=>({...f}))], dietasExtra:[...(existing.dietasExtra||[])], otrosConceptos:[...(existing.otrosConceptos||[])], journeys:[...(existing.journeys||[])]};
     // notas come from DB entry
     editingEntry=true;
   } else {
@@ -2973,9 +2984,9 @@ async function saveDraft(){
   _draftSaving=true;
   try{
     const draft={...fEntry,_draft:true,_savedAt:new Date().toISOString()};
-    // Find ANY existing entry for this date (draft or not)
+    // Find existing entries for this date
     const allForDate=S.entries.filter(e=>e.fecha===fEntry.fecha);
-    const finalized=allForDate.find(e=>!e._draft);
+    const finalized=allForDate.find(e=>!e._draft && e.id===fEntry.id); // only match same id
     const draftEntry=allForDate.find(e=>e._draft);
     // Remove duplicate entries for same date (keep newest)
     if(allForDate.length>1){
@@ -3176,13 +3187,20 @@ async function saveEntry(){
   }
   try{
     // Check for duplicate date
-    const existing = S.entries.find(e=>e.fecha===fEntry.fecha && e.id!==fEntry.id);
+    const existing = S.entries.find(e=>e.fecha===fEntry.fecha && e.id!==fEntry.id && !e._draft);
     if(existing){
       if(!confirm('Ya existe una jornada para el '+fEntry.fecha+'. ¿Sobreescribir con los datos actuales?')) return;
       // Merge: delete old, save new with old id
       fEntry.id = existing.id;
       editingEntry = true;
     }
+    // Delete any draft entries for this date before saving final
+    const draftsForDate = S.entries.filter(e=>e.fecha===fEntry.fecha && e._draft && e.id!==fEntry.id);
+    for(const d of draftsForDate){
+      try{ await dbDel(ST.entries, d.id); }catch(e){}
+    }
+    S.entries = S.entries.filter(e=>!(e.fecha===fEntry.fecha && e._draft && e.id!==fEntry.id));
+
     // BULLETPROOF: read ALL fichaje times directly from DOM right before saving
     document.querySelectorAll('.fich-row').forEach((row,i)=>{
       if(!fEntry.fichajes[i]) return;
@@ -3192,7 +3210,6 @@ async function saveEntry(){
       const nota=row.querySelector('textarea');
       if(nota) fEntry.fichajes[i].nota = nota.value || fEntry.fichajes[i].nota || '';
     });
-    console.log('SAVING fichajes:', JSON.stringify(fEntry.fichajes.map(f=>({e:f.entrada,s:f.salida}))));
     if(editingEntry&&fEntry.id){
       await dbPut(ST.entries,{...fEntry,_draft:false});
       S.entries=S.entries.map(e=>e.id===fEntry.id?{...fEntry,_draft:false}:e);
