@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779517971927 -->
+<!-- v1779564399339 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -293,6 +293,7 @@ const defVehicle = {nombre:'',tipo:'coche',matricula:'',precioPorKm:0.19,notas:'
 
 // Formularios
 let fEntry = defEntry();
+let _skipDomCapture = false; // prevent DOM contamination when switching days
 let fTask = defTask();
 let fWorker = {...defWorker};
 let fCompany = {...defCompany};
@@ -482,6 +483,7 @@ function rerender(){
 // Capture ALL current DOM input values into fEntry before each render
 // This prevents data loss when theme changes, tab switches, or auto-rerenders happen
 function captureFormState(){
+  if(_skipDomCapture) return; // switching days — don't read stale DOM
   try{
     // Read notas FIRST before persisting (fix: was saving stale data)
     const notasElFirst=document.getElementById('notas-editor');
@@ -494,8 +496,8 @@ function captureFormState(){
     fichRows.forEach((row,i)=>{
       if(!fEntry.fichajes[i]) return;
       const timeInputs=row.querySelectorAll('input[type="time"]');
-      if(timeInputs[0]&&timeInputs[0].value) fEntry.fichajes[i].entrada=timeInputs[0].value;
-      if(timeInputs[1]&&timeInputs[1].value) fEntry.fichajes[i].salida=timeInputs[1].value;
+      if(timeInputs[0]) fEntry.fichajes[i].entrada=timeInputs[0].value||fEntry.fichajes[i].entrada||'';
+      if(timeInputs[1]) fEntry.fichajes[i].salida=timeInputs[1].value||fEntry.fichajes[i].salida||'';
       const nota=row.querySelector('input[type="text"],textarea');
       if(nota) fEntry.fichajes[i].nota=nota.value||nota.textContent||'';
     });
@@ -1647,10 +1649,22 @@ function renderCalendario(){
 }
 
 function goToDay(ds){
+  // Save current day before switching
+  try{
+    const notasEl=document.getElementById('notas-editor');
+    if(notasEl && fEntry.fecha && notasEl.innerHTML.trim()){
+      fEntry.notas=notasEl.innerHTML;
+      localStorage.setItem('notas_'+fEntry.fecha, notasEl.innerHTML);
+      persistEntry();
+    }
+  }catch(e){}
+  _skipDomCapture=true;
   // Navigate to Fichar tab for specific date
   const existing=S.entries.find(e=>e.fecha===ds);
   if(existing){
     fEntry={...existing, fichajes:[...(existing.fichajes||[]).map(f=>({...f}))]};
+    const savedNotas=localStorage.getItem('notas_'+fEntry.fecha);
+    if(savedNotas) fEntry.notas=savedNotas;
     editingEntry=true;
   } else {
     fEntry={...defEntry(), fecha:ds};
@@ -1659,7 +1673,7 @@ function goToDay(ds){
   selDate=null;
   S.tab='fichar';
   rerender();
-  // Scroll to top
+  requestAnimationFrame(()=>{ _skipDomCapture=false; });
   window.scrollTo(0,0);
 }
 
@@ -3197,10 +3211,25 @@ function cancelEditing(){
 }
 
 function loadHistorial(entry){
+  // Save current day's notas before switching
+  try{
+    const notasEl=document.getElementById('notas-editor');
+    if(notasEl && fEntry.fecha && notasEl.innerHTML.trim()){
+      fEntry.notas=notasEl.innerHTML;
+      localStorage.setItem('notas_'+fEntry.fecha, notasEl.innerHTML);
+      persistEntry();
+    }
+  }catch(e){}
+  // Load the new day — flag tells captureFormState to NOT read old DOM
+  _skipDomCapture=true;
   fEntry={...entry,fichajes:[...(entry.fichajes||[])],dietasExtra:[...(entry.dietasExtra||[])],otrosConceptos:[...(entry.otrosConceptos||[])],journeys:[...(entry.journeys||[])]};
+  // Restore notas from localStorage if available for this day
+  const savedNotas=localStorage.getItem('notas_'+fEntry.fecha);
+  if(savedNotas) fEntry.notas=savedNotas;
   editingEntry=true;
   S.tab='fichar';
   rerender();
+  requestAnimationFrame(()=>{ _skipDomCapture=false; });
 }
 
 async function deleteEntry(id){
