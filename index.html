@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779397430829 -->
+<!-- v1779517971927 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2571,8 +2571,28 @@ function renderModalExport(){
     h('div',{class:'modal-box'},
       h('div',{class:'modal-title'},'Exportar Informe'),
       h('div',{class:'field'},
-        h('label',{},'FILTRAR MES (opcional)'),
-        h('input',{type:'month',value:filterMonth,on:{change:ev=>{filterMonth=ev.target.value;rerender();}}})
+        h('label',{},'FILTRAR POR PERÍODO'),
+        h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.5rem',marginBottom:'.4rem'}},
+          h('div',{},
+            h('label',{style:{fontSize:'.7rem',opacity:.7,display:'block',marginBottom:'.2rem'}},'DESDE'),
+            h('input',{type:'date',value:filterFrom,style:{width:'100%'},
+              on:{change:ev=>{filterFrom=ev.target.value;filterMonth='';rerender();}}})
+          ),
+          h('div',{},
+            h('label',{style:{fontSize:'.7rem',opacity:.7,display:'block',marginBottom:'.2rem'}},'HASTA'),
+            h('input',{type:'date',value:filterTo,style:{width:'100%'},
+              on:{change:ev=>{filterTo=ev.target.value;filterMonth='';rerender();}}})
+          )
+        ),
+        h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.3rem'}},
+          h('label',{style:{fontSize:'.7rem',opacity:.7}},'O FILTRAR POR MES'),
+          h('input',{type:'month',value:filterMonth,style:{flex:1},
+            on:{change:ev=>{filterMonth=ev.target.value;filterFrom='';filterTo='';rerender();}}})
+        ),
+        (filterFrom||filterTo||filterMonth)?h('button',{
+          style:{fontSize:'.72rem',background:'transparent',border:'1px solid var(--ink3)',borderRadius:'20px',padding:'.2rem .7rem',cursor:'pointer',color:'var(--ink2)'},
+          on:{click:()=>{filterFrom='';filterTo='';filterMonth='';rerender();}}
+        },'✕ Quitar filtro'):null
       ),
       h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.6rem',marginTop:'.5rem'}},
         expBtn('PDF','PDF','Con importes','#dc2626',exportPDFReal),
