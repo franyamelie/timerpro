@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779567405898 -->
+<!-- v1779567880698 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -341,8 +341,9 @@ function restoreEntry(){
           if(!sf) return cf;
           return {
             ...sf,
-            entrada: cf.entrada || sf.entrada || '',
-            salida: cf.salida || sf.salida || '',
+            // Prefer the longer/more complete value — avoids losing user input
+            entrada: (cf.entrada && cf.entrada.length >= (sf.entrada||'').length) ? cf.entrada : (sf.entrada||cf.entrada||''),
+            salida:  (cf.salida  && cf.salida.length  >= (sf.salida||'').length)  ? cf.salida  : (sf.salida||cf.salida||''),
             nota: cf.nota !== undefined ? cf.nota : sf.nota || ''
           };
         });
@@ -1290,8 +1291,8 @@ function renderFichaje(fj,i){
         cursor:'pointer',fontFamily:'inherit'
       },
       on:{
-        input:ev=>{fEntry.fichajes[i][field]=ev.target.value;},
-        change:ev=>{fEntry.fichajes[i][field]=ev.target.value;scheduleDraftSave();}
+        input:ev=>{ if(ev.target.value) fEntry.fichajes[i][field]=ev.target.value; },
+        change:ev=>{ fEntry.fichajes[i][field]=ev.target.value; scheduleDraftSave(); }
       }
     }),
     // "Ahora" button - sets current time
@@ -1690,6 +1691,7 @@ function goToDay(ds){
       persistEntry();
     }
   }catch(e){}
+  localStorage.removeItem('_fEntry');
   _skipDomCapture=true;
   // Navigate to Fichar tab for specific date
   const existing=S.entries.find(e=>e.fecha===ds);
@@ -3271,6 +3273,8 @@ function loadHistorial(entry){
       persistEntry();
     }
   }catch(e){}
+  // Clear stale _fEntry so restoreEntry can't merge old day's data
+  localStorage.removeItem('_fEntry');
   // Load the new day — flag tells captureFormState to NOT read old DOM
   _skipDomCapture=true;
   fEntry={...entry,fichajes:[...(entry.fichajes||[])],dietasExtra:[...(entry.dietasExtra||[])],otrosConceptos:[...(entry.otrosConceptos||[])],journeys:[...(entry.journeys||[])]};
