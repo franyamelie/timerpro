@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779564867940 -->
+<!-- v1779565595105 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3160,8 +3160,11 @@ async function captureGPS(tipo){
   );
 }
 
+let _isSaving = false;
 async function saveEntry(){
   if(!fEntry.fecha){showAlert('Selecciona una fecha','err');return;}
+  if(_isSaving) return;
+  _isSaving = true;
   // Read notas from contenteditable div (not textarea)
   const notasEl = document.getElementById('notas-editor');
   if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
@@ -3180,6 +3183,16 @@ async function saveEntry(){
       fEntry.id = existing.id;
       editingEntry = true;
     }
+    // BULLETPROOF: read ALL fichaje times directly from DOM right before saving
+    document.querySelectorAll('.fich-row').forEach((row,i)=>{
+      if(!fEntry.fichajes[i]) return;
+      const t=row.querySelectorAll('input[type="time"]');
+      if(t[0]) fEntry.fichajes[i].entrada = t[0].value || fEntry.fichajes[i].entrada || '';
+      if(t[1]) fEntry.fichajes[i].salida  = t[1].value || fEntry.fichajes[i].salida  || '';
+      const nota=row.querySelector('textarea');
+      if(nota) fEntry.fichajes[i].nota = nota.value || fEntry.fichajes[i].nota || '';
+    });
+    console.log('SAVING fichajes:', JSON.stringify(fEntry.fichajes.map(f=>({e:f.entrada,s:f.salida}))));
     if(editingEntry&&fEntry.id){
       await dbPut(ST.entries,{...fEntry,_draft:false});
       S.entries=S.entries.map(e=>e.id===fEntry.id?{...fEntry,_draft:false}:e);
@@ -3196,8 +3209,9 @@ async function saveEntry(){
     localStorage.setItem('lastSave',new Date().toISOString());
     saveLocalBackup();
     showAlert('Jornada guardada ✓');
+    _isSaving = false;
     rerender();
-  }catch(e){showAlert(e.message,'err');}
+  }catch(e){ _isSaving = false; showAlert(e.message,'err');}
 }
 
 // Clean up any existing duplicates
@@ -6009,6 +6023,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     // Saves ALL visible form field values to fEntry/fTask
     // regardless of events - prevents ANY data loss on tab switch
     setInterval(()=>{
+      if(_isSaving) return; // don't interfere during save
       // Save notas de jornada
       const notasEl = document.getElementById('notas-editor');
       if(notasEl && notasEl.innerHTML.trim()) {
