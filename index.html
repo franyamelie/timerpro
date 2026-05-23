@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779569252610 -->
+<!-- v1779570012220 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1686,6 +1686,7 @@ function goToDay(ds){
       persistEntry();
     }
   }catch(e){}
+  pauseAndSaveTimerForDay(); // save current day's timer
   localStorage.removeItem('_fEntry');
   _skipDomCapture=true;
   // Navigate to Fichar tab for specific date
@@ -1700,6 +1701,7 @@ function goToDay(ds){
   }
   selDate=null;
   S.tab='fichar';
+  restoreTimerForDay(ds); // restore this day's timer if it has one
   rerender();
   requestAnimationFrame(()=>{ _skipDomCapture=false; });
   window.scrollTo(0,0);
@@ -3259,6 +3261,44 @@ function cancelEditing(){
   rerender();
 }
 
+function pauseAndSaveTimerForDay(){
+  // Called when switching away from current day
+  // Saves timer state tied to current day's fecha
+  if(timerRunning){
+    timerElapsed = Math.floor((Date.now()-timerStart)/1000);
+    clearInterval(timerInterval);
+    timerInterval=null;
+    timerRunning=false;
+    localStorage.setItem('timerState', JSON.stringify({
+      running:false, start:timerStart, fecha:fEntry.fecha||today(),
+      elapsed:timerElapsed, deduct:timerDeduct
+    }));
+  }
+}
+
+function restoreTimerForDay(fecha){
+  // Restore timer state for the new day
+  timerRunning=false;
+  timerStart=null;
+  timerElapsed=0;
+  timerDeduct=30;
+  if(timerInterval){ clearInterval(timerInterval); timerInterval=null; }
+  try{
+    const saved=localStorage.getItem('timerState');
+    if(!saved) return;
+    const ts=JSON.parse(saved);
+    if(ts.fecha !== fecha) return; // timer belongs to a different day
+    timerStart=ts.start;
+    timerElapsed=ts.elapsed||Math.floor((Date.now()-ts.start)/1000);
+    timerDeduct=ts.deduct||30;
+    if(ts.running){
+      timerRunning=true;
+      timerStart=Date.now()-timerElapsed*1000;
+      timerInterval=setInterval(()=>{ timerElapsed=Math.floor((Date.now()-timerStart)/1000); updateTitle(); },1000);
+    }
+  }catch(e){}
+}
+
 function loadHistorial(entry){
   // Save current day's notas before switching
   try{
@@ -3269,6 +3309,7 @@ function loadHistorial(entry){
       persistEntry();
     }
   }catch(e){}
+  pauseAndSaveTimerForDay(); // save current day's timer before switching
   // Clear stale _fEntry so restoreEntry can't merge old day's data
   localStorage.removeItem('_fEntry');
   // Load the new day — flag tells captureFormState to NOT read old DOM
@@ -3277,6 +3318,7 @@ function loadHistorial(entry){
   // notas come from the DB entry — don't override with localStorage
   editingEntry=true;
   S.tab='fichar';
+  restoreTimerForDay(entry.fecha); // restore this day's timer if it has one
   rerender();
   requestAnimationFrame(()=>{ _skipDomCapture=false; });
 }
