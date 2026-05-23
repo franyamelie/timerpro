@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779568801666 -->
+<!-- v1779569252610 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -5525,10 +5525,10 @@ function startTimer(){
     let anyRunning=false;
     Object.values(fichajeTimers).forEach(ft=>{ if(ft.running) anyRunning=true; });
     if(anyRunning){
-      // Don't rebuild DOM while user is typing in a time input — they'd lose partial input
+      // Don't rebuild DOM while user is typing in a fichaje time input (now type=text with id prefix)
       const active = document.activeElement;
-      const typingTime = active && active.type === 'time';
-      if(!typingTime) rerender();
+      const typingFichaje = active && active.id && (active.id.startsWith('fich-ent-') || active.id.startsWith('fich-sal-'));
+      if(!typingFichaje) rerender();
     }
   },1000);
   rerender();
