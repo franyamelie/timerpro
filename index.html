@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779567880698 -->
+<!-- v1779568801666 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -465,20 +465,12 @@ function attachFichajeListeners(){
       if(!fEntry.fichajes[i]) return;
       const times=row.querySelectorAll('input[type="time"]');
       if(times[0]){
-        times[0].oninput=ev=>{
-          if(fEntry.fichajes[i]) fEntry.fichajes[i].entrada=ev.target.value;
-        };
-        times[0].onchange=ev=>{
-          if(fEntry.fichajes[i]){ fEntry.fichajes[i].entrada=ev.target.value; scheduleDraftSave(); }
-        };
+        times[0].oninput=ev=>{ if(fEntry.fichajes[i]&&ev.target.value) fEntry.fichajes[i].entrada=ev.target.value; };
+        times[0].onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].entrada=ev.target.value; scheduleDraftSave(); } };
       }
       if(times[1]){
-        times[1].oninput=ev=>{
-          if(fEntry.fichajes[i]) fEntry.fichajes[i].salida=ev.target.value;
-        };
-        times[1].onchange=ev=>{
-          if(fEntry.fichajes[i]){ fEntry.fichajes[i].salida=ev.target.value; scheduleDraftSave(); }
-        };
+        times[1].oninput=ev=>{ if(fEntry.fichajes[i]&&ev.target.value) fEntry.fichajes[i].salida=ev.target.value; };
+        times[1].onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].salida=ev.target.value; scheduleDraftSave(); } };
       }
       // Textarea for nota
       const nota=row.querySelector('textarea');
@@ -529,12 +521,13 @@ function captureFormState(){
     const activeEl = document.activeElement;
     fichRows.forEach((row,i)=>{
       if(!fEntry.fichajes[i]) return;
-      const timeInputs=row.querySelectorAll('input[type="time"]');
-      // Only read from DOM if the input is not currently focused (not being typed in)
-      if(timeInputs[0] && activeEl !== timeInputs[0])
-        fEntry.fichajes[i].entrada=timeInputs[0].value||fEntry.fichajes[i].entrada||'';
-      if(timeInputs[1] && activeEl !== timeInputs[1])
-        fEntry.fichajes[i].salida=timeInputs[1].value||fEntry.fichajes[i].salida||'';
+      // Find entrada/salida text inputs by id prefix (now type="text")
+      const entInput = document.getElementById('fich-ent-'+fEntry.fichajes[i]._fid);
+      const salInput = document.getElementById('fich-sal-'+fEntry.fichajes[i]._fid);
+      if(entInput && activeEl !== entInput && entInput.value)
+        fEntry.fichajes[i].entrada = entInput.value;
+      if(salInput && activeEl !== salInput && salInput.value)
+        fEntry.fichajes[i].salida = salInput.value;
       const nota=row.querySelector('input[type="text"],textarea');
       if(nota) fEntry.fichajes[i].nota=nota.value||nota.textContent||'';
     });
@@ -1279,20 +1272,22 @@ function renderFichaje(fj,i){
   const taskOpts=[{id:'',titulo:'Sin tarea'},...S.tasks];
 
   const timeInput=(field,fidPart)=>h('div',{style:{display:'flex',alignItems:'center',gap:'.3rem'}},
-    // Native time input - shows clock picker on mobile, spinner on desktop
     h('input',{
-      type:'time',
+      type:'text',
       id:'fich-'+fidPart+'-'+fj._fid,
       value:fj[field]||'',
+      placeholder:'--:--',
+      maxlength:'5',
       style:{
         background:'var(--surf2)',border:'1.5px solid var(--brd)',
         borderRadius:'var(--r2)',padding:'.35rem .5rem',
-        color:'var(--ink)',fontSize:'.9rem',width:'120px',
-        cursor:'pointer',fontFamily:'inherit'
+        color:'var(--ink)',fontSize:'.9rem',width:'80px',
+        cursor:'text',fontFamily:'inherit',textAlign:'center'
       },
       on:{
         input:ev=>{ if(ev.target.value) fEntry.fichajes[i][field]=ev.target.value; },
-        change:ev=>{ fEntry.fichajes[i][field]=ev.target.value; scheduleDraftSave(); }
+        blur:ev=>{ if(ev.target.value) fEntry.fichajes[i][field]=ev.target.value; scheduleDraftSave(); },
+        change:ev=>{ if(ev.target.value) fEntry.fichajes[i][field]=ev.target.value; scheduleDraftSave(); }
       }
     }),
     // "Ahora" button - sets current time
@@ -3214,9 +3209,10 @@ async function saveEntry(){
     // BULLETPROOF: read ALL fichaje times directly from DOM right before saving
     document.querySelectorAll('.fich-row').forEach((row,i)=>{
       if(!fEntry.fichajes[i]) return;
-      const t=row.querySelectorAll('input[type="time"]');
-      if(t[0]) fEntry.fichajes[i].entrada = t[0].value || fEntry.fichajes[i].entrada || '';
-      if(t[1]) fEntry.fichajes[i].salida  = t[1].value || fEntry.fichajes[i].salida  || '';
+      const entEl = document.getElementById('fich-ent-'+fEntry.fichajes[i]._fid);
+      const salEl = document.getElementById('fich-sal-'+fEntry.fichajes[i]._fid);
+      if(entEl && entEl.value) fEntry.fichajes[i].entrada = entEl.value;
+      if(salEl && salEl.value) fEntry.fichajes[i].salida  = salEl.value;
       const nota=row.querySelector('textarea');
       if(nota) fEntry.fichajes[i].nota = nota.value || fEntry.fichajes[i].nota || '';
     });
@@ -6067,9 +6063,11 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
       const _activeEl = document.activeElement;
       document.querySelectorAll('.fich-row').forEach((row, i) => {
         if(!fEntry.fichajes[i]) return;
-        const times = row.querySelectorAll('input[type="time"]');
-        if(times[0] && times[0].value && _activeEl !== times[0]) fEntry.fichajes[i].entrada = times[0].value;
-        if(times[1] && times[1].value && _activeEl !== times[1]) fEntry.fichajes[i].salida = times[1].value;
+        const fid = fEntry.fichajes[i]._fid;
+        const eEl=document.getElementById('fich-ent-'+fid);
+        const sEl=document.getElementById('fich-sal-'+fid);
+        if(eEl && eEl.value && _activeEl!==eEl) fEntry.fichajes[i].entrada = eEl.value;
+        if(sEl && sEl.value && _activeEl!==sEl) fEntry.fichajes[i].salida  = sEl.value;
         const nota = row.querySelector('textarea');
         if(nota) fEntry.fichajes[i].nota = nota.value;
       });
