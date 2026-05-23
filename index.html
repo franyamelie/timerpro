@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779564399339 -->
+<!-- v1779564867940 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -325,8 +325,26 @@ function restoreEntry(){
     const e = JSON.parse(saved);
     // Only restore if same date
     if(e && e.fecha && e.fecha === fEntry.fecha){
-      // Restaura todos los campos guardados — merge completo sobre fEntry
+      // Merge but keep current fichajes (user may have typed times)
+      // and keep current notas (already captured from DOM)
+      const currentFichajes = fEntry.fichajes;
+      const currentNotas = fEntry.notas;
       fEntry = {...fEntry, ...e};
+      // Restore fichajes: merge saved times only if current is empty
+      if(currentFichajes && currentFichajes.length > 0){
+        fEntry.fichajes = currentFichajes.map((cf, i) => {
+          const sf = e.fichajes && e.fichajes[i];
+          if(!sf) return cf;
+          return {
+            ...sf,
+            entrada: cf.entrada || sf.entrada || '',
+            salida: cf.salida || sf.salida || '',
+            nota: cf.nota !== undefined ? cf.nota : sf.nota || ''
+          };
+        });
+      }
+      // Keep current notas if we have them
+      if(currentNotas) fEntry.notas = currentNotas;
     }
   }catch(e){}
 }
@@ -466,9 +484,8 @@ function rerenderSetNotas(){
     const el=document.getElementById('notas-editor');
     if(el && el.contentEditable==='true' && document.activeElement!==el){
       // Read from localStorage first (most up to date), then fEntry
-      const localVal = localStorage.getItem('notas_'+fEntry.fecha)||'';
-      const val = localVal || fEntry.notas || '';
-      if(localVal) fEntry.notas = localVal; // sync back to fEntry
+      // Use fEntry.notas as single source of truth (avoids contamination from localStorage)
+      const val = fEntry.notas || '';
       if(el.innerHTML!==val) el.innerHTML=val;
     }
   });
@@ -505,10 +522,8 @@ function captureFormState(){
     if(notasEl && notasEl.innerHTML.trim()){
       fEntry.notas=notasEl.innerHTML;
       localStorage.setItem('notas_'+fEntry.fecha, notasEl.innerHTML);
-    } else {
-      const savedNotas=localStorage.getItem('notas_'+fEntry.fecha);
-      if(savedNotas) fEntry.notas=savedNotas;
     }
+    // Note: don't read from localStorage notas_fecha - fEntry.notas is source of truth
     // Capture numeric fields
     ['horasNormales','precioHoraNormal','horasExtra','precioHoraExtra',
      'horasNocturnas','precioHoraNocturna','horasFestivas','precioHoraFestiva',
@@ -521,9 +536,7 @@ function captureFormState(){
 
 function renderApp(){
   captureFormState();
-  const _notasBeforeRestore = fEntry.notas; // preserve notas captured from DOM
-  restoreEntry(); // ensure fEntry has latest data
-  if(_notasBeforeRestore) fEntry.notas = _notasBeforeRestore; // don't let restoreEntry wipe notas
+  restoreEntry(); // restore fEntry from localStorage (same day only)
   try {
     const app = document.getElementById('app');
     if(!app) return;
@@ -1663,8 +1676,7 @@ function goToDay(ds){
   const existing=S.entries.find(e=>e.fecha===ds);
   if(existing){
     fEntry={...existing, fichajes:[...(existing.fichajes||[]).map(f=>({...f}))]};
-    const savedNotas=localStorage.getItem('notas_'+fEntry.fecha);
-    if(savedNotas) fEntry.notas=savedNotas;
+    // notas come from DB entry
     editingEntry=true;
   } else {
     fEntry={...defEntry(), fecha:ds};
@@ -2933,10 +2945,8 @@ function scheduleDraftSave(){
     if(notasEl && notasEl.innerHTML.trim()){
       fEntry.notas=notasEl.innerHTML;
       localStorage.setItem('notas_'+fEntry.fecha, notasEl.innerHTML);
-    } else {
-      const savedNotas=localStorage.getItem('notas_'+fEntry.fecha);
-      if(savedNotas) fEntry.notas=savedNotas;
     }
+    // Note: don't read from localStorage notas_fecha - fEntry.notas is source of truth
     saveDraft();
   }, 1500);
 }
@@ -3180,6 +3190,8 @@ async function saveEntry(){
     }
     editingEntry=false;
     localStorage.removeItem('_fEntry');
+    // Clear notas localStorage key for this date to avoid future contamination
+    localStorage.removeItem('notas_'+fEntry.fecha);
     fEntry=defEntry();
     localStorage.setItem('lastSave',new Date().toISOString());
     saveLocalBackup();
@@ -3223,9 +3235,7 @@ function loadHistorial(entry){
   // Load the new day — flag tells captureFormState to NOT read old DOM
   _skipDomCapture=true;
   fEntry={...entry,fichajes:[...(entry.fichajes||[])],dietasExtra:[...(entry.dietasExtra||[])],otrosConceptos:[...(entry.otrosConceptos||[])],journeys:[...(entry.journeys||[])]};
-  // Restore notas from localStorage if available for this day
-  const savedNotas=localStorage.getItem('notas_'+fEntry.fecha);
-  if(savedNotas) fEntry.notas=savedNotas;
+  // notas come from the DB entry — don't override with localStorage
   editingEntry=true;
   S.tab='fichar';
   rerender();
