@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779566623049 -->
+<!-- v1779567405898 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -416,6 +416,10 @@ function h(tag, attrs, ...children){
     else if(k==='data') Object.entries(v).forEach(([dk,dv])=>el.dataset[dk]=dv);
     else if(k==='spellcheck'){ el.spellcheck=(v===true||v===''||v==='true'); el.setAttribute('spellcheck',v?'true':'false'); }
     else if(BOOL.includes(k)){ el[k]=(v===true||v===''||v==='true'); }
+    else if(k==='value'&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA')){
+      el.setAttribute('value',v); // set default
+      el.value=v; // also set current value property
+    }
     else if(v!==false&&v!==null&&v!==undefined) el.setAttribute(k,v);
   });
   children.flat(Infinity).forEach(c=>{
@@ -521,11 +525,15 @@ function captureFormState(){
     }
     persistEntry(); // save to localStorage immediately
     const fichRows = document.querySelectorAll('.fich-row');
+    const activeEl = document.activeElement;
     fichRows.forEach((row,i)=>{
       if(!fEntry.fichajes[i]) return;
       const timeInputs=row.querySelectorAll('input[type="time"]');
-      if(timeInputs[0]) fEntry.fichajes[i].entrada=timeInputs[0].value||fEntry.fichajes[i].entrada||'';
-      if(timeInputs[1]) fEntry.fichajes[i].salida=timeInputs[1].value||fEntry.fichajes[i].salida||'';
+      // Only read from DOM if the input is not currently focused (not being typed in)
+      if(timeInputs[0] && activeEl !== timeInputs[0])
+        fEntry.fichajes[i].entrada=timeInputs[0].value||fEntry.fichajes[i].entrada||'';
+      if(timeInputs[1] && activeEl !== timeInputs[1])
+        fEntry.fichajes[i].salida=timeInputs[1].value||fEntry.fichajes[i].salida||'';
       const nota=row.querySelector('input[type="text"],textarea');
       if(nota) fEntry.fichajes[i].nota=nota.value||nota.textContent||'';
     });
@@ -5516,7 +5524,12 @@ function startTimer(){
     updateTitle();
     let anyRunning=false;
     Object.values(fichajeTimers).forEach(ft=>{ if(ft.running) anyRunning=true; });
-    if(anyRunning) rerender();
+    if(anyRunning){
+      // Don't rebuild DOM while user is typing in a time input — they'd lose partial input
+      const active = document.activeElement;
+      const typingTime = active && active.type === 'time';
+      if(!typingTime) rerender();
+    }
   },1000);
   rerender();
 }
@@ -6047,11 +6060,12 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
         fEntry.notas = notasEl.innerHTML;
       }
       // Save fichaje time inputs
+      const _activeEl = document.activeElement;
       document.querySelectorAll('.fich-row').forEach((row, i) => {
         if(!fEntry.fichajes[i]) return;
         const times = row.querySelectorAll('input[type="time"]');
-        if(times[0] && times[0].value) fEntry.fichajes[i].entrada = times[0].value;
-        if(times[1] && times[1].value) fEntry.fichajes[i].salida = times[1].value;
+        if(times[0] && times[0].value && _activeEl !== times[0]) fEntry.fichajes[i].entrada = times[0].value;
+        if(times[1] && times[1].value && _activeEl !== times[1]) fEntry.fichajes[i].salida = times[1].value;
         const nota = row.querySelector('textarea');
         if(nota) fEntry.fichajes[i].nota = nota.value;
       });
