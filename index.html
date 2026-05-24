@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779655072782 -->
+<!-- v1779655537514 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2862,88 +2862,81 @@ function renderModalResumenDia(){
 
 function shareResumen(method, conPrecios){
   const e = fEntry;
+  const cp = conPrecios === true; // ONLY show prices if explicitly true
   const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
   const impHoras = (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0);
   const impDietas = (e.dieta||0)+(e.dietasExtra||[]).reduce((s,d)=>s+(d.importe||0),0);
   const impTransp = e.transporte||0;
   const impOtros = (e.otrosConceptos||[]).reduce((s,o)=>s+(o.importe||0),0);
-  const impViajes = (e.journeys||[]).reduce((s,j)=>s+(j.km||0)*(j.vehicleId?
-    (S.vehicles.find(v=>v.id==j.vehicleId)?.precioPorKm||0):j.precioManual||0),0);
-  const totalI = impHoras+impDietas+impTransp+impOtros+impViajes;
+  const totalI = impHoras+impDietas+impTransp+impOtros;
   const tareasDia = S.tasks.filter(t=>t.fecha===e.fecha);
 
-  let txt = '📋 RESUMEN JORNADA — '+dlbl(e.fecha).toUpperCase()+'\n';
-  txt += '═══════════════════════\n';
+  let lines = [];
+  lines.push('📋 JORNADA — '+dlbl(e.fecha).toUpperCase());
+  lines.push('─────────────────────────');
 
+  // Fichajes
   if((e.fichajes||[]).length>0){
-    txt += '\n⏱ FICHAJES\n';
     (e.fichajes||[]).forEach((f,i)=>{
-      txt += (i+1)+'. '+(f.entrada||'—')+' → '+(f.salida||'—');
-      if(f.entrada&&f.salida) txt += '  ('+fmtH(calcH(f.entrada,f.salida))+')';
-      if(f.nota) txt += '  '+f.nota;
-      txt += '\n';
+      let l = '⏱ '+(f.entrada||'—')+' → '+(f.salida||'—');
+      if(f.entrada&&f.salida) l += '  ('+fmtH(calcH(f.entrada,f.salida))+')';
+      if(f.nota) l += '\n   '+f.nota;
+      lines.push(l);
     });
   }
 
-  if(totalH>0){
-    txt += '\n🕐 HORAS\n';
-    if(e.horasNormales>0) txt += '• Normales: '+e.horasNormales+'h'+(conPrecios!==false?' × '+eur(e.precioHoraNormal||0)+' = '+eur((e.horasNormales||0)*(e.precioHoraNormal||0)):'')+'\n';
-    if(e.horasExtra>0)    txt += '• Extra: '+e.horasExtra+'h'+(conPrecios!==false?' × '+eur(e.precioHoraExtra||0)+' = '+eur((e.horasExtra||0)*(e.precioHoraExtra||0)):'')+'\n';
-    if(e.horasNocturnas>0)txt += '• Nocturnas: '+e.horasNocturnas+'h'+(conPrecios!==false?' × '+eur(e.precioHoraNocturna||0)+' = '+eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0)):'')+'\n';
-    if(e.horasFestivas>0) txt += '• Festivas: '+e.horasFestivas+'h'+(conPrecios!==false?' × '+eur(e.precioHoraFestiva||0)+' = '+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0)):'')+'\n';
-  }
-
-  if((e.dieta||0)+(e.transporte||0)>0){
-    txt += '\n🍽 DIETAS Y TRANSPORTE\n';
-    if(e.dieta>0)      txt += '• Dieta'+(conPrecios!==false?': '+eur(e.dieta):'')+'\n';
-    if(e.transporte>0){
-      const ttName = e._transportType?(S.transportTypes||[]).find(t=>t.id===e._transportType)?.nombre||'':'';
-      txt += '• Transporte'+(ttName?' ('+ttName+')':'')+(conPrecios!==false?': '+eur(e.transporte):'')+'\n';
-    }
-    (e.dietasExtra||[]).forEach(d=>{ txt += '• '+(d.concepto||'Dieta extra')+(conPrecios!==false?': '+eur(d.importe||0):'')+'\n'; });
-  }
-
-  if((e.otrosConceptos||[]).length>0){
-    txt += '\n➕ OTROS\n';
-    (e.otrosConceptos||[]).forEach(o=>{ txt += '• '+(o.concepto||'Concepto')+': '+eur(o.importe||0)+'\n'; });
-  }
-
+  // Tareas - each description line by line, OT clear
   if(tareasDia.length>0){
-    txt += '\n🔧 TAREAS\n';
+    lines.push('');
+    lines.push('🔧 TAREAS:');
     tareasDia.forEach(t=>{
-      // Split description by newlines to preserve formatting
       const titulo = (t.titulo||'Sin título').replace(/<[^>]*>/g,'');
-      const lines = titulo.split('\n').map(l=>l.trim()).filter(Boolean);
-      lines.forEach((l,i)=>{ txt += (i===0?'• ':  '  ')+l+'\n'; });
-      if(t.otNumero) txt += '  📋 OT: '+t.otNumero+'\n';
+      const lineas = titulo.split('\n').map(l=>l.trim()).filter(Boolean);
+      lineas.forEach((l,i)=>lines.push((i===0?'▸ ':  '  ')+l));
+      if(t.otNumero) lines.push('  📋 OT: '+t.otNumero);
+      lines.push('');
     });
   }
 
-  if(e.notas){
-    const notasText = e.notas.replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n').replace(/<[^>]*>/g,'').trim();
-    txt += '\n📝 NOTAS\n'+notasText.split('\n').map(l=>l.trim()).filter(Boolean).join('\n')+'\n';
+  // Precios SOLO si conPrecios===true
+  if(cp){
+    lines.push('─────────────────────────');
+    lines.push('🕐 HORAS: '+fmtH(totalH));
+    if(e.horasNormales>0) lines.push('  • Normales '+e.horasNormales+'h × '+eur(e.precioHoraNormal||0)+' = '+eur((e.horasNormales||0)*(e.precioHoraNormal||0)));
+    if(e.horasExtra>0)    lines.push('  • Extra '+e.horasExtra+'h × '+eur(e.precioHoraExtra||0)+' = '+eur((e.horasExtra||0)*(e.precioHoraExtra||0)));
+    if(e.horasNocturnas>0)lines.push('  • Nocturnas '+e.horasNocturnas+'h × '+eur(e.precioHoraNocturna||0)+' = '+eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0)));
+    if(e.horasFestivas>0) lines.push('  • Festivas '+e.horasFestivas+'h × '+eur(e.precioHoraFestiva||0)+' = '+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0)));
+    if((e.dieta||0)>0) lines.push('  • Dieta: '+eur(e.dieta));
+    if((e.transporte||0)>0){
+      const ttName=(S.transportTypes||[]).find(t=>t.id===e._transportType)?.nombre||'';
+      lines.push('  • Transporte'+(ttName?' ('+ttName+')':'')+': '+eur(e.transporte));
+    }
+    (e.dietasExtra||[]).forEach(d=>lines.push('  • '+(d.concepto||'Dieta extra')+': '+eur(d.importe||0)));
+    (e.otrosConceptos||[]).forEach(o=>lines.push('  • '+(o.concepto||'Concepto')+': '+eur(o.importe||0)));
+    lines.push('─────────────────────────');
+    lines.push('💰 TOTAL: '+eur(totalI));
+  } else {
+    lines.push('');
+    lines.push('🕐 '+fmtH(totalH)+' trabajadas');
   }
 
-  txt += '\n═══════════════════════\n';
-  if(conPrecios!==false) txt += '💰 TOTAL DÍA: '+eur(totalI)+'\n';
-  txt += '⏱ HORAS: '+fmtH(totalH)+'\n';
-  txt += '─ Generado con TimerPro ─';
+  lines.push('─ TimerPro ─');
+  const txt = lines.join('\n');
 
   if(method==='whatsapp'){
     window.open('https://wa.me/?text='+encodeURIComponent(txt),'_blank');
   } else if(method==='email'){
-    const subject = encodeURIComponent('Resumen jornada '+dlbl(e.fecha));
-    const body = encodeURIComponent(txt);
-    window.open('mailto:?subject='+subject+'&body='+body,'_blank');
-  } else if(method==='copy'){
-    navigator.clipboard.writeText(txt).then(()=>showAlert('Copiado al portapapeles ✓')).catch(()=>{
+    window.open('mailto:?subject='+encodeURIComponent('Jornada '+dlbl(e.fecha))+'&body='+encodeURIComponent(txt),'_blank');
+  } else {
+    navigator.clipboard.writeText(txt).then(()=>showAlert('✅ Copiado al portapapeles')).catch(()=>{
       const ta=document.createElement('textarea');
-      ta.value=txt; document.body.appendChild(ta); ta.select();
-      document.execCommand('copy'); document.body.removeChild(ta);
-      showAlert('Copiado al portapapeles ✓');
+      ta.value=txt;document.body.appendChild(ta);ta.select();
+      document.execCommand('copy');document.body.removeChild(ta);
+      showAlert('✅ Copiado al portapapeles');
     });
   }
 }
+
 
 
 function renderModalTransportConfig(){
@@ -3010,6 +3003,8 @@ function generarPDFResumen(conPrecios){
   const trabajador = (S.workers||[])[0]||{};
   const empresa = (S.companies||[])[0]||{};
 
+  const cp = conPrecios === true; // ONLY prices when explicitly true
+  const conPrecios2 = cp; // alias
   const filas = (arr, fn) => arr.map(fn).join('');
   const seccion = (titulo, contenido) => contenido ? `
     <div class="seccion">
@@ -3037,10 +3032,10 @@ function generarPDFResumen(conPrecios){
   let htmlHoras = '';
   if(totalH>0){
     let rows = '';
-    if(e.horasNormales>0) rows += fila('Horas normales', e.horasNormales+'h' + (conPrecios?' × '+eur(e.precioHoraNormal||0)+' = <b>'+eur((e.horasNormales||0)*(e.precioHoraNormal||0))+'</b>':''));
-    if(e.horasExtra>0)    rows += fila('Horas extra', e.horasExtra+'h' + (conPrecios?' × '+eur(e.precioHoraExtra||0)+' = <b>'+eur((e.horasExtra||0)*(e.precioHoraExtra||0))+'</b>':''));
-    if(e.horasNocturnas>0)rows += fila('Horas nocturnas', e.horasNocturnas+'h' + (conPrecios?' × '+eur(e.precioHoraNocturna||0)+' = <b>'+eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0))+'</b>':''));
-    if(e.horasFestivas>0) rows += fila('Horas festivas', e.horasFestivas+'h' + (conPrecios?' × '+eur(e.precioHoraFestiva||0)+' = <b>'+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0))+'</b>':''));
+    if(e.horasNormales>0) rows += fila('Horas normales', e.horasNormales+'h' + (cp?' × '+eur(e.precioHoraNormal||0)+' = <b>'+eur((e.horasNormales||0)*(e.precioHoraNormal||0))+'</b>':''));
+    if(e.horasExtra>0)    rows += fila('Horas extra', e.horasExtra+'h' + (cp?' × '+eur(e.precioHoraExtra||0)+' = <b>'+eur((e.horasExtra||0)*(e.precioHoraExtra||0))+'</b>':''));
+    if(e.horasNocturnas>0)rows += fila('Horas nocturnas', e.horasNocturnas+'h' + (cp?' × '+eur(e.precioHoraNocturna||0)+' = <b>'+eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0))+'</b>':''));
+    if(e.horasFestivas>0) rows += fila('Horas festivas', e.horasFestivas+'h' + (cp?' × '+eur(e.precioHoraFestiva||0)+' = <b>'+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0))+'</b>':''));
     if(conPrecios) rows += `<div class="fila subtotal"><span class="flabel">Subtotal horas</span><span class="fval">${eur(impHoras)}</span></div>`;
     htmlHoras = seccion('🕐 HORAS E IMPORTES', rows);
   }
@@ -3142,11 +3137,11 @@ function generarPDFResumen(conPrecios){
       <div class="fecha-big">${dlbl(e.fecha)}</div>
       <div class="dia-semana">${cap(wday(e.fecha))}</div>
     </div>
-    ${!conPrecios?'<div class="sin-precios-badge">Sin precios</div>':''}
+    ${!cp?'<div class="sin-precios-badge">Sin precios</div>':''}
   </div>
   <div class="kpis">
     <div class="kpi"><div class="kpi-val">${fmtH(totalH)}</div><div class="kpi-label">HORAS TRABAJADAS</div></div>
-    ${conPrecios?`<div class="kpi"><div class="kpi-val">${eur(totalI)}</div><div class="kpi-label">TOTAL A COBRAR</div></div>`:''}
+    ${cp?`<div class="kpi"><div class="kpi-val">${eur(totalI)}</div><div class="kpi-label">TOTAL A COBRAR</div></div>`:''}
   </div>
 </div>
 <div class="body">
@@ -3156,7 +3151,7 @@ function generarPDFResumen(conPrecios){
   ${htmlOtros}
   ${htmlTareas}
   ${htmlNotas}
-  ${conPrecios?`<div class="total-box">
+  ${cp?`<div class="total-box">
     <div><div class="total-label">Total día</div><div class="total-horas">${fmtH(totalH)}</div></div>
     <div class="total-val">${eur(totalI)}</div>
   </div>`:''}
