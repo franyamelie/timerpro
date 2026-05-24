@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779613911466 -->
+<!-- v1779615061554 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -280,7 +280,8 @@ const defEntry = () => ({
   horasExtra:0, precioHoraExtra:0, importeExtra:0, horasNocturnas:0, precioHoraNocturna:0, importeNocturnas:0,
   horasFestivas:0, precioHoraFestiva:0, importeFestivas:0, dieta:0, dietasExtra:[], transporte:0,
   otrosConceptos:[], notas:'', journeys:[], ubicacionEntrada:'', ubicacionSalida:'',
-  entradaLocked:false, fotosGastos:[]
+  entradaLocked:false, fotosGastos:[],
+  timerManualStart:'', timerManualEnd:''
 });
 const defFichaje = () => ({_fid:Date.now(), entrada:'', salida:'', nota:'', editing:false, taskId:'', timerRunning:false, timerStart:null});
 const defTask = f => ({fecha:f||today(), titulo:'', horaInicio:nowTime(), horaFin:'', descripcion:'', siteId:'', workOrderId:'', otNumero:'', usaOT:false, fotos:[]});
@@ -510,6 +511,11 @@ function rerender(){
 function captureFormState(){
   if(_skipDomCapture) return; // switching days — don't read stale DOM
   try{
+    // Read timer manual inputs into fEntry so saves preserve them
+    const tStartEl=document.getElementById('timer-start-manual');
+    const tEndEl=document.getElementById('timer-end-manual');
+    if(tStartEl&&tStartEl.value) fEntry.timerManualStart=tStartEl.value;
+    if(tEndEl&&tEndEl.value) fEntry.timerManualEnd=tEndEl.value;
     // Read notas FIRST before persisting (fix: was saving stale data)
     const notasElFirst=document.getElementById('notas-editor');
     if(notasElFirst && notasElFirst.innerHTML.trim()){
@@ -818,11 +824,13 @@ function renderFichar(){
               value:timerStart?new Date(timerStart).toTimeString().slice(0,5):'',
               style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem .5rem',color:'var(--ink)',fontSize:'.85rem'},
               on:{change:ev=>{
+                fEntry.timerManualStart=ev.target.value;
                 if(ev.target.value && !timerRunning){
                   const[h,m]=ev.target.value.split(':').map(Number);
                   const d=new Date(); d.setHours(h,m,0,0);
                   timerStart=d.getTime()-timerElapsed*1000;
                 }
+                scheduleDraftSave();
               }}}),
             h('button',{class:'btn btn-b btn-sm',title:'Abrir reloj',
               style:{fontSize:'1.1rem',padding:'.3rem .5rem'},
@@ -850,8 +858,10 @@ function renderFichar(){
           h('label',{},'HORA FIN (al finalizar)'),
           h('div',{style:{display:'flex',gap:'.3rem',alignItems:'center'}},
             h('input',{type:'time',id:'timer-end-manual',
+              value:fEntry.timerManualEnd||'',
               style:{flex:1,background:'var(--surf2)',border:'1.5px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem .5rem',color:'var(--ink)',fontSize:'.9rem'},
-              placeholder:'Se rellena al finalizar'}),
+              placeholder:'--:--',
+              on:{change:ev=>{ fEntry.timerManualEnd=ev.target.value; scheduleDraftSave(); }}}),
             h('button',{class:'btn btn-b btn-sm',style:{fontSize:'1.1rem',padding:'.3rem .5rem'},
               title:'Abrir reloj para hora fin',
               on:{click:()=>{
@@ -5212,10 +5222,10 @@ function buildSyncData(){
     version:2,
     exportedAt:new Date().toISOString(),
     entries:entries.map(e=>({...e,fotosGastos:[]})),
-    tasks:S.tasks.map(t=>({...t,fotos:[],descripcion:(t.descripcion||'').replace(/<[^>]*>/g,'').slice(0,500)})),
-    sites:S.sites,
-    workorders:S.workorders,
-    vehicles:S.vehicles,
+    tasks:S.tasks.map(t=>({id:t.id,titulo:(t.titulo||'').slice(0,80),fecha:t.fecha||'',otRef:t.otRef||'',estado:t.estado||'',fechaCierre:t.fechaCierre||''})),
+    sites:S.sites.map(s=>({id:s.id,nombre:(s.nombre||'').slice(0,60),direccion:(s.direccion||'').slice(0,100),lat:s.lat||0,lng:s.lng||0})),
+    workorders:S.workorders.map(w=>({id:w.id,numero:(w.numero||'').slice(0,30),titulo:(w.titulo||'').slice(0,80),fecha:w.fecha||''})),
+    vehicles:S.vehicles.map(v=>({id:v.id,matricula:(v.matricula||'').slice(0,15),marca:(v.marca||'').slice(0,30),modelo:(v.modelo||'').slice(0,30)})),
     workers:workers.map(w=>({
       id:w.id,nombre:w.nombre,apellidos:w.apellidos,dni:w.dni,cargo:w.cargo,
       departamento:w.departamento,email:w.email,telefono:w.telefono,
