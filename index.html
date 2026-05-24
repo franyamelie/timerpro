@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779655537514 -->
+<!-- v1779655904618 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -202,6 +202,7 @@ main{flex:1;overflow-y:auto;padding:1rem}
   border-radius:50%;background:var(--acc);transform:translate(-50%,-50%);}
 .clock-btns{display:flex;gap:.4rem;justify-content:center;margin-top:.5rem;flex-wrap:wrap;}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
 <div id="app"></div>
@@ -2821,7 +2822,13 @@ function renderModalResumenDia(){
               style:{flex:1,background:'#dc2626',color:'#fff',border:'none',borderRadius:'8px',
                 padding:'.65rem',fontWeight:700,fontSize:'.82rem',cursor:'pointer'},
               on:{click:()=>generarPDFResumen(S._shareConPrecios===true)}
-            },'📄 Ver / Imprimir PDF')
+            },'📄 PDF'),
+            h('button',{
+              id:'btn-compartir-img',
+              style:{flex:1,background:'#7c3aed',color:'#fff',border:'none',borderRadius:'8px',
+                padding:'.65rem',fontWeight:700,fontSize:'.82rem',cursor:'pointer'},
+              on:{click:()=>compartirComoImagen(S._shareConPrecios===true)}
+            },'📸 Imagen')
           ),
           h('div',{style:{display:'flex',gap:'.5rem'}},
             h('button',{
@@ -3168,6 +3175,144 @@ function generarPDFResumen(conPrecios){
   win.document.write(html);
   win.document.close();
   setTimeout(()=>win.focus(), 300);
+}
+
+
+async function compartirComoImagen(conPrecios){
+  // Render a hidden full-resolution clone of the resumen modal
+  const btn = document.getElementById('btn-compartir-img');
+  if(btn){ btn.textContent='⏳ Generando...'; btn.disabled=true; }
+
+  try{
+    // Build a standalone div matching the resumen modal content
+    const e = fEntry;
+    const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
+    const impHoras = (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0);
+    const impDietas = (e.dieta||0)+(e.dietasExtra||[]).reduce((s,d)=>s+(d.importe||0),0);
+    const impTransp = e.transporte||0;
+    const impOtros = (e.otrosConceptos||[]).reduce((s,o)=>s+(o.importe||0),0);
+    const totalI = impHoras+impDietas+impTransp+impOtros;
+    const cp = conPrecios===true;
+    const tareasDia = S.tasks.filter(t=>t.fecha===e.fecha);
+
+    // Create off-screen container
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:420px;background:#fff;font-family:system-ui,Arial,sans-serif;color:#0f172a;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.3)';
+    document.body.appendChild(wrap);
+
+    const fila = (label, val) => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:13px"><span style="color:#475569">${label}</span><span style="font-weight:700">${val}</span></div>`;
+
+    let html = `
+    <div style="background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:18px 22px">
+      <div style="font-size:10px;opacity:.7;text-transform:uppercase;letter-spacing:.1em">Resumen de jornada</div>
+      <div style="font-size:20px;font-weight:900;margin:4px 0 2px">${dlbl(e.fecha)}</div>
+      <div style="font-size:11px;opacity:.75">${cap(wday(e.fecha))}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+        <div style="background:rgba(255,255,255,.12);border-radius:8px;padding:8px 12px;text-align:center">
+          <div style="font-size:20px;font-weight:900">${fmtH(totalH)}</div>
+          <div style="font-size:9px;opacity:.7;letter-spacing:.08em;margin-top:2px">HORAS TRABAJADAS</div>
+        </div>
+        ${cp?`<div style="background:rgba(255,255,255,.12);border-radius:8px;padding:8px 12px;text-align:center">
+          <div style="font-size:20px;font-weight:900">${eur(totalI)}</div>
+          <div style="font-size:9px;opacity:.7;letter-spacing:.08em;margin-top:2px">TOTAL A COBRAR</div>
+        </div>`:''}
+      </div>
+    </div>
+    <div style="padding:14px 18px">`;
+
+    // Fichajes
+    if((e.fichajes||[]).length>0){
+      html += `<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#64748b;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin-bottom:8px;margin-top:4px">⏱ Fichajes</div>`;
+      (e.fichajes||[]).forEach((f,i)=>{
+        html += `<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:5px">
+          <span style="color:#94a3b8;font-size:11px;min-width:16px">${i+1}.</span>
+          <span style="font-weight:700;font-size:14px;min-width:46px">${f.entrada||'—'}</span>
+          <span style="color:#94a3b8">→</span>
+          <span style="font-weight:700;font-size:14px;min-width:46px">${f.salida||'—'}</span>
+          ${f.entrada&&f.salida?`<span style="background:#dcfce7;color:#16a34a;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:auto">${fmtH(calcH(f.entrada,f.salida))}</span>`:''}
+          ${f.nota?`<span style="font-size:11px;color:#64748b;font-style:italic">${f.nota.slice(0,20)}</span>`:''}
+        </div>`;
+      });
+    }
+
+    // Horas (solo si cp)
+    if(cp && totalH>0){
+      html += `<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#64748b;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin-bottom:8px;margin-top:12px">🕐 Horas e Importes</div>`;
+      if(e.horasNormales>0) html += fila('Normales — '+e.horasNormales+'h × '+eur(e.precioHoraNormal||0), eur((e.horasNormales||0)*(e.precioHoraNormal||0)));
+      if(e.horasExtra>0) html += fila('Extra — '+e.horasExtra+'h × '+eur(e.precioHoraExtra||0), '<b>'+eur((e.horasExtra||0)*(e.precioHoraExtra||0))+'</b>');
+      if(impHoras>0) html += `<div style="display:flex;justify-content:space-between;padding:5px 8px;background:#f0fdf4;border-radius:5px;margin-top:3px;font-weight:800;color:#15803d;font-size:13px"><span>Subtotal</span><span>${eur(impHoras)}</span></div>`;
+    }
+
+    // Dietas
+    if((e.dieta||0)+(e.transporte||0)>0){
+      html += `<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#64748b;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin-bottom:8px;margin-top:12px">🍽 Dietas y Transporte</div>`;
+      if(e.dieta>0) html += fila('Dieta', cp?eur(e.dieta):'✓');
+      if(e.transporte>0){
+        const ttName=(S.transportTypes||[]).find(t=>t.id===e._transportType)?.nombre||'';
+        html += fila('Transporte'+(ttName?' ('+ttName+')':''), cp?eur(e.transporte):'✓');
+      }
+    }
+
+    // Tareas
+    if(tareasDia.length>0){
+      html += `<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#64748b;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin-bottom:8px;margin-top:12px">🔧 Tareas / O.T.</div>`;
+      tareasDia.forEach(t=>{
+        const titulo = (t.titulo||'').replace(/<[^>]*>/g,'');
+        const lineas = titulo.split('\n').map(l=>l.trim()).filter(Boolean);
+        html += `<div style="background:#fefce8;border:1px solid #fef08a;border-radius:8px;padding:9px 12px;margin-bottom:5px">
+          ${t.otNumero?`<span style="background:#f59e0b;color:#1e293b;border-radius:4px;padding:2px 9px;font-size:10px;font-weight:800;letter-spacing:.05em;display:inline-block;margin-bottom:5px">OT ${t.otNumero}</span>`:''}
+          <div style="font-weight:700;font-size:12px;line-height:1.6">${lineas.map(l=>`<div>${l}</div>`).join('')}</div>
+        </div>`;
+      });
+    }
+
+    // Total
+    if(cp){
+      html += `<div style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:10px;padding:12px 16px;margin-top:14px;display:flex;justify-content:space-between;align-items:center">
+        <div><div style="color:rgba(255,255,255,.6);font-size:10px;letter-spacing:.1em">TOTAL DÍA</div><div style="color:rgba(255,255,255,.5);font-size:10px;margin-top:2px">${fmtH(totalH)}</div></div>
+        <div style="font-size:26px;font-weight:900;color:#4ade80">${eur(totalI)}</div>
+      </div>`;
+    }
+
+    html += `<div style="text-align:center;font-size:9px;color:#94a3b8;margin-top:12px;padding-top:8px;border-top:1px solid #e2e8f0">TimerPro</div>
+    </div>`;
+
+    wrap.innerHTML = html;
+
+    // Render with html2canvas
+    const canvas = await html2canvas(wrap, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+      logging: false
+    });
+
+    document.body.removeChild(wrap);
+
+    canvas.toBlob(async (blob) => {
+      if(navigator.share && navigator.canShare && navigator.canShare({files:[new File([blob],'jornada.png',{type:'image/png'})]})){
+        await navigator.share({
+          files:[new File([blob],'jornada.png',{type:'image/png'})],
+          title:'Jornada '+e.fecha
+        });
+      } else {
+        // Download fallback
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href=url; a.download='jornada-'+e.fecha+'.png';
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showAlert('✅ Imagen descargada');
+      }
+    }, 'image/png');
+
+  } catch(err){
+    showAlert('Error generando imagen: '+err.message, 'err');
+  } finally {
+    if(btn){ btn.textContent='📸 Imagen'; btn.disabled=false; }
+  }
 }
 
 
