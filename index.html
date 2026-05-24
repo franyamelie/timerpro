@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779659173346 -->
+<!-- v1779659430343 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3294,15 +3294,20 @@ async function compartirComoImagen(conPrecios){
 
     // Create off-screen container
     var wrap = document.createElement('div');
-    wrap.style.cssText = 'position:absolute;left:-9999px;top:20px;width:460px;font-family:system-ui,Arial,sans-serif;border-radius:12px;overflow:visible;box-shadow:0 4px 20px rgba(0,0,0,.3)';
+    wrap.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:460px;font-family:system-ui,Arial,sans-serif;border-radius:12px;overflow:visible;z-index:-1;opacity:0;pointer-events:none;';
     wrap.innerHTML = headerHtml + bodyHtml;
     document.body.appendChild(wrap);
 
     await new Promise(function(r){setTimeout(r,300);});
 
+    var rect = wrap.getBoundingClientRect();
     var canvas = await html2canvas(wrap, {
       scale:2.5, useCORS:true, allowTaint:true,
-      backgroundColor:'#ffffff', logging:false
+      backgroundColor:'#ffffff', logging:false,
+      scrollX: -rect.left,
+      scrollY: -rect.top,
+      windowWidth: document.documentElement.clientWidth,
+      windowHeight: document.documentElement.clientHeight
     });
     document.body.removeChild(wrap);
 
