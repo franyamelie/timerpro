@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779621812947 -->
+<!-- v1779634699125 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -280,8 +280,7 @@ const defEntry = () => ({
   horasExtra:0, precioHoraExtra:0, importeExtra:0, horasNocturnas:0, precioHoraNocturna:0, importeNocturnas:0,
   horasFestivas:0, precioHoraFestiva:0, importeFestivas:0, dieta:0, dietasExtra:[], transporte:0,
   otrosConceptos:[], notas:'', journeys:[], ubicacionEntrada:'', ubicacionSalida:'',
-  entradaLocked:false, fotosGastos:[],
-  timerManualStart:'', timerManualEnd:''
+  entradaLocked:false, fotosGastos:[]
 });
 const defFichaje = () => ({_fid:Date.now(), entrada:'', salida:'', nota:'', editing:false, taskId:'', timerRunning:false, timerStart:null});
 const defTask = f => ({fecha:f||today(), titulo:'', horaInicio:nowTime(), horaFin:'', descripcion:'', siteId:'', workOrderId:'', otNumero:'', usaOT:false, fotos:[]});
@@ -492,11 +491,7 @@ function rerender(){
 function captureFormState(){
   if(_skipDomCapture) return; // switching days — don't read stale DOM
   try{
-    // Read timer manual inputs into fEntry so saves preserve them
-    const tStartEl=document.getElementById('timer-start-manual');
-    const tEndEl=document.getElementById('timer-end-manual');
-    if(tStartEl&&tStartEl.value) fEntry.timerManualStart=tStartEl.value;
-    if(tEndEl&&tEndEl.value) fEntry.timerManualEnd=tEndEl.value;
+
     // Read notas FIRST before persisting (fix: was saving stale data)
     const notasElFirst=document.getElementById('notas-editor');
     if(notasElFirst && notasElFirst.innerHTML.trim()){
@@ -794,13 +789,11 @@ function renderFichar(){
               value:timerStart?new Date(timerStart).toTimeString().slice(0,5):'',
               style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem .5rem',color:'var(--ink)',fontSize:'.85rem'},
               on:{change:ev=>{
-                fEntry.timerManualStart=ev.target.value;
                 if(ev.target.value && !timerRunning){
                   const[h,m]=ev.target.value.split(':').map(Number);
                   const d=new Date(); d.setHours(h,m,0,0);
                   timerStart=d.getTime()-timerElapsed*1000;
                 }
-                scheduleDraftSave();
               }}}),
             h('button',{class:'btn btn-b btn-sm',title:'Abrir reloj',
               style:{fontSize:'1.1rem',padding:'.3rem .5rem'},
@@ -828,10 +821,8 @@ function renderFichar(){
           h('label',{},'HORA FIN (al finalizar)'),
           h('div',{style:{display:'flex',gap:'.3rem',alignItems:'center'}},
             h('input',{type:'time',id:'timer-end-manual',
-              value:fEntry.timerManualEnd||'',
               style:{flex:1,background:'var(--surf2)',border:'1.5px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem .5rem',color:'var(--ink)',fontSize:'.9rem'},
-              placeholder:'--:--',
-              on:{change:ev=>{ fEntry.timerManualEnd=ev.target.value; scheduleDraftSave(); }}}),
+              placeholder:'Se rellena al finalizar'}),
             h('button',{class:'btn btn-b btn-sm',style:{fontSize:'1.1rem',padding:'.3rem .5rem'},
               title:'Abrir reloj para hora fin',
               on:{click:()=>{
@@ -3011,10 +3002,15 @@ async function saveDraft(){
       }
     }
     if(fEntry.id){
-      // We have an ID - just update
-      await dbPut(ST.entries,draft);
-      S.entries=S.entries.map(e=>e.id===fEntry.id?{...draft}:e);
-      if(!S.entries.find(e=>e.id===fEntry.id)) S.entries.push({...draft});
+      // Only update if entry is a draft - never overwrite finalized with draft
+      const existingEntry=S.entries.find(e=>e.id===fEntry.id);
+      if(existingEntry && !existingEntry._draft){
+        // Entry is finalized - skip draft save to avoid corruption
+      } else {
+        await dbPut(ST.entries,draft);
+        S.entries=S.entries.map(e=>e.id===fEntry.id?{...draft}:e);
+        if(!S.entries.find(e=>e.id===fEntry.id)) S.entries.push({...draft});
+      }
     } else if(finalized){
       // Don't overwrite a finalized entry with a draft
       fEntry.id=finalized.id;
