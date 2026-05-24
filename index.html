@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779658233941 -->
+<!-- v1779658602232 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3192,190 +3192,141 @@ async function compartirComoImagen(conPrecios){
   const btn = document.getElementById('btn-compartir-img');
   if(btn){ btn.textContent='⏳...'; btn.disabled=true; }
   try{
-    // Find the actual white modal content div already rendered on screen
-    const modalBg = document.querySelector('.modal-bg');
-    const modalContent = modalBg ? modalBg.querySelector('div') : null;
-    if(!modalContent){ showAlert('Error: modal no encontrado','err'); return; }
+    const e = fEntry;
+    const cp = conPrecios === true;
+    const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
+    const impHoras = (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0);
+    const impDietas = (e.dieta||0)+(e.dietasExtra||[]).reduce((s,d)=>s+(d.importe||0),0);
+    const impTransp = e.transporte||0;
+    const impOtros = (e.otrosConceptos||[]).reduce((s,o)=>s+(o.importe||0),0);
+    const totalI = impHoras+impDietas+impTransp+impOtros;
+    const tareasDia = S.tasks.filter(t=>t.fecha===e.fecha);
 
-    // Temporarily hide the share buttons row so they don't appear in screenshot
-    const shareBtns = modalContent.querySelectorAll('button');
-    const hiddenBtns = [];
-    shareBtns.forEach(b=>{ if(b.textContent.includes('WhatsApp')||b.textContent.includes('Email')||b.textContent.includes('Copiar')||b.textContent.includes('PDF')||b.textContent.includes('Imagen')||b.textContent.includes('✓')||b.textContent.includes('✗')||b.textContent.includes('Incluir')){b.style.visibility='hidden';hiddenBtns.push(b);} });
-    // Hide the entire share section
-    const shareSection = modalContent.lastElementChild?.previousElementSibling;
+    // Build off-screen element - NO maxHeight, NO scroll, full content
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:460px;font-family:system-ui,Arial,sans-serif;color:#0f172a;border-radius:12px;overflow:hidden;background:#fff;';
+    document.body.appendChild(wrap);
 
-    // Temporarily expand modal to full height so html2canvas captures everything
-    const origMaxH = modalContent.style.maxHeight;
-    const origOverflow = modalContent.style.overflowY;
-    const origPos = modalContent.style.position;
-    modalContent.style.maxHeight = 'none';
-    modalContent.style.overflowY = 'visible';
-    modalContent.style.position = 'relative';
-    // Also hide the share section (bottom buttons) from the screenshot
-    const lastChild = modalContent.lastElementChild;
-    const lastChildDisplay = lastChild ? lastChild.style.display : '';
-    if(lastChild) lastChild.style.display = 'none';
+    // Dark header
+    const header = document.createElement('div');
+    header.style.cssText = 'background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:18px 22px;';
+    header.innerHTML = `
+      <div style="font-size:10px;opacity:.7;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">RESUMEN DE JORNADA</div>
+      <div style="font-size:22px;font-weight:900;margin-bottom:2px">${dlbl(e.fecha)}</div>
+      <div style="font-size:12px;opacity:.75;margin-bottom:12px">${cap(wday(e.fecha))}</div>
+      <div style="display:grid;grid-template-columns:${cp?'1fr 1fr':'1fr'};gap:8px;">
+        <div style="background:rgba(255,255,255,.12);border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:22px;font-weight:900">${fmtH(totalH)}</div>
+          <div style="font-size:9px;opacity:.7;letter-spacing:.08em;margin-top:2px">HORAS TRABAJADAS</div>
+        </div>
+        ${cp?`<div style="background:rgba(255,255,255,.12);border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:22px;font-weight:900">${eur(totalI)}</div>
+          <div style="font-size:9px;opacity:.7;letter-spacing:.08em;margin-top:2px">TOTAL A COBRAR</div>
+        </div>`:''}
+      </div>`;
+    wrap.appendChild(header);
 
-    await new Promise(r=>setTimeout(r,80)); // wait for reflow
+    // Body
+    const body = document.createElement('div');
+    body.style.cssText = 'padding:14px 18px;background:#fff;';
 
-    const canvas = await html2canvas(modalContent, {
-      scale: 2.5,
-      useCORS: true,
-      allowTaint: true,
-      backgroundColor: '#ffffff',
-      logging: false,
-      scrollX: 0,
-      scrollY: -window.scrollY
+    const secTitle = (icon,txt) => `<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#64748b;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin:14px 0 8px">${icon} ${txt}</div>`;
+    const rowHtml = (l,v) => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:13px"><span style="color:#475569">${l}</span><span style="font-weight:700">${v}</span></div>`;
+
+    let html = '';
+
+    // Fichajes
+    if((e.fichajes||[]).length>0){
+      html += secTitle('⏱','FICHAJES');
+      (e.fichajes||[]).forEach((f,i)=>{
+        const dur = f.entrada&&f.salida?`<span style="background:#dcfce7;color:#16a34a;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:auto">${fmtH(calcH(f.entrada,f.salida))}</span>`:'';
+        const nota = f.nota?`<span style="font-size:11px;color:#64748b;font-style:italic;margin-left:4px">${f.nota.slice(0,25)}</span>`:'';
+        html += `<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:4px">
+          <span style="color:#94a3b8;font-size:11px;min-width:16px">${i+1}.</span>
+          <span style="font-weight:700;font-size:15px;min-width:48px">${f.entrada||'—'}</span>
+          <span style="color:#94a3b8">→</span>
+          <span style="font-weight:700;font-size:15px;min-width:48px">${f.salida||'—'}</span>
+          ${dur}${nota}
+        </div>`;
+      });
+    }
+
+    // Horas
+    if(totalH>0){
+      html += secTitle('🕐','HORAS E IMPORTES');
+      if(e.horasNormales>0) html += rowHtml('Normales', e.horasNormales+'h'+(cp?' × '+eur(e.precioHoraNormal||0)+' = '+eur((e.horasNormales||0)*(e.precioHoraNormal||0)):''));
+      if(e.horasExtra>0)    html += rowHtml('Extra',     e.horasExtra+'h'+(cp?' × '+eur(e.precioHoraExtra||0)+' = '+eur((e.horasExtra||0)*(e.precioHoraExtra||0)):''));
+      if(e.horasNocturnas>0)html += rowHtml('Nocturnas', e.horasNocturnas+'h'+(cp?' × '+eur(e.precioHoraNocturna||0)+' = '+eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0)):''));
+      if(e.horasFestivas>0) html += rowHtml('Festivas',  e.horasFestivas+'h'+(cp?' × '+eur(e.precioHoraFestiva||0)+' = '+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0)):''));
+      if(cp&&impHoras>0) html += `<div style="display:flex;justify-content:space-between;padding:5px 8px;background:#f0fdf4;border-radius:5px;margin-top:3px;font-weight:800;color:#15803d;font-size:13px"><span>Subtotal</span><span>${eur(impHoras)}</span></div>`;
+    }
+
+    // Dietas
+    if((e.dieta||0)+(e.transporte||0)+(e.dietasExtra||[]).length>0){
+      html += secTitle('🍽','DIETAS Y TRANSPORTE');
+      if(e.dieta>0) html += rowHtml('Dieta', cp?eur(e.dieta):'✓');
+      if(e.transporte>0){
+        const ttName=(S.transportTypes||[]).find(t=>t.id===e._transportType)?.nombre||'';
+        html += rowHtml('Transporte'+(ttName?' — '+ttName:''), cp?eur(e.transporte):'✓');
+      }
+      (e.dietasExtra||[]).forEach(d=>{ html += rowHtml(d.concepto||'Dieta extra', cp?eur(d.importe||0):'✓'); });
+    }
+
+    // Tareas
+    if(tareasDia.length>0){
+      html += secTitle('🔧','TAREAS / O.T.');
+      tareasDia.forEach(t=>{
+        const titulo=(t.titulo||'').replace(/<[^>]*>/g,'');
+        const lineas=titulo.split('\n').map(l=>l.trim()).filter(Boolean);
+        html += `<div style="background:#fefce8;border:1px solid #fef08a;border-radius:8px;padding:9px 12px;margin-bottom:5px">
+          ${t.otNumero?`<span style="background:#f59e0b;color:#1e293b;border-radius:4px;padding:2px 9px;font-size:10px;font-weight:800;display:inline-block;margin-bottom:5px">OT ${t.otNumero}</span>`:''}
+          <div style="font-weight:700;font-size:12px;line-height:1.6">${lineas.map(l=>`<div>${l}</div>`).join('')}</div>
+        </div>`;
+      });
+    }
+
+    // Notas
+    if(e.notas){
+      const notasTxt=e.notas.replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n').replace(/<[^>]*>/g,'').trim();
+      html += secTitle('📝','NOTAS');
+      html += `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:12px;color:#334155;line-height:1.6;font-style:italic">${notasTxt.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>`<div>${l}</div>`).join('')}</div>`;
+    }
+
+    // Total
+    if(cp){
+      html += `<div style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:10px;padding:12px 16px;margin-top:14px;display:flex;justify-content:space-between;align-items:center">
+        <div><div style="color:rgba(255,255,255,.6);font-size:10px;letter-spacing:.1em">TOTAL DÍA</div><div style="color:rgba(255,255,255,.5);font-size:10px;margin-top:2px">${fmtH(totalH)}</div></div>
+        <div style="font-size:26px;font-weight:900;color:#4ade80">${eur(totalI)}</div>
+      </div>`;
+    }
+
+    html += `<div style="text-align:center;font-size:9px;color:#94a3b8;margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0">TimerPro · ${e.fecha}</div>`;
+    body.innerHTML = html;
+    wrap.appendChild(body);
+
+    await new Promise(r=>setTimeout(r,100));
+
+    const canvas = await html2canvas(wrap, {
+      scale: 2.5, useCORS:true, allowTaint:true,
+      backgroundColor:'#ffffff', logging:false
     });
 
-    // Restore
-    modalContent.style.maxHeight = origMaxH;
-    modalContent.style.overflowY = origOverflow;
-    modalContent.style.position = origPos;
-    if(lastChild) lastChild.style.display = lastChildDisplay;
+    document.body.removeChild(wrap);
 
-    // Restore hidden buttons
-    hiddenBtns.forEach(b=>{ b.style.visibility=''; });
-
-    canvas.toBlob(async (blob)=>{
-      const file = new File([blob], 'jornada-'+fEntry.fecha+'.png', {type:'image/png'});
-      // Try native share (works on mobile)
-      if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
-        try{ await navigator.share({ files:[file], title:'Jornada '+dlbl(fEntry.fecha) }); return; }catch(e){}
-      }
-      // Desktop fallback: open image in new window with share instructions
+    canvas.toBlob(blob=>{
       const url = URL.createObjectURL(blob);
-      const win = window.open('','_blank');
-      if(win){
-        win.document.write('<html><head><title>Jornada '+fEntry.fecha+'</title>'
-          +'<style>body{margin:0;background:#1e293b;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:system-ui}'
-          +'.msg{color:#94a3b8;font-size:13px;margin-bottom:12px;text-align:center}'
-          +'.btns{display:flex;gap:8px;margin-top:12px}'
-          +'button{padding:10px 20px;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:14px}'
-          +'.dl{background:#22c55e;color:#000}.cp{background:#3b82f6;color:#fff}'
-          +'img{max-width:100%;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5)}'
-          +'</style></head><body>'
-          +'<div class="msg">📋 Haz clic derecho sobre la imagen → <b>Copiar imagen</b><br>Luego pégala directamente en WhatsApp, Email o donde quieras</div>'
-          +'<img src="'+url+'" />'
-          +'<div class="btns">'
-          +'<button class="dl" id="dlbtn">⬇️ Descargar PNG</button>'
-          +'</div>'
-          +'</body></html>');
-        win.document.getElementById('dlbtn').onclick=()=>{
-          const a=win.document.createElement('a');
-          a.href=url; a.download='jornada-'+fEntry.fecha+'.png';
-          win.document.body.appendChild(a); a.click(); win.document.body.removeChild(a);
-        };
-        win.document.close();
-      } else {
-        // Blocked popups: just download
-        const a=document.createElement('a');
-        a.href=url;a.download='jornada-'+fEntry.fecha+'.png';
-        document.body.appendChild(a);a.click();document.body.removeChild(a);
-        showAlert('✅ Imagen descargada');
-      }
-      setTimeout(()=>URL.revokeObjectURL(url), 30000);
-    }, 'image/png', 0.95);
+      const a = document.createElement('a');
+      a.href=url; a.download='jornada-'+e.fecha+'.png';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(url),5000);
+      showAlert('✅ Imagen descargada — adjúntala en WhatsApp con el clip 📎');
+    },'image/png',0.95);
 
-  } catch(err){
+  }catch(err){
     showAlert('Error: '+err.message,'err');
-    console.error(err);
-  } finally {
+  }finally{
     if(btn){ btn.textContent='📸 Imagen'; btn.disabled=false; }
   }
-}
-
-
-
-function locLabel(loc){
-  try{ const d=JSON.parse(loc); return d.label||d.address||loc; }
-  catch(e){ return loc||''; }
-}
-
-
-function renderModalIA(){
-  const msgs = S.iaMsgs||[];
-  return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.classList.contains('modal-bg')){S.modal=null;rerender();}}}},
-    h('div',{class:'modal',style:{maxWidth:'460px',height:'75vh',display:'flex',flexDirection:'column',padding:0,overflow:'hidden'}},
-      // Header
-      h('div',{style:{padding:'1rem',borderBottom:'1px solid var(--brd)',display:'flex',alignItems:'center',gap:'.5rem'}},
-        h('span',{style:{fontSize:'1.3rem'}},'🤖'),
-        h('div',{style:{flex:1}},
-          h('div',{style:{fontWeight:800,fontSize:'.95rem'}},'Asistente IA'),
-          h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'Pregúntame sobre tus jornadas, horas y datos')
-        ),
-        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.modal=null;rerender();}}},'✕')
-      ),
-      // Messages
-      h('div',{id:'ia-msgs',style:{flex:1,overflowY:'auto',padding:'1rem',display:'flex',flexDirection:'column',gap:'.6rem'}},
-        msgs.length===0
-          ? h('div',{style:{color:'var(--ink3)',fontSize:'.82rem',textAlign:'center',marginTop:'2rem'}},
-'Hola 👋 Puedo analizar tus horas, calcular totales, resumir jornadas y responder preguntas sobre tus datos.'
-            )
-          : null,
-        ...msgs.map(m=>h('div',{style:{
-            alignSelf:m.role==='user'?'flex-end':'flex-start',
-            background:m.role==='user'?'var(--acc)':'var(--surf2)',
-            color:m.role==='user'?'#000':'var(--ink)',
-            borderRadius:m.role==='user'?'12px 12px 2px 12px':'12px 12px 12px 2px',
-            padding:'.5rem .8rem',maxWidth:'85%',fontSize:'.82rem',lineHeight:1.5,
-            whiteSpace:'pre-wrap'
-          }},m.content))
-      ),
-      // Input
-      h('div',{style:{padding:'.8rem',borderTop:'1px solid var(--brd)',display:'flex',gap:'.5rem'}},
-        h('input',{
-          type:'text',id:'ia-input',
-          placeholder:'Pregunta algo...',
-          style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
-                 padding:'.5rem .7rem',color:'var(--ink)',fontSize:'.85rem'},
-          on:{keydown:ev=>{ if(ev.key==='Enter'&&!ev.shiftKey){ ev.preventDefault(); sendIAMsg(); } }}
-        }),
-        h('button',{
-          class:'btn btn-g',
-          style:{padding:'.5rem .8rem',fontSize:'.85rem'},
-          on:{click:sendIAMsg}
-        },'Enviar')
-      )
-    )
-  );
-}
-
-function renderIAChat(){
-  const msgs = S.iaMsgs||[];
-  return h('div',{style:{display:'flex',flexDirection:'column',height:'60vh',gap:'.5rem'}},
-    h('div',{class:'card',style:{padding:'.6rem .8rem'}},
-      h('div',{style:{fontWeight:700,fontSize:'.9rem'}},'🤖 Asistente IA — TimerPro'),
-      h('div',{style:{fontSize:'.75rem',color:'var(--ink2)'}},'Analiza tus datos, calcula totales, responde preguntas sobre tus jornadas · Powered by Gemini')
-    ),
-    h('div',{id:'ia-msgs-page',style:{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:'.5rem',padding:'.5rem 0'}},
-      msgs.length===0
-        ? h('div',{style:{color:'var(--ink3)',fontSize:'.82rem',textAlign:'center',padding:'2rem'}},
-    'Ejemplos: ¿Cuántas horas este mes? · ¿Mi jornada más larga? · Resume mi semana · ¿Cuánto he ganado?')
-        : null,
-      ...msgs.map(m=>h('div',{class:'card',style:{
-          alignSelf:m.role==='user'?'flex-end':'flex-start',
-          background:m.role==='user'?'var(--acc)':'var(--surf2)',
-          color:m.role==='user'?'#000':'var(--ink)',
-          maxWidth:'85%',padding:'.5rem .8rem',fontSize:'.82rem',
-          lineHeight:1.5,whiteSpace:'pre-wrap',margin:0
-        }},m.content))
-    ),
-    h('div',{style:{display:'flex',gap:'.5rem'}},
-      h('input',{
-        type:'text',id:'ia-input-page',
-        placeholder:'Pregunta sobre tus jornadas, horas, dinero...',
-        style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',
-               borderRadius:'var(--r2)',padding:'.6rem .8rem',color:'var(--ink)',fontSize:'.85rem'},
-        on:{keydown:ev=>{ if(ev.key==='Enter'&&!ev.shiftKey){ ev.preventDefault(); sendIAMsgPage(); } }}
-      }),
-      h('button',{class:'btn btn-g',on:{click:sendIAMsgPage}},'Enviar'),
-      msgs.length>0?h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.iaMsgs=[];rerender();}}},'🗑'):null,
-      h('button',{class:'btn btn-gh btn-sm',title:'Cambiar API Key',
-        on:{click:()=>{ localStorage.removeItem('anthropic_api_key');
-          localStorage.removeItem('gemini_api_key'); S.iaMsgs=[]; showAlert('API key eliminada. Escribe un mensaje para introducir la nueva.'); }}},'🔑')
-    )
-  );
 }
 
 async function sendIAMsgPage(){
