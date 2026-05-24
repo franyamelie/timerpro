@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779654156389 -->
+<!-- v1779654514078 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2816,6 +2816,13 @@ function renderModalResumenDia(){
               on:{click:()=>{S._shareConPrecios=S._shareConPrecios===false?true:false;rerender();}}
             },S._shareConPrecios!==false?'✓ Sí':'✗ No')
           ),
+          h('div',{style:{display:'flex',gap:'.5rem',marginBottom:'.5rem'}},
+            h('button',{
+              style:{flex:1,background:'#dc2626',color:'#fff',border:'none',borderRadius:'8px',
+                padding:'.65rem',fontWeight:700,fontSize:'.82rem',cursor:'pointer'},
+              on:{click:()=>generarPDFResumen(S._shareConPrecios!==false)}
+            },'📄 Ver / Imprimir PDF')
+          ),
           h('div',{style:{display:'flex',gap:'.5rem'}},
             h('button',{
               style:{flex:1,background:'#25D366',color:'#fff',border:'none',borderRadius:'8px',
@@ -2988,6 +2995,184 @@ function closeTransportConfig(){
   document.querySelectorAll('.modal-bg').forEach(e=>e.remove());
   rerender();
   showAlert('✅ Tipos de transporte guardados');
+}
+
+
+function generarPDFResumen(conPrecios){
+  const e = fEntry;
+  const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
+  const impHoras = (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0);
+  const impDietas = (e.dieta||0)+(e.dietasExtra||[]).reduce((s,d)=>s+(d.importe||0),0);
+  const impTransp = e.transporte||0;
+  const impOtros = (e.otrosConceptos||[]).reduce((s,o)=>s+(o.importe||0),0);
+  const totalI = impHoras+impDietas+impTransp+impOtros;
+  const tareasDia = S.tasks.filter(t=>t.fecha===e.fecha);
+  const trabajador = (S.workers||[])[0]||{};
+  const empresa = (S.companies||[])[0]||{};
+
+  const filas = (arr, fn) => arr.map(fn).join('');
+  const seccion = (titulo, contenido) => contenido ? `
+    <div class="seccion">
+      <div class="sec-titulo">${titulo}</div>
+      ${contenido}
+    </div>` : '';
+  const fila = (label, val) => `
+    <div class="fila">
+      <span class="flabel">${label}</span>
+      <span class="fval">${val}</span>
+    </div>`;
+
+  // Fichajes
+  const htmlFichajes = seccion('⏱ FICHAJES', filas(e.fichajes||[], (f,i) => `
+    <div class="fichaje-row">
+      <span class="fnum">${i+1}.</span>
+      <span class="ftime">${f.entrada||'—'}</span>
+      <span class="farrow">→</span>
+      <span class="ftime">${f.salida||'—'}</span>
+      ${f.entrada&&f.salida?`<span class="fbadge">${fmtH(calcH(f.entrada,f.salida))}</span>`:''}
+      ${f.nota?`<span class="fnota">${f.nota}</span>`:''}
+    </div>`));
+
+  // Horas
+  let htmlHoras = '';
+  if(totalH>0){
+    let rows = '';
+    if(e.horasNormales>0) rows += fila('Horas normales', e.horasNormales+'h' + (conPrecios?' × '+eur(e.precioHoraNormal||0)+' = <b>'+eur((e.horasNormales||0)*(e.precioHoraNormal||0))+'</b>':''));
+    if(e.horasExtra>0)    rows += fila('Horas extra', e.horasExtra+'h' + (conPrecios?' × '+eur(e.precioHoraExtra||0)+' = <b>'+eur((e.horasExtra||0)*(e.precioHoraExtra||0))+'</b>':''));
+    if(e.horasNocturnas>0)rows += fila('Horas nocturnas', e.horasNocturnas+'h' + (conPrecios?' × '+eur(e.precioHoraNocturna||0)+' = <b>'+eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0))+'</b>':''));
+    if(e.horasFestivas>0) rows += fila('Horas festivas', e.horasFestivas+'h' + (conPrecios?' × '+eur(e.precioHoraFestiva||0)+' = <b>'+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0))+'</b>':''));
+    if(conPrecios) rows += `<div class="fila subtotal"><span class="flabel">Subtotal horas</span><span class="fval">${eur(impHoras)}</span></div>`;
+    htmlHoras = seccion('🕐 HORAS E IMPORTES', rows);
+  }
+
+  // Dietas y transporte
+  let dietaRows = '';
+  if(e.dieta>0) dietaRows += fila('Dieta', conPrecios?eur(e.dieta):'✓');
+  if(e.transporte>0){
+    const ttName = e._transportType?(S.transportTypes||[]).find(t=>t.id===e._transportType)?.nombre||'':'';
+    dietaRows += fila('Transporte'+(ttName?' ('+ttName+')':''), conPrecios?eur(e.transporte):'✓');
+  }
+  (e.dietasExtra||[]).forEach(d=>{ dietaRows += fila(d.concepto||'Dieta extra', conPrecios?eur(d.importe||0):'✓'); });
+  const htmlDietas = dietaRows ? seccion('🍽 DIETAS Y TRANSPORTE', dietaRows) : '';
+
+  // Otros
+  let otrosRows = (e.otrosConceptos||[]).map(o=>fila(o.concepto||'Concepto', conPrecios?eur(o.importe||0):'✓')).join('');
+  const htmlOtros = otrosRows ? seccion('➕ OTROS CONCEPTOS', otrosRows) : '';
+
+  // Tareas con OT - full text, line by line
+  let htmlTareas = '';
+  if(tareasDia.length>0){
+    const tareasHtml = filas(tareasDia, t => {
+      const titulo = (t.titulo||'Sin título').replace(/<[^>]*>/g,'');
+      const lineas = titulo.split('\n').map(l=>l.trim()).filter(Boolean);
+      return `<div class="tarea-item">
+        ${t.otNumero?`<div class="ot-badge">OT ${t.otNumero}</div>`:''}
+        <div class="tarea-texto">${lineas.map(l=>`<div class="tarea-linea">${l}</div>`).join('')}</div>
+        ${t.horaInicio?`<div class="tarea-hora">🕐 ${t.horaInicio}${t.horaFin?' → '+t.horaFin:''}</div>`:''}
+      </div>`;
+    });
+    htmlTareas = seccion('🔧 TAREAS / ÓRDENES DE TRABAJO', tareasHtml);
+  }
+
+  // Notas
+  let htmlNotas = '';
+  if(e.notas){
+    const txt = e.notas.replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n').replace(/<[^>]*>/g,'').trim();
+    const lineas = txt.split('\n').map(l=>l.trim()).filter(Boolean);
+    htmlNotas = seccion('📝 NOTAS', lineas.map(l=>`<div class="nota-linea">${l}</div>`).join(''));
+  }
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jornada ${e.fecha}</title>
+<style>
+  @page { margin: 15mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; background: #fff; font-size: 13px; }
+  .header { background: linear-gradient(135deg, #1e293b, #334155); color: #fff; padding: 20px 24px; border-radius: 8px 8px 0 0; margin-bottom: 0; }
+  .header-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+  .empresa-nombre { font-size: 11px; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.1em; }
+  .fecha-big { font-size: 22px; font-weight: 800; margin: 4px 0 2px; }
+  .dia-semana { font-size: 12px; opacity: 0.75; }
+  .sin-precios-badge { background: rgba(255,255,255,.2); padding: 3px 10px; border-radius: 20px; font-size: 11px; }
+  .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .kpi { background: rgba(255,255,255,.12); border-radius: 8px; padding: 10px 14px; text-align: center; }
+  .kpi-val { font-size: 22px; font-weight: 900; }
+  .kpi-label { font-size: 10px; opacity: 0.7; letter-spacing: 0.08em; margin-top: 2px; }
+  .body { padding: 0 2px; }
+  .seccion { margin-top: 18px; }
+  .sec-titulo { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 8px; }
+  .fila { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #f1f5f9; }
+  .flabel { color: #475569; }
+  .fval { font-weight: 600; }
+  .fila.subtotal { background: #f0fdf4; padding: 6px 8px; border-radius: 6px; margin-top: 4px; }
+  .fila.subtotal .flabel, .fila.subtotal .fval { color: #15803d; font-weight: 800; }
+  .fichaje-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 5px; }
+  .fnum { color: #94a3b8; min-width: 18px; font-size: 12px; }
+  .ftime { font-weight: 700; font-size: 15px; min-width: 48px; }
+  .farrow { color: #94a3b8; }
+  .fbadge { background: #dcfce7; color: #16a34a; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 700; margin-left: auto; }
+  .fnota { font-size: 11px; color: #64748b; font-style: italic; }
+  .tarea-item { background: #fefce8; border: 1px solid #fef08a; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
+  .ot-badge { display: inline-block; background: #f59e0b; color: #1e293b; border-radius: 5px; padding: 2px 10px; font-size: 11px; font-weight: 800; margin-bottom: 6px; letter-spacing: 0.05em; }
+  .tarea-texto { font-weight: 600; font-size: 13px; line-height: 1.6; }
+  .tarea-linea { padding: 1px 0; }
+  .tarea-hora { font-size: 11px; color: #92400e; margin-top: 5px; }
+  .nota-linea { padding: 2px 0; line-height: 1.6; color: #334155; }
+  .total-box { background: linear-gradient(135deg, #0f172a, #1e293b); color: #fff; border-radius: 10px; padding: 14px 18px; margin-top: 20px; display: flex; justify-content: space-between; align-items: center; }
+  .total-label { font-size: 12px; opacity: 0.7; letter-spacing: 0.1em; text-transform: uppercase; }
+  .total-val { font-size: 28px; font-weight: 900; color: #4ade80; }
+  .total-horas { font-size: 12px; opacity: 0.6; margin-top: 2px; }
+  .footer { text-align: center; font-size: 10px; color: #94a3b8; margin-top: 20px; padding-top: 10px; border-top: 1px solid #e2e8f0; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .no-print { display: none !important; }
+    .header { -webkit-print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-top">
+    <div>
+      ${empresa.nombre?`<div class="empresa-nombre">${empresa.nombre}</div>`:''}
+      <div class="fecha-big">${dlbl(e.fecha)}</div>
+      <div class="dia-semana">${cap(wday(e.fecha))}</div>
+    </div>
+    ${!conPrecios?'<div class="sin-precios-badge">Sin precios</div>':''}
+  </div>
+  <div class="kpis">
+    <div class="kpi"><div class="kpi-val">${fmtH(totalH)}</div><div class="kpi-label">HORAS TRABAJADAS</div></div>
+    ${conPrecios?`<div class="kpi"><div class="kpi-val">${eur(totalI)}</div><div class="kpi-label">TOTAL A COBRAR</div></div>`:''}
+  </div>
+</div>
+<div class="body">
+  ${htmlFichajes}
+  ${htmlHoras}
+  ${htmlDietas}
+  ${htmlOtros}
+  ${htmlTareas}
+  ${htmlNotas}
+  ${conPrecios?`<div class="total-box">
+    <div><div class="total-label">Total día</div><div class="total-horas">${fmtH(totalH)}</div></div>
+    <div class="total-val">${eur(totalI)}</div>
+  </div>`:''}
+  <div class="footer">Generado con TimerPro · ${e.fecha}</div>
+</div>
+<script>
+  document.querySelector('.no-print')?.addEventListener('click',()=>window.print());
+<\/script>
+</body>
+</html>`;
+
+  const win = window.open('','_blank','width=600,height=800,scrollbars=yes');
+  if(!win){ showAlert('Activa las ventanas emergentes para ver el PDF','err'); return; }
+  win.document.write(html);
+  win.document.close();
+  setTimeout(()=>win.focus(), 300);
 }
 
 
