@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779660807325 -->
+<!-- v1779661440479 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3312,19 +3312,70 @@ async function compartirComoImagen(conPrecios){
     document.body.removeChild(wrap);
 
     canvas.toBlob(async function(blob){
-      // Try clipboard → paste with Ctrl+V in WhatsApp
-      try{
-        await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
-        showAlert('✅ Imagen copiada — pega con Ctrl+V en WhatsApp o Email');
-      }catch(ex){
-        // Fallback: download
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href=url; a.download='jornada-'+e.fecha+'.png';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        setTimeout(function(){URL.revokeObjectURL(url);},5000);
-        showAlert('✅ Imagen descargada — adjúntala en WhatsApp con el clip 📎');
+      const imgUrl = URL.createObjectURL(blob);
+      const imgFile = new File([blob],'jornada-'+e.fecha+'.png',{type:'image/png'});
+
+      // Try native share first (works on mobile + modern desktop)
+      if(navigator.share && navigator.canShare && navigator.canShare({files:[imgFile]})){
+        try{
+          await navigator.share({files:[imgFile], title:'Jornada '+dlbl(e.fecha)});
+          URL.revokeObjectURL(imgUrl);
+          return;
+        }catch(ex){ if(ex.name==='AbortError'){ URL.revokeObjectURL(imgUrl); return; } }
       }
+
+      // Desktop: show custom share panel with image preview
+      const panel = document.createElement('div');
+      panel.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
+      panel.innerHTML = '<div style="background:#fff;border-radius:16px;padding:1.2rem;max-width:420px;width:100%;font-family:system-ui">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">'
+        +'<b style="font-size:1rem">Compartir imagen</b>'
+        +'<button id="sp-close" style="background:none;border:none;font-size:1.2rem;cursor:pointer">✕</button>'
+        +'</div>'
+        +'<img src="'+imgUrl+'" style="width:100%;border-radius:10px;margin-bottom:1rem;box-shadow:0 2px 12px rgba(0,0,0,.15)">'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">'
+        +'<button id="sp-wa" style="background:#25D366;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">📱 WhatsApp</button>'
+        +'<button id="sp-em" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">📧 Email</button>'
+        +'<button id="sp-cp" style="background:#7c3aed;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">📋 Copiar</button>'
+        +'<button id="sp-dl" style="background:#475569;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">⬇️ Descargar</button>'
+        +'</div></div>';
+      document.body.appendChild(panel);
+
+      const close = function(){ document.body.removeChild(panel); URL.revokeObjectURL(imgUrl); };
+      document.getElementById('sp-close').onclick = close;
+      panel.addEventListener('click', function(ev){ if(ev.target===panel) close(); });
+
+      document.getElementById('sp-wa').onclick = async function(){
+        try{
+          await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+          window.open('https://web.whatsapp.com','_blank');
+          showAlert('Imagen copiada — pégala en WhatsApp con Ctrl+V');
+        }catch(ex){
+          const a=document.createElement('a'); a.href=imgUrl; a.download='jornada-'+e.fecha+'.png';
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          showAlert('Descargada — adjúntala en WhatsApp con el clip 📎');
+        }
+        close();
+      };
+      document.getElementById('sp-em').onclick = function(){
+        const a=document.createElement('a'); a.href=imgUrl; a.download='jornada-'+e.fecha+'.png';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function(){ window.location.href='mailto:?subject=Jornada '+e.fecha; }, 500);
+        close();
+      };
+      document.getElementById('sp-cp').onclick = async function(){
+        try{
+          await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+          showAlert('✅ Imagen copiada — pega con Ctrl+V donde quieras');
+        }catch(ex){ showAlert('No se pudo copiar','err'); }
+        close();
+      };
+      document.getElementById('sp-dl').onclick = function(){
+        const a=document.createElement('a'); a.href=imgUrl; a.download='jornada-'+e.fecha+'.png';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        showAlert('✅ Imagen descargada');
+        close();
+      };
     },'image/png',0.95);
 
   }catch(err){
@@ -5962,7 +6013,7 @@ async function driveSync(){
     horasNocturnas:e.horasNocturnas||0, precioHoraNocturna:e.precioHoraNocturna||0,
     horasFestivas:e.horasFestivas||0, precioHoraFestiva:e.precioHoraFestiva||0,
     dieta:e.dieta||0, transporte:e.transporte||0,
-    notas:(stripHtmlNotas(e.notas)||'').slice(0,200),
+    notas:(stripHtmlNotas(e.notas)||'').slice(0,100),
     ubicacionEntrada:compactLoc(e.ubicacionEntrada),
     ubicacionSalida:compactLoc(e.ubicacionSalida),
   });
@@ -6071,12 +6122,9 @@ function buildSyncData(){
     version:2,
     exportedAt:new Date().toISOString(),
     entries:entries.map(e=>({...e,fotosGastos:[]})),
-    tasks:S.tasks.map(t=>({id:t.id,titulo:(t.titulo||'').replace(/<[^>]*>/g,'').slice(0,60),fecha:t.fecha||'',otNumero:t.otNumero||'',estado:t.estado||''})),
-    sites:S.sites.map(s=>({id:s.id,nombre:(s.nombre||'').slice(0,60),direccion:(s.direccion||'').slice(0,100),lat:s.lat||0,lng:s.lng||0})),
-    workorders:S.workorders.map(w=>({id:w.id,numero:(w.numero||'').slice(0,30),titulo:(w.titulo||'').slice(0,80),fecha:w.fecha||''})),
-    vehicles:S.vehicles.map(v=>({id:v.id,matricula:(v.matricula||'').slice(0,15),marca:(v.marca||'').slice(0,30),modelo:(v.modelo||'').slice(0,30)})),
-    workers:workers.slice(0,3).map(w=>({id:w.id,nombre:(w.nombre||'').slice(0,30),apellidos:(w.apellidos||'').slice(0,30),cargo:(w.cargo||'').slice(0,20)})),
-    companies:companies.slice(0,2).map(c=>({id:c.id,nombre:(c.nombre||'').slice(0,40),cif:(c.cif||'').slice(0,15)
+    tasks:S.tasks.slice(0,20).map(t=>({id:t.id,titulo:(t.titulo||'').replace(/<[^>]*>/g,'').slice(0,40),fecha:t.fecha||'',otNumero:t.otNumero||''})),
+    workers:workers.slice(0,1).map(w=>({id:w.id,nombre:(w.nombre||'').slice(0,25),cargo:(w.cargo||'').slice(0,15)})),
+    companies:companies.slice(0,1).map(c=>({id:c.id,nombre:(c.nombre||'').slice(0,30)
     })),
     activeWorkerId, activeCompanyId,
     worker:(()=>{const w=workers.find(x=>x.id===activeWorkerId)||workers[0]||{};
