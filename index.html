@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779621334765 -->
+<!-- v1779621812947 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1246,6 +1246,7 @@ function renderFichar(){
                       if(nota) fEntry.fichajes[i].nota=nota.value||fEntry.fichajes[i].nota||'';
                     });
                     const saved={...fEntry,fecha:en.fecha,id:en.id};
+                    console.log('MID SAVE fichajes:', JSON.stringify((saved.fichajes||[]).map(f=>({e:f.entrada,s:f.salida}))));
                     dbPut(ST.entries,{...saved,_draft:false}).then(()=>{
                       S.entries=S.entries.map(e=>e.id===en.id?{...saved}:e);
                       showAlert('Jornada guardada ✓');
@@ -3222,6 +3223,7 @@ async function saveEntry(){
       const nota=row.querySelector('textarea');
       if(nota) fEntry.fichajes[i].nota=nota.value||fEntry.fichajes[i].nota||'';
     });
+    console.log('SAVE fichajes:', JSON.stringify((fEntry.fichajes||[]).map(f=>({e:f.entrada,s:f.salida}))));
     if(editingEntry&&fEntry.id){
       await dbPut(ST.entries,{...fEntry,_draft:false});
       S.entries=S.entries.map(e=>e.id===fEntry.id?{...fEntry,_draft:false}:e);
