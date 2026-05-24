@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779615061554 -->
+<!-- v1779615606452 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -527,22 +527,7 @@ function captureFormState(){
     const activeEl = document.activeElement;
     fichRows.forEach((row,i)=>{
       if(!fEntry.fichajes[i]) return;
-      // Find entrada/salida text inputs by id (now type="text")
-      const entInput = document.getElementById('fich-ent-'+fEntry.fichajes[i]._fid);
-      const salInput = document.getElementById('fich-sal-'+fEntry.fichajes[i]._fid);
-      if(entInput && activeEl !== entInput && entInput.value)
-        fEntry.fichajes[i].entrada = entInput.value;
-      if(salInput && activeEl !== salInput && salInput.value)
-        fEntry.fichajes[i].salida = salInput.value;
-      if(entInput || salInput){ // also grab nota/taskId from the row
-        const row = entInput&&entInput.closest('.fich-row');
-        if(row){
-          const nota=row.querySelector('textarea');
-          const sel=row.querySelector('select');
-          if(nota && nota !== activeEl) fEntry.fichajes[i].nota=nota.value||fEntry.fichajes[i].nota||'';
-          if(sel) fEntry.fichajes[i].taskId=sel.value||fEntry.fichajes[i].taskId||'';
-        }
-      }
+      // fichajes maintained directly by event handlers - no DOM read needed here
       const nota=row.querySelector('input[type="text"],textarea');
       if(nota) fEntry.fichajes[i].nota=nota.value||nota.textContent||'';
     });
@@ -1266,7 +1251,7 @@ function renderFichar(){
                     captureFormState();
                     const notasEl=document.getElementById('notas-editor');
                     if(notasEl&&notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
-                    captureFichajeFromDOM(); // read all fichaje text inputs by ID
+                    // fEntry.fichajes already up to date via event handlers
                     const saved={...fEntry,fecha:en.fecha,id:en.id};
                     dbPut(ST.entries,{...saved,_draft:false}).then(()=>{
                       S.entries=S.entries.map(e=>e.id===en.id?{...saved}:e);
@@ -3012,7 +2997,7 @@ async function saveDraft(){
   // Capture all DOM values before saving draft
   const notasEl=document.getElementById('notas-editor');
   if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
-  captureFichajeFromDOM(); // reads text inputs by ID
+  // fEntry.fichajes maintained by input handlers
   if(!fEntry.fecha||_draftSaving) return;
   _draftSaving=true;
   try{
@@ -3235,15 +3220,7 @@ async function saveEntry(){
     S.entries = S.entries.filter(e=>!(e.fecha===fEntry.fecha && e._draft && e.id!==fEntry.id));
 
     // BULLETPROOF: read ALL fichaje times directly from DOM right before saving
-    document.querySelectorAll('.fich-row').forEach((row,i)=>{
-      if(!fEntry.fichajes[i]) return;
-      const entEl = document.getElementById('fich-ent-'+fEntry.fichajes[i]._fid);
-      const salEl = document.getElementById('fich-sal-'+fEntry.fichajes[i]._fid);
-      if(entEl && entEl.value) fEntry.fichajes[i].entrada = entEl.value;
-      if(salEl && salEl.value) fEntry.fichajes[i].salida  = salEl.value;
-      const nota=row.querySelector('textarea');
-      if(nota) fEntry.fichajes[i].nota = nota.value || fEntry.fichajes[i].nota || '';
-    });
+    // fEntry.fichajes already up to date via event handlers
     if(editingEntry&&fEntry.id){
       await dbPut(ST.entries,{...fEntry,_draft:false});
       S.entries=S.entries.map(e=>e.id===fEntry.id?{...fEntry,_draft:false}:e);
@@ -5619,7 +5596,7 @@ function resetTimer(){
 }
 
 function finishTimer(){
-  captureFichajeFromDOM(); // capture current fichaje inputs before timer saves
+  // fEntry.fichajes already up to date
   const totalSecs=timerElapsed;
   const netSecs=Math.max(0,timerElapsed-timerDeduct*60);
   const netHours=Math.round(netSecs/36)/100;
@@ -6128,18 +6105,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
       if(notasEl && notasEl.innerHTML.trim()) {
         fEntry.notas = notasEl.innerHTML;
       }
-      // Save fichaje time inputs
-      const _activeEl = document.activeElement;
-      document.querySelectorAll('.fich-row').forEach((row, i) => {
-        if(!fEntry.fichajes[i]) return;
-        const fid = fEntry.fichajes[i]._fid;
-        const eEl=document.getElementById('fich-ent-'+fid);
-        const sEl=document.getElementById('fich-sal-'+fid);
-        if(eEl && eEl.value && _activeEl!==eEl) fEntry.fichajes[i].entrada = eEl.value;
-        if(sEl && sEl.value && _activeEl!==sEl) fEntry.fichajes[i].salida  = sEl.value;
-        const nota = row.querySelector('textarea');
-        if(nota) fEntry.fichajes[i].nota = nota.value;
-      });
+      // fichajes maintained by event handlers - no DOM polling needed
       // Save numeric inputs by data-field attribute
       document.querySelectorAll('input[data-field]').forEach(el => {
         const f = el.dataset.field;
