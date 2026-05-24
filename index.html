@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779642221199 -->
+<!-- v1779642646195 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2761,7 +2761,7 @@ function renderIAChat(){
   return h('div',{style:{display:'flex',flexDirection:'column',height:'60vh',gap:'.5rem'}},
     h('div',{class:'card',style:{padding:'.6rem .8rem'}},
       h('div',{style:{fontWeight:700,fontSize:'.9rem'}},'🤖 Asistente IA — TimerPro'),
-      h('div',{style:{fontSize:'.75rem',color:'var(--ink2)'}},'Analiza tus datos, calcula totales, responde preguntas sobre tus jornadas')
+      h('div',{style:{fontSize:'.75rem',color:'var(--ink2)'}},'Analiza tus datos, calcula totales, responde preguntas sobre tus jornadas · Powered by Gemini')
     ),
     h('div',{id:'ia-msgs-page',style:{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:'.5rem',padding:'.5rem 0'}},
       msgs.length===0
@@ -2788,7 +2788,7 @@ function renderIAChat(){
       msgs.length>0?h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.iaMsgs=[];rerender();}}},'🗑'):null,
       h('button',{class:'btn btn-gh btn-sm',title:'Cambiar API Key',
         on:{click:()=>{ localStorage.removeItem('anthropic_api_key');
-          showAlert('API key eliminada. Se pedirá al enviar el próximo mensaje.'); }}},'🔑')
+          localStorage.removeItem('gemini_api_key'); showAlert('API key eliminada. Se pedirá al enviar el próximo mensaje.'); }}},'🔑')
     )
   );
 }
@@ -2818,27 +2818,32 @@ sendIAMsg._core = async function(userMsg){
     +'Tareas: '+S.tasks.length+'. '
     +'Responde en espanol de forma concisa y util.';
   try{
-    let apiKey=localStorage.getItem('anthropic_api_key')||'';
+    let apiKey=localStorage.getItem('gemini_api_key')||'';
     if(!apiKey){
-      apiKey=prompt('Introduce tu API Key de Anthropic (console.anthropic.com):\nSe guardará solo en tu navegador:');
+      apiKey=prompt('Introduce tu API Key de Gemini (gratis en aistudio.google.com):\nSe guardará solo en tu navegador:');
       if(!apiKey){ S.iaMsgs.pop(); rerender(); return; }
-      localStorage.setItem('anthropic_api_key', apiKey.trim());
+      localStorage.setItem('gemini_api_key', apiKey.trim());
     }
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01',
-               'anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:600,
-        system:context,messages:S.iaMsgs.map(m=>({role:m.role,content:m.content}))})
-    });
+    // Build conversation for Gemini format
+    const geminiMsgs = S.iaMsgs.map(m=>({
+      role: m.role==='assistant'?'model':'user',
+      parts:[{text: m.role==='user'&&m===S.iaMsgs[0] ? context+'\n\n'+m.content : m.content}]
+    }));
+    const res=await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='+apiKey,
+      {method:'POST',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({contents:geminiMsgs,
+         generationConfig:{maxOutputTokens:600,temperature:0.7}})}
+    );
     if(!res.ok){
-      if(res.status===401){ localStorage.removeItem('anthropic_api_key'); }
-      throw new Error('API error '+res.status+': '+await res.text());
+      if(res.status===400||res.status===401){ localStorage.removeItem('gemini_api_key'); }
+      throw new Error('Error '+res.status+': '+await res.text());
     }
     const data=await res.json();
-    S.iaMsgs.push({role:'assistant',content:data.content?.[0]?.text||'Sin respuesta'});
+    const reply=data.candidates?.[0]?.content?.parts?.[0]?.text||'Sin respuesta';
+    S.iaMsgs.push({role:'assistant',content:reply});
   }catch(e){
-    S.iaMsgs.push({role:'assistant',content:'Error: '+e.message+'\n\nAsegúrate de que tu API key es correcta y tiene saldo.'});
+    S.iaMsgs.push({role:'assistant',content:'Error: '+e.message});
   }
   rerender();
   setTimeout(()=>{
