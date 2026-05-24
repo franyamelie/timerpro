@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779659712978 -->
+<!-- v1779660807325 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3196,78 +3196,83 @@ async function compartirComoImagen(conPrecios){
     const cp = conPrecios === true;
     const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
     const impH = (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0);
-    const impD = (e.dieta||0)+(e.dietasExtra||[]).reduce(function(s,d){return s+(d.importe||0);},0);
-    const totalI = impH+(e.transporte||0)+impD+(e.otrosConceptos||[]).reduce(function(s,o){return s+(o.importe||0);},0);
-    const tareas = S.tasks.filter(function(t){return t.fecha===e.fecha;});
+    const totalI = impH+(e.transporte||0)+(e.dieta||0)
+      +(e.dietasExtra||[]).reduce(function(s,d){return s+(d.importe||0);},0)
+      +(e.otrosConceptos||[]).reduce(function(s,o){return s+(o.importe||0);},0);
+    const tareas = (S.tasks||[]).filter(function(t){return t.fecha===e.fecha;});
 
-    // Build content as a simple HTML string
-    var rows = '';
-
-    // Header (rendered separately as dark div)
-    var kpiHtml = '<div style="display:grid;grid-template-columns:'+(cp?'1fr 1fr':'1fr')+';gap:8px;margin-top:10px">'
-      +'<div style="background:rgba(255,255,255,.15);border-radius:8px;padding:10px;text-align:center">'
-      +'<div style="font-size:22px;font-weight:900">'+fmtH(totalH)+'</div>'
-      +'<div style="font-size:9px;opacity:.7;letter-spacing:.08em;margin-top:2px">HORAS TRABAJADAS</div></div>'
-      +(cp?'<div style="background:rgba(255,255,255,.15);border-radius:8px;padding:10px;text-align:center">'
-      +'<div style="font-size:22px;font-weight:900">'+eur(totalI)+'</div>'
-      +'<div style="font-size:9px;opacity:.7;letter-spacing:.08em;margin-top:2px">TOTAL A COBRAR</div></div>':'')
+    // Build HTML string
+    var kpis = '<div style="display:grid;grid-template-columns:'+(cp?'1fr 1fr':'1fr')+';gap:8px;margin-top:12px">'
+      +'<div style="background:rgba(255,255,255,.14);border-radius:8px;padding:10px;text-align:center">'
+      +'<div style="font-size:20px;font-weight:900">'+fmtH(totalH)+'</div>'
+      +'<div style="font-size:9px;opacity:.65;letter-spacing:.08em;margin-top:2px">HORAS TRABAJADAS</div>'
+      +'</div>'
+      +(cp?'<div style="background:rgba(255,255,255,.14);border-radius:8px;padding:10px;text-align:center">'
+        +'<div style="font-size:20px;font-weight:900">'+eur(totalI)+'</div>'
+        +'<div style="font-size:9px;opacity:.65;letter-spacing:.08em;margin-top:2px">TOTAL A COBRAR</div>'
+        +'</div>':'')
       +'</div>';
 
-    var headerHtml = '<div style="background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:18px 22px;border-radius:12px 12px 0 0">'
-      +'<div style="font-size:10px;opacity:.65;text-transform:uppercase;letter-spacing:.08em">RESUMEN DE JORNADA</div>'
+    var html = '<div style="width:460px;font-family:system-ui,Arial,sans-serif;color:#0f172a;border-radius:12px;overflow:hidden">';
+
+    // Header
+    html += '<div style="background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:18px 22px">'
+      +'<div style="font-size:10px;opacity:.6;text-transform:uppercase;letter-spacing:.08em">RESUMEN DE JORNADA</div>'
       +'<div style="font-size:22px;font-weight:900;margin:4px 0 2px">'+dlbl(e.fecha)+'</div>'
       +'<div style="font-size:12px;opacity:.7">'+cap(wday(e.fecha))+'</div>'
-      +kpiHtml+'</div>';
+      +kpis+'</div>';
 
-    // Body rows
-    var bodyHtml = '<div style="padding:14px 18px;background:#fff">';
+    // Body
+    html += '<div style="background:#fff;padding:14px 18px">';
 
-    var sec = function(ico,txt){ return '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#64748b;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin:12px 0 8px">'+ico+' '+txt+'</div>'; };
-    var row = function(l,v){ return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:13px"><span style="color:#475569">'+l+'</span><span style="font-weight:700">'+v+'</span></div>'; };
+    var sec = function(i,t){return '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#64748b;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin:12px 0 8px">'+i+' '+t+'</div>';};
+    var row = function(l,v){return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:13px"><span style="color:#475569">'+l+'</span><span style="font-weight:700">'+v+'</span></div>';};
 
     // Fichajes
     if((e.fichajes||[]).length>0){
-      bodyHtml += sec('⏱','FICHAJES');
+      html += sec('⏱','FICHAJES');
       (e.fichajes||[]).forEach(function(f,i){
-        var dur = (f.entrada&&f.salida)?('<span style="background:#dcfce7;color:#16a34a;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:auto">'+fmtH(calcH(f.entrada,f.salida))+'</span>'):'';
-        bodyHtml += '<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:4px">'
+        var dur = (f.entrada&&f.salida)?'<span style="background:#dcfce7;color:#16a34a;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:auto">'+fmtH(calcH(f.entrada,f.salida))+'</span>':'';
+        html += '<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:4px">'
           +'<span style="color:#94a3b8;font-size:11px">'+(i+1)+'.</span>'
-          +'<span style="font-weight:700;font-size:15px;min-width:48px">'+(f.entrada||'—')+'</span>'
+          +'<span style="font-weight:700;font-size:15px;min-width:46px">'+(f.entrada||'—')+'</span>'
           +'<span style="color:#94a3b8">→</span>'
-          +'<span style="font-weight:700;font-size:15px;min-width:48px">'+(f.salida||'—')+'</span>'
+          +'<span style="font-weight:700;font-size:15px;min-width:46px">'+(f.salida||'—')+'</span>'
           +dur
-          +(f.nota?'<span style="font-size:11px;color:#64748b;font-style:italic;margin-left:4px">'+f.nota.slice(0,25)+'</span>':'')
+          +(f.nota?'<span style="font-size:11px;color:#64748b;font-style:italic">'+f.nota.slice(0,20)+'</span>':'')
           +'</div>';
       });
     }
 
     // Horas
     if(totalH>0){
-      bodyHtml += sec('🕐','HORAS E IMPORTES');
-      if(e.horasNormales>0) bodyHtml += row('Normales', e.horasNormales+'h'+(cp?' × '+eur(e.precioHoraNormal||0)+' = '+eur((e.horasNormales||0)*(e.precioHoraNormal||0)):''));
-      if(e.horasExtra>0)    bodyHtml += row('Extra',    e.horasExtra+'h'+(cp?' × '+eur(e.precioHoraExtra||0)+' = '+eur((e.horasExtra||0)*(e.precioHoraExtra||0)):''));
-      if(e.horasNocturnas>0)bodyHtml += row('Nocturnas',e.horasNocturnas+'h'+(cp?' × '+eur(e.precioHoraNocturna||0)+' = '+eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0)):''));
-      if(e.horasFestivas>0) bodyHtml += row('Festivas', e.horasFestivas+'h'+(cp?' × '+eur(e.precioHoraFestiva||0)+' = '+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0)):''));
+      html += sec('🕐','HORAS E IMPORTES');
+      if(e.horasNormales>0) html += row('Normales', e.horasNormales+'h'+(cp?' × '+eur(e.precioHoraNormal||0)+' = '+eur((e.horasNormales||0)*(e.precioHoraNormal||0)):''));
+      if(e.horasExtra>0)    html += row('Extra',    e.horasExtra+'h'+(cp?' × '+eur(e.precioHoraExtra||0)+' = '+eur((e.horasExtra||0)*(e.precioHoraExtra||0)):''));
+      if(e.horasNocturnas>0)html += row('Nocturnas',e.horasNocturnas+'h'+(cp?' × '+eur(e.precioHoraNocturna||0)+' = '+eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0)):''));
+      if(e.horasFestivas>0) html += row('Festivas', e.horasFestivas+'h'+(cp?' × '+eur(e.precioHoraFestiva||0)+' = '+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0)):''));
     }
 
     // Dietas y transporte
     if((e.dieta||0)+(e.transporte||0)>0){
-      bodyHtml += sec('🍽','DIETAS Y TRANSPORTE');
-      if(e.dieta>0) bodyHtml += row('Dieta', cp?eur(e.dieta):'✓');
+      html += sec('🍽','DIETAS Y TRANSPORTE');
+      if(e.dieta>0) html += row('Dieta', cp?eur(e.dieta):'✓');
       if(e.transporte>0){
-        var ttName=''; try{ var tt=(S.transportTypes||[]).filter(function(t){return t.id===e._transportType;})[0]; if(tt)ttName=tt.nombre; }catch(ex){}
-        bodyHtml += row('Transporte'+(ttName?' — '+ttName:''), cp?eur(e.transporte):'✓');
+        var ttName='';
+        try{ var tt=(S.transportTypes||[]).find(function(t){return t.id===e._transportType;}); if(tt)ttName=tt.nombre; }catch(ex){}
+        html += row('Transporte'+(ttName?' — '+ttName:''), cp?eur(e.transporte):'✓');
       }
+      (e.dietasExtra||[]).forEach(function(d){ html += row(d.concepto||'Dieta extra', cp?eur(d.importe||0):'✓'); });
     }
 
-    // Tareas
+    // Tareas con OT
     if(tareas.length>0){
-      bodyHtml += sec('🔧','TAREAS / O.T.');
+      html += sec('🔧','TAREAS / O.T.');
       tareas.forEach(function(t){
         var titulo=(t.titulo||'').replace(/<[^>]*>/g,'');
         var lineas=titulo.split('\n').filter(function(l){return l.trim();});
-        bodyHtml += '<div style="background:#fefce8;border:1px solid #fef08a;border-radius:8px;padding:9px 12px;margin-bottom:5px">'
-          +(t.otNumero?'<span style="background:#f59e0b;color:#1e293b;border-radius:4px;padding:2px 9px;font-size:10px;font-weight:800;display:inline-block;margin-bottom:5px">OT '+t.otNumero+'</span>':'')
+        html += '<div style="background:#fefce8;border:1px solid #fef08a;border-radius:8px;padding:9px 12px;margin-bottom:5px">'
+          +(t.otNumero?'<div style="margin-bottom:5px"><span style="background:#f59e0b;color:#1e293b;border-radius:4px;padding:2px 9px;font-size:10px;font-weight:800">OT '+t.otNumero+'</span></div>':'')
           +'<div style="font-weight:700;font-size:12px;line-height:1.6">'
           +lineas.map(function(l){return '<div>'+l+'</div>';}).join('')
           +'</div></div>';
@@ -3276,42 +3281,41 @@ async function compartirComoImagen(conPrecios){
 
     // Notas
     if(e.notas){
-      var notasTxt=e.notas.replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n').replace(/<[^>]*>/g,'').trim();
-      bodyHtml += sec('📝','NOTAS')
+      var nt=e.notas.replace(/<br[^>]*>/gi,' ').replace(/<\/p>/gi,' ').replace(/<[^>]*>/g,'').trim();
+      html += sec('📝','NOTAS')
         +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:12px;color:#334155;line-height:1.6;font-style:italic">'
-        +notasTxt.split('\n').filter(function(l){return l.trim();}).map(function(l){return '<div>'+l+'</div>';}).join('')+'</div>';
+        +nt.split('\n').filter(function(l){return l.trim();}).map(function(l){return '<div>'+l+'</div>';}).join('')+'</div>';
     }
 
     // Total
     if(cp){
-      bodyHtml += '<div style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:10px;padding:12px 16px;margin-top:14px;display:flex;justify-content:space-between;align-items:center">'
+      html += '<div style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:10px;padding:12px 16px;margin-top:14px;display:flex;justify-content:space-between;align-items:center">'
         +'<div><div style="color:rgba(255,255,255,.6);font-size:10px;letter-spacing:.1em">TOTAL DÍA</div>'
         +'<div style="color:rgba(255,255,255,.5);font-size:10px;margin-top:2px">'+fmtH(totalH)+'</div></div>'
         +'<div style="font-size:26px;font-weight:900;color:#4ade80">'+eur(totalI)+'</div></div>';
     }
 
-    bodyHtml += '<div style="text-align:center;font-size:9px;color:#94a3b8;margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0">TimerPro · '+e.fecha+'</div></div>';
+    html += '<div style="text-align:center;font-size:9px;color:#94a3b8;margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0">TimerPro · '+e.fecha+'</div></div></div>';
 
-    // Create off-screen container
+    // Render in-viewport at top-left, invisible but renders correctly
     var wrap = document.createElement('div');
-    wrap.style.cssText = 'position:absolute;top:-9999px;left:0;width:460px;font-family:system-ui,Arial,sans-serif;border-radius:12px;overflow:hidden;';
-    wrap.innerHTML = headerHtml + bodyHtml;
+    wrap.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;opacity:0.01;pointer-events:none;';
+    wrap.innerHTML = html;
     document.body.appendChild(wrap);
+    await new Promise(function(r){setTimeout(r,200);});
 
-    await new Promise(function(r){setTimeout(r,300);});
-
-    var canvas = await html2canvas(wrap, {
+    var inner = wrap.firstChild;
+    var canvas = await html2canvas(inner, {
       scale:2, useCORS:true, allowTaint:true,
-      backgroundColor:'#ffffff', logging:false,
-      scrollX: 0, scrollY: 0
+      backgroundColor:'#ffffff', logging:false
     });
     document.body.removeChild(wrap);
 
     canvas.toBlob(async function(blob){
-      // Try clipboard first (Ctrl+V paste directly in WhatsApp Web)
+      // Try clipboard → paste with Ctrl+V in WhatsApp
       try{
         await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
-        showAlert('✅ Imagen copiada — pégala en WhatsApp con Ctrl+V');
+        showAlert('✅ Imagen copiada — pega con Ctrl+V en WhatsApp o Email');
       }catch(ex){
         // Fallback: download
         var url = URL.createObjectURL(blob);
@@ -3319,13 +3323,13 @@ async function compartirComoImagen(conPrecios){
         a.href=url; a.download='jornada-'+e.fecha+'.png';
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         setTimeout(function(){URL.revokeObjectURL(url);},5000);
-        showAlert('✅ Imagen descargada — adjúntala en WhatsApp con 📎');
+        showAlert('✅ Imagen descargada — adjúntala en WhatsApp con el clip 📎');
       }
     },'image/png',0.95);
 
   }catch(err){
-    showAlert('Error generando imagen: '+err.message,'err');
-    console.error('compartirComoImagen error:',err);
+    showAlert('Error: '+err.message,'err');
+    console.error(err);
   }finally{
     if(btn){ btn.textContent='📸 Imagen'; btn.disabled=false; }
   }
