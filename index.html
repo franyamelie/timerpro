@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779656149129 -->
+<!-- v1779656605262 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2741,11 +2741,11 @@ function renderModalResumenDia(){
         // Horas e importes
         totalH>0 ? h('div',{},
           sec('🕐','Horas e Importes'),
-          (e.horasNormales||0)>0?row('Normales — '+e.horasNormales+'h × '+eur(e.precioHoraNormal||0),eur((e.horasNormales||0)*(e.precioHoraNormal||0))):null,
-          (e.horasExtra||0)>0?row('Extra — '+e.horasExtra+'h × '+eur(e.precioHoraExtra||0),eur((e.horasExtra||0)*(e.precioHoraExtra||0)),true):null,
-          (e.horasNocturnas||0)>0?row('Nocturnas — '+e.horasNocturnas+'h × '+eur(e.precioHoraNocturna||0),eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0))):null,
-          (e.horasFestivas||0)>0?row('Festivas — '+e.horasFestivas+'h × '+eur(e.precioHoraFestiva||0),eur((e.horasFestivas||0)*(e.precioHoraFestiva||0))):null,
-          impHoras>0?h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.4rem .6rem',background:'#f0fdf4',borderRadius:'6px',marginTop:'.3rem'}},
+          (e.horasNormales||0)>0?row('Normales',e.horasNormales+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraNormal||0)+' = '+eur((e.horasNormales||0)*(e.precioHoraNormal||0)):'')):null,
+          (e.horasExtra||0)>0?row('Extra',e.horasExtra+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraExtra||0)+' = '+eur((e.horasExtra||0)*(e.precioHoraExtra||0)):'')):null,
+          (e.horasNocturnas||0)>0?row('Nocturnas',e.horasNocturnas+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraNocturna||0)+' = '+eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0)):'')):null,
+          (e.horasFestivas||0)>0?row('Festivas',e.horasFestivas+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraFestiva||0)+' = '+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0)):'')):null,
+          impHoras>0&&S._shareConPrecios===true?h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.4rem .6rem',background:'#f0fdf4',borderRadius:'6px',marginTop:'.3rem'}},
             h('span',{style:{fontSize:'.83rem',fontWeight:700,color:'#15803d'}},'Subtotal horas'),
             h('span',{style:{fontWeight:800,color:'#15803d'}},eur(impHoras))
           ):null
@@ -2754,9 +2754,12 @@ function renderModalResumenDia(){
         // Dietas y transporte
         (e.dieta||0)+(e.transporte||0)+(e.dietasExtra||[]).length>0 ? h('div',{},
           sec('🍽','Dietas y Transporte'),
-          (e.dieta||0)>0?row('Dieta',eur(e.dieta)):null,
-          (e.transporte||0)>0?row('Transporte',eur(e.transporte)):null,
-          ...(e.dietasExtra||[]).map(d=>row(d.concepto||'Dieta extra',eur(d.importe||0)))
+          (e.dieta||0)>0?row('Dieta', S._shareConPrecios===true?eur(e.dieta):'✓'):null,
+          (e.transporte||0)>0?row(
+            'Transporte'+((S.transportTypes||[]).find(t=>t.id===e._transportType)?.nombre?' — '+(S.transportTypes||[]).find(t=>t.id===e._transportType).nombre:''),
+            S._shareConPrecios===true?eur(e.transporte):'✓'
+          ):null,
+          ...(e.dietasExtra||[]).map(d=>row(d.concepto||'Dieta extra', S._shareConPrecios===true?eur(d.importe||0):'✓'))
         ):null,
 
         // Otros conceptos
@@ -2853,7 +2856,7 @@ function renderModalResumenDia(){
         h('div',{style:{
           background:'linear-gradient(135deg,#0f172a,#1e293b)',
           borderRadius:'10px',padding:'1rem 1.2rem',marginTop:'.6rem',
-          display:'flex',justifyContent:'space-between',alignItems:'center'
+          display:S._shareConPrecios===true?'flex':'none',justifyContent:'space-between',alignItems:'center'
         }},
           h('div',{},
             h('div',{style:{color:'rgba(255,255,255,.7)',fontSize:'.72rem',letterSpacing:'.1em'}},'TOTAL DÍA'),
