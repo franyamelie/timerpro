@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779653221067 -->
+<!-- v1779653742390 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -987,7 +987,12 @@ function renderFichar(){
               style:{background:'none',border:'none',cursor:'pointer',fontSize:'.8rem',color:'var(--ink2)',padding:'0 .2rem'},
               on:{click:()=>{
                 const p=prompt('Precio dieta por defecto (€):',S.dietaDefault||0);
-                if(p!==null){ S.dietaDefault=parseFloat(p)||0; localStorage.setItem('dietaDefault',S.dietaDefault); showAlert('Precio dieta guardado: '+eur(S.dietaDefault)); }
+                if(p!==null){
+                  S.dietaDefault=parseFloat(p)||0;
+                  localStorage.setItem('dietaDefault',S.dietaDefault);
+                  showAlert('✅ Precio dieta guardado: '+eur(S.dietaDefault));
+                  rerender();
+                }
               }}
             },'⚙️'),
             S.dietaDefault>0?h('button',{
@@ -2151,7 +2156,7 @@ function renderResumen(){
 
   return h('div',{},
     h('div',{style:{display:'flex',justifyContent:'flex-end',marginBottom:'.3rem'}},
-      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.tab='fichar';rerender();}}},'✕ Cerrar')
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{captureFormState();S.tab='fichar';rerender();}}},'✕ Cerrar')
     ),
     // Date filter
     h('div',{class:'card'},
@@ -2943,19 +2948,20 @@ function renderModalTransportConfig(){
     h('div',{class:'card',style:{maxWidth:'360px',width:'100%',padding:'1.2rem'}},
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1rem'}},
         h('div',{style:{fontWeight:800,fontSize:'1rem'}},'🚗 Tipos de Transporte'),
-        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.modal=null;rerender();}}},'✕')
+        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>closeTransportConfig()}},'✕')
       ),
       ...types.map((tt,i)=>h('div',{style:{display:'flex',gap:'.5rem',alignItems:'center',marginBottom:'.5rem'}},
         h('input',{type:'text',value:tt.nombre,placeholder:'Nombre',
           style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
             padding:'.4rem .6rem',color:'var(--ink)',fontSize:'.85rem'},
-          on:{change:ev=>{S.transportTypes[i].nombre=ev.target.value;
-            localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));rerender();}}}),
+          on:{input:ev=>{S.transportTypes[i].nombre=ev.target.value;},
+            change:ev=>{S.transportTypes[i].nombre=ev.target.value;
+            localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));}}}),
         h('input',{type:'number',value:tt.precio||'',placeholder:'€/uso',min:0,step:0.01,
           style:{width:'80px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
             padding:'.4rem .5rem',color:'var(--ink)',fontSize:'.85rem'},
           on:{change:ev=>{S.transportTypes[i].precio=parseFloat(ev.target.value)||0;
-            localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));rerender();}}}),
+            localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));}}}),
         h('button',{class:'btn btn-r btn-sm',
           on:{click:()=>{S.transportTypes.splice(i,1);
             localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));rerender();}}
@@ -2971,6 +2977,15 @@ function renderModalTransportConfig(){
         'El precio se aplica automáticamente al seleccionar el tipo')
     )
   );
+}
+
+
+function closeTransportConfig(){
+  // Save to localStorage
+  localStorage.setItem('transportTypes', JSON.stringify(S.transportTypes));
+  S.modal=null;
+  rerender();
+  showAlert('✅ Tipos de transporte guardados');
 }
 
 
