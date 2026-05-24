@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779642016664 -->
+<!-- v1779642221199 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2785,7 +2785,10 @@ function renderIAChat(){
         on:{keydown:ev=>{ if(ev.key==='Enter'&&!ev.shiftKey){ ev.preventDefault(); sendIAMsgPage(); } }}
       }),
       h('button',{class:'btn btn-g',on:{click:sendIAMsgPage}},'Enviar'),
-      msgs.length>0?h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.iaMsgs=[];rerender();}}},'🗑'):null
+      msgs.length>0?h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.iaMsgs=[];rerender();}}},'🗑'):null,
+      h('button',{class:'btn btn-gh btn-sm',title:'Cambiar API Key',
+        on:{click:()=>{ localStorage.removeItem('anthropic_api_key');
+          showAlert('API key eliminada. Se pedirá al enviar el próximo mensaje.'); }}},'🔑')
     )
   );
 }
@@ -2815,15 +2818,27 @@ sendIAMsg._core = async function(userMsg){
     +'Tareas: '+S.tasks.length+'. '
     +'Responde en espanol de forma concisa y util.';
   try{
+    let apiKey=localStorage.getItem('anthropic_api_key')||'';
+    if(!apiKey){
+      apiKey=prompt('Introduce tu API Key de Anthropic (console.anthropic.com):\nSe guardará solo en tu navegador:');
+      if(!apiKey){ S.iaMsgs.pop(); rerender(); return; }
+      localStorage.setItem('anthropic_api_key', apiKey.trim());
+    }
     const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01',
+               'anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:600,
         system:context,messages:S.iaMsgs.map(m=>({role:m.role,content:m.content}))})
     });
+    if(!res.ok){
+      if(res.status===401){ localStorage.removeItem('anthropic_api_key'); }
+      throw new Error('API error '+res.status+': '+await res.text());
+    }
     const data=await res.json();
     S.iaMsgs.push({role:'assistant',content:data.content?.[0]?.text||'Sin respuesta'});
   }catch(e){
-    S.iaMsgs.push({role:'assistant',content:'Error: '+e.message});
+    S.iaMsgs.push({role:'assistant',content:'Error: '+e.message+'\n\nAsegúrate de que tu API key es correcta y tiene saldo.'});
   }
   rerender();
   setTimeout(()=>{
