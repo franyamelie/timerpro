@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779653742390 -->
+<!-- v1779653974533 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2671,6 +2671,7 @@ function renderModalResumenDia(){
   );
 
   return h('div',{
+    class:'modal-bg',
     style:{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',
       display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:'1rem'},
     on:{click:ev=>{if(ev.target===ev.currentTarget){S.modal=null;rerender();}}}
@@ -2941,6 +2942,7 @@ function shareResumen(method, conPrecios){
 function renderModalTransportConfig(){
   const types = S.transportTypes||[];
   return h('div',{
+    class:'modal-bg',
     style:{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',display:'flex',
       alignItems:'center',justifyContent:'center',zIndex:9999,padding:'1rem'},
     on:{click:ev=>{if(ev.target===ev.currentTarget){S.modal=null;rerender();}}}
