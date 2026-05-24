@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779661440479 -->
+<!-- v1779661863053 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3412,33 +3412,28 @@ sendIAMsg._core = async function(userMsg){
     +'Tareas: '+S.tasks.length+'. '
     +'Responde en espanol de forma concisa y util.';
   try{
-    let apiKey=localStorage.getItem('gemini_api_key')||'';
+    let apiKey=localStorage.getItem('groq_api_key')||'';
     if(!apiKey){
-      apiKey=prompt('Introduce tu API Key de Gemini (gratis en aistudio.google.com):\nSe guardará solo en tu navegador:');
+      apiKey=prompt('Introduce tu API Key de Groq (GRATIS en console.groq.com)\nRegistro rápido con Google, sin tarjeta:');
       if(!apiKey){ S.iaMsgs.pop(); rerender(); return; }
-      localStorage.setItem('gemini_api_key', apiKey.trim());
+      localStorage.setItem('groq_api_key', apiKey.trim());
     }
-    // Build conversation: filter errors, keep last 6 msgs, add context to first
     const cleanMsgs = S.iaMsgs
       .filter(m=>!m.content.startsWith('Error:')&&!m.content.startsWith('⏳'))
-      .slice(-6);
-    if(cleanMsgs.length===0) cleanMsgs.push({role:'user',content:userMsg});
-    const geminiMsgs = cleanMsgs.map((m,idx)=>({
-      role: m.role==='assistant'?'model':'user',
-      parts:[{text: idx===0&&m.role==='user' ? context+'\n\n'+m.content : m.content}]
-    }));
-    const res=await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key='+apiKey,
-      {method:'POST',headers:{'Content-Type':'application/json'},
-       body:JSON.stringify({contents:geminiMsgs,
-         generationConfig:{maxOutputTokens:600,temperature:0.7}})}
-    );
+      .slice(-8);
+    const groqMsgs = [{role:'system',content:context}]
+      .concat(cleanMsgs.map(m=>({role:m.role,content:m.content})));
+    const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey},
+      body:JSON.stringify({model:'llama-3.1-8b-instant',messages:groqMsgs,max_tokens:600,temperature:0.7})
+    });
     if(!res.ok){
-      if(res.status===400||res.status===401||res.status===404){ localStorage.removeItem('gemini_api_key'); S.iaMsgs=[]; }
-      throw new Error('Error '+res.status+': '+await res.text());
+      if(res.status===401||res.status===403){localStorage.removeItem('groq_api_key');S.iaMsgs=[];}
+      throw new Error('Error '+res.status+': '+(await res.text()).slice(0,200));
     }
     const data=await res.json();
-    const reply=data.candidates?.[0]?.content?.parts?.[0]?.text||'Sin respuesta';
+    const reply=data.choices?.[0]?.message?.content||'Sin respuesta';
     S.iaMsgs.push({role:'assistant',content:reply});
   }catch(e){
     const msg = e.message||'';
