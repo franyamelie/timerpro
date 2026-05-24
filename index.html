@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779657154095 -->
+<!-- v1779657737842 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3204,15 +3204,29 @@ async function compartirComoImagen(conPrecios){
     // Hide the entire share section
     const shareSection = modalContent.lastElementChild?.previousElementSibling;
 
-    // Capture
+    // Scroll modal to top before capture
+    const scrollable = modalBg.querySelector('div');
+    const origScroll = scrollable ? scrollable.scrollTop : 0;
+    if(scrollable) scrollable.scrollTop = 0;
+
+    // Capture the full modal width including header
     const canvas = await html2canvas(modalContent, {
       scale: 2.5,
       useCORS: true,
       allowTaint: true,
       backgroundColor: '#ffffff',
       logging: false,
-      removeContainer: false
+      windowWidth: modalContent.scrollWidth,
+      windowHeight: modalContent.scrollHeight,
+      scrollX: 0,
+      scrollY: 0,
+      x: 0,
+      y: 0,
+      width: modalContent.offsetWidth,
+      height: modalContent.scrollHeight
     });
+
+    if(scrollable) scrollable.scrollTop = origScroll;
 
     // Restore hidden buttons
     hiddenBtns.forEach(b=>{ b.style.visibility=''; });
@@ -5960,7 +5974,7 @@ async function driveSync(){
     horasNocturnas:e.horasNocturnas||0, precioHoraNocturna:e.precioHoraNocturna||0,
     horasFestivas:e.horasFestivas||0, precioHoraFestiva:e.precioHoraFestiva||0,
     dieta:e.dieta||0, transporte:e.transporte||0,
-    notas:stripHtmlNotas(e.notas),
+    notas:(stripHtmlNotas(e.notas)||'').slice(0,200),
     ubicacionEntrada:compactLoc(e.ubicacionEntrada),
     ubicacionSalida:compactLoc(e.ubicacionSalida),
   });
@@ -6069,18 +6083,12 @@ function buildSyncData(){
     version:2,
     exportedAt:new Date().toISOString(),
     entries:entries.map(e=>({...e,fotosGastos:[]})),
-    tasks:S.tasks.map(t=>({id:t.id,titulo:(t.titulo||'').slice(0,80),fecha:t.fecha||'',otRef:t.otRef||'',estado:t.estado||'',fechaCierre:t.fechaCierre||''})),
+    tasks:S.tasks.map(t=>({id:t.id,titulo:(t.titulo||'').replace(/<[^>]*>/g,'').slice(0,60),fecha:t.fecha||'',otNumero:t.otNumero||'',estado:t.estado||''})),
     sites:S.sites.map(s=>({id:s.id,nombre:(s.nombre||'').slice(0,60),direccion:(s.direccion||'').slice(0,100),lat:s.lat||0,lng:s.lng||0})),
     workorders:S.workorders.map(w=>({id:w.id,numero:(w.numero||'').slice(0,30),titulo:(w.titulo||'').slice(0,80),fecha:w.fecha||''})),
     vehicles:S.vehicles.map(v=>({id:v.id,matricula:(v.matricula||'').slice(0,15),marca:(v.marca||'').slice(0,30),modelo:(v.modelo||'').slice(0,30)})),
-    workers:workers.map(w=>({
-      id:w.id,nombre:w.nombre,apellidos:w.apellidos,dni:w.dni,cargo:w.cargo,
-      departamento:w.departamento,email:w.email,telefono:w.telefono,
-      numSS:w.numSS,fechaAlta:w.fechaAlta,convenio:w.convenio
-    })),
-    companies:companies.map(c=>({
-      id:c.id,nombre:c.nombre,cif:c.cif,direccion:c.direccion,ciudad:c.ciudad,
-      cp:c.cp,telefono:c.telefono,email:c.email,web:c.web
+    workers:workers.slice(0,3).map(w=>({id:w.id,nombre:(w.nombre||'').slice(0,30),apellidos:(w.apellidos||'').slice(0,30),cargo:(w.cargo||'').slice(0,20)})),
+    companies:companies.slice(0,2).map(c=>({id:c.id,nombre:(c.nombre||'').slice(0,40),cif:(c.cif||'').slice(0,15)
     })),
     activeWorkerId, activeCompanyId,
     worker:(()=>{const w=workers.find(x=>x.id===activeWorkerId)||workers[0]||{};
