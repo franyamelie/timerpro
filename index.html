@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779656605262 -->
+<!-- v1779657154095 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2780,20 +2780,27 @@ function renderModalResumenDia(){
         // Tareas
         tareasDia.length>0 ? h('div',{},
           sec('🔧','Tareas / O.T.'),
-          ...tareasDia.map(t=>h('div',{style:{
-            padding:'.45rem .7rem',marginBottom:'.3rem',
-            background:'#fefce8',borderRadius:'8px',border:'1px solid #fef08a'
-          }},
-            h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem'}},
-              h('span',{style:{fontWeight:700,fontSize:'.85rem',color:'#1e293b'}},t.titulo||'Sin título'),
-              t.otNumero?h('span',{style:{
-                background:'#fbbf24',color:'#1e293b',borderRadius:'4px',
-                padding:'.1rem .4rem',fontSize:'.7rem',fontWeight:700
-              }},'OT '+t.otNumero):null
-            ),
-            t.horaInicio?h('div',{style:{fontSize:'.75rem',color:'#92400e',marginTop:'.2rem'}},
-              '🕐 '+t.horaInicio+(t.horaFin?' → '+t.horaFin:'')):null
-          ))
+          ...tareasDia.map(t=>{
+            const titulo=(t.titulo||'Sin título').replace(/<[^>]*>/g,'');
+            const lineas=titulo.split('\n').map(l=>l.trim()).filter(Boolean);
+            return h('div',{style:{
+              padding:'.5rem .8rem',marginBottom:'.4rem',
+              background:'#fefce8',borderRadius:'8px',border:'1px solid #fef08a'
+            }},
+              t.otNumero?h('div',{style:{marginBottom:'.4rem'}},
+                h('span',{style:{
+                  background:'#f59e0b',color:'#1e293b',borderRadius:'5px',
+                  padding:'.15rem .6rem',fontSize:'.75rem',fontWeight:800,
+                  letterSpacing:'.04em'
+                }},'OT '+t.otNumero)
+              ):null,
+              h('div',{style:{fontWeight:700,fontSize:'.85rem',color:'#1e293b',lineHeight:1.6}},
+                ...lineas.map(l=>h('div',{},l))
+              ),
+              t.horaInicio?h('div',{style:{fontSize:'.75rem',color:'#92400e',marginTop:'.3rem'}},
+                '🕐 '+t.horaInicio+(t.horaFin?' → '+t.horaFin:'')):null
+            );
+          })
         ):null,
 
         // Notas
