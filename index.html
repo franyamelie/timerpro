@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779657737842 -->
+<!-- v1779658024660 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -888,7 +888,7 @@ function renderFichar(){
         h('button',{
           class:'btn btn-b btn-sm',
           style:{fontSize:'.72rem',padding:'.25rem .6rem'},
-          on:{click:()=>{ S.modal='resumendia'; rerender(); }}
+          on:{click:()=>{ S.modal='resumendia'; S._shareConPrecios=false; rerender(); }}
         },'📊 Resumen')
       ),
       ...e.fichajes.map((fj,i)=>renderFichaje(fj,i)),
@@ -3204,29 +3204,35 @@ async function compartirComoImagen(conPrecios){
     // Hide the entire share section
     const shareSection = modalContent.lastElementChild?.previousElementSibling;
 
-    // Scroll modal to top before capture
-    const scrollable = modalBg.querySelector('div');
-    const origScroll = scrollable ? scrollable.scrollTop : 0;
-    if(scrollable) scrollable.scrollTop = 0;
+    // Temporarily expand modal to full height so html2canvas captures everything
+    const origMaxH = modalContent.style.maxHeight;
+    const origOverflow = modalContent.style.overflowY;
+    const origPos = modalContent.style.position;
+    modalContent.style.maxHeight = 'none';
+    modalContent.style.overflowY = 'visible';
+    modalContent.style.position = 'relative';
+    // Also hide the share section (bottom buttons) from the screenshot
+    const lastChild = modalContent.lastElementChild;
+    const lastChildDisplay = lastChild ? lastChild.style.display : '';
+    if(lastChild) lastChild.style.display = 'none';
 
-    // Capture the full modal width including header
+    await new Promise(r=>setTimeout(r,80)); // wait for reflow
+
     const canvas = await html2canvas(modalContent, {
       scale: 2.5,
       useCORS: true,
       allowTaint: true,
       backgroundColor: '#ffffff',
       logging: false,
-      windowWidth: modalContent.scrollWidth,
-      windowHeight: modalContent.scrollHeight,
       scrollX: 0,
-      scrollY: 0,
-      x: 0,
-      y: 0,
-      width: modalContent.offsetWidth,
-      height: modalContent.scrollHeight
+      scrollY: -window.scrollY
     });
 
-    if(scrollable) scrollable.scrollTop = origScroll;
+    // Restore
+    modalContent.style.maxHeight = origMaxH;
+    modalContent.style.overflowY = origOverflow;
+    modalContent.style.position = origPos;
+    if(lastChild) lastChild.style.display = lastChildDisplay;
 
     // Restore hidden buttons
     hiddenBtns.forEach(b=>{ b.style.visibility=''; });
