@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779640745876 -->
+<!-- v1779640992143 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2271,6 +2271,7 @@ function renderSincronizar(){
         'Si tienes problemas con la app o pierdes datos, usa este boton para guardar una copia de seguridad ahora mismo en tu dispositivo.'
       ),
       h('button',{class:'btn btn-r btn-full btn-lg',on:{click:emergencyExport}},'🆘 Descargar Backup Ahora'),
+      h('button',{class:'btn btn-y btn-full btn-lg',style:{marginTop:'.5rem'},on:{click:recoverFromIndexedDB}},'🔄 Recuperar datos de IndexedDB'),
       localStorage.getItem('backup_date')
         ? h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginTop:'.5rem',textAlign:'center'}},
             'Ultima copia local: ' + new Date(localStorage.getItem('backup_date')||'').toLocaleString('es-ES')
@@ -5946,6 +5947,26 @@ async function checkAndRestoreFromLocalBackup(){
 }
 
 // Descarga JSON de emergencia
+async function recoverFromIndexedDB(){
+  try{
+    const all = await dbAll(ST.entries);
+    if(!all||all.length===0){
+      showAlert('No se encontraron datos en IndexedDB','err');
+      return;
+    }
+    showAlert('Recuperando '+all.length+' entradas de IndexedDB...');
+    S.entries = all;
+    // Also try tasks, sites, vehicles
+    try{ const t=await dbAll(ST.tasks); if(t&&t.length) S.tasks=t; }catch(e){}
+    try{ const s=await dbAll(ST.sites); if(s&&s.length) S.sites=s; }catch(e){}
+    try{ const v=await dbAll(ST.vehicles); if(v&&v.length) S.vehicles=v; }catch(e){}
+    showAlert('✅ Recuperadas '+all.length+' jornadas de IndexedDB');
+    rerender();
+  }catch(e){
+    showAlert('Error recuperando: '+e.message,'err');
+  }
+}
+
 function emergencyExport(){
   try{
     const backup = {
