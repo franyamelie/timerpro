@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779620801418 -->
+<!-- v1779621334765 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -445,7 +445,7 @@ function attachFichajeListeners(){
   requestAnimationFrame(()=>{
     document.querySelectorAll('.fich-row').forEach((row,i)=>{
       if(!fEntry.fichajes[i]) return;
-      const times=row.querySelectorAll('input[type="time"]');
+      const times=row.querySelectorAll('input[type="text"]'); // fichaje inputs are type=text
       if(times[0]){
         times[0].oninput=ev=>{ if(fEntry.fichajes[i]&&ev.target.value) fEntry.fichajes[i].entrada=ev.target.value; };
         times[0].onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].entrada=ev.target.value; scheduleDraftSave(); } };
@@ -508,9 +508,13 @@ function captureFormState(){
     const activeEl = document.activeElement;
     fichRows.forEach((row,i)=>{
       if(!fEntry.fichajes[i]) return;
-      // fichajes maintained directly by event handlers - no DOM read needed here
-      const nota=row.querySelector('input[type="text"],textarea');
-      if(nota) fEntry.fichajes[i].nota=nota.value||nota.textContent||'';
+      // Read text inputs in order: first=entrada, second=salida
+      const textInputs=Array.from(row.querySelectorAll('input[type="text"]'));
+      if(textInputs[0]&&textInputs[0].value) fEntry.fichajes[i].entrada=textInputs[0].value;
+      if(textInputs[1]&&textInputs[1].value) fEntry.fichajes[i].salida=textInputs[1].value;
+      // Read nota from textarea only
+      const notaEl=row.querySelector('textarea');
+      if(notaEl) fEntry.fichajes[i].nota=notaEl.value||fEntry.fichajes[i].nota||'';
     });
     const notasEl=document.getElementById('notas-editor');
     if(notasEl && notasEl.innerHTML.trim()){
@@ -1232,7 +1236,15 @@ function renderFichar(){
                     captureFormState();
                     const notasEl=document.getElementById('notas-editor');
                     if(notasEl&&notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
-                    // fEntry.fichajes already up to date via event handlers
+                    // Read inputs directly before snapshot
+                    document.querySelectorAll('.fich-row').forEach((row,i)=>{
+                      if(!fEntry.fichajes[i]) return;
+                      const ti=Array.from(row.querySelectorAll('input[type="text"]'));
+                      if(ti[0]&&ti[0].value) fEntry.fichajes[i].entrada=ti[0].value;
+                      if(ti[1]&&ti[1].value) fEntry.fichajes[i].salida=ti[1].value;
+                      const nota=row.querySelector('textarea');
+                      if(nota) fEntry.fichajes[i].nota=nota.value||fEntry.fichajes[i].nota||'';
+                    });
                     const saved={...fEntry,fecha:en.fecha,id:en.id};
                     dbPut(ST.entries,{...saved,_draft:false}).then(()=>{
                       S.entries=S.entries.map(e=>e.id===en.id?{...saved}:e);
@@ -3201,7 +3213,15 @@ async function saveEntry(){
     S.entries = S.entries.filter(e=>!(e.fecha===fEntry.fecha && e._draft && e.id!==fEntry.id));
 
     // BULLETPROOF: read ALL fichaje times directly from DOM right before saving
-    // fEntry.fichajes already up to date via event handlers
+    // Read ALL fichaje inputs directly before saving
+    document.querySelectorAll('.fich-row').forEach((row,i)=>{
+      if(!fEntry.fichajes[i]) return;
+      const ti=Array.from(row.querySelectorAll('input[type="text"]'));
+      if(ti[0]&&ti[0].value) fEntry.fichajes[i].entrada=ti[0].value;
+      if(ti[1]&&ti[1].value) fEntry.fichajes[i].salida=ti[1].value;
+      const nota=row.querySelector('textarea');
+      if(nota) fEntry.fichajes[i].nota=nota.value||fEntry.fichajes[i].nota||'';
+    });
     if(editingEntry&&fEntry.id){
       await dbPut(ST.entries,{...fEntry,_draft:false});
       S.entries=S.entries.map(e=>e.id===fEntry.id?{...fEntry,_draft:false}:e);
