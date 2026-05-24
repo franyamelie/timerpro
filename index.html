@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779615606452 -->
+<!-- v1779620801418 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -324,40 +324,21 @@ function restoreEntry(){
     const saved = localStorage.getItem('_fEntry');
     if(!saved) return;
     const e = JSON.parse(saved);
-    // Only restore if same date
     if(e && e.fecha && e.fecha === fEntry.fecha){
-      // Preserve current in-memory arrays and notas before merge
-      const cur = {
-        fichajes: fEntry.fichajes,
-        notas: fEntry.notas,
-        dietasExtra: fEntry.dietasExtra,
-        otrosConceptos: fEntry.otrosConceptos,
-        journeys: fEntry.journeys
-      };
+      // Save what must NEVER be overwritten by localStorage
+      const fichajes     = fEntry.fichajes;
+      const notas        = fEntry.notas;
+      const dietasExtra  = fEntry.dietasExtra;
+      const otrosConceptos = fEntry.otrosConceptos;
+      const journeys     = fEntry.journeys;
+      // Restore only simple scalar fields (horas, precios, dieta, etc.)
       fEntry = {...fEntry, ...e};
-      // Restore fichajes: prefer current (user may have typed times)
-      if(cur.fichajes && cur.fichajes.length > 0){
-        fEntry.fichajes = cur.fichajes.map((cf, i) => {
-          const sf = e.fichajes && e.fichajes[i];
-          if(!sf) return cf;
-          return {
-            ...sf,
-            // Prefer the longer/more complete value — avoids losing user input
-            entrada: (cf.entrada && cf.entrada.length >= (sf.entrada||'').length) ? cf.entrada : (sf.entrada||cf.entrada||''),
-            salida:  (cf.salida  && cf.salida.length  >= (sf.salida||'').length)  ? cf.salida  : (sf.salida||cf.salida||''),
-            nota: cf.nota !== undefined ? cf.nota : sf.nota || ''
-          };
-        });
-      }
-      // Prefer current arrays if they have more data
-      if(cur.dietasExtra && cur.dietasExtra.length >= (e.dietasExtra||[]).length)
-        fEntry.dietasExtra = cur.dietasExtra;
-      if(cur.otrosConceptos && cur.otrosConceptos.length >= (e.otrosConceptos||[]).length)
-        fEntry.otrosConceptos = cur.otrosConceptos;
-      if(cur.journeys && cur.journeys.length >= (e.journeys||[]).length)
-        fEntry.journeys = cur.journeys;
-      // Keep current notas
-      if(cur.notas) fEntry.notas = cur.notas;
+      // Always restore from memory — these are maintained by event handlers
+      fEntry.fichajes      = fichajes;
+      fEntry.notas         = notas;
+      fEntry.dietasExtra   = dietasExtra;
+      fEntry.otrosConceptos= otrosConceptos;
+      fEntry.journeys      = journeys;
     }
   }catch(e){}
 }
