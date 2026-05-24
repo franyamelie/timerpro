@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779642646195 -->
+<!-- v1779643201205 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2830,7 +2830,7 @@ sendIAMsg._core = async function(userMsg){
       parts:[{text: m.role==='user'&&m===S.iaMsgs[0] ? context+'\n\n'+m.content : m.content}]
     }));
     const res=await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='+apiKey,
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key='+apiKey,
       {method:'POST',headers:{'Content-Type':'application/json'},
        body:JSON.stringify({contents:geminiMsgs,
          generationConfig:{maxOutputTokens:600,temperature:0.7}})}
