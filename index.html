@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779570012220 -->
+<!-- v1779613911466 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -521,13 +521,22 @@ function captureFormState(){
     const activeEl = document.activeElement;
     fichRows.forEach((row,i)=>{
       if(!fEntry.fichajes[i]) return;
-      // Find entrada/salida text inputs by id prefix (now type="text")
+      // Find entrada/salida text inputs by id (now type="text")
       const entInput = document.getElementById('fich-ent-'+fEntry.fichajes[i]._fid);
       const salInput = document.getElementById('fich-sal-'+fEntry.fichajes[i]._fid);
       if(entInput && activeEl !== entInput && entInput.value)
         fEntry.fichajes[i].entrada = entInput.value;
       if(salInput && activeEl !== salInput && salInput.value)
         fEntry.fichajes[i].salida = salInput.value;
+      if(entInput || salInput){ // also grab nota/taskId from the row
+        const row = entInput&&entInput.closest('.fich-row');
+        if(row){
+          const nota=row.querySelector('textarea');
+          const sel=row.querySelector('select');
+          if(nota && nota !== activeEl) fEntry.fichajes[i].nota=nota.value||fEntry.fichajes[i].nota||'';
+          if(sel) fEntry.fichajes[i].taskId=sel.value||fEntry.fichajes[i].taskId||'';
+        }
+      }
       const nota=row.querySelector('input[type="text"],textarea');
       if(nota) fEntry.fichajes[i].nota=nota.value||nota.textContent||'';
     });
@@ -1243,10 +1252,12 @@ function renderFichar(){
                   h('button',{class:'btn btn-g btn-sm',title:'Guardar jornada actual en este día',on:{click:ev=>{
                     ev.stopPropagation();
                     if(!confirm('¿Guardar la jornada actual sobreescribiendo el día '+en.fecha+'?')) return;
-                    const saved={...fEntry,fecha:en.fecha,id:en.id};
-                    const notasEl=document.getElementById('notas-editor');
-                    if(notasEl) saved.notas=notasEl.innerHTML;
+                    // Read DOM first THEN snapshot (fichajes + notas need DOM read first)
                     captureFormState();
+                    const notasEl=document.getElementById('notas-editor');
+                    if(notasEl&&notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
+                    captureFichajeFromDOM(); // read all fichaje text inputs by ID
+                    const saved={...fEntry,fecha:en.fecha,id:en.id};
                     dbPut(ST.entries,{...saved,_draft:false}).then(()=>{
                       S.entries=S.entries.map(e=>e.id===en.id?{...saved}:e);
                       showAlert('Jornada guardada ✓');
@@ -2970,23 +2981,28 @@ function scheduleDraftSave(){
 }
 
 let _draftSaving=false;
+// Read all fichaje text inputs from DOM into fEntry (shared helper)
+function captureFichajeFromDOM(){
+  (fEntry.fichajes||[]).forEach((fj,i)=>{
+    const eEl=document.getElementById('fich-ent-'+fj._fid);
+    const sEl=document.getElementById('fich-sal-'+fj._fid);
+    const row=eEl&&eEl.closest('.fich-row');
+    if(eEl&&eEl.value) fEntry.fichajes[i].entrada=eEl.value;
+    if(sEl&&sEl.value) fEntry.fichajes[i].salida=sEl.value;
+    if(row){
+      const nota=row.querySelector('textarea');
+      const sel=row.querySelector('select');
+      if(nota) fEntry.fichajes[i].nota=nota.value||fEntry.fichajes[i].nota||'';
+      if(sel) fEntry.fichajes[i].taskId=sel.value||fEntry.fichajes[i].taskId||'';
+    }
+  });
+}
+
 async function saveDraft(){
-  // Always capture latest DOM values before saving
+  // Capture all DOM values before saving draft
   const notasEl=document.getElementById('notas-editor');
   if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
-  const notasEditors=document.querySelectorAll('[contenteditable="true"]');
-  notasEditors.forEach(el=>{
-    if(el.id==='notas-editor' && el.innerHTML) fEntry.notas=el.innerHTML;
-  });
-  const fichRows=document.querySelectorAll('.fich-row');
-  fichRows.forEach((row,i)=>{
-    if(!fEntry.fichajes[i]) return;
-    const times=row.querySelectorAll('input[type="time"]');
-    if(times[0]&&times[0].value) fEntry.fichajes[i].entrada=times[0].value;
-    if(times[1]&&times[1].value) fEntry.fichajes[i].salida=times[1].value;
-    const nota=row.querySelector('textarea');
-    if(nota) fEntry.fichajes[i].nota=nota.value;
-  });
+  captureFichajeFromDOM(); // reads text inputs by ID
   if(!fEntry.fecha||_draftSaving) return;
   _draftSaving=true;
   try{
@@ -5593,6 +5609,7 @@ function resetTimer(){
 }
 
 function finishTimer(){
+  captureFichajeFromDOM(); // capture current fichaje inputs before timer saves
   const totalSecs=timerElapsed;
   const netSecs=Math.max(0,timerElapsed-timerDeduct*60);
   const netHours=Math.round(netSecs/36)/100;
