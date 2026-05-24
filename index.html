@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779640992143 -->
+<!-- v1779641802608 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -134,7 +134,7 @@ main{flex:1;overflow-y:auto;padding:1rem}
 .cal-day.has-e::after{content:'';position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--acc)}
 .cal-day.worked{background:rgba(34,197,94,.28);color:#16a34a;font-weight:700;border:1.5px solid rgba(34,197,94,.5)}
 .cal-day.worked::after{content:'✓';position:absolute;bottom:1px;right:2px;font-size:.55rem;color:#16a34a;opacity:.8}
-.cal-day.holiday{background:rgba(239,68,68,.18);color:#dc2626;font-weight:700;border:1.5px solid rgba(239,68,68,.4)}
+.cal-day.weekend-rest{background:rgba(239,68,68,.1);color:#ef4444!important;border-color:rgba(239,68,68,.25)!important}.holiday{background:rgba(239,68,68,.18);color:#dc2626;font-weight:700;border:1.5px solid rgba(239,68,68,.4)}
 .cal-day.holiday::before{content:'★';position:absolute;top:1px;left:2px;font-size:.5rem;color:#dc2626}
 .cal-day.holiday.worked{background:rgba(34,197,94,.28);color:#16a34a;border:1.5px solid rgba(34,197,94,.5)}
 .cal-day.holiday.worked::before{content:'★';position:absolute;top:1px;left:2px;font-size:.5rem;color:#dc2626;opacity:.6}
@@ -668,6 +668,7 @@ const TABS = [
   {id:'sincronizar',icon:'🔄',label:'Sincronizar'},
   {id:'trabajador',icon:'👤',label:'Trabajador'},
   {id:'empresa',icon:'🏢',label:'Empresa'},
+  {id:'ia',icon:'🤖',label:'IA'},
 ];
 function renderTabs(){
   return h('div',{class:'tabs'},
@@ -1630,9 +1631,13 @@ function renderCalendario(){
           const isWorked = hasEntry;
           const isHol = isHolidayES(ds);
           const isVac = isVacacion(ds);
+          const dow = new Date(ds+'T12:00:00').getDay(); // 0=Sun,6=Sat
+          const isWeekend = dow===0||dow===6;
           if(isSel) cls+=' selected';
           else if(isToday) cls+=' today';
-          // Add ALL applicable classes (order matters for CSS priority)
+          // Weekends and holidays in red UNLESS worked
+          if((isWeekend||isHol) && !isWorked) cls+=' weekend-rest';
+          // Add ALL applicable classes
           if(isWorked) cls+=' worked';
           if(isHol) cls+=' holiday';
           if(isVac && !isWorked) cls+=' vacation';
@@ -2702,7 +2707,176 @@ function locLabel(loc){
 }
 
 
+function renderModalIA(){
+  const msgs = S.iaMsgs||[];
+  return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.classList.contains('modal-bg')){S.modal=null;rerender();}}}},
+    h('div',{class:'modal',style:{maxWidth:'460px',height:'75vh',display:'flex',flexDirection:'column',padding:0,overflow:'hidden'}},
+      // Header
+      h('div',{style:{padding:'1rem',borderBottom:'1px solid var(--brd)',display:'flex',alignItems:'center',gap:'.5rem'}},
+        h('span',{style:{fontSize:'1.3rem'}},'🤖'),
+        h('div',{style:{flex:1}},
+          h('div',{style:{fontWeight:800,fontSize:'.95rem'}},'Asistente IA'),
+          h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'Pregúntame sobre tus jornadas, horas y datos')
+        ),
+        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.modal=null;rerender();}}},'✕')
+      ),
+      // Messages
+      h('div',{id:'ia-msgs',style:{flex:1,overflowY:'auto',padding:'1rem',display:'flex',flexDirection:'column',gap:'.6rem'}},
+        msgs.length===0
+          ? h('div',{style:{color:'var(--ink3)',fontSize:'.82rem',textAlign:'center',marginTop:'2rem'}},
+'Hola 👋 Puedo analizar tus horas, calcular totales, resumir jornadas y responder preguntas sobre tus datos.'
+            )
+          : null,
+        ...msgs.map(m=>h('div',{style:{
+            alignSelf:m.role==='user'?'flex-end':'flex-start',
+            background:m.role==='user'?'var(--acc)':'var(--surf2)',
+            color:m.role==='user'?'#000':'var(--ink)',
+            borderRadius:m.role==='user'?'12px 12px 2px 12px':'12px 12px 12px 2px',
+            padding:'.5rem .8rem',maxWidth:'85%',fontSize:'.82rem',lineHeight:1.5,
+            whiteSpace:'pre-wrap'
+          }},m.content))
+      ),
+      // Input
+      h('div',{style:{padding:'.8rem',borderTop:'1px solid var(--brd)',display:'flex',gap:'.5rem'}},
+        h('input',{
+          type:'text',id:'ia-input',
+          placeholder:'Pregunta algo...',
+          style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
+                 padding:'.5rem .7rem',color:'var(--ink)',fontSize:'.85rem'},
+          on:{keydown:ev=>{ if(ev.key==='Enter'&&!ev.shiftKey){ ev.preventDefault(); sendIAMsg(); } }}
+        }),
+        h('button',{
+          class:'btn btn-g',
+          style:{padding:'.5rem .8rem',fontSize:'.85rem'},
+          on:{click:sendIAMsg}
+        },'Enviar')
+      )
+    )
+  );
+}
+
+function renderIAChat(){
+  const msgs = S.iaMsgs||[];
+  return h('div',{style:{display:'flex',flexDirection:'column',height:'60vh',gap:'.5rem'}},
+    h('div',{class:'card',style:{padding:'.6rem .8rem'}},
+      h('div',{style:{fontWeight:700,fontSize:'.9rem'}},'🤖 Asistente IA — TimerPro'),
+      h('div',{style:{fontSize:'.75rem',color:'var(--ink2)'}},'Analiza tus datos, calcula totales, responde preguntas sobre tus jornadas')
+    ),
+    h('div',{id:'ia-msgs-page',style:{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:'.5rem',padding:'.5rem 0'}},
+      msgs.length===0
+        ? h('div',{style:{color:'var(--ink3)',fontSize:'.82rem',textAlign:'center',padding:'2rem'}},
+    'Ejemplos: ¿Cuántas horas este mes? · ¿Mi jornada más larga? · Resume mi semana · ¿Cuánto he ganado?')
+        : null,
+      ...msgs.map(m=>h('div',{class:'card',style:{
+          alignSelf:m.role==='user'?'flex-end':'flex-start',
+          background:m.role==='user'?'var(--acc)':'var(--surf2)',
+          color:m.role==='user'?'#000':'var(--ink)',
+          maxWidth:'85%',padding:'.5rem .8rem',fontSize:'.82rem',
+          lineHeight:1.5,whiteSpace:'pre-wrap',margin:0
+        }},m.content))
+    ),
+    h('div',{style:{display:'flex',gap:'.5rem'}},
+      h('input',{
+        type:'text',id:'ia-input-page',
+        placeholder:'Pregunta sobre tus jornadas, horas, dinero...',
+        style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',
+               borderRadius:'var(--r2)',padding:'.6rem .8rem',color:'var(--ink)',fontSize:'.85rem'},
+        on:{keydown:ev=>{ if(ev.key==='Enter'&&!ev.shiftKey){ ev.preventDefault(); sendIAMsgPage(); } }}
+      }),
+      h('button',{class:'btn btn-g',on:{click:sendIAMsgPage}},'Enviar'),
+      msgs.length>0?h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.iaMsgs=[];rerender();}}},'🗑'):null
+    )
+  );
+}
+
+async function sendIAMsgPage(){
+  const inp=document.getElementById('ia-input-page');
+  if(!inp||!inp.value.trim()) return;
+  const userMsg=inp.value.trim();
+  inp.value='';
+  if(!S.iaMsgs) S.iaMsgs=[];
+  S.iaMsgs.push({role:'user',content:userMsg});
+  rerender();
+  setTimeout(()=>{const el=document.getElementById('ia-msgs-page');if(el)el.scrollTop=el.scrollHeight;},50);
+  await sendIAMsg._core(userMsg);
+}
+
+
+sendIAMsg._core = async function(userMsg){
+  if(!S.iaMsgs) S.iaMsgs=[];
+  const entries=S.entries.slice(-30);
+  const totalH=entries.reduce((s,e)=>s+(e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0),0);
+  const totalI=entries.reduce((s,e)=>s+(e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0)+(e.dieta||0)+(e.transporte||0),0);
+  const context='Eres un asistente de TimerPro, app de control horario. Datos: '
+    +S.entries.length+' jornadas totales, '
+    +totalH.toFixed(1)+'h en ultimas 30 jornadas, '
+    +totalI.toFixed(2)+' euros total. '
+    +'Tareas: '+S.tasks.length+'. '
+    +'Responde en espanol de forma concisa y util.';
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,
+        system:context,messages:S.iaMsgs.map(m=>({role:m.role,content:m.content}))})
+    });
+    const data=await res.json();
+    S.iaMsgs.push({role:'assistant',content:data.content?.[0]?.text||'Sin respuesta'});
+  }catch(e){
+    S.iaMsgs.push({role:'assistant',content:'Error: '+e.message});
+  }
+  rerender();
+  setTimeout(()=>{
+    const el=document.getElementById('ia-msgs')||document.getElementById('ia-msgs-page');
+    if(el) el.scrollTop=el.scrollHeight;
+  },100);
+};
+
+async function sendIAMsg(){
+  const inp = document.getElementById('ia-input');
+  if(!inp||!inp.value.trim()) return;
+  const userMsg = inp.value.trim();
+  inp.value='';
+  if(!S.iaMsgs) S.iaMsgs=[];
+  S.iaMsgs.push({role:'user',content:userMsg});
+  rerender();
+
+  // Build context from user data
+  const entries = S.entries.slice(-30); // last 30 entries
+  const totalH = entries.reduce((s,e)=>s+(e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0),0);
+  const totalI = entries.reduce((s,e)=>s+(e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0)+(e.dieta||0)+(e.transporte||0),0);
+  const context = 'Eres un asistente de TimerPro, app de control horario. Datos del usuario: '
+    +'Jornadas: '+S.entries.length
+    +', Ultimas 30: '+totalH.toFixed(1)+'h, '+totalI.toFixed(2)+'eur total'
+    +', Tareas: '+S.tasks.length
+    +'. Responde en espanol, conciso y util.';
+
+  try{
+    const res = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:500,
+        system:context,
+        messages:S.iaMsgs.map(m=>({role:m.role,content:m.content}))
+      })
+    });
+    const data = await res.json();
+    const reply = data.content?.[0]?.text || 'Sin respuesta';
+    S.iaMsgs.push({role:'assistant',content:reply});
+  }catch(e){
+    S.iaMsgs.push({role:'assistant',content:'Error conectando con IA: '+e.message});
+  }
+  rerender();
+  setTimeout(()=>{
+    const msgs=document.getElementById('ia-msgs');
+    if(msgs) msgs.scrollTop=msgs.scrollHeight;
+  },100);
+}
+
+
 function renderModal(){
+  if(S.modal==='ia') return renderModalIA();
   if(S.modal==='resumendia') return renderModalResumenDia();
   if(S.modal==='export') return renderModalExport();
   if(S.modal==='dl') return renderModalDl();
