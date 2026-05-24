@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779634699125 -->
+<!-- v1779640745876 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -879,7 +879,14 @@ function renderFichar(){
 
     // Fichajes
     h('div',{class:'card'},
-      h('div',{class:'sec-title'},'Fichajes del día'),
+      h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'.4rem'}},
+        h('div',{class:'sec-title',style:{margin:0}},'Fichajes del día'),
+        h('button',{
+          class:'btn btn-b btn-sm',
+          style:{fontSize:'.72rem',padding:'.25rem .6rem'},
+          on:{click:()=>{ S.modal='resumendia'; rerender(); }}
+        },'📊 Resumen')
+      ),
       ...e.fichajes.map((fj,i)=>renderFichaje(fj,i)),
       h('button',{class:'btn btn-gh btn-sm',style:{marginTop:'.3rem'},on:{click:addFichaje}},'➕ Añadir fichaje'),
       e.fichajes.length>0&&e.fichajes[0].entrada
@@ -1222,7 +1229,11 @@ function renderFichar(){
                   h('button',{class:'btn btn-b btn-sm',title:'Editar jornada',on:{click:ev=>{ev.stopPropagation();loadHistorial(en);}}},'✏️'),
                   h('button',{class:'btn btn-g btn-sm',title:'Guardar jornada actual en este día',on:{click:ev=>{
                     ev.stopPropagation();
-                    if(!confirm('¿Guardar la jornada actual sobreescribiendo el día '+en.fecha+'?')) return;
+                    if(fEntry.fecha !== en.fecha){
+                      showAlert('Carga primero esta jornada con ✏️ antes de guardar','err');
+                      return;
+                    }
+                    if(!confirm('¿Guardar la jornada del '+en.fecha+'?')) return;
                     // Read DOM first THEN snapshot (fichajes + notas need DOM read first)
                     captureFormState();
                     const notasEl=document.getElementById('notas-editor');
@@ -1237,7 +1248,6 @@ function renderFichar(){
                       if(nota) fEntry.fichajes[i].nota=nota.value||fEntry.fichajes[i].nota||'';
                     });
                     const saved={...fEntry,fecha:en.fecha,id:en.id};
-                    console.log('MID SAVE fichajes:', JSON.stringify((saved.fichajes||[]).map(f=>({e:f.entrada,s:f.salida}))));
                     dbPut(ST.entries,{...saved,_draft:false}).then(()=>{
                       S.entries=S.entries.map(e=>e.id===en.id?{...saved}:e);
                       showAlert('Jornada guardada ✓');
@@ -2577,7 +2587,122 @@ function renderEmpresa(){
 // ══════════════════════════════════════════════════════════
 // MODAL
 // ══════════════════════════════════════════════════════════
+function renderModalResumenDia(){
+  const e = fEntry;
+  const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
+  const impHoras = (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0);
+  const impDietas = (e.dieta||0)+(e.dietasExtra||[]).reduce((s,d)=>s+(d.importe||0),0);
+  const impTransp = e.transporte||0;
+  const impOtros = (e.otrosConceptos||[]).reduce((s,o)=>s+(o.importe||0),0);
+  const impViajes = (e.journeys||[]).reduce((s,j)=>s+(j.km||0)*(j.vehicleId?
+    (S.vehicles.find(v=>v.id==j.vehicleId)?.precioPorKm||0):j.precioManual||0),0);
+  const totalI = impHoras+impDietas+impTransp+impOtros+impViajes;
+  const tareasDia = S.tasks.filter(t=>t.fecha===e.fecha);
+
+  function row(label,val,color){
+    return h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.4rem 0',
+      borderBottom:'1px solid var(--brd)'}},
+      h('span',{style:{fontSize:'.82rem',color:'var(--ink2)'}},label),
+      h('span',{style:{fontWeight:700,color:color||'var(--ink)'}},val)
+    );
+  }
+
+  return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.classList.contains('modal-bg')){S.modal=null;rerender();}}}},
+    h('div',{class:'modal',style:{maxWidth:'420px',maxHeight:'85vh',overflowY:'auto'}},
+      h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'1rem'}},
+        h('div',{style:{fontWeight:800,fontSize:'1.1rem'}},'📊 Resumen — '+dlbl(e.fecha)),
+        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.modal=null;rerender();}}},'✕')
+      ),
+
+      // Fichajes
+      (e.fichajes||[]).length>0 ? h('div',{style:{marginBottom:'.8rem'}},
+        h('div',{style:{fontWeight:700,fontSize:'.8rem',color:'var(--acc)',marginBottom:'.3rem'}},'⏱ FICHAJES'),
+        ...(e.fichajes||[]).map((f,i)=>h('div',{style:{fontSize:'.82rem',padding:'.2rem 0',display:'flex',gap:'.5rem',alignItems:'center'}},
+          h('span',{style:{color:'var(--ink2)',minWidth:'16px'}},i+1+'.'),
+          h('span',{style:{fontWeight:600}},f.entrada||'—'),
+          h('span',{style:{color:'var(--ink3)'}},'→'),
+          h('span',{style:{fontWeight:600}},f.salida||'—'),
+          f.entrada&&f.salida?h('span',{class:'badge badge-g',style:{fontSize:'.7rem'}},fmtH(calcH(f.entrada,f.salida))):null,
+          f.nota?h('span',{style:{color:'var(--ink2)',fontSize:'.75rem',fontStyle:'italic'}},f.nota.slice(0,30)):null
+        ))
+      ) : null,
+
+      // Horas
+      h('div',{style:{marginBottom:'.8rem'}},
+        h('div',{style:{fontWeight:700,fontSize:'.8rem',color:'var(--acc)',marginBottom:'.3rem'}},'🕐 HORAS'),
+        totalH>0 ? h('div',{},
+          (e.horasNormales||0)>0?row('Normales ('+e.horasNormales+'h × '+eur(e.precioHoraNormal||0)+')',eur((e.horasNormales||0)*(e.precioHoraNormal||0))):null,
+          (e.horasExtra||0)>0?row('Extra ('+e.horasExtra+'h × '+eur(e.precioHoraExtra||0)+')',eur((e.horasExtra||0)*(e.precioHoraExtra||0)),'var(--acc)'):null,
+          (e.horasNocturnas||0)>0?row('Nocturnas ('+e.horasNocturnas+'h × '+eur(e.precioHoraNocturna||0)+')',eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0))):null,
+          (e.horasFestivas||0)>0?row('Festivas ('+e.horasFestivas+'h × '+eur(e.precioHoraFestiva||0)+')',eur((e.horasFestivas||0)*(e.precioHoraFestiva||0))):null,
+          row('Total horas',fmtH(totalH)+' = '+eur(impHoras),'var(--acc)')
+        ) : h('div',{style:{fontSize:'.8rem',color:'var(--ink3)',fontStyle:'italic'}},'Sin horas registradas')
+      ),
+
+      // Dietas y transporte
+      (e.dieta||0)+(e.transporte||0)+(e.dietasExtra||[]).length>0 ? h('div',{style:{marginBottom:'.8rem'}},
+        h('div',{style:{fontWeight:700,fontSize:'.8rem',color:'var(--acc)',marginBottom:'.3rem'}},'🍽 DIETAS Y TRANSPORTE'),
+        (e.dieta||0)>0?row('Dieta',eur(e.dieta)):null,
+        (e.transporte||0)>0?row('Transporte',eur(e.transporte)):null,
+        ...(e.dietasExtra||[]).map(d=>row(d.concepto||'Dieta extra',eur(d.importe||0)))
+      ) : null,
+
+      // Otros conceptos
+      (e.otrosConceptos||[]).length>0 ? h('div',{style:{marginBottom:'.8rem'}},
+        h('div',{style:{fontWeight:700,fontSize:'.8rem',color:'var(--acc)',marginBottom:'.3rem'}},'➕ OTROS CONCEPTOS'),
+        ...(e.otrosConceptos||[]).map(o=>row(o.concepto||'Concepto',eur(o.importe||0)))
+      ) : null,
+
+      // Viajes
+      (e.journeys||[]).length>0 ? h('div',{style:{marginBottom:'.8rem'}},
+        h('div',{style:{fontWeight:700,fontSize:'.8rem',color:'var(--acc)',marginBottom:'.3rem'}},'🚗 VIAJES'),
+        ...(e.journeys||[]).map(j=>row((j.origen||'')+(j.destino?' → '+j.destino:'')+(j.km?' ('+j.km+'km)':''),eur(impViajes)))
+      ) : null,
+
+      // OT / Tareas del día
+      tareasDia.length>0 ? h('div',{style:{marginBottom:'.8rem'}},
+        h('div',{style:{fontWeight:700,fontSize:'.8rem',color:'var(--acc)',marginBottom:'.3rem'}},'🔧 TAREAS / O.T.'),
+        ...tareasDia.map(t=>h('div',{style:{fontSize:'.82rem',padding:'.2rem 0',borderBottom:'1px solid var(--brd)'}},
+          h('span',{style:{fontWeight:600}},t.titulo||'Sin título'),
+          t.otNumero?h('span',{class:'badge badge-y',style:{marginLeft:'.4rem',fontSize:'.7rem'}},'OT '+t.otNumero):null,
+          t.horaInicio?h('div',{style:{fontSize:'.75rem',color:'var(--ink2)'}},
+            t.horaInicio+(t.horaFin?' → '+t.horaFin:'')):null
+        ))
+      ) : null,
+
+      // Ubicación
+      (e.ubicacionEntrada||e.ubicacionSalida) ? h('div',{style:{marginBottom:'.8rem'}},
+        h('div',{style:{fontWeight:700,fontSize:'.8rem',color:'var(--acc)',marginBottom:'.3rem'}},'📍 UBICACIÓN'),
+        e.ubicacionEntrada?h('div',{style:{fontSize:'.78rem',color:'var(--ink2)',marginBottom:'.2rem'}},
+          '▶ '+locLabel(e.ubicacionEntrada)):null,
+        e.ubicacionSalida?h('div',{style:{fontSize:'.78rem',color:'var(--ink2)'}},
+          '■ '+locLabel(e.ubicacionSalida)):null
+      ) : null,
+
+      // Notas
+      e.notas?h('div',{style:{marginBottom:'.8rem'}},
+        h('div',{style:{fontWeight:700,fontSize:'.8rem',color:'var(--acc)',marginBottom:'.3rem'}},'📝 NOTAS'),
+        h('div',{style:{fontSize:'.82rem',color:'var(--ink2)',fontStyle:'italic',lineHeight:1.5}},
+          e.notas.replace(/<[^>]*>/g,'').slice(0,300))
+      ):null,
+
+      // TOTAL
+      h('div',{style:{background:'var(--acc)',borderRadius:'var(--r)',padding:'.8rem 1rem',marginTop:'.5rem',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+        h('div',{style:{fontWeight:800,fontSize:'1rem',color:'#000'}},'TOTAL DÍA'),
+        h('div',{style:{fontWeight:900,fontSize:'1.4rem',color:'#000'}},eur(totalI))
+      )
+    )
+  );
+}
+
+function locLabel(loc){
+  try{ const d=JSON.parse(loc); return d.label||d.address||loc; }
+  catch(e){ return loc||''; }
+}
+
+
 function renderModal(){
+  if(S.modal==='resumendia') return renderModalResumenDia();
   if(S.modal==='export') return renderModalExport();
   if(S.modal==='dl') return renderModalDl();
   if(S.modal==='qr') return renderModalQR();
