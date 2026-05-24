@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779658602232 -->
+<!-- v1779658889965 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3195,139 +3195,134 @@ async function compartirComoImagen(conPrecios){
     const e = fEntry;
     const cp = conPrecios === true;
     const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
-    const impHoras = (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0);
-    const impDietas = (e.dieta||0)+(e.dietasExtra||[]).reduce((s,d)=>s+(d.importe||0),0);
-    const impTransp = e.transporte||0;
-    const impOtros = (e.otrosConceptos||[]).reduce((s,o)=>s+(o.importe||0),0);
-    const totalI = impHoras+impDietas+impTransp+impOtros;
-    const tareasDia = S.tasks.filter(t=>t.fecha===e.fecha);
+    const impH = (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0);
+    const impD = (e.dieta||0)+(e.dietasExtra||[]).reduce(function(s,d){return s+(d.importe||0);},0);
+    const totalI = impH+(e.transporte||0)+impD+(e.otrosConceptos||[]).reduce(function(s,o){return s+(o.importe||0);},0);
+    const tareas = S.tasks.filter(function(t){return t.fecha===e.fecha;});
 
-    // Build off-screen element - NO maxHeight, NO scroll, full content
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:460px;font-family:system-ui,Arial,sans-serif;color:#0f172a;border-radius:12px;overflow:hidden;background:#fff;';
-    document.body.appendChild(wrap);
+    // Build content as a simple HTML string
+    var rows = '';
 
-    // Dark header
-    const header = document.createElement('div');
-    header.style.cssText = 'background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:18px 22px;';
-    header.innerHTML = `
-      <div style="font-size:10px;opacity:.7;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">RESUMEN DE JORNADA</div>
-      <div style="font-size:22px;font-weight:900;margin-bottom:2px">${dlbl(e.fecha)}</div>
-      <div style="font-size:12px;opacity:.75;margin-bottom:12px">${cap(wday(e.fecha))}</div>
-      <div style="display:grid;grid-template-columns:${cp?'1fr 1fr':'1fr'};gap:8px;">
-        <div style="background:rgba(255,255,255,.12);border-radius:8px;padding:10px;text-align:center">
-          <div style="font-size:22px;font-weight:900">${fmtH(totalH)}</div>
-          <div style="font-size:9px;opacity:.7;letter-spacing:.08em;margin-top:2px">HORAS TRABAJADAS</div>
-        </div>
-        ${cp?`<div style="background:rgba(255,255,255,.12);border-radius:8px;padding:10px;text-align:center">
-          <div style="font-size:22px;font-weight:900">${eur(totalI)}</div>
-          <div style="font-size:9px;opacity:.7;letter-spacing:.08em;margin-top:2px">TOTAL A COBRAR</div>
-        </div>`:''}
-      </div>`;
-    wrap.appendChild(header);
+    // Header (rendered separately as dark div)
+    var kpiHtml = '<div style="display:grid;grid-template-columns:'+(cp?'1fr 1fr':'1fr')+';gap:8px;margin-top:10px">'
+      +'<div style="background:rgba(255,255,255,.15);border-radius:8px;padding:10px;text-align:center">'
+      +'<div style="font-size:22px;font-weight:900">'+fmtH(totalH)+'</div>'
+      +'<div style="font-size:9px;opacity:.7;letter-spacing:.08em;margin-top:2px">HORAS TRABAJADAS</div></div>'
+      +(cp?'<div style="background:rgba(255,255,255,.15);border-radius:8px;padding:10px;text-align:center">'
+      +'<div style="font-size:22px;font-weight:900">'+eur(totalI)+'</div>'
+      +'<div style="font-size:9px;opacity:.7;letter-spacing:.08em;margin-top:2px">TOTAL A COBRAR</div></div>':'')
+      +'</div>';
 
-    // Body
-    const body = document.createElement('div');
-    body.style.cssText = 'padding:14px 18px;background:#fff;';
+    var headerHtml = '<div style="background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:18px 22px;border-radius:12px 12px 0 0">'
+      +'<div style="font-size:10px;opacity:.65;text-transform:uppercase;letter-spacing:.08em">RESUMEN DE JORNADA</div>'
+      +'<div style="font-size:22px;font-weight:900;margin:4px 0 2px">'+dlbl(e.fecha)+'</div>'
+      +'<div style="font-size:12px;opacity:.7">'+cap(wday(e.fecha))+'</div>'
+      +kpiHtml+'</div>';
 
-    const secTitle = (icon,txt) => `<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#64748b;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin:14px 0 8px">${icon} ${txt}</div>`;
-    const rowHtml = (l,v) => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:13px"><span style="color:#475569">${l}</span><span style="font-weight:700">${v}</span></div>`;
+    // Body rows
+    var bodyHtml = '<div style="padding:14px 18px;background:#fff">';
 
-    let html = '';
+    var sec = function(ico,txt){ return '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#64748b;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin:12px 0 8px">'+ico+' '+txt+'</div>'; };
+    var row = function(l,v){ return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:13px"><span style="color:#475569">'+l+'</span><span style="font-weight:700">'+v+'</span></div>'; };
 
     // Fichajes
     if((e.fichajes||[]).length>0){
-      html += secTitle('⏱','FICHAJES');
-      (e.fichajes||[]).forEach((f,i)=>{
-        const dur = f.entrada&&f.salida?`<span style="background:#dcfce7;color:#16a34a;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:auto">${fmtH(calcH(f.entrada,f.salida))}</span>`:'';
-        const nota = f.nota?`<span style="font-size:11px;color:#64748b;font-style:italic;margin-left:4px">${f.nota.slice(0,25)}</span>`:'';
-        html += `<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:4px">
-          <span style="color:#94a3b8;font-size:11px;min-width:16px">${i+1}.</span>
-          <span style="font-weight:700;font-size:15px;min-width:48px">${f.entrada||'—'}</span>
-          <span style="color:#94a3b8">→</span>
-          <span style="font-weight:700;font-size:15px;min-width:48px">${f.salida||'—'}</span>
-          ${dur}${nota}
-        </div>`;
+      bodyHtml += sec('⏱','FICHAJES');
+      (e.fichajes||[]).forEach(function(f,i){
+        var dur = (f.entrada&&f.salida)?('<span style="background:#dcfce7;color:#16a34a;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:auto">'+fmtH(calcH(f.entrada,f.salida))+'</span>'):'';
+        bodyHtml += '<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:4px">'
+          +'<span style="color:#94a3b8;font-size:11px">'+(i+1)+'.</span>'
+          +'<span style="font-weight:700;font-size:15px;min-width:48px">'+(f.entrada||'—')+'</span>'
+          +'<span style="color:#94a3b8">→</span>'
+          +'<span style="font-weight:700;font-size:15px;min-width:48px">'+(f.salida||'—')+'</span>'
+          +dur
+          +(f.nota?'<span style="font-size:11px;color:#64748b;font-style:italic;margin-left:4px">'+f.nota.slice(0,25)+'</span>':'')
+          +'</div>';
       });
     }
 
     // Horas
     if(totalH>0){
-      html += secTitle('🕐','HORAS E IMPORTES');
-      if(e.horasNormales>0) html += rowHtml('Normales', e.horasNormales+'h'+(cp?' × '+eur(e.precioHoraNormal||0)+' = '+eur((e.horasNormales||0)*(e.precioHoraNormal||0)):''));
-      if(e.horasExtra>0)    html += rowHtml('Extra',     e.horasExtra+'h'+(cp?' × '+eur(e.precioHoraExtra||0)+' = '+eur((e.horasExtra||0)*(e.precioHoraExtra||0)):''));
-      if(e.horasNocturnas>0)html += rowHtml('Nocturnas', e.horasNocturnas+'h'+(cp?' × '+eur(e.precioHoraNocturna||0)+' = '+eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0)):''));
-      if(e.horasFestivas>0) html += rowHtml('Festivas',  e.horasFestivas+'h'+(cp?' × '+eur(e.precioHoraFestiva||0)+' = '+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0)):''));
-      if(cp&&impHoras>0) html += `<div style="display:flex;justify-content:space-between;padding:5px 8px;background:#f0fdf4;border-radius:5px;margin-top:3px;font-weight:800;color:#15803d;font-size:13px"><span>Subtotal</span><span>${eur(impHoras)}</span></div>`;
+      bodyHtml += sec('🕐','HORAS E IMPORTES');
+      if(e.horasNormales>0) bodyHtml += row('Normales', e.horasNormales+'h'+(cp?' × '+eur(e.precioHoraNormal||0)+' = '+eur((e.horasNormales||0)*(e.precioHoraNormal||0)):''));
+      if(e.horasExtra>0)    bodyHtml += row('Extra',    e.horasExtra+'h'+(cp?' × '+eur(e.precioHoraExtra||0)+' = '+eur((e.horasExtra||0)*(e.precioHoraExtra||0)):''));
+      if(e.horasNocturnas>0)bodyHtml += row('Nocturnas',e.horasNocturnas+'h'+(cp?' × '+eur(e.precioHoraNocturna||0)+' = '+eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0)):''));
+      if(e.horasFestivas>0) bodyHtml += row('Festivas', e.horasFestivas+'h'+(cp?' × '+eur(e.precioHoraFestiva||0)+' = '+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0)):''));
     }
 
-    // Dietas
-    if((e.dieta||0)+(e.transporte||0)+(e.dietasExtra||[]).length>0){
-      html += secTitle('🍽','DIETAS Y TRANSPORTE');
-      if(e.dieta>0) html += rowHtml('Dieta', cp?eur(e.dieta):'✓');
+    // Dietas y transporte
+    if((e.dieta||0)+(e.transporte||0)>0){
+      bodyHtml += sec('🍽','DIETAS Y TRANSPORTE');
+      if(e.dieta>0) bodyHtml += row('Dieta', cp?eur(e.dieta):'✓');
       if(e.transporte>0){
-        const ttName=(S.transportTypes||[]).find(t=>t.id===e._transportType)?.nombre||'';
-        html += rowHtml('Transporte'+(ttName?' — '+ttName:''), cp?eur(e.transporte):'✓');
+        var ttName=''; try{ var tt=(S.transportTypes||[]).filter(function(t){return t.id===e._transportType;})[0]; if(tt)ttName=tt.nombre; }catch(ex){}
+        bodyHtml += row('Transporte'+(ttName?' — '+ttName:''), cp?eur(e.transporte):'✓');
       }
-      (e.dietasExtra||[]).forEach(d=>{ html += rowHtml(d.concepto||'Dieta extra', cp?eur(d.importe||0):'✓'); });
     }
 
     // Tareas
-    if(tareasDia.length>0){
-      html += secTitle('🔧','TAREAS / O.T.');
-      tareasDia.forEach(t=>{
-        const titulo=(t.titulo||'').replace(/<[^>]*>/g,'');
-        const lineas=titulo.split('\n').map(l=>l.trim()).filter(Boolean);
-        html += `<div style="background:#fefce8;border:1px solid #fef08a;border-radius:8px;padding:9px 12px;margin-bottom:5px">
-          ${t.otNumero?`<span style="background:#f59e0b;color:#1e293b;border-radius:4px;padding:2px 9px;font-size:10px;font-weight:800;display:inline-block;margin-bottom:5px">OT ${t.otNumero}</span>`:''}
-          <div style="font-weight:700;font-size:12px;line-height:1.6">${lineas.map(l=>`<div>${l}</div>`).join('')}</div>
-        </div>`;
+    if(tareas.length>0){
+      bodyHtml += sec('🔧','TAREAS / O.T.');
+      tareas.forEach(function(t){
+        var titulo=(t.titulo||'').replace(/<[^>]*>/g,'');
+        var lineas=titulo.split('\n').filter(function(l){return l.trim();});
+        bodyHtml += '<div style="background:#fefce8;border:1px solid #fef08a;border-radius:8px;padding:9px 12px;margin-bottom:5px">'
+          +(t.otNumero?'<span style="background:#f59e0b;color:#1e293b;border-radius:4px;padding:2px 9px;font-size:10px;font-weight:800;display:inline-block;margin-bottom:5px">OT '+t.otNumero+'</span>':'')
+          +'<div style="font-weight:700;font-size:12px;line-height:1.6">'
+          +lineas.map(function(l){return '<div>'+l+'</div>';}).join('')
+          +'</div></div>';
       });
     }
 
     // Notas
     if(e.notas){
-      const notasTxt=e.notas.replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n').replace(/<[^>]*>/g,'').trim();
-      html += secTitle('📝','NOTAS');
-      html += `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:12px;color:#334155;line-height:1.6;font-style:italic">${notasTxt.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>`<div>${l}</div>`).join('')}</div>`;
+      var notasTxt=e.notas.replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n').replace(/<[^>]*>/g,'').trim();
+      bodyHtml += sec('📝','NOTAS')
+        +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:12px;color:#334155;line-height:1.6;font-style:italic">'
+        +notasTxt.split('\n').filter(function(l){return l.trim();}).map(function(l){return '<div>'+l+'</div>';}).join('')+'</div>';
     }
 
     // Total
     if(cp){
-      html += `<div style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:10px;padding:12px 16px;margin-top:14px;display:flex;justify-content:space-between;align-items:center">
-        <div><div style="color:rgba(255,255,255,.6);font-size:10px;letter-spacing:.1em">TOTAL DÍA</div><div style="color:rgba(255,255,255,.5);font-size:10px;margin-top:2px">${fmtH(totalH)}</div></div>
-        <div style="font-size:26px;font-weight:900;color:#4ade80">${eur(totalI)}</div>
-      </div>`;
+      bodyHtml += '<div style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:10px;padding:12px 16px;margin-top:14px;display:flex;justify-content:space-between;align-items:center">'
+        +'<div><div style="color:rgba(255,255,255,.6);font-size:10px;letter-spacing:.1em">TOTAL DÍA</div>'
+        +'<div style="color:rgba(255,255,255,.5);font-size:10px;margin-top:2px">'+fmtH(totalH)+'</div></div>'
+        +'<div style="font-size:26px;font-weight:900;color:#4ade80">'+eur(totalI)+'</div></div>';
     }
 
-    html += `<div style="text-align:center;font-size:9px;color:#94a3b8;margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0">TimerPro · ${e.fecha}</div>`;
-    body.innerHTML = html;
-    wrap.appendChild(body);
+    bodyHtml += '<div style="text-align:center;font-size:9px;color:#94a3b8;margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0">TimerPro · '+e.fecha+'</div></div>';
 
-    await new Promise(r=>setTimeout(r,100));
+    // Create off-screen container
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'position:absolute;left:-9999px;top:0;width:460px;font-family:system-ui,Arial,sans-serif;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.3)';
+    wrap.innerHTML = headerHtml + bodyHtml;
+    document.body.appendChild(wrap);
 
-    const canvas = await html2canvas(wrap, {
-      scale: 2.5, useCORS:true, allowTaint:true,
+    await new Promise(function(r){setTimeout(r,150);});
+
+    var canvas = await html2canvas(wrap, {
+      scale:2.5, useCORS:true, allowTaint:true,
       backgroundColor:'#ffffff', logging:false
     });
-
     document.body.removeChild(wrap);
 
-    canvas.toBlob(blob=>{
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+    canvas.toBlob(function(blob){
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
       a.href=url; a.download='jornada-'+e.fecha+'.png';
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(()=>URL.revokeObjectURL(url),5000);
-      showAlert('✅ Imagen descargada — adjúntala en WhatsApp con el clip 📎');
+      setTimeout(function(){URL.revokeObjectURL(url);},5000);
+      showAlert('✅ Imagen descargada — adjúntala con el clip 📎 en WhatsApp');
     },'image/png',0.95);
 
   }catch(err){
-    showAlert('Error: '+err.message,'err');
+    showAlert('Error generando imagen: '+err.message,'err');
+    console.error('compartirComoImagen error:',err);
   }finally{
     if(btn){ btn.textContent='📸 Imagen'; btn.disabled=false; }
   }
 }
+
 
 async function sendIAMsgPage(){
   const inp=document.getElementById('ia-input-page');
