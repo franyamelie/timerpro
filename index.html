@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779654514078 -->
+<!-- v1779655072782 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2809,35 +2809,35 @@ function renderModalResumenDia(){
             h('span',{style:{fontSize:'.82rem',color:'#475569',flex:1}},'Incluir precios al compartir'),
             h('button',{
               style:{
-                background:S._shareConPrecios!==false?'#22c55e':'#94a3b8',
+                background:S._shareConPrecios===true?'#22c55e':'#94a3b8',
                 color:'#fff',border:'none',borderRadius:'20px',
                 padding:'.25rem .7rem',cursor:'pointer',fontWeight:700,fontSize:'.78rem'
               },
-              on:{click:()=>{S._shareConPrecios=S._shareConPrecios===false?true:false;rerender();}}
-            },S._shareConPrecios!==false?'✓ Sí':'✗ No')
+              on:{click:()=>{S._shareConPrecios=S._shareConPrecios===true?false:true;rerender();}}
+            },S._shareConPrecios===true?'✓ Sí':'✗ No')
           ),
           h('div',{style:{display:'flex',gap:'.5rem',marginBottom:'.5rem'}},
             h('button',{
               style:{flex:1,background:'#dc2626',color:'#fff',border:'none',borderRadius:'8px',
                 padding:'.65rem',fontWeight:700,fontSize:'.82rem',cursor:'pointer'},
-              on:{click:()=>generarPDFResumen(S._shareConPrecios!==false)}
+              on:{click:()=>generarPDFResumen(S._shareConPrecios===true)}
             },'📄 Ver / Imprimir PDF')
           ),
           h('div',{style:{display:'flex',gap:'.5rem'}},
             h('button',{
               style:{flex:1,background:'#25D366',color:'#fff',border:'none',borderRadius:'8px',
                 padding:'.65rem',fontWeight:700,fontSize:'.82rem',cursor:'pointer'},
-              on:{click:()=>shareResumen('whatsapp',S._shareConPrecios!==false)}
+              on:{click:()=>shareResumen('whatsapp',S._shareConPrecios===true)}
             },'📱 WhatsApp'),
             h('button',{
               style:{flex:1,background:'#2563eb',color:'#fff',border:'none',borderRadius:'8px',
                 padding:'.65rem',fontWeight:700,fontSize:'.82rem',cursor:'pointer'},
-              on:{click:()=>shareResumen('email',S._shareConPrecios!==false)}
+              on:{click:()=>shareResumen('email',S._shareConPrecios===true)}
             },'📧 Email'),
             h('button',{
               style:{flex:1,background:'#64748b',color:'#fff',border:'none',borderRadius:'8px',
                 padding:'.65rem',fontWeight:700,fontSize:'.82rem',cursor:'pointer'},
-              on:{click:()=>shareResumen('copy',S._shareConPrecios!==false)}
+              on:{click:()=>shareResumen('copy',S._shareConPrecios===true)}
             },'📋 Copiar')
           )
         ),
