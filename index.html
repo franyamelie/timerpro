@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779646422735 -->
+<!-- v1779653221067 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -264,6 +264,8 @@ const dbClear=st=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrite')
 const S = {
   tab:'fichar', dark:true,
   entries:[], tasks:[], sites:[], workorders:[], vehicles:[], settings:{},
+  transportTypes:[{id:'coche',nombre:'Coche',precio:0},{id:'camion',nombre:'Camión',precio:0}],
+  dietaDefault:0,
   // Jornada activa
   entry:null,
   // Modales
@@ -978,11 +980,49 @@ function renderFichar(){
       h('div',{class:'sep'}),
       h('div',{class:'grid-2'},
         h('div',{class:'field'},
-          h('label',{},'DIETA'),
+          h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',marginBottom:'.3rem'}},
+            h('label',{style:{margin:0}},'DIETA'),
+            h('button',{
+              title:'Precio dieta por defecto',
+              style:{background:'none',border:'none',cursor:'pointer',fontSize:'.8rem',color:'var(--ink2)',padding:'0 .2rem'},
+              on:{click:()=>{
+                const p=prompt('Precio dieta por defecto (€):',S.dietaDefault||0);
+                if(p!==null){ S.dietaDefault=parseFloat(p)||0; localStorage.setItem('dietaDefault',S.dietaDefault); showAlert('Precio dieta guardado: '+eur(S.dietaDefault)); }
+              }}
+            },'⚙️'),
+            S.dietaDefault>0?h('button',{
+              title:'Aplicar precio por defecto',
+              style:{background:'var(--acc)',color:'#000',border:'none',borderRadius:'4px',
+                cursor:'pointer',fontSize:'.7rem',padding:'.1rem .4rem',fontWeight:700},
+              on:{click:()=>{fEntry.dieta=S.dietaDefault;rerender();}}
+            },eur(S.dietaDefault)):null
+          ),
           importeField(e.dieta, v=>{fEntry.dieta=v;rerender()})
         ),
         h('div',{class:'field'},
-          h('label',{},'TRANSPORTE'),
+          h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',marginBottom:'.3rem'}},
+            h('label',{style:{margin:0}},'TRANSPORTE'),
+            h('button',{
+              title:'Gestionar tipos de transporte',
+              style:{background:'none',border:'none',cursor:'pointer',fontSize:'.8rem',color:'var(--ink2)',padding:'0 .2rem'},
+              on:{click:()=>{S.modal='transportConfig';rerender();}}
+            },'⚙️')
+          ),
+          h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',flexWrap:'wrap',marginBottom:'.3rem'}},
+            ...(S.transportTypes||[]).map(tt=>h('button',{
+              style:{
+                background: fEntry._transportType===tt.id?'var(--acc)':'var(--surf2)',
+                color: fEntry._transportType===tt.id?'#000':'var(--ink)',
+                border:'1px solid var(--brd)',borderRadius:'6px',
+                padding:'.25rem .6rem',cursor:'pointer',fontSize:'.75rem',fontWeight:600
+              },
+              on:{click:()=>{
+                fEntry._transportType=tt.id;
+                if(tt.precio>0) fEntry.transporte=tt.precio;
+                rerender();
+              }}
+            },tt.nombre+(tt.precio>0?' ('+eur(tt.precio)+')':'')))
+          ),
           importeField(e.transporte, v=>{fEntry.transporte=v;rerender()})
         )
       )
@@ -2110,6 +2150,9 @@ function renderResumen(){
   }
 
   return h('div',{},
+    h('div',{style:{display:'flex',justifyContent:'flex-end',marginBottom:'.3rem'}},
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.tab='fichar';rerender();}}},'✕ Cerrar')
+    ),
     // Date filter
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'Filtro de fechas'),
@@ -2753,25 +2796,37 @@ function renderModalResumenDia(){
           }},e.notas.replace(/<[^>]*>/g,'').slice(0,400))
         ):null,
 
-        // Share buttons
-        h('div',{style:{display:'flex',gap:'.5rem',marginTop:'1rem',flexWrap:'wrap'}},
-          h('button',{
-            style:{flex:1,background:'#25D366',color:'#fff',border:'none',borderRadius:'8px',
-              padding:'.7rem',fontWeight:700,fontSize:'.85rem',cursor:'pointer',display:'flex',
-              alignItems:'center',justifyContent:'center',gap:'.4rem'},
-            on:{click:()=>shareResumen('whatsapp')}
-          },'📱 WhatsApp'),
-          h('button',{
-            style:{flex:1,background:'#2563eb',color:'#fff',border:'none',borderRadius:'8px',
-              padding:'.7rem',fontWeight:700,fontSize:'.85rem',cursor:'pointer',display:'flex',
-              alignItems:'center',justifyContent:'center',gap:'.4rem'},
-            on:{click:()=>shareResumen('email')}
-          },'📧 Email'),
-          h('button',{
-            style:{flex:1,background:'#64748b',color:'#fff',border:'none',borderRadius:'8px',
-              padding:'.7rem',fontWeight:700,fontSize:'.85rem',cursor:'pointer'},
-            on:{click:()=>shareResumen('copy')}
-          },'📋 Copiar')
+        // Share with/without prices toggle + buttons
+        h('div',{style:{marginTop:'1rem'}},
+          h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',
+            background:'#f8fafc',borderRadius:'8px',padding:'.5rem .8rem',border:'1px solid #e2e8f0'}},
+            h('span',{style:{fontSize:'.82rem',color:'#475569',flex:1}},'Incluir precios al compartir'),
+            h('button',{
+              style:{
+                background:S._shareConPrecios!==false?'#22c55e':'#94a3b8',
+                color:'#fff',border:'none',borderRadius:'20px',
+                padding:'.25rem .7rem',cursor:'pointer',fontWeight:700,fontSize:'.78rem'
+              },
+              on:{click:()=>{S._shareConPrecios=S._shareConPrecios===false?true:false;rerender();}}
+            },S._shareConPrecios!==false?'✓ Sí':'✗ No')
+          ),
+          h('div',{style:{display:'flex',gap:'.5rem'}},
+            h('button',{
+              style:{flex:1,background:'#25D366',color:'#fff',border:'none',borderRadius:'8px',
+                padding:'.65rem',fontWeight:700,fontSize:'.82rem',cursor:'pointer'},
+              on:{click:()=>shareResumen('whatsapp',S._shareConPrecios!==false)}
+            },'📱 WhatsApp'),
+            h('button',{
+              style:{flex:1,background:'#2563eb',color:'#fff',border:'none',borderRadius:'8px',
+                padding:'.65rem',fontWeight:700,fontSize:'.82rem',cursor:'pointer'},
+              on:{click:()=>shareResumen('email',S._shareConPrecios!==false)}
+            },'📧 Email'),
+            h('button',{
+              style:{flex:1,background:'#64748b',color:'#fff',border:'none',borderRadius:'8px',
+                padding:'.65rem',fontWeight:700,fontSize:'.82rem',cursor:'pointer'},
+              on:{click:()=>shareResumen('copy',S._shareConPrecios!==false)}
+            },'📋 Copiar')
+          )
         ),
 
         // TOTAL
@@ -2792,7 +2847,7 @@ function renderModalResumenDia(){
   );
 }
 
-function shareResumen(method){
+function shareResumen(method, conPrecios){
   const e = fEntry;
   const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
   const impHoras = (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0);
@@ -2819,17 +2874,20 @@ function shareResumen(method){
 
   if(totalH>0){
     txt += '\n🕐 HORAS\n';
-    if(e.horasNormales>0) txt += '• Normales: '+e.horasNormales+'h × '+eur(e.precioHoraNormal||0)+' = '+eur((e.horasNormales||0)*(e.precioHoraNormal||0))+'\n';
-    if(e.horasExtra>0)    txt += '• Extra: '+e.horasExtra+'h × '+eur(e.precioHoraExtra||0)+' = '+eur((e.horasExtra||0)*(e.precioHoraExtra||0))+'\n';
-    if(e.horasNocturnas>0)txt += '• Nocturnas: '+e.horasNocturnas+'h × '+eur(e.precioHoraNocturna||0)+' = '+eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0))+'\n';
-    if(e.horasFestivas>0) txt += '• Festivas: '+e.horasFestivas+'h × '+eur(e.precioHoraFestiva||0)+' = '+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0))+'\n';
+    if(e.horasNormales>0) txt += '• Normales: '+e.horasNormales+'h'+(conPrecios!==false?' × '+eur(e.precioHoraNormal||0)+' = '+eur((e.horasNormales||0)*(e.precioHoraNormal||0)):'')+'\n';
+    if(e.horasExtra>0)    txt += '• Extra: '+e.horasExtra+'h'+(conPrecios!==false?' × '+eur(e.precioHoraExtra||0)+' = '+eur((e.horasExtra||0)*(e.precioHoraExtra||0)):'')+'\n';
+    if(e.horasNocturnas>0)txt += '• Nocturnas: '+e.horasNocturnas+'h'+(conPrecios!==false?' × '+eur(e.precioHoraNocturna||0)+' = '+eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0)):'')+'\n';
+    if(e.horasFestivas>0) txt += '• Festivas: '+e.horasFestivas+'h'+(conPrecios!==false?' × '+eur(e.precioHoraFestiva||0)+' = '+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0)):'')+'\n';
   }
 
   if((e.dieta||0)+(e.transporte||0)>0){
     txt += '\n🍽 DIETAS Y TRANSPORTE\n';
-    if(e.dieta>0)      txt += '• Dieta: '+eur(e.dieta)+'\n';
-    if(e.transporte>0) txt += '• Transporte: '+eur(e.transporte)+'\n';
-    (e.dietasExtra||[]).forEach(d=>{ txt += '• '+( d.concepto||'Dieta extra')+': '+eur(d.importe||0)+'\n'; });
+    if(e.dieta>0)      txt += '• Dieta'+(conPrecios!==false?': '+eur(e.dieta):'')+'\n';
+    if(e.transporte>0){
+      const ttName = e._transportType?(S.transportTypes||[]).find(t=>t.id===e._transportType)?.nombre||'':'';
+      txt += '• Transporte'+(ttName?' ('+ttName+')':'')+(conPrecios!==false?': '+eur(e.transporte):'')+'\n';
+    }
+    (e.dietasExtra||[]).forEach(d=>{ txt += '• '+(d.concepto||'Dieta extra')+(conPrecios!==false?': '+eur(d.importe||0):'')+'\n'; });
   }
 
   if((e.otrosConceptos||[]).length>0){
@@ -2839,13 +2897,22 @@ function shareResumen(method){
 
   if(tareasDia.length>0){
     txt += '\n🔧 TAREAS\n';
-    tareasDia.forEach(t=>{ txt += '• '+(t.titulo||'Sin título')+(t.otNumero?' [OT '+t.otNumero+']':'')+'\n'; });
+    tareasDia.forEach(t=>{
+      // Split description by newlines to preserve formatting
+      const titulo = (t.titulo||'Sin título').replace(/<[^>]*>/g,'');
+      const lines = titulo.split('\n').map(l=>l.trim()).filter(Boolean);
+      lines.forEach((l,i)=>{ txt += (i===0?'• ':  '  ')+l+'\n'; });
+      if(t.otNumero) txt += '  📋 OT: '+t.otNumero+'\n';
+    });
   }
 
-  if(e.notas) txt += '\n📝 NOTAS\n'+e.notas.replace(/<[^>]*>/g,'').slice(0,200)+'\n';
+  if(e.notas){
+    const notasText = e.notas.replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n').replace(/<[^>]*>/g,'').trim();
+    txt += '\n📝 NOTAS\n'+notasText.split('\n').map(l=>l.trim()).filter(Boolean).join('\n')+'\n';
+  }
 
   txt += '\n═══════════════════════\n';
-  txt += '💰 TOTAL DÍA: '+eur(totalI)+'\n';
+  if(conPrecios!==false) txt += '💰 TOTAL DÍA: '+eur(totalI)+'\n';
   txt += '⏱ HORAS: '+fmtH(totalH)+'\n';
   txt += '─ Generado con TimerPro ─';
 
@@ -2863,6 +2930,47 @@ function shareResumen(method){
       showAlert('Copiado al portapapeles ✓');
     });
   }
+}
+
+
+function renderModalTransportConfig(){
+  const types = S.transportTypes||[];
+  return h('div',{
+    style:{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',display:'flex',
+      alignItems:'center',justifyContent:'center',zIndex:9999,padding:'1rem'},
+    on:{click:ev=>{if(ev.target===ev.currentTarget){S.modal=null;rerender();}}}
+  },
+    h('div',{class:'card',style:{maxWidth:'360px',width:'100%',padding:'1.2rem'}},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1rem'}},
+        h('div',{style:{fontWeight:800,fontSize:'1rem'}},'🚗 Tipos de Transporte'),
+        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.modal=null;rerender();}}},'✕')
+      ),
+      ...types.map((tt,i)=>h('div',{style:{display:'flex',gap:'.5rem',alignItems:'center',marginBottom:'.5rem'}},
+        h('input',{type:'text',value:tt.nombre,placeholder:'Nombre',
+          style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
+            padding:'.4rem .6rem',color:'var(--ink)',fontSize:'.85rem'},
+          on:{change:ev=>{S.transportTypes[i].nombre=ev.target.value;
+            localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));rerender();}}}),
+        h('input',{type:'number',value:tt.precio||'',placeholder:'€/uso',min:0,step:0.01,
+          style:{width:'80px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
+            padding:'.4rem .5rem',color:'var(--ink)',fontSize:'.85rem'},
+          on:{change:ev=>{S.transportTypes[i].precio=parseFloat(ev.target.value)||0;
+            localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));rerender();}}}),
+        h('button',{class:'btn btn-r btn-sm',
+          on:{click:()=>{S.transportTypes.splice(i,1);
+            localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));rerender();}}
+        },'✕')
+      )),
+      h('button',{class:'btn btn-g btn-sm',style:{width:'100%',marginTop:'.5rem'},
+        on:{click:()=>{
+          S.transportTypes.push({id:'t'+Date.now(),nombre:'Nuevo tipo',precio:0});
+          localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));rerender();
+        }}
+      },'+ Añadir tipo'),
+      h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',marginTop:'.7rem',textAlign:'center'}},
+        'El precio se aplica automáticamente al seleccionar el tipo')
+    )
+  );
 }
 
 
@@ -3070,6 +3178,7 @@ async function sendIAMsg(){
 
 function renderModal(){
   if(S.modal==='ia') return renderModalIA();
+  if(S.modal==='transportConfig') return renderModalTransportConfig();
   if(S.modal==='resumendia') return renderModalResumenDia();
   if(S.modal==='export') return renderModalExport();
   if(S.modal==='dl') return renderModalDl();
