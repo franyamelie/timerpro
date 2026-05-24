@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779658024660 -->
+<!-- v1779658233941 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3239,18 +3239,42 @@ async function compartirComoImagen(conPrecios){
 
     canvas.toBlob(async (blob)=>{
       const file = new File([blob], 'jornada-'+fEntry.fecha+'.png', {type:'image/png'});
+      // Try native share (works on mobile)
       if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
-        await navigator.share({ files:[file], title:'Jornada '+dlbl(fEntry.fecha) });
-      } else {
-        // Desktop: download
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href=url; a.download='jornada-'+fEntry.fecha+'.png';
-        document.body.appendChild(a); a.click();
-        document.body.removeChild(a);
-        setTimeout(()=>URL.revokeObjectURL(url), 1000);
-        showAlert('✅ Imagen descargada — adjúntala en WhatsApp/Email');
+        try{ await navigator.share({ files:[file], title:'Jornada '+dlbl(fEntry.fecha) }); return; }catch(e){}
       }
+      // Desktop fallback: open image in new window with share instructions
+      const url = URL.createObjectURL(blob);
+      const win = window.open('','_blank');
+      if(win){
+        win.document.write('<html><head><title>Jornada '+fEntry.fecha+'</title>'
+          +'<style>body{margin:0;background:#1e293b;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:system-ui}'
+          +'.msg{color:#94a3b8;font-size:13px;margin-bottom:12px;text-align:center}'
+          +'.btns{display:flex;gap:8px;margin-top:12px}'
+          +'button{padding:10px 20px;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:14px}'
+          +'.dl{background:#22c55e;color:#000}.cp{background:#3b82f6;color:#fff}'
+          +'img{max-width:100%;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5)}'
+          +'</style></head><body>'
+          +'<div class="msg">📋 Haz clic derecho sobre la imagen → <b>Copiar imagen</b><br>Luego pégala directamente en WhatsApp, Email o donde quieras</div>'
+          +'<img src="'+url+'" />'
+          +'<div class="btns">'
+          +'<button class="dl" id="dlbtn">⬇️ Descargar PNG</button>'
+          +'</div>'
+          +'</body></html>');
+        win.document.getElementById('dlbtn').onclick=()=>{
+          const a=win.document.createElement('a');
+          a.href=url; a.download='jornada-'+fEntry.fecha+'.png';
+          win.document.body.appendChild(a); a.click(); win.document.body.removeChild(a);
+        };
+        win.document.close();
+      } else {
+        // Blocked popups: just download
+        const a=document.createElement('a');
+        a.href=url;a.download='jornada-'+fEntry.fecha+'.png';
+        document.body.appendChild(a);a.click();document.body.removeChild(a);
+        showAlert('✅ Imagen descargada');
+      }
+      setTimeout(()=>URL.revokeObjectURL(url), 30000);
     }, 'image/png', 0.95);
 
   } catch(err){
