@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779643201205 -->
+<!-- v1779643356582 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2788,7 +2788,7 @@ function renderIAChat(){
       msgs.length>0?h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.iaMsgs=[];rerender();}}},'🗑'):null,
       h('button',{class:'btn btn-gh btn-sm',title:'Cambiar API Key',
         on:{click:()=>{ localStorage.removeItem('anthropic_api_key');
-          localStorage.removeItem('gemini_api_key'); showAlert('API key eliminada. Se pedirá al enviar el próximo mensaje.'); }}},'🔑')
+          localStorage.removeItem('gemini_api_key'); S.iaMsgs=[]; showAlert('API key eliminada. Escribe un mensaje para introducir la nueva.'); }}},'🔑')
     )
   );
 }
@@ -2836,7 +2836,7 @@ sendIAMsg._core = async function(userMsg){
          generationConfig:{maxOutputTokens:600,temperature:0.7}})}
     );
     if(!res.ok){
-      if(res.status===400||res.status===401){ localStorage.removeItem('gemini_api_key'); }
+      if(res.status===400||res.status===401||res.status===404){ localStorage.removeItem('gemini_api_key'); S.iaMsgs=[]; }
       throw new Error('Error '+res.status+': '+await res.text());
     }
     const data=await res.json();
