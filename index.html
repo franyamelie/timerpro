@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779687123823 -->
+<!-- v1779738017737 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -698,7 +698,7 @@ function renderMain(){
     case 'sincronizar':return renderSincronizar();
     case 'trabajador': return renderTrabajador();
     case 'empresa':    return renderEmpresa();
-    case 'ia':         return renderIAChat();
+    case 'ia':         return (typeof renderIAChat==='function'?renderIAChat():renderIAFallback());
     default: return h('div',{},'');
   }
 }
@@ -3384,6 +3384,16 @@ async function compartirComoImagen(conPrecios){
   }finally{
     if(btn){ btn.textContent='📸 Imagen'; btn.disabled=false; }
   }
+}
+
+
+function renderIAFallback(){
+  return h('div',{class:'card',style:{textAlign:'center',padding:'2rem'}},
+    h('div',{style:{fontSize:'2rem',marginBottom:'1rem'}},'🤖'),
+    h('div',{style:{fontWeight:700,marginBottom:'.5rem'}},'Asistente IA'),
+    h('div',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'1rem'}},'Powered by Groq (gratis)'),
+    h('div',{style:{fontSize:'.8rem',color:'var(--red)'}},'Error cargando. Recarga la página con Ctrl+Shift+R')
+  );
 }
 
 
@@ -6156,10 +6166,9 @@ function buildSyncData(){
     version:2,
     exportedAt:new Date().toISOString(),
     entries:entries.map(e=>({...e,fotosGastos:[]})),
-    tasks:S.tasks.slice(0,20).map(t=>({id:t.id,titulo:(t.titulo||'').replace(/<[^>]*>/g,'').slice(0,40),fecha:t.fecha||'',otNumero:t.otNumero||''})),
-    workers:workers.slice(0,1).map(w=>({id:w.id,nombre:(w.nombre||'').slice(0,25),cargo:(w.cargo||'').slice(0,15)})),
-    companies:companies.slice(0,1).map(c=>({id:c.id,nombre:(c.nombre||'').slice(0,30)
-    })),
+    tasks:S.tasks.slice(-10).map(t=>({id:t.id,titulo:(t.titulo||'').replace(/<[^>]*>/g,'').slice(0,30),fecha:t.fecha||'',otNumero:(t.otNumero||'').slice(0,15)})),
+
+
     activeWorkerId, activeCompanyId,
     worker:(()=>{const w=workers.find(x=>x.id===activeWorkerId)||workers[0]||{};
       return {nombre:w.nombre||fWorker.nombre,apellidos:w.apellidos||fWorker.apellidos,
