@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779740232012 -->
+<!-- v1779740745132 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -6043,9 +6043,9 @@ async function driveSync(){
     if(!loc) return '';
     try{
       const d=JSON.parse(loc);
-      if(d.lat && d.lng) return JSON.stringify({lat:d.lat,lng:d.lng,url:d.url||'',label:d.label||'',acc:d.acc||0});
-      return loc.slice(0,200);
-    }catch(e){ return (loc||'').slice(0,200); }
+      if(d.lat && d.lng) return JSON.stringify({lat:Math.round(d.lat*10000)/10000,lng:Math.round(d.lng*10000)/10000,label:(d.label||'').slice(0,30)});
+      return (loc||'').slice(0,50);
+    }catch(e){ return (loc||'').slice(0,50); }
   };
   const stripHtmlNotas = n => (n||'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,500);
 
