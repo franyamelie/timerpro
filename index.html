@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779661863053 -->
+<!-- v1779686498513 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3384,6 +3384,45 @@ async function compartirComoImagen(conPrecios){
   }finally{
     if(btn){ btn.textContent='📸 Imagen'; btn.disabled=false; }
   }
+}
+
+
+function renderIAChat(){
+  const msgs = S.iaMsgs||[];
+  return h('div',{style:{display:'flex',flexDirection:'column',height:'60vh',gap:'.5rem'}},
+    h('div',{class:'card',style:{padding:'.6rem .8rem'}},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+        h('div',{style:{fontWeight:700,fontSize:'.9rem'}},'🤖 Asistente IA — TimerPro'),
+        h('button',{class:'btn btn-gh btn-sm',title:'Borrar API Key',
+          on:{click:()=>{localStorage.removeItem('groq_api_key');S.iaMsgs=[];rerender();showAlert('API key eliminada');}}},'🔑')
+      ),
+      h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginTop:'.2rem'}},'Powered by Groq (gratis) · Analiza jornadas, calcula totales, responde preguntas')
+    ),
+    h('div',{id:'ia-msgs-page',style:{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:'.5rem',padding:'.3rem 0'}},
+      msgs.length===0
+        ? h('div',{style:{color:'var(--ink3)',fontSize:'.82rem',textAlign:'center',padding:'2rem',lineHeight:1.8}},
+            '¿Cuántas horas llevo este mes?\n¿Cuánto he ganado en abril?\nResume mi semana\n¿Cuál es mi jornada más larga?')
+        : null,
+      ...msgs.map(m=>h('div',{class:'card',style:{
+          alignSelf:m.role==='user'?'flex-end':'flex-start',
+          background:m.role==='user'?'var(--acc)':'var(--surf2)',
+          color:m.role==='user'?'#000':'var(--ink)',
+          maxWidth:'88%',padding:'.5rem .8rem',fontSize:'.83rem',
+          lineHeight:1.5,whiteSpace:'pre-wrap',margin:0
+        }},m.content))
+    ),
+    h('div',{style:{display:'flex',gap:'.5rem'}},
+      h('input',{
+        type:'text',id:'ia-input-page',
+        placeholder:'Pregunta sobre tus jornadas...',
+        style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',
+               borderRadius:'var(--r2)',padding:'.6rem .8rem',color:'var(--ink)',fontSize:'.85rem'},
+        on:{keydown:ev=>{if(ev.key==='Enter'&&!ev.shiftKey){ev.preventDefault();sendIAMsgPage();}}}
+      }),
+      h('button',{class:'btn btn-g',on:{click:sendIAMsgPage}},'Enviar'),
+      msgs.length>0?h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.iaMsgs=[];rerender();}}},'🗑'):null
+    )
+  );
 }
 
 
