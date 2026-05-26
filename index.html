@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779822368488 -->
+<!-- v1779822782797 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -283,7 +283,7 @@ const defEntry = () => ({
   horasExtra:0, precioHoraExtra:0, importeExtra:0, horasNocturnas:0, precioHoraNocturna:0, importeNocturnas:0,
   horasFestivas:0, precioHoraFestiva:0, importeFestivas:0, dieta:0, dietasExtra:[], transporte:0,
   otrosConceptos:[], notas:'', journeys:[], ubicacionEntrada:'', ubicacionSalida:'',
-  entradaLocked:false, fotosGastos:[]
+  entradaLocked:false, fotosGastos:[], timerDeduct:30
 });
 const defFichaje = () => ({_fid:Date.now(), entrada:'', salida:'', nota:'', editing:false, taskId:'', timerRunning:false, timerStart:null});
 const defTask = f => ({fecha:f||today(), titulo:'', horaInicio:nowTime(), horaFin:'', descripcion:'', siteId:'', workOrderId:'', otNumero:'', usaOT:false, fotos:[]});
@@ -1367,7 +1367,7 @@ function renderFichaje(fj,i){
           ? h('span',{class:'badge badge-g',style:{flexShrink:0}},
             (function(){
               var raw=calcH(fj.entrada,fj.salida);
-              var dec=fEntry.fichajes.length===1?(fEntry.timerDeduct||0)/60:0;
+              var dec=fEntry.fichajes.length===1?timerDeduct/60:0;
               return fmtH(Math.max(0,raw-dec));
             })())
           : null
@@ -1568,6 +1568,22 @@ function renderTareas(){
   );
 }
 
+async function adjuntarTareaADia(t){
+  const fecha = prompt('¿A qué día adjuntar esta tarea?\nFormato: AAAA-MM-DD\nEjemplo: 2026-05-26\n\nDía actual de la tarea: '+t.fecha, t.fecha||today());
+  if(!fecha || fecha === t.fecha) return;
+  // Validate format
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)){ showAlert('Formato incorrecto. Usa AAAA-MM-DD','err'); return; }
+  const idx = S.tasks.findIndex(x=>x.id===t.id);
+  if(idx<0) return;
+  S.tasks[idx] = {...S.tasks[idx], fecha:fecha};
+  fTask = defTask();
+  // Save updated task to DB
+  try{ await dbPut(ST.tasks, S.tasks[idx]); }catch(ex){}
+  showAlert('✅ Tarea adjuntada al día '+dlbl(fecha));
+  rerender();
+}
+
+
 function renderTaskCard(t){
   const site = S.sites.find(s=>s.id==t.siteId);
   const wo = S.workorders.find(w=>w.id==t.workOrderId);
@@ -1577,6 +1593,7 @@ function renderTaskCard(t){
       h('div',{class:'task-title'},t.titulo||'Sin título'),
       h('div',{style:{display:'flex',gap:'.3rem'}},
         h('button',{class:'btn btn-b btn-sm',on:{click:()=>editTask(t)}},'✏️'),
+        h('button',{class:'btn btn-g btn-sm',title:'Adjuntar a otro día',on:{click:()=>adjuntarTareaADia(t)}},'📅'),
         h('button',{class:'btn btn-gh btn-sm',on:{click:()=>copyTask(t)}},'📋'),
         h('button',{class:'btn btn-r btn-sm',on:{click:()=>deleteTask(t.id)}},'🗑')
       )
@@ -2738,7 +2755,7 @@ function renderModalResumenDia(){
             f.entrada&&f.salida?h('span',{style:{
               background:'#dcfce7',color:'#16a34a',borderRadius:'6px',
               padding:'.2rem .5rem',fontSize:'.75rem',fontWeight:700,marginLeft:'auto'
-            }},(function(){var r=calcH(f.entrada,f.salida);var d=e.fichajes.length===1?(e.timerDeduct||0)/60:0;return fmtH(Math.max(0,r-d));}())):null,
+            }},(function(){var r=calcH(f.entrada,f.salida);var d=(e.fichajes||[]).length===1?(e.timerDeduct||timerDeduct||0)/60:0;return fmtH(Math.max(0,r-d));}())):null,
             f.nota?h('span',{style:{fontSize:'.75rem',color:'#64748b',fontStyle:'italic',marginLeft:'.3rem'}},f.nota.slice(0,25)):null
           ))
         ) : null,
