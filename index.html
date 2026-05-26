@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779822782797 -->
+<!-- v1779823541751 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1156,15 +1156,15 @@ function renderFichar(){
         },
           h('div',{style:{flex:1}},
             h('div',{style:{fontWeight:700,fontSize:'.85rem',display:'flex',alignItems:'center',gap:'.3rem',flexWrap:'wrap'}},
-              h('span',{},t.titulo||'Sin título'),
-              t.usaOT?h('span',{class:'badge badge-b',style:{fontSize:'.6rem'}},'OT'+(t.otNumero?' '+t.otNumero:'')):null
+              h('span',{style:{wordBreak:'break-word',whiteSpace:'normal'}},t.titulo||'Sin título'),
+              t.otNumero?h('span',{class:'badge badge-y',style:{fontSize:'.65rem',fontWeight:800}},'OT '+t.otNumero):null
             ),
             t.horaInicio||t.horaFin
               ? h('div',{style:{fontSize:'.75rem',color:'var(--ink2)'}},(t.horaInicio||'--')+' → '+(t.horaFin||'--'))
               : null,
             t.descripcion
               ? h('div',{style:{fontSize:'.73rem',color:'var(--ink3)',marginTop:'.15rem'}},
-                  t.descripcion.replace(/<[^>]*>/g,'').slice(0,60)+(t.descripcion.length>60?'...':''))
+                  t.descripcion.replace(/<[^>]*>/g,''))
               : null
           ),
           h('button',{class:'btn btn-gh btn-sm',style:{flexShrink:0},
@@ -6069,7 +6069,18 @@ async function driveSync(){
       return (loc||'').slice(0,50);
     }catch(e){ return (loc||'').slice(0,50); }
   };
-  const stripHtmlNotas = n => (n||'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,500);
+  const stripHtmlNotas = n => {
+    if(!n) return '';
+    // Keep basic formatting tags, strip the rest
+    return n
+      .replace(/<br\s*\/?>/gi,'\n')
+      .replace(/<\/(p|div|li)>/gi,'\n')
+      .replace(/<(b|strong)>/gi,'**').replace(/<\/(b|strong)>/gi,'**')
+      .replace(/<(u)>/gi,'__').replace(/<\/u>/gi,'__')
+      .replace(/<[^>]*>/g,'')
+      .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+      .replace(/\n{3,}/g,'\n\n').trim().slice(0,600);
+  };
 
   const cleanEntry = e => ({
     id:e.id, fecha:e.fecha, _draft:e._draft||false,
@@ -6079,7 +6090,7 @@ async function driveSync(){
     horasNocturnas:e.horasNocturnas||0, precioHoraNocturna:e.precioHoraNocturna||0,
     horasFestivas:e.horasFestivas||0, precioHoraFestiva:e.precioHoraFestiva||0,
     dieta:e.dieta||0, transporte:e.transporte||0,
-    notas:(stripHtmlNotas(e.notas)||'').slice(0,600),
+    notas:stripHtmlNotas(e.notas),
     ubicacionEntrada:compactLoc(e.ubicacionEntrada),
     ubicacionSalida:compactLoc(e.ubicacionSalida),
   });
