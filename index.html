@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779824168968 -->
+<!-- v1779825130164 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -780,7 +780,7 @@ function renderFichar(){
           'Descanso:',
           h('input',{type:'number',min:'0',max:'480',value:timerDeduct,
             style:{width:'52px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.85rem',textAlign:'center'},
-            on:{input:ev=>{timerDeduct=parseInt(ev.target.value)||0;}}}),
+            on:{input:ev=>{timerDeduct=parseInt(ev.target.value)||0;localStorage.setItem('timerDeduct',timerDeduct);}}},
           'min'
         )
       ),
@@ -1262,8 +1262,8 @@ function renderFichar(){
             ...S.entries.filter(en=>{
               if(!histSearch)return true;
               const q=histSearch.toLowerCase();
-              return en.fecha?.includes(q)||en.notas?.toLowerCase().includes(q)||
-                wday(en.fecha)?.toLowerCase().includes(q);
+              return (en.fecha&&en.fecha.includes(q))||(en.notas&&en.notas.toLowerCase().includes(q))||
+                (wday(en.fecha)&&wday(en.fecha).toLowerCase().includes(q));
             }).slice().reverse().slice(0,30).map(en=>
               h('div',{class:'sum-row',style:{cursor:'pointer'},on:{click:()=>loadHistorial(en)}},
                 h('div',{},
@@ -2776,10 +2776,13 @@ function renderModalResumenDia(){
         // Dietas y transporte
         (e.dieta||0)+(e.transporte||0)+(e.dietasExtra||[]).length>0 ? h('div',{},
           sec('🍽','Dietas y Transporte'),
-          (e.dieta||0)>0?row('Dieta', S._shareConPrecios===true?eur(e.dieta):'✓'):null,
+          (e.dieta||0)>0?row(
+            S._shareConPrecios===true?'Dieta':'1 Dieta',
+            S._shareConPrecios===true?eur(e.dieta):''
+          ):null,
           (e.transporte||0)>0?row(
-            'Transporte'+((S.transportTypes||[]).find(t=>t.id===e._transportType)?.nombre?' — '+(S.transportTypes||[]).find(t=>t.id===e._transportType).nombre:''),
-            S._shareConPrecios===true?eur(e.transporte):'✓'
+            (function(){var tt=(S.transportTypes||[]).find(function(t){return t.id===e._transportType;});return 'Transporte'+(tt?' - '+tt.nombre:'');}()),
+            S._shareConPrecios===true?eur(e.transporte):''
           ):null,
           ...(e.dietasExtra||[]).map(d=>row(d.concepto||'Dieta extra', S._shareConPrecios===true?eur(d.importe||0):'✓'))
         ):null,
@@ -3425,9 +3428,20 @@ function renderIAChat(){
   return h('div',{style:{display:'flex',flexDirection:'column',height:'60vh',gap:'.5rem'}},
     h('div',{class:'card',style:{padding:'.6rem .8rem'}},
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
-        h('div',{style:{fontWeight:700,fontSize:'.9rem'}},'🤖 Asistente IA — TimerPro'),
-        h('button',{class:'btn btn-gh btn-sm',title:'Borrar API Key',
-          on:{click:()=>{localStorage.removeItem('groq_api_key');S.iaMsgs=[];rerender();showAlert('API key eliminada');}}},'🔑')
+        h('div',{style:{flex:1}},
+          h('div',{style:{fontWeight:700,fontSize:'.9rem'}},'🤖 Asistente IA - TimerPro'),
+          h('div',{style:{fontSize:'.68rem',color:localStorage.getItem('groq_api_key')?'var(--acc)':'var(--red)',marginTop:'.1rem'}},
+            localStorage.getItem('groq_api_key')?'✓ API Key configurada':'✗ Sin API Key - escribe un mensaje para configurarla')
+        ),
+        h('button',{class:'btn btn-gh btn-sm',title:'Cambiar API Key',
+          on:{click:()=>{
+            const k=prompt('API Key de Groq (console.groq.com):',localStorage.getItem('groq_api_key')||'');
+            if(k!==null){
+              if(k.trim()){localStorage.setItem('groq_api_key',k.trim());showAlert('✅ API Key guardada');}
+              else{localStorage.removeItem('groq_api_key');showAlert('API Key eliminada');}
+              S.iaMsgs=[];rerender();
+            }
+          }}},'🔑')
       ),
       h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginTop:'.2rem'}},'Powered by Groq (gratis) · Analiza jornadas, calcula totales, responde preguntas')
     ),
@@ -7031,6 +7045,15 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
         editingEntry=!!lastEntry.id;
       }
     }
+    // Load persistent settings
+    try{
+      const td=localStorage.getItem('timerDeduct');
+      if(td!==null) timerDeduct=parseInt(td)||30;
+      const tt=localStorage.getItem('transportTypes');
+      if(tt) S.transportTypes=JSON.parse(tt)||S.transportTypes;
+      const dd=localStorage.getItem('dietaDefault');
+      if(dd) S.dietaDefault=parseFloat(dd)||0;
+    }catch(e){}
     // Restore timer state if was running
     const savedTimer=localStorage.getItem('timerState');
     if(savedTimer){
