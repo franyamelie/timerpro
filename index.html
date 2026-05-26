@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779823541751 -->
+<!-- v1779824168968 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2831,8 +2831,8 @@ function renderModalResumenDia(){
           h('div',{style:{
             background:'#f8fafc',borderRadius:'8px',padding:'.7rem .9rem',
             fontSize:'.83rem',color:'#334155',lineHeight:1.6,
-            border:'1px solid #e2e8f0',fontStyle:'italic'
-          }},e.notas.replace(/<[^>]*>/g,'').slice(0,400))
+            border:'1px solid #e2e8f0'
+          },html:e.notas})
         ):null,
 
         // Share with/without prices toggle + buttons
@@ -3111,9 +3111,11 @@ function generarPDFResumen(conPrecios){
   // Notas
   let htmlNotas = '';
   if(e.notas){
-    const txt = e.notas.replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n').replace(/<[^>]*>/g,'').trim();
-    const lineas = txt.split('\n').map(l=>l.trim()).filter(Boolean);
-    htmlNotas = seccion('📝 NOTAS', lineas.map(l=>`<div class="nota-linea">${l}</div>`).join(''));
+    // Preserve HTML formatting in PDF
+    const notasHtml = e.notas
+      .replace(/<b>/gi,'<strong>').replace(/<\/b>/gi,'<\/strong>')
+      .replace(/<u>/gi,'<u>').replace(/<\/u>/gi,'<\/u>');
+    htmlNotas = seccion('📝 NOTAS', `<div class="nota-linea" style="line-height:1.7">${notasHtml}</div>`);
   }
 
   const html = `<!DOCTYPE html>
@@ -3303,10 +3305,9 @@ async function compartirComoImagen(conPrecios){
 
     // Notas
     if(e.notas){
-      var nt=e.notas.replace(/<br[^>]*>/gi,' ').replace(/<\/p>/gi,' ').replace(/<[^>]*>/g,'').trim();
       html += sec('📝','NOTAS')
-        +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:12px;color:#334155;line-height:1.6;font-style:italic">'
-        +nt.split('\n').filter(function(l){return l.trim();}).map(function(l){return '<div>'+l+'</div>';}).join('')+'</div>';
+        +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:12px;color:#334155;line-height:1.7">'
+        +e.notas+'</div>';
     }
 
     // Total
