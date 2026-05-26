@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779825130164 -->
+<!-- v1779825777515 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1111,7 +1111,15 @@ function renderFichar(){
         h('div',{
           id:'notas-editor',
           contenteditable:'true',
-          html:fEntry.notas||'',
+          html:(function(n){
+            if(!n) return '';
+            // If already HTML (has tags), use as-is
+            if(/<[a-z]/i.test(n)) return n;
+            // Plain text from Drive: convert newlines to <br> and markers to formatting
+            return n.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
+                    .replace(/__(.+?)__/g,'<u>$1</u>')
+                    .replace(/\n/g,'<br>');
+          }(fEntry.notas)),
           spellcheck:true, lang:'es',
           style:{
             minHeight:'80px',background:'var(--surf2)',border:'1px solid var(--brd)',
@@ -6086,12 +6094,14 @@ async function driveSync(){
   };
   const stripHtmlNotas = n => {
     if(!n) return '';
-    // Keep basic formatting tags, strip the rest
+    // If already plain text, return as-is
+    if(!/<[a-z]/i.test(n)) return n.slice(0,600);
+    // Convert HTML to plain text preserving line structure
     return n
       .replace(/<br\s*\/?>/gi,'\n')
       .replace(/<\/(p|div|li)>/gi,'\n')
-      .replace(/<(b|strong)>/gi,'**').replace(/<\/(b|strong)>/gi,'**')
-      .replace(/<(u)>/gi,'__').replace(/<\/u>/gi,'__')
+      .replace(/<(b|strong)[^>]*>/gi,'**').replace(/<\/(b|strong)>/gi,'**')
+      .replace(/<u[^>]*>/gi,'__').replace(/<\/u>/gi,'__')
       .replace(/<[^>]*>/g,'')
       .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
       .replace(/\n{3,}/g,'\n\n').trim().slice(0,600);
