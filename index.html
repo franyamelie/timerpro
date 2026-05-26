@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779826128800 -->
+<!-- v1779826772095 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1111,11 +1111,7 @@ function renderFichar(){
         h('div',{
           id:'notas-editor',
           contenteditable:'true',
-          html:(function(){
-            var n=fEntry.notas||'';
-            if(n.indexOf('<')===-1){var nl=String.fromCharCode(10);return n.split(nl).join('<br>');}
-            return n;
-          }()),
+          html:fEntry.notas||'',
           spellcheck:true, lang:'es',
           style:{
             minHeight:'80px',background:'var(--surf2)',border:'1px solid var(--brd)',
@@ -1266,8 +1262,8 @@ function renderFichar(){
             ...S.entries.filter(en=>{
               if(!histSearch)return true;
               const q=histSearch.toLowerCase();
-              return (en.fecha&&en.fecha.includes(q))||(en.notas&&en.notas.toLowerCase().includes(q))||
-                (wday(en.fecha)&&wday(en.fecha).toLowerCase().includes(q));
+              return en.fecha?.includes(q)||en.notas?.toLowerCase().includes(q)||
+                wday(en.fecha)?.toLowerCase().includes(q);
             }).slice().reverse().slice(0,30).map(en=>
               h('div',{class:'sum-row',style:{cursor:'pointer'},on:{click:()=>loadHistorial(en)}},
                 h('div',{},
