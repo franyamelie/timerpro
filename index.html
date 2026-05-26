@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779825777515 -->
+<!-- v1779826128800 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1111,15 +1111,11 @@ function renderFichar(){
         h('div',{
           id:'notas-editor',
           contenteditable:'true',
-          html:(function(n){
-            if(!n) return '';
-            // If already HTML (has tags), use as-is
-            if(/<[a-z]/i.test(n)) return n;
-            // Plain text from Drive: convert newlines to <br> and markers to formatting
-            return n.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
-                    .replace(/__(.+?)__/g,'<u>$1</u>')
-                    .replace(/\n/g,'<br>');
-          }(fEntry.notas)),
+          html:(function(){
+            var n=fEntry.notas||'';
+            if(n.indexOf('<')===-1){var nl=String.fromCharCode(10);return n.split(nl).join('<br>');}
+            return n;
+          }()),
           spellcheck:true, lang:'es',
           style:{
             minHeight:'80px',background:'var(--surf2)',border:'1px solid var(--brd)',
