@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779844223121 -->
+<!-- v1779860185739 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -390,6 +390,20 @@ let timerElapsed=0; // seconds elapsed
 let timerInterval=null;
 
 // ── RENDER ENGINE ────────────────────────────────────────
+function formatNotas(n){
+  if(!n) return '';
+  // Already has HTML formatting - use as is
+  if(n.indexOf('<')!==-1) return n;
+  // Plain text (from Drive) - convert newlines to <br>
+  var result='', nl=String.fromCharCode(10);
+  var parts=n.split(nl);
+  for(var i=0;i<parts.length;i++){
+    result+=parts[i];
+    if(i<parts.length-1) result+='<br>';
+  }
+  return result;
+}
+
 function h(tag, attrs, ...children){
   const el = document.createElement(tag);
   const BOOL=['selected','checked','disabled','multiple','readonly','required','autofocus','spellcheck'];
@@ -1111,7 +1125,7 @@ function renderFichar(){
         h('div',{
           id:'notas-editor',
           contenteditable:'true',
-          html:fEntry.notas||'',
+          html:formatNotas(fEntry.notas),
           spellcheck:true, lang:'es',
           style:{
             minHeight:'80px',background:'var(--surf2)',border:'1px solid var(--brd)',
@@ -2836,7 +2850,7 @@ function renderModalResumenDia(){
             background:'#f8fafc',borderRadius:'8px',padding:'.7rem .9rem',
             fontSize:'.83rem',color:'#334155',lineHeight:1.6,
             border:'1px solid #e2e8f0'
-          },html:e.notas})
+          },html:formatNotas(e.notas)})
         ):null,
 
         // Share with/without prices toggle + buttons
@@ -3311,7 +3325,7 @@ async function compartirComoImagen(conPrecios){
     if(e.notas){
       html += sec('📝','NOTAS')
         +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:12px;color:#334155;line-height:1.7">'
-        +e.notas+'</div>';
+        +formatNotas(e.notas)+'</div>';
     }
 
     // Total
@@ -3375,13 +3389,20 @@ async function compartirComoImagen(conPrecios){
       document.getElementById('sp-wa').onclick = async function(){
         try{
           await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
-          window.open('https://web.whatsapp.com','_blank');
-          showAlert('Imagen copiada — pégala en WhatsApp con Ctrl+V');
+          showAlert('✅ Imagen copiada — abre WhatsApp Web y pega con Ctrl+V');
         }catch(ex){
           const a=document.createElement('a'); a.href=imgUrl; a.download='jornada-'+e.fecha+'.png';
           document.body.appendChild(a); a.click(); document.body.removeChild(a);
-          showAlert('Descargada — adjúntala en WhatsApp con el clip 📎');
+          showAlert('✅ Descargada — adjúntala en WhatsApp con el clip 📎');
         }
+        // Open WhatsApp Web as a real link (bypasses popup blocker)
+        const waLink=document.createElement('a');
+        waLink.href='https://web.whatsapp.com';
+        waLink.target='_blank';
+        waLink.rel='noopener';
+        document.body.appendChild(waLink);
+        waLink.click();
+        document.body.removeChild(waLink);
         close();
       };
       document.getElementById('sp-em').onclick = function(){
