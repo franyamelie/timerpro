@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779860185739 -->
+<!-- v1779863624787 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2792,11 +2792,11 @@ function renderModalResumenDia(){
         (e.dieta||0)+(e.transporte||0)+(e.dietasExtra||[]).length>0 ? h('div',{},
           sec('🍽','Dietas y Transporte'),
           (e.dieta||0)>0?row(
-            S._shareConPrecios===true?'Dieta':'1 Dieta',
+            S._shareConPrecios===true?'Dieta':(1+(e.dietasExtra||[]).length>1?(1+(e.dietasExtra||[]).length)+' Dietas':'1 Dieta'),
             S._shareConPrecios===true?eur(e.dieta):''
           ):null,
           (e.transporte||0)>0?row(
-            (function(){var tt=(S.transportTypes||[]).find(function(t){return t.id===e._transportType;});return 'Transporte'+(tt?' - '+tt.nombre:'');}()),
+            (function(){var tt=(S.transportTypes||[]).find(function(t){return t.id===e._transportType;});return tt?tt.nombre:'Transporte';}()),
             S._shareConPrecios===true?eur(e.transporte):''
           ):null,
           ...(e.dietasExtra||[]).map(d=>row(d.concepto||'Dieta extra', S._shareConPrecios===true?eur(d.importe||0):'✓'))
@@ -3387,22 +3387,17 @@ async function compartirComoImagen(conPrecios){
       panel.addEventListener('click', function(ev){ if(ev.target===panel) close(); });
 
       document.getElementById('sp-wa').onclick = async function(){
+        // PRIMERO abrimos WhatsApp (debe ser síncrono y directo al click)
+        window.open('https://web.whatsapp.com','_blank','noopener');
+        // LUEGO copiamos la imagen al portapapeles
         try{
           await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
-          showAlert('✅ Imagen copiada — abre WhatsApp Web y pega con Ctrl+V');
+          showAlert('✅ Imagen copiada — pégala en WhatsApp con Ctrl+V');
         }catch(ex){
           const a=document.createElement('a'); a.href=imgUrl; a.download='jornada-'+e.fecha+'.png';
           document.body.appendChild(a); a.click(); document.body.removeChild(a);
           showAlert('✅ Descargada — adjúntala en WhatsApp con el clip 📎');
         }
-        // Open WhatsApp Web as a real link (bypasses popup blocker)
-        const waLink=document.createElement('a');
-        waLink.href='https://web.whatsapp.com';
-        waLink.target='_blank';
-        waLink.rel='noopener';
-        document.body.appendChild(waLink);
-        waLink.click();
-        document.body.removeChild(waLink);
         close();
       };
       document.getElementById('sp-em').onclick = function(){
@@ -4344,7 +4339,8 @@ function loadHistorial(entry){
   // Load the new day — flag tells captureFormState to NOT read old DOM
   _skipDomCapture=true;
   fEntry={...entry,fichajes:[...(entry.fichajes||[])],dietasExtra:[...(entry.dietasExtra||[])],otrosConceptos:[...(entry.otrosConceptos||[])],journeys:[...(entry.journeys||[])]};
-  // notas come from the DB entry — don't override with localStorage
+  // Convert notas to HTML on load so format is preserved on re-save
+  if(fEntry.notas) fEntry.notas=formatNotas(fEntry.notas);
   editingEntry=true;
   S.tab='fichar';
   restoreTimerForDay(entry.fecha); // restore this day's timer if it has one
@@ -6118,7 +6114,7 @@ async function driveSync(){
       .replace(/<u[^>]*>/gi,'__').replace(/<\/u>/gi,'__')
       .replace(/<[^>]*>/g,'')
       .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
-      .replace(/\n{3,}/g,'\n\n').trim().slice(0,600);
+      .replace(/\n{3,}/g,'\n\n').trim().slice(0,1200);
   };
 
   const cleanEntry = e => ({
@@ -6317,7 +6313,7 @@ async function importDriveData(d, verifyMode){
     S.entries.forEach(e=>{ if(e.fecha) localEntryMap[e.fecha]={fotosGastos:e.fotosGastos||[]}; });
 
     await Promise.all(Object.values(ST).filter(s=>s!=='snapshots').map(s=>dbClear(s)));
-    for(const e of(d.entries||[])){
+    for(const e of(d.entries||[])){if(e.notas)e.notas=formatNotas(e.notas);
       // Restore fotosGastos from local if Drive stripped them
       const localE = localEntryMap[e.fecha]||{};
       await dbPut(ST.entries,{...e, fotosGastos:e.fotosGastos&&e.fotosGastos.length?e.fotosGastos:localE.fotosGastos||[]});
