@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779899152968 -->
+<!-- v1779916794034 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -207,6 +207,16 @@ main{flex:1;overflow-y:auto;padding:1rem}
 <body>
 <div id="app"></div>
 <script>
+function formatNotas(n){
+  if(!n) return '';
+  // Already HTML
+  if(n.indexOf('<br')!==-1||n.indexOf('<div')!==-1||n.indexOf('<b>')!==-1||n.indexOf('<u>')!==-1) return n;
+  // Plain text: convert newlines to <br>
+  var nl=String.fromCharCode(10);
+  return n.split(nl).join('<br>');
+}
+
+
 
 
 'use strict';
@@ -390,15 +400,6 @@ let timerElapsed=0; // seconds elapsed
 let timerInterval=null;
 
 // ── RENDER ENGINE ────────────────────────────────────────
-function formatNotas(n){
-  if(!n) return '';
-  // Already HTML (has tags) - return as-is
-  if(n.indexOf('<br')!==-1 || n.indexOf('<div')!==-1 || n.indexOf('<b>')!==-1) return n;
-  // Plain text from Drive - convert newlines to <br>
-  var nl=String.fromCharCode(10);
-  return n.split(nl).join('<br>');
-}
-
 function h(tag, attrs, ...children){
   const el = document.createElement(tag);
   const BOOL=['selected','checked','disabled','multiple','readonly','required','autofocus','spellcheck'];
@@ -2348,19 +2349,8 @@ function renderSincronizar(){
           '⬇️ Cargar TODO desde Drive'
         ),
         h('button',{class:'btn btn-full btn-lg',style:{background:'#7c3aed',color:'#fff'},
-          on:{click:async ()=>{
-            if(!isOnline){showAlert('Sin conexión','err');return;}
-            showAlert('Cargando desde Drive...');
-            // Step 1: load from Drive (merge smart)
-            _doLoad(true,false,false);
-            // Step 2: after load, upload merged result
-            setTimeout(()=>{
-              warmupDriveScript();
-              setTimeout(driveSync,_warmupDone?0:2000);
-              showAlert('✅ Sync bidireccional completado');
-            },10000);
-          }}},
-          '🔄 Sync bidireccional (cargar + subir)'
+          on:{click:()=>{if(!isOnline){showAlert('Sin conexión','err');return;}showAlert('Cargando desde Drive...');_doLoad(true,false,false);setTimeout(()=>{warmupDriveScript();setTimeout(driveSync,_warmupDone?0:2000);},10000);}}},
+          '🔄 Sync bidireccional'
         )
       ),
       h('div',{style:{fontSize:'.75rem',color:'var(--ink3)',marginTop:'.5rem',textAlign:'center'}},
@@ -2802,7 +2792,7 @@ function renderModalResumenDia(){
         (e.dieta||0)+(e.transporte||0)+(e.dietasExtra||[]).length>0 ? h('div',{},
           sec('🍽','Dietas y Transporte'),
           (e.dieta||0)>0?row(
-            S._shareConPrecios===true?'Dieta':(1+(e.dietasExtra||[]).length>1?(1+(e.dietasExtra||[]).length)+' Dietas':'1 Dieta'),
+            S._shareConPrecios===true?'Dieta':'1 Dieta',
             S._shareConPrecios===true?eur(e.dieta):''
           ):null,
           (e.transporte||0)>0?row(
@@ -3312,7 +3302,7 @@ async function compartirComoImagen(conPrecios){
       if(e.transporte>0){
         var ttName='';
         try{ var tt=(S.transportTypes||[]).find(function(t){return t.id===e._transportType;}); if(tt)ttName=tt.nombre; }catch(ex){}
-        html += row('1 Viaje'+(ttName?' - '+ttName:''), cp?eur(e.transporte):'✓');
+        html += row('Transporte'+(ttName?' — '+ttName:''), cp?eur(e.transporte):'✓');
       }
       (e.dietasExtra||[]).forEach(function(d){ html += row(d.concepto||'Dieta extra', cp?eur(d.importe||0):'✓'); });
     }
@@ -3397,16 +3387,14 @@ async function compartirComoImagen(conPrecios){
       panel.addEventListener('click', function(ev){ if(ev.target===panel) close(); });
 
       document.getElementById('sp-wa').onclick = async function(){
-        // PRIMERO abrimos WhatsApp (debe ser síncrono y directo al click)
         window.open('https://web.whatsapp.com','_blank','noopener');
-        // LUEGO copiamos la imagen al portapapeles
         try{
           await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
           showAlert('✅ Imagen copiada — pégala en WhatsApp con Ctrl+V');
         }catch(ex){
           const a=document.createElement('a'); a.href=imgUrl; a.download='jornada-'+e.fecha+'.png';
           document.body.appendChild(a); a.click(); document.body.removeChild(a);
-          showAlert('✅ Descargada — adjúntala en WhatsApp con el clip 📎');
+          showAlert('✅ Descargada — adjúntala con el clip 📎');
         }
         close();
       };
@@ -4125,12 +4113,12 @@ function gpsDisplay(loc){
     const d=JSON.parse(loc);
     const lat=parseFloat(d.lat),lng=parseFloat(d.lng);
     if(!lat||!lng) throw new Error('no coords');
-    const mapImgUrl = d.mapImg || ('https://staticmap.openstreetmap.de/staticmap.php?center='+lat+','+lng+'&zoom=16&size=300x130&markers='+lat+','+lng+',red-pushpin');
+    const mapImgUrl = d.mapImg||'';
+    const _osmSrc='https://www.openstreetmap.org/export/embed.html?bbox='+(lng-0.003)+','+(lat-0.002)+','+(lng+0.003)+','+(lat+0.002)+'&layer=mapnik&marker='+lat+','+lng;
     return h('div',{style:{marginTop:'.4rem'}},
       h('a',{href:d.url,target:'_blank',rel:'noopener',style:{display:'block',textDecoration:'none'}},
         h('div',{style:{position:'relative',borderRadius:'var(--r)',overflow:'hidden',border:'2px solid var(--acc)',maxWidth:'300px',cursor:'pointer',boxShadow:'var(--sh)',height:'130px',backgroundColor:'#e8f4f8'}},
-          h('img',{src:mapImgUrl,style:{width:'100%',height:'100%',objectFit:'cover'},
-            onerror:"this.style.display='none';this.nextSibling.style.display='flex'"}),
+          h('iframe',{src:_osmSrc,style:{width:'100%',height:'100%',border:'none'},loading:'lazy',frameborder:'0'}),
           h('div',{style:{display:'none',position:'absolute',inset:0,alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'.3rem',color:'var(--ink2)',fontSize:'.75rem'}},
             h('span',{style:{fontSize:'1.5rem'}},'🗺️'),
             h('span',{},'Ver en Google Maps')
@@ -4195,7 +4183,7 @@ async function captureGPS(tipo){
       const lng=pos.coords.longitude.toFixed(6);
       const acc=Math.round(pos.coords.accuracy);
       // Static map preview using OpenStreetMap (free, no API key)
-      const mapImg='https://staticmap.openstreetmap.de/staticmap.php?center='+lat+','+lng+'&zoom=16&size=300x150&markers='+lat+','+lng+',red-pushpin';
+      const mapImg='';
       const mapsUrl='https://www.google.com/maps?q='+lat+','+lng;
       const loc=JSON.stringify({lat,lng,url:mapsUrl,label:lat+', '+lng,acc});
       if(tipo==='entrada')fEntry.ubicacionEntrada=loc;
@@ -4315,7 +4303,7 @@ function restoreTimerForDay(fecha){
   timerRunning=false;
   timerStart=null;
   timerElapsed=0;
-  timerDeduct=30;
+  {const _td=localStorage.getItem('timerDeduct');timerDeduct=_td!==null?parseInt(_td)||30:30;}
   if(timerInterval){ clearInterval(timerInterval); timerInterval=null; }
   try{
     const saved=localStorage.getItem('timerState');
@@ -4349,8 +4337,8 @@ function loadHistorial(entry){
   // Load the new day — flag tells captureFormState to NOT read old DOM
   _skipDomCapture=true;
   fEntry={...entry,fichajes:[...(entry.fichajes||[])],dietasExtra:[...(entry.dietasExtra||[])],otrosConceptos:[...(entry.otrosConceptos||[])],journeys:[...(entry.journeys||[])]};
-  // Convert notas to HTML on load so format is preserved on re-save
   if(fEntry.notas) fEntry.notas=formatNotas(fEntry.notas);
+  {const _td=localStorage.getItem('timerDeduct');timerDeduct=_td!==null?parseInt(_td)||30:30;}
   editingEntry=true;
   S.tab='fichar';
   restoreTimerForDay(entry.fecha); // restore this day's timer if it has one
@@ -4730,7 +4718,8 @@ async function importJSON(file){
     const text=await file.text();
     const data=JSON.parse(text);
     if(!confirm('¿Importar datos? Se reemplazarán los actuales.'))return;
-    await Promise.all(Object.values(ST).filter(s=>s!=='snapshots').map(s=>dbClear(s)));
+    // Preserve sites/workers/vehicles/companies - only clear entries+tasks
+    await Promise.all([ST.entries,ST.tasks].map(s=>dbClear(s)));
     for(const e of(data.entries||[]))await dbPut(ST.entries,e);
     for(const t of(data.tasks||[]))await dbPut(ST.tasks,t);
     for(const s of(data.sites||[]))await dbPut(ST.sites,s);
@@ -6116,16 +6105,16 @@ async function driveSync(){
     if(!n) return '';
     if(n.indexOf('<')===-1) return n.slice(0,1200);
     var nl=String.fromCharCode(10);
-    var s=n;
-    s=s.replace(/<br>/gi,nl).replace(/<br[^>]*>/gi,nl);
-    s=s.replace(/<[/]div>/gi,nl).replace(/<[/]p>/gi,nl).replace(/<[/]li>/gi,nl);
-    s=s.replace(/<b>/gi,'**').replace(/<[/]b>/gi,'**');
-    s=s.replace(/<strong>/gi,'**').replace(/<[/]strong>/gi,'**');
-    s=s.replace(/<u>/gi,'__').replace(/<[/]u>/gi,'__');
-    s=s.replace(/<[^>]*>/g,'');
-    s=s.replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
-    s=s.split(nl+nl+nl).join(nl+nl);
-    return s.trim().slice(0,1200);
+    var r=n;
+    r=r.replace(/<br>/gi,nl).replace(/<br[^>]*>/gi,nl);
+    r=r.replace(/<[/]div>/gi,nl).replace(/<[/]p>/gi,nl).replace(/<[/]li>/gi,nl);
+    r=r.replace(/<b>/gi,'**').replace(/<[/]b>/gi,'**');
+    r=r.replace(/<strong>/gi,'**').replace(/<[/]strong>/gi,'**');
+    r=r.replace(/<u>/gi,'__').replace(/<[/]u>/gi,'__');
+    r=r.replace(/<[^>]*>/g,'');
+    r=r.replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
+    r=r.split(nl+nl+nl).join(nl+nl);
+    return r.trim().slice(0,1200);
   };
 
   const cleanEntry = e => ({
@@ -6244,12 +6233,7 @@ function buildSyncData(){
   return {
     version:2,
     exportedAt:new Date().toISOString(),
-    entries:entries.map(e=>{
-      const clean={...e,fotosGastos:[]};
-      // Include notas but strip heavy HTML to save space
-      if(clean.notas) clean.notas=stripHtmlNotas(clean.notas);
-      return clean;
-    }).filter(e=>e.fecha>=(()=>{const d=new Date();d.setDate(d.getDate()-60);return d.toISOString().slice(0,10);})()),
+    entries:entries.map(e=>({...e,fotosGastos:[]})),
     tasks:S.tasks.slice(-10).map(t=>({id:t.id,titulo:(t.titulo||'').replace(/<[^>]*>/g,'').slice(0,30),fecha:t.fecha||'',otNumero:(t.otNumero||'').slice(0,15)})),
 
 
@@ -6302,7 +6286,7 @@ function _doLoad(force, verifyMode, confirmMode){
       showAlert('Sin respuesta de Drive. Comprueba conexión.','err');
       rerender();
     }
-  },35000);
+  },20000);
 
   script.src=driveUrl+'?action=load&callback='+cbName+'&t='+Date.now();
   document.body.appendChild(script);
@@ -6380,22 +6364,20 @@ async function mergeDriveData(d){
     const localEntries = [...S.entries];
     const driveEntries = d.entries||[];
 
-    // SMART MERGE: keep newest version of each date
+    // Merge by fecha: Drive wins for same date, keep local if not in Drive
     const merged = [];
-    const driveByDate = {};
-    driveEntries.forEach(e=>{ driveByDate[e.fecha]=e; });
-    const localByDate = {};
-    localEntries.forEach(e=>{ localByDate[e.fecha]=e; });
-    const allDates = new Set([...Object.keys(driveByDate),...Object.keys(localByDate)]);
+    const driveDates = new Set(driveEntries.map(e=>e.fecha));
+
+    // Add all Drive entries
+    // SMART MERGE: keep newest version per date
+    const driveByDate={},localByDate={};
+    driveEntries.forEach(e=>{driveByDate[e.fecha]=e;});
+    localEntries.forEach(e=>{localByDate[e.fecha]=e;});
+    const allDates=new Set([...Object.keys(driveByDate),...Object.keys(localByDate)]);
     allDates.forEach(fecha=>{
-      const driveE = driveByDate[fecha];
-      const localE = localByDate[fecha];
-      if(driveE && localE){
-        // Keep the one with higher id (more recently saved)
-        merged.push((driveE.id||0)>=(localE.id||0) ? driveE : localE);
-      } else {
-        merged.push(driveE || localE);
-      }
+      const de=driveByDate[fecha],le=localByDate[fecha];
+      if(de&&le) merged.push((de.id||0)>=(le.id||0)?de:le);
+      else merged.push(de||le);
     });
 
     // Sort by date
