@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779863624787 -->
+<!-- v1779899152968 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -392,16 +392,11 @@ let timerInterval=null;
 // ── RENDER ENGINE ────────────────────────────────────────
 function formatNotas(n){
   if(!n) return '';
-  // Already has HTML formatting - use as is
-  if(n.indexOf('<')!==-1) return n;
-  // Plain text (from Drive) - convert newlines to <br>
-  var result='', nl=String.fromCharCode(10);
-  var parts=n.split(nl);
-  for(var i=0;i<parts.length;i++){
-    result+=parts[i];
-    if(i<parts.length-1) result+='<br>';
-  }
-  return result;
+  // Already HTML (has tags) - return as-is
+  if(n.indexOf('<br')!==-1 || n.indexOf('<div')!==-1 || n.indexOf('<b>')!==-1) return n;
+  // Plain text from Drive - convert newlines to <br>
+  var nl=String.fromCharCode(10);
+  return n.split(nl).join('<br>');
 }
 
 function h(tag, attrs, ...children){
@@ -2351,6 +2346,21 @@ function renderSincronizar(){
         ),
         h('button',{class:'btn btn-b btn-full btn-lg',on:{click:()=>_doLoad(true,false,true)}},
           '⬇️ Cargar TODO desde Drive'
+        ),
+        h('button',{class:'btn btn-full btn-lg',style:{background:'#7c3aed',color:'#fff'},
+          on:{click:async ()=>{
+            if(!isOnline){showAlert('Sin conexión','err');return;}
+            showAlert('Cargando desde Drive...');
+            // Step 1: load from Drive (merge smart)
+            _doLoad(true,false,false);
+            // Step 2: after load, upload merged result
+            setTimeout(()=>{
+              warmupDriveScript();
+              setTimeout(driveSync,_warmupDone?0:2000);
+              showAlert('✅ Sync bidireccional completado');
+            },10000);
+          }}},
+          '🔄 Sync bidireccional (cargar + subir)'
         )
       ),
       h('div',{style:{fontSize:'.75rem',color:'var(--ink3)',marginTop:'.5rem',textAlign:'center'}},
@@ -2796,7 +2806,7 @@ function renderModalResumenDia(){
             S._shareConPrecios===true?eur(e.dieta):''
           ):null,
           (e.transporte||0)>0?row(
-            (function(){var tt=(S.transportTypes||[]).find(function(t){return t.id===e._transportType;});return tt?tt.nombre:'Transporte';}()),
+            (function(){var tt=(S.transportTypes||[]).find(function(t){return t.id===e._transportType;});return '1 Viaje'+(tt?' - '+tt.nombre:'');}()),
             S._shareConPrecios===true?eur(e.transporte):''
           ):null,
           ...(e.dietasExtra||[]).map(d=>row(d.concepto||'Dieta extra', S._shareConPrecios===true?eur(d.importe||0):'✓'))
@@ -3302,7 +3312,7 @@ async function compartirComoImagen(conPrecios){
       if(e.transporte>0){
         var ttName='';
         try{ var tt=(S.transportTypes||[]).find(function(t){return t.id===e._transportType;}); if(tt)ttName=tt.nombre; }catch(ex){}
-        html += row('Transporte'+(ttName?' — '+ttName:''), cp?eur(e.transporte):'✓');
+        html += row('1 Viaje'+(ttName?' - '+ttName:''), cp?eur(e.transporte):'✓');
       }
       (e.dietasExtra||[]).forEach(function(d){ html += row(d.concepto||'Dieta extra', cp?eur(d.importe||0):'✓'); });
     }
@@ -6104,17 +6114,18 @@ async function driveSync(){
   };
   const stripHtmlNotas = n => {
     if(!n) return '';
-    // If already plain text, return as-is
-    if(!/<[a-z]/i.test(n)) return n.slice(0,600);
-    // Convert HTML to plain text preserving line structure
-    return n
-      .replace(/<br\s*\/?>/gi,'\n')
-      .replace(/<\/(p|div|li)>/gi,'\n')
-      .replace(/<(b|strong)[^>]*>/gi,'**').replace(/<\/(b|strong)>/gi,'**')
-      .replace(/<u[^>]*>/gi,'__').replace(/<\/u>/gi,'__')
-      .replace(/<[^>]*>/g,'')
-      .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
-      .replace(/\n{3,}/g,'\n\n').trim().slice(0,1200);
+    if(n.indexOf('<')===-1) return n.slice(0,1200);
+    var nl=String.fromCharCode(10);
+    var s=n;
+    s=s.replace(/<br>/gi,nl).replace(/<br[^>]*>/gi,nl);
+    s=s.replace(/<[/]div>/gi,nl).replace(/<[/]p>/gi,nl).replace(/<[/]li>/gi,nl);
+    s=s.replace(/<b>/gi,'**').replace(/<[/]b>/gi,'**');
+    s=s.replace(/<strong>/gi,'**').replace(/<[/]strong>/gi,'**');
+    s=s.replace(/<u>/gi,'__').replace(/<[/]u>/gi,'__');
+    s=s.replace(/<[^>]*>/g,'');
+    s=s.replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
+    s=s.split(nl+nl+nl).join(nl+nl);
+    return s.trim().slice(0,1200);
   };
 
   const cleanEntry = e => ({
@@ -6233,7 +6244,12 @@ function buildSyncData(){
   return {
     version:2,
     exportedAt:new Date().toISOString(),
-    entries:entries.map(e=>({...e,fotosGastos:[]})),
+    entries:entries.map(e=>{
+      const clean={...e,fotosGastos:[]};
+      // Include notas but strip heavy HTML to save space
+      if(clean.notas) clean.notas=stripHtmlNotas(clean.notas);
+      return clean;
+    }).filter(e=>e.fecha>=(()=>{const d=new Date();d.setDate(d.getDate()-60);return d.toISOString().slice(0,10);})()),
     tasks:S.tasks.slice(-10).map(t=>({id:t.id,titulo:(t.titulo||'').replace(/<[^>]*>/g,'').slice(0,30),fecha:t.fecha||'',otNumero:(t.otNumero||'').slice(0,15)})),
 
 
@@ -6286,7 +6302,7 @@ function _doLoad(force, verifyMode, confirmMode){
       showAlert('Sin respuesta de Drive. Comprueba conexión.','err');
       rerender();
     }
-  },20000);
+  },35000);
 
   script.src=driveUrl+'?action=load&callback='+cbName+'&t='+Date.now();
   document.body.appendChild(script);
@@ -6364,17 +6380,21 @@ async function mergeDriveData(d){
     const localEntries = [...S.entries];
     const driveEntries = d.entries||[];
 
-    // Merge by fecha: Drive wins for same date, keep local if not in Drive
+    // SMART MERGE: keep newest version of each date
     const merged = [];
-    const driveDates = new Set(driveEntries.map(e=>e.fecha));
-
-    // Add all Drive entries
-    driveEntries.forEach(e=>merged.push(e));
-
-    // Add local entries not in Drive
-    localEntries.forEach(e=>{
-      if(!driveDates.has(e.fecha)){
-        merged.push(e);
+    const driveByDate = {};
+    driveEntries.forEach(e=>{ driveByDate[e.fecha]=e; });
+    const localByDate = {};
+    localEntries.forEach(e=>{ localByDate[e.fecha]=e; });
+    const allDates = new Set([...Object.keys(driveByDate),...Object.keys(localByDate)]);
+    allDates.forEach(fecha=>{
+      const driveE = driveByDate[fecha];
+      const localE = localByDate[fecha];
+      if(driveE && localE){
+        // Keep the one with higher id (more recently saved)
+        merged.push((driveE.id||0)>=(localE.id||0) ? driveE : localE);
+      } else {
+        merged.push(driveE || localE);
       }
     });
 
