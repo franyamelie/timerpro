@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779945380512 -->
+<!-- v1779945884647 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -4110,7 +4110,7 @@ function gpsDisplay(loc){
     const d=JSON.parse(loc);
     const lat=parseFloat(d.lat),lng=parseFloat(d.lng);
     if(!lat||!lng) throw new Error('no coords');
-    const mapImgUrl=d.mapImg||''; const _osmSrc='https://www.openstreetmap.org/export/embed.html?bbox='+(lng-0.003)+','+(lat-0.002)+','+(lng+0.003)+','+(lat+0.002)+'&layer=mapnik&marker='+lat+','+lng;
+    const _osmSrc='https://www.openstreetmap.org/export/embed.html?bbox='+(lng-0.003)+','+(lat-0.002)+','+(lng+0.003)+','+(lat+0.002)+'&layer=mapnik&marker='+lat+','+lng;
     return h('div',{style:{marginTop:'.4rem'}},
       h('a',{href:d.url,target:'_blank',rel:'noopener',style:{display:'block',textDecoration:'none'}},
         h('div',{style:{position:'relative',borderRadius:'var(--r)',overflow:'hidden',border:'2px solid var(--acc)',maxWidth:'300px',cursor:'pointer',boxShadow:'var(--sh)',height:'130px',backgroundColor:'#e8f4f8'}},
@@ -6400,6 +6400,12 @@ async function loadData(){
     dbAll(ST.entries),dbAll(ST.tasks),dbAll(ST.sites),dbAll(ST.workorders),dbAll(ST.vehicles),
     dbAll(ST.workers),dbAll(ST.companies)
   ]);
+  // Strip old staticmap URLs from saved locations (cleanup legacy data)
+  S.entries.forEach(e=>{
+    ['ubicacionEntrada','ubicacionSalida'].forEach(k=>{
+      if(e[k]){try{const d=JSON.parse(e[k]);if(d.mapImg){delete d.mapImg;e[k]=JSON.stringify(d);}}catch(ex){}}
+    });
+  });
   // Load active worker/company
   const settings=(await dbAll(ST.settings))[0]||{};
   if(settings.activeWorkerId) activeWorkerId=settings.activeWorkerId;
