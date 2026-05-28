@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779945884647 -->
+<!-- v1779993888990 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -6071,6 +6071,36 @@ async function driveSync(){
   if(!driveUrl||_syncInProgress) return;
   _syncInProgress=true;
 
+  // SAFE UPLOAD: First read current Drive data, merge with local, then upload
+  // This prevents phone entries from being overwritten by PC upload
+  try{
+    await new Promise((resolve)=>{
+      const cb='preSync_'+Date.now();
+      const sc=document.createElement('script');
+      let done=false;
+      window[cb]=async function(result){
+        done=true; delete window[cb]; sc.remove();
+        if(result&&result.ok&&result.data){
+          const driveEntries=result.data.entries||[];
+          // Merge Drive entries into local S.entries (Drive wins for dates not in local)
+          const localDates=new Set(S.entries.map(e=>e.fecha));
+          driveEntries.forEach(e=>{
+            if(!localDates.has(e.fecha)){
+              // Drive has an entry we don't have locally - add it
+              if(e.notas) e.notas=formatNotas(e.notas);
+              S.entries.push(e);
+              dbPut(ST.entries,e).catch(()=>{});
+            }
+          });
+        }
+        resolve();
+      };
+      setTimeout(()=>{ if(!done){delete window[cb];sc.remove();resolve();} },8000);
+      sc.src=driveUrl+'?action=load&callback='+cb+'&t='+Date.now();
+      document.body.appendChild(sc);
+    });
+  }catch(ex){ /* if pre-read fails, continue with upload anyway */ }
+
   // Capture all current form data
   captureFormState();
   const notasEl=document.getElementById('notas-editor');
@@ -7136,8 +7166,8 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
       // Schedule auto-sync after 30s idle
       _idleSyncTimer = setTimeout(()=>{
         if(!_syncInProgress && isOnline && driveUrl){
-          console.log('Auto-sync: 90s idle');
-          driveSync();
+          console.log('Auto-sync: 90s idle - download only (never overwrite Drive)');
+          _doLoad(false,false,false); // silent download + merge, no upload
         }
       }, IDLE_MS);
       // Schedule drive check after 35s idle
