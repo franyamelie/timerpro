@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779916794034 -->
+<!-- v1779945380512 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -206,14 +206,10 @@ main{flex:1;overflow-y:auto;padding:1rem}
 </head>
 <body>
 <div id="app"></div>
-<script>
-function formatNotas(n){
+<script>function formatNotas(n){
   if(!n) return '';
-  // Already HTML
   if(n.indexOf('<br')!==-1||n.indexOf('<div')!==-1||n.indexOf('<b>')!==-1||n.indexOf('<u>')!==-1) return n;
-  // Plain text: convert newlines to <br>
-  var nl=String.fromCharCode(10);
-  return n.split(nl).join('<br>');
+  return n.split(String.fromCharCode(10)).join('<br>');
 }
 
 
@@ -3390,11 +3386,12 @@ async function compartirComoImagen(conPrecios){
         window.open('https://web.whatsapp.com','_blank','noopener');
         try{
           await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
-          showAlert('✅ Imagen copiada — pégala en WhatsApp con Ctrl+V');
+          window.open('https://web.whatsapp.com','_blank');
+          showAlert('Imagen copiada — pégala en WhatsApp con Ctrl+V');
         }catch(ex){
           const a=document.createElement('a'); a.href=imgUrl; a.download='jornada-'+e.fecha+'.png';
           document.body.appendChild(a); a.click(); document.body.removeChild(a);
-          showAlert('✅ Descargada — adjúntala con el clip 📎');
+          showAlert('Descargada — adjúntala en WhatsApp con el clip 📎');
         }
         close();
       };
@@ -4113,8 +4110,7 @@ function gpsDisplay(loc){
     const d=JSON.parse(loc);
     const lat=parseFloat(d.lat),lng=parseFloat(d.lng);
     if(!lat||!lng) throw new Error('no coords');
-    const mapImgUrl = d.mapImg||'';
-    const _osmSrc='https://www.openstreetmap.org/export/embed.html?bbox='+(lng-0.003)+','+(lat-0.002)+','+(lng+0.003)+','+(lat+0.002)+'&layer=mapnik&marker='+lat+','+lng;
+    const mapImgUrl=d.mapImg||''; const _osmSrc='https://www.openstreetmap.org/export/embed.html?bbox='+(lng-0.003)+','+(lat-0.002)+','+(lng+0.003)+','+(lat+0.002)+'&layer=mapnik&marker='+lat+','+lng;
     return h('div',{style:{marginTop:'.4rem'}},
       h('a',{href:d.url,target:'_blank',rel:'noopener',style:{display:'block',textDecoration:'none'}},
         h('div',{style:{position:'relative',borderRadius:'var(--r)',overflow:'hidden',border:'2px solid var(--acc)',maxWidth:'300px',cursor:'pointer',boxShadow:'var(--sh)',height:'130px',backgroundColor:'#e8f4f8'}},
@@ -4303,7 +4299,7 @@ function restoreTimerForDay(fecha){
   timerRunning=false;
   timerStart=null;
   timerElapsed=0;
-  {const _td=localStorage.getItem('timerDeduct');timerDeduct=_td!==null?parseInt(_td)||30:30;}
+  {const _td=localStorage.getItem('timerDeduct');timerDeduct=_td?parseInt(_td)||30:30;}
   if(timerInterval){ clearInterval(timerInterval); timerInterval=null; }
   try{
     const saved=localStorage.getItem('timerState');
@@ -4338,7 +4334,6 @@ function loadHistorial(entry){
   _skipDomCapture=true;
   fEntry={...entry,fichajes:[...(entry.fichajes||[])],dietasExtra:[...(entry.dietasExtra||[])],otrosConceptos:[...(entry.otrosConceptos||[])],journeys:[...(entry.journeys||[])]};
   if(fEntry.notas) fEntry.notas=formatNotas(fEntry.notas);
-  {const _td=localStorage.getItem('timerDeduct');timerDeduct=_td!==null?parseInt(_td)||30:30;}
   editingEntry=true;
   S.tab='fichar';
   restoreTimerForDay(entry.fecha); // restore this day's timer if it has one
@@ -4718,7 +4713,6 @@ async function importJSON(file){
     const text=await file.text();
     const data=JSON.parse(text);
     if(!confirm('¿Importar datos? Se reemplazarán los actuales.'))return;
-    // Preserve sites/workers/vehicles/companies - only clear entries+tasks
     await Promise.all([ST.entries,ST.tasks].map(s=>dbClear(s)));
     for(const e of(data.entries||[]))await dbPut(ST.entries,e);
     for(const t of(data.tasks||[]))await dbPut(ST.tasks,t);
@@ -6230,11 +6224,14 @@ function buildSyncData(){
   if(fEntry.fecha && !S.entries.find(e=>e.fecha===fEntry.fecha) && (fEntry.ubicacionEntrada||fEntry.notas||fEntry.horasNormales)){
     entries.push({...fEntry, ubicacionEntrada:cleanLoc(fEntry.ubicacionEntrada), ubicacionSalida:cleanLoc(fEntry.ubicacionSalida)});
   }
+  const _cut=(()=>{const d=new Date();d.setDate(d.getDate()-30);return d.toISOString().slice(0,10);})();
   return {
     version:2,
     exportedAt:new Date().toISOString(),
-    entries:entries.map(e=>({...e,fotosGastos:[]})),
+    entries:entries.filter(e=>e.fecha>=_cut).map(e=>{const c={...e,fotosGastos:[]};if(c.notas)c.notas=stripHtmlNotas(c.notas);return c;}),
     tasks:S.tasks.slice(-10).map(t=>({id:t.id,titulo:(t.titulo||'').replace(/<[^>]*>/g,'').slice(0,30),fecha:t.fecha||'',otNumero:(t.otNumero||'').slice(0,15)})),
+    sites:(S.sites||[]).map(s=>({id:s.id,nombre:s.nombre||'',lat:s.lat||0,lng:s.lng||0,url:s.url||'',foto:s.foto||''})),
+    transportTypes:(S.transportTypes||[]),
 
 
     activeWorkerId, activeCompanyId,
@@ -6286,7 +6283,7 @@ function _doLoad(force, verifyMode, confirmMode){
       showAlert('Sin respuesta de Drive. Comprueba conexión.','err');
       rerender();
     }
-  },20000);
+  },45000);
 
   script.src=driveUrl+'?action=load&callback='+cbName+'&t='+Date.now();
   document.body.appendChild(script);
@@ -6324,6 +6321,7 @@ async function importDriveData(d, verifyMode){
       await dbPut(ST.tasks,{...t, fotos:t.fotos&&t.fotos.length?t.fotos:localT.fotos||[]});
     }
     for(const s of(d.sites||[]))    await dbPut(ST.sites,s);
+    if(d.transportTypes&&d.transportTypes.length){S.transportTypes=d.transportTypes;localStorage.setItem('transportTypes',JSON.stringify(d.transportTypes));}
     for(const w of(d.workorders||[]))await dbPut(ST.workorders,w);
     for(const v of(d.vehicles||[])) await dbPut(ST.vehicles,v);
     for(const w of(d.workers||[])){
@@ -6369,13 +6367,11 @@ async function mergeDriveData(d){
     const driveDates = new Set(driveEntries.map(e=>e.fecha));
 
     // Add all Drive entries
-    // SMART MERGE: keep newest version per date
-    const driveByDate={},localByDate={};
-    driveEntries.forEach(e=>{driveByDate[e.fecha]=e;});
-    localEntries.forEach(e=>{localByDate[e.fecha]=e;});
-    const allDates=new Set([...Object.keys(driveByDate),...Object.keys(localByDate)]);
-    allDates.forEach(fecha=>{
-      const de=driveByDate[fecha],le=localByDate[fecha];
+    const _dbd={},_lbd={};
+    driveEntries.forEach(e=>{_dbd[e.fecha]=e;});
+    localEntries.forEach(e=>{_lbd[e.fecha]=e;});
+    new Set([...Object.keys(_dbd),...Object.keys(_lbd)]).forEach(f=>{
+      const de=_dbd[f],le=_lbd[f];
       if(de&&le) merged.push((de.id||0)>=(le.id||0)?de:le);
       else merged.push(de||le);
     });
@@ -7177,6 +7173,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
       '<div style="color:red;padding:20px;font-family:monospace">Error: ' + e.message + '<br>' + e.stack + '</div>';
   }
 })();
+
 
 
 </script>
