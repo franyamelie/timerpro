@@ -206,7 +206,18 @@ main{flex:1;overflow-y:auto;padding:1rem}
 </head>
 <body>
 <div id="app"></div>
-<script>function formatNotas(n){
+<script>
+function _lsSave(){
+  try{
+    const data={entries:S.entries.filter(e=>!e._draft).map(e=>({...e,fotosGastos:[]})),sites:S.sites||[],tasks:S.tasks||[],transportTypes:S.transportTypes||[],savedAt:Date.now()};
+    localStorage.setItem('_tp_primary',JSON.stringify(data));
+  }catch(ex){}
+}
+function _lsLoad(){
+  try{const d=JSON.parse(localStorage.getItem('_tp_primary')||'null');return(d&&Array.isArray(d.entries))?d:null;}catch(ex){return null;}
+}
+
+function formatNotas(n){
   if(!n) return '';
   if(n.indexOf('<br')!==-1||n.indexOf('<div')!==-1||n.indexOf('<b>')!==-1||n.indexOf('<u>')!==-1) return n;
   return n.split(String.fromCharCode(10)).join('<br>');
@@ -4282,12 +4293,12 @@ async function saveEntry(){
     if(editingEntry&&fEntry.id){
       await dbPut(ST.entries,{...fEntry,_draft:false});
       S.entries=S.entries.map(e=>e.id===fEntry.id?{...fEntry,_draft:false}:e);
-      _backupEntriesToLS();
+      _backupEntriesToLS(); _lsSave();
     } else {
       const id=await dbPut(ST.entries,{...fEntry,_draft:false});
       fEntry.id=id;
       S.entries.push({...fEntry,id,_draft:false});
-      _backupEntriesToLS();
+      _backupEntriesToLS(); _lsSave();
     }
     editingEntry=false;
     localStorage.removeItem('_fEntry');
@@ -6498,6 +6509,7 @@ async function importDriveData(d, verifyMode){
     if(s.id && !localSiteIds.has(s.id)){
       S.sites.push(s);
       try{ await dbPut(ST.sites, s); }catch(ex){}
+      _lsSave();
     }
   }
   
@@ -6578,7 +6590,28 @@ async function loadData(){
     }
   }catch(ex){}
 
-  // Strip old staticmap URLs from saved locations (cleanup legacy data)
+  // PRIMARY STORAGE: Load from localStorage and merge
+  try{
+    const lsData=_lsLoad();
+    if(lsData&&lsData.entries){
+      const dbDates=new Set(S.entries.map(e=>e.fecha));
+      let n=0;
+      for(const e of lsData.entries){
+        if(!dbDates.has(e.fecha)&&!e._draft){
+          if(e.notas)e.notas=formatNotas(e.notas);
+          S.entries.push(e);await dbPut(ST.entries,e).catch(()=>{});n++;
+        }
+      }
+      if(lsData.sites&&lsData.sites.length&&!S.sites.length){
+        S.sites=lsData.sites;for(const s of lsData.sites)await dbPut(ST.sites,s).catch(()=>{});
+      }
+      if(n>0)console.log('Restored '+n+' from localStorage');
+    }
+    const old=JSON.parse(localStorage.getItem('_entriesBackup')||'[]');
+    if(old.length){const d2=new Set(S.entries.map(e=>e.fecha));for(const e of old){if(!d2.has(e.fecha)){if(e.notas)e.notas=formatNotas(e.notas);S.entries.push(e);await dbPut(ST.entries,e).catch(()=>{});}}}
+  }catch(ex){}
+
+    // Strip old staticmap URLs from saved locations (cleanup legacy data)
   S.entries.forEach(e=>{
     ['ubicacionEntrada','ubicacionSalida'].forEach(k=>{
       if(e[k]){try{const d=JSON.parse(e[k]);if(d.mapImg){delete d.mapImg;e[k]=JSON.stringify(d);}}catch(ex){}}
