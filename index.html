@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780076551458 -->
+<!-- v1780077348419 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -6139,7 +6139,8 @@ function warmupDriveScript(){
 }
 
 async function driveSync(){
-  if(!driveUrl||_syncInProgress) return;
+  if(!driveUrl){ showAlert('Configura la URL de Drive en Sincronizar','err'); return; }
+  if(_syncInProgress){ showAlert('Sync en curso, espera...'); return; }
   _syncInProgress=true;
 
   // SAFE UPLOAD: First read current Drive data, merge with local, then upload
@@ -6341,39 +6342,50 @@ function buildSyncData(){
 function _doLoad(force, verifyMode, confirmMode){
   if(!driveUrl) return;
   syncStatus='syncing'; rerender();
-  const cbName='load_'+Date.now();
-  const script=document.createElement('script');
-  let done=false;
 
-  window[cbName]=async function(result){
-    done=true; delete window[cbName]; script.remove();
-    if(!result||!result.ok){
-      syncStatus='err';
-      showAlert('Error cargando Drive: '+(result&&result.error||'sin datos'),'err');
-      rerender(); return;
-    }
-    const d=result.data;
-    if(!d||!d.entries||d.entries.length===0){
+  let attempts=0;
+  function attempt(){
+    attempts++;
+    const cbName='load_'+Date.now();
+    const script=document.createElement('script');
+    let done=false;
+
+    window[cbName]=async function(result){
+      done=true; delete window[cbName]; script.remove();
+      if(!result||!result.ok){
+        syncStatus='err';
+        showAlert('Drive: sin datos. Intenta de nuevo.','err');
+        rerender(); return;
+      }
       syncStatus='ok';
-      showAlert('Drive vacío — guarda algo primero desde el PC','err');
-      rerender(); return;
-    }
+      await importDriveData(result.data||result, verifyMode);
+    };
 
-    await importDriveData(d, verifyMode);
-  };
+    // Timeout: 60s on first attempt, 45s on retry
+    setTimeout(()=>{
+      if(!done){
+        delete window[cbName]; script.remove();
+        if(attempts<2){
+          // Retry once automatically
+          showAlert('Drive tardando... reintentando...','err');
+          setTimeout(attempt, 3000);
+        } else {
+          syncStatus='err';
+          showAlert('Drive no responde. El servicio puede estar ocupado, espera 1 minuto e inténtalo de nuevo.','err');
+          rerender();
+        }
+      }
+    }, attempts===1?60000:45000);
 
-  setTimeout(()=>{
-    if(!done){
-      delete window[cbName]; script.remove();
-      syncStatus='err';
-      showAlert('Sin respuesta de Drive. Comprueba conexión.','err');
-      rerender();
-    }
-  },45000);
+    script.src=driveUrl+'?action=load&callback='+cbName+'&t='+Date.now();
+    document.body.appendChild(script);
+  }
 
-  script.src=driveUrl+'?action=load&callback='+cbName+'&t='+Date.now();
-  document.body.appendChild(script);
+  // Warm up first, then load
+  warmupDriveScript();
+  setTimeout(attempt, _warmupDone?0:5000);
 }
+
 
 
 // Export full data as JSON file for device-to-device sync
