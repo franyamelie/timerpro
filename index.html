@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779993888990 -->
+<!-- v1780032135023 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -6033,6 +6033,48 @@ async function saveDriveUrl(){
   driveSync();
 }
 
+
+// Safe silent sync - downloads from Drive and adds missing entries WITHOUT clearing local
+async function _safeSilentSync(){
+  if(!driveUrl || _syncInProgress) return;
+  try{
+    await new Promise((resolve)=>{
+      const cb='silent_'+Date.now();
+      const sc=document.createElement('script');
+      let done=false;
+      window[cb]=async function(result){
+        done=true; delete window[cb]; sc.remove();
+        if(result&&result.ok&&result.data){
+          const driveEntries=result.data.entries||[];
+          const localDates=new Set(S.entries.map(e=>e.fecha));
+          let added=0;
+          for(const e of driveEntries){
+            if(!localDates.has(e.fecha)){
+              if(e.notas) e.notas=formatNotas(e.notas);
+              S.entries.push(e);
+              try{ await dbPut(ST.entries,e); }catch(ex){}
+              added++;
+            }
+          }
+          if(added>0){
+            driveHasNew=false;
+            rerender();
+            console.log('Auto-sync: added '+added+' entries from Drive');
+          }
+          // Check if Drive has newer data for existing dates
+          const driveTs=result.data.exportedAt?new Date(result.data.exportedAt).getTime():0;
+          const localTs=new Date(localStorage.getItem('lastSave')||0).getTime();
+          if(driveTs > localTs+5000) driveHasNew=true;
+        }
+        resolve();
+      };
+      setTimeout(()=>{ if(!done){delete window[cb];sc.remove();resolve();} },15000);
+      sc.src=driveUrl+'?action=load&callback='+cb+'&t='+Date.now();
+      document.body.appendChild(sc);
+    });
+  }catch(ex){ console.log('Silent sync error:',ex); }
+}
+
 // ── DRIVE SYNC ────────────────────────────────────────
 
 // ── CHUNKED SAVE ──────────────────────────────────────
@@ -6320,70 +6362,79 @@ function _doLoad(force, verifyMode, confirmMode){
 }
 
 async function importDriveData(d, verifyMode){
-  if(S.entries.length>0) await createSnapshot('Antes de cargar Drive - '+new Date().toLocaleString('es-ES'));
-  try{
-    // Save ALL local photos before clearing (Drive strips them for size)
-    const localWorkers = [...workers];
-    const localWorkerMap = {};
-    localWorkers.forEach(w=>{ if(w.id) localWorkerMap[w.id]=w; });
-    const localCompanies = [...companies];
-    const localCompanyMap = {};
-    localCompanies.forEach(c=>{ if(c.id) localCompanyMap[c.id]=c; });
-    const savedWorkerFoto = fWorker.foto||'';
-    const savedWorkerFirma = fWorker.firma||'';
-    const savedCompanyLogo = fCompany.logo||'';
-    // Save local task photos (keyed by id)
-    const localTaskMap = {};
-    S.tasks.forEach(t=>{ if(t.id) localTaskMap[t.id]={fotos:t.fotos||[]}; });
-    // Save local entry fotosGastos (keyed by fecha)
-    const localEntryMap = {};
-    S.entries.forEach(e=>{ if(e.fecha) localEntryMap[e.fecha]={fotosGastos:e.fotosGastos||[]}; });
+  // SAFETY: Always read from IndexedDB as ground truth
+  let localEntries = [];
+  try{ localEntries = await dbAll(ST.entries); }catch(ex){ localEntries=[...S.entries]; }
+  localEntries = localEntries.filter(e=>!e._draft);
 
-    await Promise.all(Object.values(ST).filter(s=>s!=='snapshots').map(s=>dbClear(s)));
-    for(const e of(d.entries||[])){if(e.notas)e.notas=formatNotas(e.notas);
-      // Restore fotosGastos from local if Drive stripped them
-      const localE = localEntryMap[e.fecha]||{};
-      await dbPut(ST.entries,{...e, fotosGastos:e.fotosGastos&&e.fotosGastos.length?e.fotosGastos:localE.fotosGastos||[]});
-    }
-    for(const t of(d.tasks||[])){
-      // Restore fotos from local if Drive stripped them
-      const localT = localTaskMap[t.id]||{};
-      await dbPut(ST.tasks,{...t, fotos:t.fotos&&t.fotos.length?t.fotos:localT.fotos||[]});
-    }
-    for(const s of(d.sites||[]))    await dbPut(ST.sites,s);
-    if(d.transportTypes&&d.transportTypes.length){S.transportTypes=d.transportTypes;localStorage.setItem('transportTypes',JSON.stringify(d.transportTypes));}
-    for(const w of(d.workorders||[]))await dbPut(ST.workorders,w);
-    for(const v of(d.vehicles||[])) await dbPut(ST.vehicles,v);
-    for(const w of(d.workers||[])){
-      const local = localWorkerMap[w.id]||{};
-      await dbPut(ST.workers,{...w, foto:w.foto||local.foto||'', firma:w.firma||local.firma||''});
-    }
-    for(const c of(d.companies||[])){
-      const local = localCompanyMap[c.id]||{};
-      await dbPut(ST.companies,{...c, logo:c.logo||local.logo||''});
-    }
-    if(d.worker)  fWorker={...defWorker,...d.worker, foto:d.worker.foto||savedWorkerFoto, firma:d.worker.firma||savedWorkerFirma};
-    if(d.company) fCompany={...defCompany,...d.company, logo:d.company.logo||savedCompanyLogo};
-    activeWorkerId=d.activeWorkerId||null;
-    activeCompanyId=d.activeCompanyId||null;
-    await loadData();
-    syncStatus='ok';
-    lastSync=new Date().toLocaleTimeString('es-ES');
-    localStorage.setItem('lastSync',lastSync);
-    driveHasNew=false; // cleared after loading
-    // Do NOT reset fEntry - keep current form data
-    if(verifyMode){
-      showAlert('✅ Drive OK: '+S.entries.length+' jornadas guardadas correctamente');
+  // Create snapshot before any changes
+  try{ if(localEntries.length>0) await createSnapshot('Antes de Drive - '+new Date().toLocaleString('es-ES')); }catch(ex){}
+
+  const driveEntries = (d.entries||[]);
+  
+  // MERGE: Build map by fecha, keep newest version of each day
+  const byDate = {};
+  
+  // First: load ALL local entries (ground truth)
+  localEntries.forEach(e=>{ byDate[e.fecha] = e; });
+  
+  // Second: add Drive entries ONLY if newer or not in local
+  driveEntries.forEach(e=>{
+    if(e.notas) e.notas = formatNotas(e.notas);
+    const local = byDate[e.fecha];
+    if(!local) {
+      // Drive has entry we don't have locally - add it
+      byDate[e.fecha] = e;
     } else {
-      saveLocalBackup();
-    showAlert('✅ Cargado: '+S.entries.length+' jornadas, '+S.tasks.length+' tareas');
+      // Both have this date - keep whichever was saved more recently
+      if((e.id||0) > (local.id||0)) byDate[e.fecha] = e;
     }
-    rerender();
-  }catch(e){
-    syncStatus='err';
-    showAlert('Error importando: '+e.message,'err');
-    rerender();
+  });
+  
+  const merged = Object.values(byDate).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  
+  // Update S.entries with merged data
+  S.entries = merged;
+  
+  // Save merged entries to IndexedDB (additive - never clear first)
+  try{
+    for(const e of merged){
+      await dbPut(ST.entries, e);
+    }
+  }catch(ex){ console.error('Error saving merged entries:', ex); }
+  
+  // Tasks: add Drive tasks that aren't local
+  const localTaskIds = new Set((S.tasks||[]).map(t=>t.id));
+  for(const t of (d.tasks||[])){
+    if(t.id && !localTaskIds.has(t.id)){
+      S.tasks.push(t);
+      try{ await dbPut(ST.tasks, t); }catch(ex){}
+    }
   }
+  
+  // Sites: add Drive sites that aren't local (by id)
+  const localSiteIds = new Set((S.sites||[]).map(s=>s.id));
+  for(const s of (d.sites||[])){
+    if(s.id && !localSiteIds.has(s.id)){
+      S.sites.push(s);
+      try{ await dbPut(ST.sites, s); }catch(ex){}
+    }
+  }
+  
+  // Transport types: merge
+  if(d.transportTypes && d.transportTypes.length){
+    const localTT = new Set((S.transportTypes||[]).map(t=>t.id));
+    d.transportTypes.forEach(t=>{ if(!localTT.has(t.id)) S.transportTypes.push(t); });
+    localStorage.setItem('transportTypes', JSON.stringify(S.transportTypes));
+  }
+  
+  // Update active worker/company if set in Drive
+  if(d.activeWorkerId) activeWorkerId=d.activeWorkerId;
+  if(d.activeCompanyId) activeCompanyId=d.activeCompanyId;
+  
+  localStorage.setItem('lastSave', new Date().toISOString());
+  showAlert('✅ '+merged.length+' jornadas ('+driveEntries.length+' Drive + '+localEntries.length+' local fusionadas)');
+  rerender();
 }
 
 async function mergeDriveData(d){
@@ -7166,8 +7217,9 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
       // Schedule auto-sync after 30s idle
       _idleSyncTimer = setTimeout(()=>{
         if(!_syncInProgress && isOnline && driveUrl){
-          console.log('Auto-sync: 90s idle - download only (never overwrite Drive)');
-          _doLoad(false,false,false); // silent download + merge, no upload
+          console.log('Auto-sync: 90s idle - safe silent merge');
+          // Only merge new Drive entries, never clear local
+          _safeSilentSync();
         }
       }, IDLE_MS);
       // Schedule drive check after 35s idle
