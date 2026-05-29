@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780077348419 -->
+<!-- v1780078113408 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -4225,6 +4225,20 @@ async function captureGPS(tipo){
 }
 
 let _isSaving = false;
+
+// Backup all entries to localStorage as secondary safety net
+function _backupEntriesToLS(){
+  try{
+    const backup = S.entries.filter(e=>!e._draft).map(e=>({
+      ...e,
+      fotosGastos:[],  // strip photos to save space
+      notas: (e.notas||'').slice(0,500)  // limit notas size
+    }));
+    localStorage.setItem('_entriesBackup', JSON.stringify(backup));
+    localStorage.setItem('_entriesBackupTs', Date.now().toString());
+  }catch(ex){ /* localStorage might be full */ }
+}
+
 async function saveEntry(){
   if(!fEntry.fecha){showAlert('Selecciona una fecha','err');return;}
   if(_isSaving) return;
@@ -4268,10 +4282,12 @@ async function saveEntry(){
     if(editingEntry&&fEntry.id){
       await dbPut(ST.entries,{...fEntry,_draft:false});
       S.entries=S.entries.map(e=>e.id===fEntry.id?{...fEntry,_draft:false}:e);
+      _backupEntriesToLS();
     } else {
       const id=await dbPut(ST.entries,{...fEntry,_draft:false});
       fEntry.id=id;
       S.entries.push({...fEntry,id,_draft:false});
+      _backupEntriesToLS();
     }
     editingEntry=false;
     localStorage.removeItem('_fEntry');
@@ -6332,7 +6348,8 @@ function buildSyncData(){
     tasks:S.tasks.slice(-8).map(t=>({id:t.id,titulo:(t.titulo||'').slice(0,35),fecha:t.fecha||'',otNumero:(t.otNumero||'').slice(0,12)})),
     sites:(S.sites||[]).slice(0,20).map(s=>({id:s.id,nombre:(s.nombre||'').slice(0,25),lat:+(s.lat||0).toFixed(5),lng:+(s.lng||0).toFixed(5)})),
     tt:S.transportTypes||[],
-    wid:activeWorkerId,cid:activeCompanyId
+    wid:activeWorkerId,cid:activeCompanyId,
+    driveUrl:driveUrl||''
   };
 }
 
@@ -6433,6 +6450,7 @@ async function importDriveData(d, verifyMode){
   if(d.tt) { const localTT=new Set((S.transportTypes||[]).map(t=>t.id)); d.tt.forEach(t=>{if(!localTT.has(t.id))S.transportTypes.push(t);}); localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes)); }
   if(d.wid) activeWorkerId=d.wid;
   if(d.cid) activeCompanyId=d.cid;
+  if(d.driveUrl && !driveUrl){ driveUrl=d.driveUrl; localStorage.setItem('driveUrl',d.driveUrl); showAlert('✅ URL de Drive configurada automáticamente'); }
   
   // MERGE: Build map by fecha, keep newest version of each day
   const byDate = {};
@@ -6543,6 +6561,23 @@ async function loadData(){
     dbAll(ST.entries),dbAll(ST.tasks),dbAll(ST.sites),dbAll(ST.workorders),dbAll(ST.vehicles),
     dbAll(ST.workers),dbAll(ST.companies)
   ]);
+  // Restore from localStorage backup if IndexedDB has fewer entries
+  try{
+    const lsBackup = JSON.parse(localStorage.getItem('_entriesBackup')||'[]');
+    if(lsBackup.length > S.entries.length){
+      const dbDates = new Set(S.entries.map(e=>e.fecha));
+      let restored = 0;
+      for(const e of lsBackup){
+        if(!dbDates.has(e.fecha)){
+          S.entries.push(e);
+          await dbPut(ST.entries, e).catch(()=>{});
+          restored++;
+        }
+      }
+      if(restored > 0) console.log('Restored '+restored+' entries from localStorage backup');
+    }
+  }catch(ex){}
+
   // Strip old staticmap URLs from saved locations (cleanup legacy data)
   S.entries.forEach(e=>{
     ['ubicacionEntrada','ubicacionSalida'].forEach(k=>{
@@ -7137,195 +7172,11 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
           window[cb]=async function(result){
             done=true; delete window[cb]; sc.remove();
             if(result&&result.ok&&result.data){
-              // Silent boot load - MERGE, never lose local data
+              // Boot: NEVER import from Drive automatically - only notify
+              // User must manually sync to get Drive data
               const d=result.data;
               try{
-                const driveTs = new Date(d.exportedAt||0).getTime();
+                const driveTs = new Date(d.exportedAt||d.ts||0).getTime();
                 const localTs = parseInt(localStorage.getItem('lastDriveLoad')||'0');
-                const lastSaveTs = new Date(localStorage.getItem('lastSave')||0).getTime();
-                // STRICT: Skip boot load if we have ANY local entries
-                // Only load from Drive if this is a fresh install (no local data)
-                if(S.entries.length > 0){
-                  console.log('Skipping boot load: local data exists ('+S.entries.length+' entries)');
-                  // Just show notification if Drive has newer data
-                  if(driveTs > localTs + 5000) driveHasNew=true;
-                  syncStatus='ok'; rerender(); res(); return;
-                }
-                // Build local maps for merging
-                const savedFoto=fWorker.foto||'', savedFirma=fWorker.firma||'', savedLogo=fCompany.logo||'';
-                const localEntryMap={}; S.entries.forEach(e=>{localEntryMap[e.fecha]=e;});
-                const localWorkerMap={}; workers.forEach(w=>{if(w.id)localWorkerMap[w.id]=w;});
-                const localCompanyMap={}; companies.forEach(c=>{if(c.id)localCompanyMap[c.id]=c;});
-
-                // MERGE entries: keep local if newer or not in Drive
-                const driveEntryMap={};
-                (d.entries||[]).forEach(e=>{driveEntryMap[e.fecha]=e;});
-                // Add/update entries from Drive that don't exist locally or are newer
-                for(const [fecha,de] of Object.entries(driveEntryMap)){
-                  const le=localEntryMap[fecha];
-                  if(!le){
-                    // Drive has entry we don't have locally - add it
-                    await dbPut(ST.entries,{...de,fotosGastos:de.fotosGastos||[]});
-                    S.entries.push({...de});
-                  } else if(!le._draft && driveTs > localTs){
-                    // Drive data is newer than last load - update
-                    await dbPut(ST.entries,{...de,id:le.id,fotosGastos:le.fotosGastos||de.fotosGastos||[]});
-                    S.entries=S.entries.map(e=>e.fecha===fecha?{...de,id:le.id,fotosGastos:le.fotosGastos||[]}:e);
-                  }
-                  // If local has a draft or is newer - keep local
-                }
-                // Merge other collections (replace if Drive has them)
-                if((d.tasks||[]).length>0){ await dbClear(ST.tasks); for(const t of d.tasks) await dbPut(ST.tasks,t); }
-                if((d.sites||[]).length>0){ await dbClear(ST.sites); for(const s of d.sites) await dbPut(ST.sites,s); }
-                if((d.workorders||[]).length>0){ await dbClear(ST.workorders); for(const w of d.workorders) await dbPut(ST.workorders,w); }
-                if((d.vehicles||[]).length>0){ await dbClear(ST.vehicles); for(const v of d.vehicles) await dbPut(ST.vehicles,v); }
-                if((d.workers||[]).length>0){ await dbClear(ST.workers); for(const w of d.workers){ const lw=localWorkerMap[w.id]||{}; await dbPut(ST.workers,{...w,foto:lw.foto||savedFoto,firma:w.firma||lw.firma||savedFirma}); } }
-                if((d.companies||[]).length>0){ await dbClear(ST.companies); for(const co of d.companies){ const lc=localCompanyMap[co.id]||{}; await dbPut(ST.companies,{...co,logo:lc.logo||savedLogo}); } }
-                if(d.worker&&d.worker.nombre) fWorker={...defWorker,...d.worker,foto:savedFoto,firma:d.worker.firma||savedFirma};
-                if(d.company&&d.company.nombre) fCompany={...defCompany,...d.company,logo:savedLogo};
-                if(d.activeWorkerId) activeWorkerId=d.activeWorkerId;
-                if(d.activeCompanyId) activeCompanyId=d.activeCompanyId;
-                await loadData();
-                localStorage.setItem('lastDriveLoad', Date.now().toString());
-                syncStatus='ok';
-              }catch(e){ console.warn('Boot load error:',e); syncStatus='ok'; }
-            } else {
-              syncStatus='ok';
-            }
-            rerender(); res();
-          };
-          setTimeout(()=>{ if(!done){delete window[cb];sc.remove();syncStatus='ok';rerender();res();} },15000);
-          sc.src=driveUrl+'?action=load&callback='+cb+'&t='+Date.now();
-          document.body.appendChild(sc);
-        });
-      }catch(e){ syncStatus='ok'; }
-    }
-    // Fix any existing duplicates on startup
-    await deduplicateEntries();
-    // Load task draft if any
-    loadFTaskDraft();
-    // Load most recent entry on boot
-    if(S.entries.length>0 && !editingEntry){
-      const lastEntry=[...S.entries].sort((a,b)=>b.fecha.localeCompare(a.fecha))[0];
-      if(lastEntry){
-        fEntry={...lastEntry,fichajes:[...(lastEntry.fichajes||[]).map(f=>({...f}))]};
-        editingEntry=!!lastEntry.id;
-      }
-    }
-    // Load persistent settings
-    try{
-      const td=localStorage.getItem('timerDeduct');
-      if(td!==null) timerDeduct=parseInt(td)||30;
-      const tt=localStorage.getItem('transportTypes');
-      if(tt) S.transportTypes=JSON.parse(tt)||S.transportTypes;
-      const dd=localStorage.getItem('dietaDefault');
-      if(dd) S.dietaDefault=parseFloat(dd)||0;
-    }catch(e){}
-    // Restore timer state if was running
-    const savedTimer=localStorage.getItem('timerState');
-    if(savedTimer){
-      try{
-        const ts=JSON.parse(savedTimer);
-        if(ts.running && ts.start){
-          timerStart=ts.start;
-          timerElapsed=Math.floor((Date.now()-ts.start)/1000);
-          timerDeduct=ts.deduct||30;
-          timerRunning=true;
-          timerInterval=setInterval(()=>{
-            timerElapsed=Math.floor((Date.now()-timerStart)/1000);
-            updateTitle();
-          },1000);
-          showAlert('⏱ Jornada en curso desde '+new Date(ts.start).toTimeString().slice(0,5));
-        }
-      }catch(e){}
-    }
-    // Restore draft if exists for today
-    const todayDraft = S.entries.find(e=>e.fecha===today()&&e._draft);
-    if(todayDraft){ fEntry={...todayDraft}; editingEntry=true; }
-    if(driveUrl && syncStatus!=='ok') syncStatus='ok';
-    // Auto sync: idle-based (see trackActivity above)
-    // Auto backup weekly
-    if(driveUrl){
-      const lastBackup=localStorage.getItem('lastBackup')||'';
-      const weekAgo=new Date();weekAgo.setDate(weekAgo.getDate()-7);
-      if(!lastBackup||new Date(lastBackup)<weekAgo){
-        localStorage.setItem('lastBackup',new Date().toISOString());
-      }
-    }
-    // Load Firebase config if saved
-    const savedCfg=localStorage.getItem('fbConfig');
-    if(savedCfg){ try{ fbConfig=JSON.parse(savedCfg); await initFirebase(); }catch(e){} }
-    await loadVacaciones();
-    renderApp();
-    startClock();
-    updateTitle();
-    autoSnapshot();
-    // Clean URL param on load
-    if(location.search){ history.replaceState(null,'',location.pathname); }
-    // Version check: on startup after 10s, then every 5 minutes
-    setTimeout(checkForUpdate, 10000);
-    setInterval(checkForUpdate, 5 * 60 * 1000);
-    // Adaptive Drive check: 30s active, 8s inactive (>10s idle)
-    lastActivity = Date.now(); // reset on startup
-    let _idleSyncTimer = null;
-    let _idleCheckTimer = null;
-    const IDLE_MS = 90000; // 90 seconds idle before auto-sync
-
-    function trackActivity(){
-      lastActivity = Date.now();
-      // Reset idle timers on any user action
-      clearTimeout(_idleSyncTimer);
-      clearTimeout(_idleCheckTimer);
-      // Schedule auto-sync after 30s idle
-      _idleSyncTimer = setTimeout(()=>{
-        if(!_syncInProgress && isOnline && driveUrl){
-          console.log('Auto-sync: 90s idle - safe silent merge');
-          // Only merge new Drive entries, never clear local
-          _safeSilentSync();
-        }
-      }, IDLE_MS);
-      // Schedule drive check after 35s idle
-      _idleCheckTimer = setTimeout(()=>{
-        checkDriveForNewData();
-      }, IDLE_MS + 5000);
-    }
-
-    // Track all user interactions
-    ['click','touchstart','keydown','scroll','input','mousedown'].forEach(ev=>
-      document.addEventListener(ev, trackActivity, {passive:true})
-    );
-    // Start first idle timer
-    // ── CONTINUOUS FORM SAVE (every 500ms) ──────────────
-    // Saves ALL visible form field values to fEntry/fTask
-    // regardless of events - prevents ANY data loss on tab switch
-    setInterval(()=>{
-      if(_isSaving) return; // don't interfere during save
-      // Save notas de jornada
-      const notasEl = document.getElementById('notas-editor');
-      if(notasEl && notasEl.innerHTML.trim()) {
-        fEntry.notas = notasEl.innerHTML;
-      }
-      // fichajes maintained by event handlers - no DOM polling needed
-      // Save numeric inputs by data-field attribute
-      document.querySelectorAll('input[data-field]').forEach(el => {
-        const f = el.dataset.field;
-        if(f && el.value !== '') fEntry[f] = parseFloat(el.value) || 0;
-      });
-      // Save task form if on tareas tab
-      if(S.tab === 'tareas') {
-        const taskTitle = document.querySelector('input[placeholder="Título de la tarea"]');
-        if(taskTitle && taskTitle.value) fTask.titulo = taskTitle.value;
-      }
-    }, 500);
-
-  } catch(e) {
-    document.getElementById('app').innerHTML = 
-      '<div style="color:red;padding:20px;font-family:monospace">Error: ' + e.message + '<br>' + e.stack + '</div>';
-  }
-})();
-
-
-
-</script>
-</body>
-</html>
+                if(driveTs > localTs + 5000) driveHasNew=true;
+                console.log('Boot: Drive checked, local data preserved. Entries: '+S.entries.length);
