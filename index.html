@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780032135023 -->
+<!-- v1780076551458 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2347,6 +2347,35 @@ function renderSincronizar(){
         h('button',{class:'btn btn-full btn-lg',style:{background:'#7c3aed',color:'#fff'},
           on:{click:()=>{if(!isOnline){showAlert('Sin conexión','err');return;}showAlert('Cargando desde Drive...');_doLoad(true,false,false);setTimeout(()=>{warmupDriveScript();setTimeout(driveSync,_warmupDone?0:2000);},10000);}}},
           '🔄 Sync bidireccional'
+        )
+      ),
+      // FILE SYNC - 100% reliable, no internet needed
+      h('div',{class:'card',style:{marginBottom:'1rem',border:'2px solid #0ea5e9'}},
+        h('div',{class:'sec-title',style:{color:'#0ea5e9'}},'📂 TRANSFERIR DATOS ENTRE DISPOSITIVOS'),
+        h('p',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.8rem'}},
+          'Exporta desde el móvil, importa en el PC. Sin Drive, sin internet, sin pérdida de datos.'
+        ),
+        h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.5rem'}},
+          h('button',{class:'btn btn-g btn-full btn-lg',on:{click:()=>exportSyncFile()}},
+            '📤 Exportar archivo sync'
+          ),
+          h('button',{class:'btn btn-full btn-lg',style:{background:'#0ea5e9',color:'#fff'},
+            on:{click:()=>{
+              const inp=document.createElement('input');
+              inp.type='file'; inp.accept='.json';
+              inp.onchange=ev=>{
+                const f=ev.target.files[0]; if(!f) return;
+                const r=new FileReader();
+                r.onload=e=>{
+                  try{ const d=JSON.parse(e.target.result); importDriveData(d,false); }
+                  catch(ex){ showAlert('Error al leer el archivo','err'); }
+                };
+                r.readAsText(f);
+              };
+              inp.click();
+            }}},
+            '📥 Importar archivo sync'
+          )
         )
       ),
       h('div',{style:{fontSize:'.75rem',color:'var(--ink3)',marginTop:'.5rem',textAlign:'center'}},
@@ -6269,55 +6298,40 @@ async function driveSync(){
 
 
 function buildSyncData(){
-  function cleanLoc(loc){
-    if(!loc) return loc;
-    try{const d=JSON.parse(loc);delete d.mapImg;return JSON.stringify(d);}
-    catch(e){return loc;}
+  // MINIMAL payload: skeleton data only - always fits in URL
+  // Full data (notes, GPS, sites) is transferred via file export/import
+  const _cut=(()=>{const d=new Date();d.setDate(d.getDate()-60);return d.toISOString().slice(0,10);})();
+  let allEntries=[...S.entries];
+  if(fEntry.fecha && !allEntries.find(e=>e.fecha===fEntry.fecha) && (fEntry.horasNormales||fEntry.fichajes?.length)){
+    allEntries.push({...fEntry});
   }
-  // Merge current fEntry into S.entries so GPS/notes from form are included
-  let entries = S.entries.map(e=>{
-    if(fEntry.fecha && e.fecha===fEntry.fecha){
-      // Overlay fEntry data (has latest GPS, notes, etc.)
-      return {
-        ...e,
-        ...fEntry,
-        id: e.id, // keep existing id
-        ubicacionEntrada: cleanLoc(fEntry.ubicacionEntrada||e.ubicacionEntrada),
-        ubicacionSalida: cleanLoc(fEntry.ubicacionSalida||e.ubicacionSalida)
-      };
-    }
-    return {
-      ...e,
-      ubicacionEntrada:cleanLoc(e.ubicacionEntrada),
-      ubicacionSalida:cleanLoc(e.ubicacionSalida)
-    };
+  const mini=e=>({
+    id:e.id||Date.now(),
+    fecha:e.fecha,
+    fichajes:(e.fichajes||[]).map(f=>({entrada:f.entrada||'',salida:f.salida||''})),
+    horasNormales:+(e.horasNormales||0).toFixed(2),
+    horasExtra:+(e.horasExtra||0).toFixed(2),
+    horasNocturnas:+(e.horasNocturnas||0).toFixed(2),
+    horasFestivas:+(e.horasFestivas||0).toFixed(2),
+    precioHoraNormal:+(e.precioHoraNormal||0).toFixed(2),
+    precioHoraExtra:+(e.precioHoraExtra||0).toFixed(2),
+    dieta:+(e.dieta||0).toFixed(2),
+    transporte:+(e.transporte||0).toFixed(2),
+    _transportType:e._transportType||'',
+    timerDeduct:e.timerDeduct||30,
+    notas:stripHtmlNotas(e.notas||'').slice(0,200),
+    dietasExtra:(e.dietasExtra||[]).slice(0,2),
+    otrosConceptos:(e.otrosConceptos||[]).slice(0,2),
+    journeys:(e.journeys||[]).slice(0,3).map(j=>({km:j.km||0,tipo:j.tipo||''})),
   });
-  // If fEntry has data but no matching entry yet, add it
-  if(fEntry.fecha && !S.entries.find(e=>e.fecha===fEntry.fecha) && (fEntry.ubicacionEntrada||fEntry.notas||fEntry.horasNormales)){
-    entries.push({...fEntry, ubicacionEntrada:cleanLoc(fEntry.ubicacionEntrada), ubicacionSalida:cleanLoc(fEntry.ubicacionSalida)});
-  }
-  const _cut=(()=>{const d=new Date();d.setDate(d.getDate()-30);return d.toISOString().slice(0,10);})();
   return {
-    version:2,
-    exportedAt:new Date().toISOString(),
-    entries:entries.filter(e=>e.fecha>=_cut).map(e=>{const c={...e,fotosGastos:[]};if(c.notas)c.notas=stripHtmlNotas(c.notas);return c;}),
-    tasks:S.tasks.slice(-10).map(t=>({id:t.id,titulo:(t.titulo||'').replace(/<[^>]*>/g,'').slice(0,30),fecha:t.fecha||'',otNumero:(t.otNumero||'').slice(0,15)})),
-    sites:(S.sites||[]).map(s=>({id:s.id,nombre:s.nombre||'',lat:s.lat||0,lng:s.lng||0,url:s.url||'',foto:s.foto||''})),
-    transportTypes:(S.transportTypes||[]),
-
-
-    activeWorkerId, activeCompanyId,
-    worker:(()=>{const w=workers.find(x=>x.id===activeWorkerId)||workers[0]||{};
-      return {nombre:w.nombre||fWorker.nombre,apellidos:w.apellidos||fWorker.apellidos,
-      dni:w.dni||fWorker.dni,cargo:w.cargo||fWorker.cargo,
-      departamento:w.departamento||fWorker.departamento,email:w.email||fWorker.email,
-      telefono:w.telefono||fWorker.telefono,numSS:w.numSS||fWorker.numSS,
-      fechaAlta:w.fechaAlta||fWorker.fechaAlta,convenio:w.convenio||fWorker.convenio};})(),
-    company:(()=>{const c=companies.find(x=>x.id===activeCompanyId)||companies[0]||{};
-      return {nombre:c.nombre||fCompany.nombre,cif:c.cif||fCompany.cif,
-      direccion:c.direccion||fCompany.direccion,ciudad:c.ciudad||fCompany.ciudad,
-      cp:c.cp||fCompany.cp,telefono:c.telefono||fCompany.telefono,
-      email:c.email||fCompany.email,web:c.web||fCompany.web};})()
+    v:3,
+    ts:Date.now(),
+    entries:allEntries.filter(e=>e.fecha>=_cut).map(mini),
+    tasks:S.tasks.slice(-8).map(t=>({id:t.id,titulo:(t.titulo||'').slice(0,35),fecha:t.fecha||'',otNumero:(t.otNumero||'').slice(0,12)})),
+    sites:(S.sites||[]).slice(0,20).map(s=>({id:s.id,nombre:(s.nombre||'').slice(0,25),lat:+(s.lat||0).toFixed(5),lng:+(s.lng||0).toFixed(5)})),
+    tt:S.transportTypes||[],
+    wid:activeWorkerId,cid:activeCompanyId
   };
 }
 
@@ -6361,6 +6375,33 @@ function _doLoad(force, verifyMode, confirmMode){
   document.body.appendChild(script);
 }
 
+
+// Export full data as JSON file for device-to-device sync
+async function exportSyncFile(){
+  try{
+    const entries = await dbAll(ST.entries);
+    const tasks = await dbAll(ST.tasks);
+    const sites = await dbAll(ST.sites);
+    const data = {
+      version:3,
+      exportedAt:new Date().toISOString(),
+      entries: entries.map(e=>({...e,fotosGastos:[]})),
+      tasks: tasks.map(t=>({id:t.id,titulo:t.titulo||'',fecha:t.fecha||'',otNumero:t.otNumero||''})),
+      sites: sites.map(s=>({id:s.id,nombre:s.nombre||'',lat:s.lat||0,lng:s.lng||0,url:s.url||''})),
+      transportTypes: S.transportTypes||[],
+      activeWorkerId, activeCompanyId,
+    };
+    const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'timerpro-sync-'+new Date().toISOString().slice(0,10)+'.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showAlert('✅ Archivo exportado — '+entries.length+' jornadas, '+sites.length+' sitios');
+  }catch(ex){ showAlert('Error al exportar: '+ex.message,'err'); }
+}
+
 async function importDriveData(d, verifyMode){
   // SAFETY: Always read from IndexedDB as ground truth
   let localEntries = [];
@@ -6370,7 +6411,16 @@ async function importDriveData(d, verifyMode){
   // Create snapshot before any changes
   try{ if(localEntries.length>0) await createSnapshot('Antes de Drive - '+new Date().toLocaleString('es-ES')); }catch(ex){}
 
-  const driveEntries = (d.entries||[]);
+  // Handle both mini (v:3) and legacy formats
+  const driveEntries = (d.entries||[]).map(e=>({
+    ...e,
+    // Map mini format fields to full format if needed
+    fecha: e.fecha,
+    id: e.id||Date.now(),
+  }));
+  if(d.tt) { const localTT=new Set((S.transportTypes||[]).map(t=>t.id)); d.tt.forEach(t=>{if(!localTT.has(t.id))S.transportTypes.push(t);}); localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes)); }
+  if(d.wid) activeWorkerId=d.wid;
+  if(d.cid) activeCompanyId=d.cid;
   
   // MERGE: Build map by fecha, keep newest version of each day
   const byDate = {};
