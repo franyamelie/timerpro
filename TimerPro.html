@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1779234113185 -->
+<!-- v1780078113408 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -134,7 +134,7 @@ main{flex:1;overflow-y:auto;padding:1rem}
 .cal-day.has-e::after{content:'';position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--acc)}
 .cal-day.worked{background:rgba(34,197,94,.28);color:#16a34a;font-weight:700;border:1.5px solid rgba(34,197,94,.5)}
 .cal-day.worked::after{content:'✓';position:absolute;bottom:1px;right:2px;font-size:.55rem;color:#16a34a;opacity:.8}
-.cal-day.holiday{background:rgba(239,68,68,.18);color:#dc2626;font-weight:700;border:1.5px solid rgba(239,68,68,.4)}
+.cal-day.weekend-rest{background:rgba(239,68,68,.1);color:#ef4444!important;border-color:rgba(239,68,68,.25)!important}.holiday{background:rgba(239,68,68,.18);color:#dc2626;font-weight:700;border:1.5px solid rgba(239,68,68,.4)}
 .cal-day.holiday::before{content:'★';position:absolute;top:1px;left:2px;font-size:.5rem;color:#dc2626}
 .cal-day.holiday.worked{background:rgba(34,197,94,.28);color:#16a34a;border:1.5px solid rgba(34,197,94,.5)}
 .cal-day.holiday.worked::before{content:'★';position:absolute;top:1px;left:2px;font-size:.5rem;color:#dc2626;opacity:.6}
@@ -202,10 +202,28 @@ main{flex:1;overflow-y:auto;padding:1rem}
   border-radius:50%;background:var(--acc);transform:translate(-50%,-50%);}
 .clock-btns{display:flex;gap:.4rem;justify-content:center;margin-top:.5rem;flex-wrap:wrap;}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
 <div id="app"></div>
 <script>
+function _lsSave(){
+  try{
+    const data={entries:S.entries.filter(e=>!e._draft).map(e=>({...e,fotosGastos:[]})),sites:S.sites||[],tasks:S.tasks||[],transportTypes:S.transportTypes||[],savedAt:Date.now()};
+    localStorage.setItem('_tp_primary',JSON.stringify(data));
+  }catch(ex){}
+}
+function _lsLoad(){
+  try{const d=JSON.parse(localStorage.getItem('_tp_primary')||'null');return(d&&Array.isArray(d.entries))?d:null;}catch(ex){return null;}
+}
+
+function formatNotas(n){
+  if(!n) return '';
+  if(n.indexOf('<br')!==-1||n.indexOf('<div')!==-1||n.indexOf('<b>')!==-1||n.indexOf('<u>')!==-1) return n;
+  return n.split(String.fromCharCode(10)).join('<br>');
+}
+
+
 
 
 'use strict';
@@ -264,6 +282,8 @@ const dbClear=st=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrite')
 const S = {
   tab:'fichar', dark:true,
   entries:[], tasks:[], sites:[], workorders:[], vehicles:[], settings:{},
+  transportTypes:[{id:'coche',nombre:'Coche',precio:0},{id:'camion',nombre:'Camión',precio:0}],
+  dietaDefault:0,
   // Jornada activa
   entry:null,
   // Modales
@@ -280,7 +300,7 @@ const defEntry = () => ({
   horasExtra:0, precioHoraExtra:0, importeExtra:0, horasNocturnas:0, precioHoraNocturna:0, importeNocturnas:0,
   horasFestivas:0, precioHoraFestiva:0, importeFestivas:0, dieta:0, dietasExtra:[], transporte:0,
   otrosConceptos:[], notas:'', journeys:[], ubicacionEntrada:'', ubicacionSalida:'',
-  entradaLocked:false, fotosGastos:[]
+  entradaLocked:false, fotosGastos:[], timerDeduct:30
 });
 const defFichaje = () => ({_fid:Date.now(), entrada:'', salida:'', nota:'', editing:false, taskId:'', timerRunning:false, timerStart:null});
 const defTask = f => ({fecha:f||today(), titulo:'', horaInicio:nowTime(), horaFin:'', descripcion:'', siteId:'', workOrderId:'', otNumero:'', usaOT:false, fotos:[]});
@@ -293,6 +313,7 @@ const defVehicle = {nombre:'',tipo:'coche',matricula:'',precioPorKm:0.19,notas:'
 
 // Formularios
 let fEntry = defEntry();
+let _skipDomCapture = false; // prevent DOM contamination when switching days
 let fTask = defTask();
 let fWorker = {...defWorker};
 let fCompany = {...defCompany};
@@ -308,6 +329,36 @@ function loadFTaskDraft(){
   try{
     const d=localStorage.getItem('fTaskDraft');
     if(d){ const t=JSON.parse(d); if(t&&t.titulo!==undefined) fTask={...t}; }
+  }catch(e){}
+}
+
+// ── PERSISTENT FORM STATE ──────────────────────────
+// Save/restore entire fEntry to localStorage so data
+// survives tab switches, rerenders, and sync operations
+function persistEntry(){
+  try{ localStorage.setItem('_fEntry', JSON.stringify(fEntry)); }catch(e){}
+}
+function restoreEntry(){
+  try{
+    const saved = localStorage.getItem('_fEntry');
+    if(!saved) return;
+    const e = JSON.parse(saved);
+    if(e && e.fecha && e.fecha === fEntry.fecha){
+      // Save what must NEVER be overwritten by localStorage
+      const fichajes     = fEntry.fichajes;
+      const notas        = fEntry.notas;
+      const dietasExtra  = fEntry.dietasExtra;
+      const otrosConceptos = fEntry.otrosConceptos;
+      const journeys     = fEntry.journeys;
+      // Restore only simple scalar fields (horas, precios, dieta, etc.)
+      fEntry = {...fEntry, ...e};
+      // Always restore from memory — these are maintained by event handlers
+      fEntry.fichajes      = fichajes;
+      fEntry.notas         = notas;
+      fEntry.dietasExtra   = dietasExtra;
+      fEntry.otrosConceptos= otrosConceptos;
+      fEntry.journeys      = journeys;
+    }
   }catch(e){}
 }
 let editTaskId = null;
@@ -337,7 +388,7 @@ let fbConfig=null; // loaded from localStorage
 let syncStatus=''; // '', 'syncing', 'ok', 'err'
 let syncTimer=null;
 let deferredInstall=null;
-let driveUrl='https://script.google.com/macros/s/AKfycbyaHPepTcBvSk-CiEnqvApBNPl3pp1x2iHhN3Zx3qNTc4hGb0FEFOUa9IVN34GG0I1pmQ/exec'; // URL fija - ya configurada
+let driveUrl='https://script.google.com/macros/s/AKfycbzE1jMIbFs4xMQKtdO5syVDSHMyuNBJqnNcQTyj8T5Qy34SPFU1XJsqKOXrrFMn-zZAxQ/exec'; // URL fija - ya configurada
 let lastSync='';
 let driveHasNew=false; // Drive has newer data than local
 let driveChecked=false; // Has been checked at least once
@@ -367,6 +418,10 @@ function h(tag, attrs, ...children){
     else if(k==='data') Object.entries(v).forEach(([dk,dv])=>el.dataset[dk]=dv);
     else if(k==='spellcheck'){ el.spellcheck=(v===true||v===''||v==='true'); el.setAttribute('spellcheck',v?'true':'false'); }
     else if(BOOL.includes(k)){ el[k]=(v===true||v===''||v==='true'); }
+    else if(k==='value'&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA')){
+      el.setAttribute('value',v); // set default
+      el.value=v; // also set current value property
+    }
     else if(v!==false&&v!==null&&v!==undefined) el.setAttribute(k,v);
   });
   children.flat(Infinity).forEach(c=>{
@@ -409,22 +464,14 @@ function attachFichajeListeners(){
   requestAnimationFrame(()=>{
     document.querySelectorAll('.fich-row').forEach((row,i)=>{
       if(!fEntry.fichajes[i]) return;
-      const times=row.querySelectorAll('input[type="time"]');
+      const times=row.querySelectorAll('input[type="text"]'); // fichaje inputs are type=text
       if(times[0]){
-        times[0].oninput=ev=>{
-          if(fEntry.fichajes[i]) fEntry.fichajes[i].entrada=ev.target.value;
-        };
-        times[0].onchange=ev=>{
-          if(fEntry.fichajes[i]){ fEntry.fichajes[i].entrada=ev.target.value; scheduleDraftSave(); }
-        };
+        times[0].oninput=ev=>{ if(fEntry.fichajes[i]&&ev.target.value) fEntry.fichajes[i].entrada=ev.target.value; };
+        times[0].onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].entrada=ev.target.value; scheduleDraftSave(); } };
       }
       if(times[1]){
-        times[1].oninput=ev=>{
-          if(fEntry.fichajes[i]) fEntry.fichajes[i].salida=ev.target.value;
-        };
-        times[1].onchange=ev=>{
-          if(fEntry.fichajes[i]){ fEntry.fichajes[i].salida=ev.target.value; scheduleDraftSave(); }
-        };
+        times[1].oninput=ev=>{ if(fEntry.fichajes[i]&&ev.target.value) fEntry.fichajes[i].salida=ev.target.value; };
+        times[1].onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].salida=ev.target.value; scheduleDraftSave(); } };
       }
       // Textarea for nota
       const nota=row.querySelector('textarea');
@@ -445,7 +492,9 @@ function rerenderSetNotas(){
   requestAnimationFrame(()=>{
     const el=document.getElementById('notas-editor');
     if(el && el.contentEditable==='true' && document.activeElement!==el){
-      const val=fEntry.notas||'';
+      // Read from localStorage first (most up to date), then fEntry
+      // Use fEntry.notas as single source of truth (avoids contamination from localStorage)
+      const val = fEntry.notas || '';
       if(el.innerHTML!==val) el.innerHTML=val;
     }
   });
@@ -460,18 +509,34 @@ function rerender(){
 // Capture ALL current DOM input values into fEntry before each render
 // This prevents data loss when theme changes, tab switches, or auto-rerenders happen
 function captureFormState(){
+  if(_skipDomCapture) return; // switching days — don't read stale DOM
   try{
+
+    // Read notas FIRST before persisting (fix: was saving stale data)
+    const notasElFirst=document.getElementById('notas-editor');
+    if(notasElFirst && notasElFirst.innerHTML.trim()){
+      fEntry.notas=notasElFirst.innerHTML;
+      localStorage.setItem('notas_'+fEntry.fecha, notasElFirst.innerHTML);
+    }
+    persistEntry(); // save to localStorage immediately
     const fichRows = document.querySelectorAll('.fich-row');
+    const activeEl = document.activeElement;
     fichRows.forEach((row,i)=>{
       if(!fEntry.fichajes[i]) return;
-      const timeInputs=row.querySelectorAll('input[type="time"]');
-      if(timeInputs[0]&&timeInputs[0].value) fEntry.fichajes[i].entrada=timeInputs[0].value;
-      if(timeInputs[1]&&timeInputs[1].value) fEntry.fichajes[i].salida=timeInputs[1].value;
-      const nota=row.querySelector('input[type="text"],textarea');
-      if(nota) fEntry.fichajes[i].nota=nota.value||nota.textContent||'';
+      // Read text inputs in order: first=entrada, second=salida
+      const textInputs=Array.from(row.querySelectorAll('input[type="text"]'));
+      if(textInputs[0]&&textInputs[0].value) fEntry.fichajes[i].entrada=textInputs[0].value;
+      if(textInputs[1]&&textInputs[1].value) fEntry.fichajes[i].salida=textInputs[1].value;
+      // Read nota from textarea only
+      const notaEl=row.querySelector('textarea');
+      if(notaEl) fEntry.fichajes[i].nota=notaEl.value||fEntry.fichajes[i].nota||'';
     });
     const notasEl=document.getElementById('notas-editor');
-    if(notasEl) fEntry.notas = (notasEl.value||notasEl.innerHTML||'') || fEntry.notas || '';
+    if(notasEl && notasEl.innerHTML.trim()){
+      fEntry.notas=notasEl.innerHTML;
+      localStorage.setItem('notas_'+fEntry.fecha, notasEl.innerHTML);
+    }
+    // Note: don't read from localStorage notas_fecha - fEntry.notas is source of truth
     // Capture numeric fields
     ['horasNormales','precioHoraNormal','horasExtra','precioHoraExtra',
      'horasNocturnas','precioHoraNocturna','horasFestivas','precioHoraFestiva',
@@ -484,6 +549,7 @@ function captureFormState(){
 
 function renderApp(){
   captureFormState();
+  restoreEntry(); // restore fEntry from localStorage (same day only)
   try {
     const app = document.getElementById('app');
     if(!app) return;
@@ -504,6 +570,9 @@ function renderApp(){
     if(m) m.scrollTop=scrollTop;
     document.documentElement.classList.toggle('light',!S.dark);
   updateTitle();
+  // ── POST-RENDER HOOKS ── restituye valores de formulario tras cada render
+  if(S.tab==='fichar'){ rerenderSetNotas(); attachFichajeListeners(); }
+  initFieldAreas();
   } catch(e) {
     console.error('renderApp error:',e);
     const app=document.getElementById('app');
@@ -619,10 +688,15 @@ const TABS = [
   {id:'sincronizar',icon:'🔄',label:'Sincronizar'},
   {id:'trabajador',icon:'👤',label:'Trabajador'},
   {id:'empresa',icon:'🏢',label:'Empresa'},
+  {id:'ia',icon:'🤖',label:'IA'},
 ];
 function renderTabs(){
   return h('div',{class:'tabs'},
-    ...TABS.map(t=>h('button',{class:'tab'+(S.tab===t.id?' active':''),on:{click:()=>{captureFormState();if(t.id==='tareas')loadFTaskDraft();S.tab=t.id;rerender()}}},
+    ...TABS.map(t=>h('button',{class:'tab'+(S.tab===t.id?' active':''),'data-tabId':t.id,on:{click:()=>{
+        captureFormState();
+        S.tab=t.id;
+        rerender();
+        }}},
       h('span',{class:'tab-icon'},t.icon),t.label
     ))
   );
@@ -641,6 +715,7 @@ function renderMain(){
     case 'sincronizar':return renderSincronizar();
     case 'trabajador': return renderTrabajador();
     case 'empresa':    return renderEmpresa();
+    case 'ia':         return (typeof renderIAChat==='function'?renderIAChat():renderIAFallback());
     default: return h('div',{},'');
   }
 }
@@ -722,7 +797,7 @@ function renderFichar(){
           'Descanso:',
           h('input',{type:'number',min:'0',max:'480',value:timerDeduct,
             style:{width:'52px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.85rem',textAlign:'center'},
-            on:{input:ev=>{timerDeduct=parseInt(ev.target.value)||0;}}}),
+            on:{input:ev=>{timerDeduct=parseInt(ev.target.value)||0;localStorage.setItem('timerDeduct',timerDeduct);}}},
           'min'
         )
       ),
@@ -799,7 +874,7 @@ function renderFichar(){
         ? h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.6rem .8rem',marginTop:'.5rem',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.3rem'}},
             h('div',{style:{display:'flex',flexDirection:'column'}},
               h('span',{style:{fontSize:'.65rem',color:'var(--ink3)',textTransform:'uppercase',letterSpacing:'.04em'}},'Tiempo total'),
-              h('span',{style:{fontWeight:800,fontSize:'1.1rem',color:'var(--acc)',fontVariantNumeric:'tabular-nums'}},formatTimerFull(timerElapsed))
+              h('span',{id:'timer-display',style:{fontWeight:800,fontSize:'1.1rem',color:'var(--acc)',fontVariantNumeric:'tabular-nums'}},formatTimerFull(timerElapsed))
             ),
             h('div',{style:{display:'flex',flexDirection:'column'}},
               h('span',{style:{fontSize:'.65rem',color:'var(--ink3)',textTransform:'uppercase',letterSpacing:'.04em'}},'Tiempo neto'),
@@ -825,7 +900,14 @@ function renderFichar(){
 
     // Fichajes
     h('div',{class:'card'},
-      h('div',{class:'sec-title'},'Fichajes del día'),
+      h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'.4rem'}},
+        h('div',{class:'sec-title',style:{margin:0}},'Fichajes del día'),
+        h('button',{
+          class:'btn btn-b btn-sm',
+          style:{fontSize:'.72rem',padding:'.25rem .6rem'},
+          on:{click:()=>{ S.modal='resumendia'; S._shareConPrecios=false; rerender(); }}
+        },'📊 Resumen')
+      ),
       ...e.fichajes.map((fj,i)=>renderFichaje(fj,i)),
       h('button',{class:'btn btn-gh btn-sm',style:{marginTop:'.3rem'},on:{click:addFichaje}},'➕ Añadir fichaje'),
       e.fichajes.length>0&&e.fichajes[0].entrada
@@ -916,11 +998,54 @@ function renderFichar(){
       h('div',{class:'sep'}),
       h('div',{class:'grid-2'},
         h('div',{class:'field'},
-          h('label',{},'DIETA'),
+          h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',marginBottom:'.3rem'}},
+            h('label',{style:{margin:0}},'DIETA'),
+            h('button',{
+              title:'Precio dieta por defecto',
+              style:{background:'none',border:'none',cursor:'pointer',fontSize:'.8rem',color:'var(--ink2)',padding:'0 .2rem'},
+              on:{click:()=>{
+                const p=prompt('Precio dieta por defecto (€):',S.dietaDefault||0);
+                if(p!==null){
+                  S.dietaDefault=parseFloat(p)||0;
+                  localStorage.setItem('dietaDefault',S.dietaDefault);
+                  showAlert('✅ Precio dieta guardado: '+eur(S.dietaDefault));
+                  rerender();
+                }
+              }}
+            },'⚙️'),
+            S.dietaDefault>0?h('button',{
+              title:'Aplicar precio por defecto',
+              style:{background:'var(--acc)',color:'#000',border:'none',borderRadius:'4px',
+                cursor:'pointer',fontSize:'.7rem',padding:'.1rem .4rem',fontWeight:700},
+              on:{click:()=>{fEntry.dieta=S.dietaDefault;rerender();}}
+            },eur(S.dietaDefault)):null
+          ),
           importeField(e.dieta, v=>{fEntry.dieta=v;rerender()})
         ),
         h('div',{class:'field'},
-          h('label',{},'TRANSPORTE'),
+          h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',marginBottom:'.3rem'}},
+            h('label',{style:{margin:0}},'TRANSPORTE'),
+            h('button',{
+              title:'Gestionar tipos de transporte',
+              style:{background:'none',border:'none',cursor:'pointer',fontSize:'.8rem',color:'var(--ink2)',padding:'0 .2rem'},
+              on:{click:()=>{S.modal='transportConfig';rerender();}}
+            },'⚙️')
+          ),
+          h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',flexWrap:'wrap',marginBottom:'.3rem'}},
+            ...(S.transportTypes||[]).map(tt=>h('button',{
+              style:{
+                background: fEntry._transportType===tt.id?'var(--acc)':'var(--surf2)',
+                color: fEntry._transportType===tt.id?'#000':'var(--ink)',
+                border:'1px solid var(--brd)',borderRadius:'6px',
+                padding:'.25rem .6rem',cursor:'pointer',fontSize:'.75rem',fontWeight:600
+              },
+              on:{click:()=>{
+                fEntry._transportType=tt.id;
+                if(tt.precio>0) fEntry.transporte=tt.precio;
+                rerender();
+              }}
+            },tt.nombre+(tt.precio>0?' ('+eur(tt.precio)+')':'')))
+          ),
           importeField(e.transporte, v=>{fEntry.transporte=v;rerender()})
         )
       )
@@ -1003,6 +1128,7 @@ function renderFichar(){
         h('div',{
           id:'notas-editor',
           contenteditable:'true',
+          html:formatNotas(fEntry.notas),
           spellcheck:true, lang:'es',
           style:{
             minHeight:'80px',background:'var(--surf2)',border:'1px solid var(--brd)',
@@ -1011,7 +1137,7 @@ function renderFichar(){
             boxSizing:'border-box'
           },
           on:{
-            input:ev=>{fEntry.notas=ev.target.innerHTML;scheduleDraftSave();},
+            input:ev=>{fEntry.notas=ev.target.innerHTML;localStorage.setItem('notas_'+fEntry.fecha,ev.target.innerHTML);persistEntry();scheduleDraftSave();},
             keyup:ev=>{fEntry.notas=ev.target.innerHTML;}
           }
         })
@@ -1047,15 +1173,15 @@ function renderFichar(){
         },
           h('div',{style:{flex:1}},
             h('div',{style:{fontWeight:700,fontSize:'.85rem',display:'flex',alignItems:'center',gap:'.3rem',flexWrap:'wrap'}},
-              h('span',{},t.titulo||'Sin título'),
-              t.usaOT?h('span',{class:'badge badge-b',style:{fontSize:'.6rem'}},'OT'+(t.otNumero?' '+t.otNumero:'')):null
+              h('span',{style:{wordBreak:'break-word',whiteSpace:'normal'}},t.titulo||'Sin título'),
+              t.otNumero?h('span',{class:'badge badge-y',style:{fontSize:'.65rem',fontWeight:800}},'OT '+t.otNumero):null
             ),
             t.horaInicio||t.horaFin
               ? h('div',{style:{fontSize:'.75rem',color:'var(--ink2)'}},(t.horaInicio||'--')+' → '+(t.horaFin||'--'))
               : null,
             t.descripcion
               ? h('div',{style:{fontSize:'.73rem',color:'var(--ink3)',marginTop:'.15rem'}},
-                  t.descripcion.replace(/<[^>]*>/g,'').slice(0,60)+(t.descripcion.length>60?'...':''))
+                  t.descripcion.replace(/<[^>]*>/g,''))
               : null
           ),
           h('button',{class:'btn btn-gh btn-sm',style:{flexShrink:0},
@@ -1137,7 +1263,8 @@ function renderFichar(){
       h('p',{style:{fontSize:'.72rem',color:'var(--ink3)',marginTop:'.3rem'}},
         '💡 Escribe la dirección directamente o pulsa 📍 para GPS (requiere HTTPS)'
       )
-    ),
+    )
+  ),
 
     // Historial
     h('div',{class:'card'},
@@ -1167,11 +1294,25 @@ function renderFichar(){
                   h('button',{class:'btn btn-b btn-sm',title:'Editar jornada',on:{click:ev=>{ev.stopPropagation();loadHistorial(en);}}},'✏️'),
                   h('button',{class:'btn btn-g btn-sm',title:'Guardar jornada actual en este día',on:{click:ev=>{
                     ev.stopPropagation();
-                    if(!confirm('¿Guardar la jornada actual sobreescribiendo el día '+en.fecha+'?')) return;
-                    const saved={...fEntry,fecha:en.fecha,id:en.id};
-                    const notasEl=document.getElementById('notas-editor');
-                    if(notasEl) saved.notas=notasEl.innerHTML;
+                    if(fEntry.fecha !== en.fecha){
+                      showAlert('Carga primero esta jornada con ✏️ antes de guardar','err');
+                      return;
+                    }
+                    if(!confirm('¿Guardar la jornada del '+en.fecha+'?')) return;
+                    // Read DOM first THEN snapshot (fichajes + notas need DOM read first)
                     captureFormState();
+                    const notasEl=document.getElementById('notas-editor');
+                    if(notasEl&&notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
+                    // Read inputs directly before snapshot
+                    document.querySelectorAll('.fich-row').forEach((row,i)=>{
+                      if(!fEntry.fichajes[i]) return;
+                      const ti=Array.from(row.querySelectorAll('input[type="text"]'));
+                      if(ti[0]&&ti[0].value) fEntry.fichajes[i].entrada=ti[0].value;
+                      if(ti[1]&&ti[1].value) fEntry.fichajes[i].salida=ti[1].value;
+                      const nota=row.querySelector('textarea');
+                      if(nota) fEntry.fichajes[i].nota=nota.value||fEntry.fichajes[i].nota||'';
+                    });
+                    const saved={...fEntry,fecha:en.fecha,id:en.id};
                     dbPut(ST.entries,{...saved,_draft:false}).then(()=>{
                       S.entries=S.entries.map(e=>e.id===en.id?{...saved}:e);
                       showAlert('Jornada guardada ✓');
@@ -1197,20 +1338,22 @@ function renderFichaje(fj,i){
   const taskOpts=[{id:'',titulo:'Sin tarea'},...S.tasks];
 
   const timeInput=(field,fidPart)=>h('div',{style:{display:'flex',alignItems:'center',gap:'.3rem'}},
-    // Native time input - shows clock picker on mobile, spinner on desktop
     h('input',{
-      type:'time',
+      type:'text',
       id:'fich-'+fidPart+'-'+fj._fid,
       value:fj[field]||'',
+      placeholder:'--:--',
+      maxlength:'5',
       style:{
         background:'var(--surf2)',border:'1.5px solid var(--brd)',
         borderRadius:'var(--r2)',padding:'.35rem .5rem',
-        color:'var(--ink)',fontSize:'.9rem',width:'120px',
-        cursor:'pointer',fontFamily:'inherit'
+        color:'var(--ink)',fontSize:'.9rem',width:'80px',
+        cursor:'text',fontFamily:'inherit',textAlign:'center'
       },
       on:{
-        input:ev=>{fEntry.fichajes[i][field]=ev.target.value;},
-        change:ev=>{fEntry.fichajes[i][field]=ev.target.value;scheduleDraftSave();}
+        input:ev=>{ if(ev.target.value) fEntry.fichajes[i][field]=ev.target.value; },
+        blur:ev=>{ if(ev.target.value) fEntry.fichajes[i][field]=ev.target.value; scheduleDraftSave(); },
+        change:ev=>{ if(ev.target.value) fEntry.fichajes[i][field]=ev.target.value; scheduleDraftSave(); }
       }
     }),
     // "Ahora" button - sets current time
@@ -1239,7 +1382,12 @@ function renderFichaje(fj,i){
         h('span',{style:{color:'var(--ink3)'}},'→'),
         timeInput('salida','sal'),
         fj.entrada&&fj.salida
-          ? h('span',{class:'badge badge-g',style:{flexShrink:0}},fmtH(calcH(fj.entrada,fj.salida)))
+          ? h('span',{class:'badge badge-g',style:{flexShrink:0}},
+            (function(){
+              var raw=calcH(fj.entrada,fj.salida);
+              var dec=fEntry.fichajes.length===1?timerDeduct/60:0;
+              return fmtH(Math.max(0,raw-dec));
+            })())
           : null
       ),
       // Live timer button
@@ -1294,7 +1442,7 @@ function renderFichaje(fj,i){
       )
     ),
     ftimer.running
-      ? h('div',{style:{fontSize:'.72rem',color:'var(--acc)',fontWeight:700}},
+      ? h('div',{id:'fichaje-timer-'+fj._fid,style:{fontSize:'.72rem',color:'var(--acc)',fontWeight:700}},
           '⏱ En curso: '+formatTimer(ftimer.elapsed))
       : null
   );
@@ -1438,6 +1586,22 @@ function renderTareas(){
   );
 }
 
+async function adjuntarTareaADia(t){
+  const fecha = prompt('¿A qué día adjuntar esta tarea?\nFormato: AAAA-MM-DD\nEjemplo: 2026-05-26\n\nDía actual de la tarea: '+t.fecha, t.fecha||today());
+  if(!fecha || fecha === t.fecha) return;
+  // Validate format
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)){ showAlert('Formato incorrecto. Usa AAAA-MM-DD','err'); return; }
+  const idx = S.tasks.findIndex(x=>x.id===t.id);
+  if(idx<0) return;
+  S.tasks[idx] = {...S.tasks[idx], fecha:fecha};
+  fTask = defTask();
+  // Save updated task to DB
+  try{ await dbPut(ST.tasks, S.tasks[idx]); }catch(ex){}
+  showAlert('✅ Tarea adjuntada al día '+dlbl(fecha));
+  rerender();
+}
+
+
 function renderTaskCard(t){
   const site = S.sites.find(s=>s.id==t.siteId);
   const wo = S.workorders.find(w=>w.id==t.workOrderId);
@@ -1447,6 +1611,7 @@ function renderTaskCard(t){
       h('div',{class:'task-title'},t.titulo||'Sin título'),
       h('div',{style:{display:'flex',gap:'.3rem'}},
         h('button',{class:'btn btn-b btn-sm',on:{click:()=>editTask(t)}},'✏️'),
+        h('button',{class:'btn btn-g btn-sm',title:'Adjuntar a otro día',on:{click:()=>adjuntarTareaADia(t)}},'📅'),
         h('button',{class:'btn btn-gh btn-sm',on:{click:()=>copyTask(t)}},'📋'),
         h('button',{class:'btn btn-r btn-sm',on:{click:()=>deleteTask(t.id)}},'🗑')
       )
@@ -1552,9 +1717,13 @@ function renderCalendario(){
           const isWorked = hasEntry;
           const isHol = isHolidayES(ds);
           const isVac = isVacacion(ds);
+          const dow = new Date(ds+'T12:00:00').getDay(); // 0=Sun,6=Sat
+          const isWeekend = dow===0||dow===6;
           if(isSel) cls+=' selected';
           else if(isToday) cls+=' today';
-          // Add ALL applicable classes (order matters for CSS priority)
+          // Weekends and holidays in red UNLESS worked
+          if((isWeekend||isHol) && !isWorked) cls+=' weekend-rest';
+          // Add ALL applicable classes
           if(isWorked) cls+=' worked';
           if(isHol) cls+=' holiday';
           if(isVac && !isWorked) cls+=' vacation';
@@ -1600,10 +1769,23 @@ function renderCalendario(){
 }
 
 function goToDay(ds){
+  // Save current day before switching
+  try{
+    const notasEl=document.getElementById('notas-editor');
+    if(notasEl && fEntry.fecha && notasEl.innerHTML.trim()){
+      fEntry.notas=notasEl.innerHTML;
+      localStorage.setItem('notas_'+fEntry.fecha, notasEl.innerHTML);
+      persistEntry();
+    }
+  }catch(e){}
+  pauseAndSaveTimerForDay(); // save current day's timer
+  localStorage.removeItem('_fEntry');
+  _skipDomCapture=true;
   // Navigate to Fichar tab for specific date
   const existing=S.entries.find(e=>e.fecha===ds);
   if(existing){
-    fEntry={...existing, fichajes:[...(existing.fichajes||[]).map(f=>({...f}))]};
+    fEntry={...existing, fichajes:[...(existing.fichajes||[]).map(f=>({...f}))], dietasExtra:[...(existing.dietasExtra||[])], otrosConceptos:[...(existing.otrosConceptos||[])], journeys:[...(existing.journeys||[])]};
+    // notas come from DB entry
     editingEntry=true;
   } else {
     fEntry={...defEntry(), fecha:ds};
@@ -1611,8 +1793,9 @@ function goToDay(ds){
   }
   selDate=null;
   S.tab='fichar';
+  restoreTimerForDay(ds); // restore this day's timer if it has one
   rerender();
-  // Scroll to top
+  requestAnimationFrame(()=>{ _skipDomCapture=false; });
   window.scrollTo(0,0);
 }
 
@@ -2013,6 +2196,9 @@ function renderResumen(){
   }
 
   return h('div',{},
+    h('div',{style:{display:'flex',justifyContent:'flex-end',marginBottom:'.3rem'}},
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{captureFormState();S.tab='fichar';rerender();}}},'✕ Cerrar')
+    ),
     // Date filter
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'Filtro de fechas'),
@@ -2163,11 +2349,44 @@ function renderSincronizar(){
         h('span',{style:{fontWeight:700}},S.entries.length+' jornadas')
       ),
       h('div',{class:'btn-row',style:{flexDirection:'column',marginTop:'.5rem'}},
-        h('button',{class:'btn btn-g btn-full btn-lg',style:{opacity:isOnline?1:.5},on:{click:()=>{if(!isOnline){showAlert('Sin conexion. Los datos se subiran cuando vuelva el internet.','err');pendingSync=true;return;}driveSync();}}},
+        h('button',{class:'btn btn-g btn-full btn-lg',style:{opacity:isOnline?1:.5},on:{click:()=>{if(!isOnline){showAlert('Sin conexion. Los datos se subiran cuando vuelva el internet.','err');pendingSync=true;return;}warmupDriveScript();setTimeout(driveSync,_warmupDone?0:2000);}}},
           isOnline?'☁️ Subir TODO a Drive':'☁️ Subir (sin conexion)'
         ),
         h('button',{class:'btn btn-b btn-full btn-lg',on:{click:()=>_doLoad(true,false,true)}},
           '⬇️ Cargar TODO desde Drive'
+        ),
+        h('button',{class:'btn btn-full btn-lg',style:{background:'#7c3aed',color:'#fff'},
+          on:{click:()=>{if(!isOnline){showAlert('Sin conexión','err');return;}showAlert('Cargando desde Drive...');_doLoad(true,false,false);setTimeout(()=>{warmupDriveScript();setTimeout(driveSync,_warmupDone?0:2000);},10000);}}},
+          '🔄 Sync bidireccional'
+        )
+      ),
+      // FILE SYNC - 100% reliable, no internet needed
+      h('div',{class:'card',style:{marginBottom:'1rem',border:'2px solid #0ea5e9'}},
+        h('div',{class:'sec-title',style:{color:'#0ea5e9'}},'📂 TRANSFERIR DATOS ENTRE DISPOSITIVOS'),
+        h('p',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.8rem'}},
+          'Exporta desde el móvil, importa en el PC. Sin Drive, sin internet, sin pérdida de datos.'
+        ),
+        h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.5rem'}},
+          h('button',{class:'btn btn-g btn-full btn-lg',on:{click:()=>exportSyncFile()}},
+            '📤 Exportar archivo sync'
+          ),
+          h('button',{class:'btn btn-full btn-lg',style:{background:'#0ea5e9',color:'#fff'},
+            on:{click:()=>{
+              const inp=document.createElement('input');
+              inp.type='file'; inp.accept='.json';
+              inp.onchange=ev=>{
+                const f=ev.target.files[0]; if(!f) return;
+                const r=new FileReader();
+                r.onload=e=>{
+                  try{ const d=JSON.parse(e.target.result); importDriveData(d,false); }
+                  catch(ex){ showAlert('Error al leer el archivo','err'); }
+                };
+                r.readAsText(f);
+              };
+              inp.click();
+            }}},
+            '📥 Importar archivo sync'
+          )
         )
       ),
       h('div',{style:{fontSize:'.75rem',color:'var(--ink3)',marginTop:'.5rem',textAlign:'center'}},
@@ -2179,6 +2398,7 @@ function renderSincronizar(){
         'Si tienes problemas con la app o pierdes datos, usa este boton para guardar una copia de seguridad ahora mismo en tu dispositivo.'
       ),
       h('button',{class:'btn btn-r btn-full btn-lg',on:{click:emergencyExport}},'🆘 Descargar Backup Ahora'),
+      h('button',{class:'btn btn-y btn-full btn-lg',style:{marginTop:'.5rem'},on:{click:recoverFromIndexedDB}},'🔄 Recuperar datos de IndexedDB'),
       localStorage.getItem('backup_date')
         ? h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginTop:'.5rem',textAlign:'center'}},
             'Ultima copia local: ' + new Date(localStorage.getItem('backup_date')||'').toLocaleString('es-ES')
@@ -2495,7 +2715,926 @@ function renderEmpresa(){
 // ══════════════════════════════════════════════════════════
 // MODAL
 // ══════════════════════════════════════════════════════════
+function renderModalResumenDia(){
+  const e = fEntry;
+  const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
+  const impHoras = (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0);
+  const impDietas = (e.dieta||0)+(e.dietasExtra||[]).reduce((s,d)=>s+(d.importe||0),0);
+  const impTransp = e.transporte||0;
+  const impOtros = (e.otrosConceptos||[]).reduce((s,o)=>s+(o.importe||0),0);
+  const impViajes = (e.journeys||[]).reduce((s,j)=>s+(j.km||0)*(j.vehicleId?
+    (S.vehicles.find(v=>v.id==j.vehicleId)?.precioPorKm||0):j.precioManual||0),0);
+  const totalI = impHoras+impDietas+impTransp+impOtros+impViajes;
+  const tareasDia = S.tasks.filter(t=>t.fecha===e.fecha);
+
+  const sec = (icon,title)=>h('div',{style:{
+    display:'flex',alignItems:'center',gap:'.5rem',
+    borderBottom:'2px solid #e2e8f0',paddingBottom:'.4rem',
+    marginBottom:'.6rem',marginTop:'.8rem'
+  }},
+    h('span',{style:{fontSize:'1.1rem'}},icon),
+    h('span',{style:{fontWeight:800,fontSize:'.85rem',color:'#1e293b',letterSpacing:'.05em',textTransform:'uppercase'}},title)
+  );
+
+  const row = (label,val,bold)=>h('div',{style:{
+    display:'flex',justifyContent:'space-between',alignItems:'center',
+    padding:'.35rem 0',borderBottom:'1px solid #f1f5f9'
+  }},
+    h('span',{style:{fontSize:'.83rem',color:'#475569'}},label),
+    h('span',{style:{fontWeight:bold?700:600,fontSize:'.85rem',color:bold?'#0f172a':'#1e293b'}},val)
+  );
+
+  return h('div',{
+    class:'modal-bg',
+    style:{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',
+      display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:'1rem'},
+    on:{click:ev=>{if(ev.target===ev.currentTarget){S.modal=null;document.querySelectorAll('.modal-bg').forEach(e=>e.remove());rerender();}}}
+  },
+    h('div',{style:{
+      background:'#ffffff',color:'#0f172a',
+      borderRadius:'12px',width:'100%',maxWidth:'480px',
+      maxHeight:'88vh',overflowY:'auto',
+      boxShadow:'0 25px 60px rgba(0,0,0,.4)',
+      fontFamily:'system-ui,sans-serif'
+    }},
+      // Header tipo PDF
+      h('div',{style:{
+        background:'linear-gradient(135deg,#1e293b,#334155)',
+        color:'#fff',padding:'1.2rem 1.4rem',borderRadius:'12px 12px 0 0'
+      }},
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
+          h('div',{},
+            h('div',{style:{fontSize:'.72rem',opacity:.7,letterSpacing:'.1em',textTransform:'uppercase'}},'Resumen de jornada'),
+            h('div',{style:{fontSize:'1.3rem',fontWeight:800,marginTop:'.2rem'}},dlbl(e.fecha)),
+            h('div',{style:{fontSize:'.8rem',opacity:.8,marginTop:'.1rem'}},cap(wday(e.fecha)))
+          ),
+          h('button',{
+            style:{background:'rgba(255,255,255,.15)',border:'none',color:'#fff',
+              borderRadius:'8px',padding:'.4rem .7rem',cursor:'pointer',fontSize:'.85rem'},
+            on:{click:()=>{ S.modal=null; document.querySelectorAll('.modal-bg').forEach(e=>e.remove()); rerender(); }}
+          },'✕')
+        ),
+        // KPIs rápidos
+        h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.6rem',marginTop:'1rem'}},
+          h('div',{style:{background:'rgba(255,255,255,.12)',borderRadius:'8px',padding:'.6rem .8rem',textAlign:'center'}},
+            h('div',{style:{fontSize:'1.4rem',fontWeight:900}},fmtH(totalH)),
+            h('div',{style:{fontSize:'.68rem',opacity:.75,marginTop:'.1rem'}},'HORAS TRABAJADAS')
+          ),
+          S._shareConPrecios===true?h('div',{style:{background:'rgba(255,255,255,.12)',borderRadius:'8px',padding:'.6rem .8rem',textAlign:'center'}},
+            h('div',{style:{fontSize:'1.4rem',fontWeight:900}},eur(totalI)),
+            h('div',{style:{fontSize:'.68rem',opacity:.75,marginTop:'.1rem'}},'TOTAL A COBRAR')
+          ):null
+        )
+      ),
+
+      // Cuerpo
+      h('div',{style:{padding:'1rem 1.4rem 1.4rem'}},
+
+        // Fichajes
+        (e.fichajes||[]).length>0 ? h('div',{},
+          sec('⏱','Fichajes'),
+          ...(e.fichajes||[]).map((f,i)=>h('div',{style:{
+            display:'flex',alignItems:'center',gap:'.6rem',
+            padding:'.5rem .7rem',marginBottom:'.4rem',
+            background:'#f8fafc',borderRadius:'8px',
+            border:'1px solid #e2e8f0'
+          }},
+            h('span',{style:{fontWeight:700,color:'#64748b',minWidth:'20px',fontSize:'.8rem'}},i+1+'.'),
+            h('span',{style:{fontWeight:700,fontSize:'1rem',color:'#0f172a',minWidth:'50px'}},f.entrada||'—'),
+            h('span',{style:{color:'#94a3b8',fontSize:'1.1rem'}},'→'),
+            h('span',{style:{fontWeight:700,fontSize:'1rem',color:'#0f172a',minWidth:'50px'}},f.salida||'—'),
+            f.entrada&&f.salida?h('span',{style:{
+              background:'#dcfce7',color:'#16a34a',borderRadius:'6px',
+              padding:'.2rem .5rem',fontSize:'.75rem',fontWeight:700,marginLeft:'auto'
+            }},(function(){var r=calcH(f.entrada,f.salida);var d=(e.fichajes||[]).length===1?(e.timerDeduct||timerDeduct||0)/60:0;return fmtH(Math.max(0,r-d));}())):null,
+            f.nota?h('span',{style:{fontSize:'.75rem',color:'#64748b',fontStyle:'italic',marginLeft:'.3rem'}},f.nota.slice(0,25)):null
+          ))
+        ) : null,
+
+        // Horas e importes
+        totalH>0 ? h('div',{},
+          sec('🕐','Horas e Importes'),
+          (e.horasNormales||0)>0?row('Normales',e.horasNormales+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraNormal||0)+' = '+eur((e.horasNormales||0)*(e.precioHoraNormal||0)):'')):null,
+          (e.horasExtra||0)>0?row('Extra',e.horasExtra+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraExtra||0)+' = '+eur((e.horasExtra||0)*(e.precioHoraExtra||0)):'')):null,
+          (e.horasNocturnas||0)>0?row('Nocturnas',e.horasNocturnas+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraNocturna||0)+' = '+eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0)):'')):null,
+          (e.horasFestivas||0)>0?row('Festivas',e.horasFestivas+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraFestiva||0)+' = '+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0)):'')):null,
+          impHoras>0&&S._shareConPrecios===true?h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.4rem .6rem',background:'#f0fdf4',borderRadius:'6px',marginTop:'.3rem'}},
+            h('span',{style:{fontSize:'.83rem',fontWeight:700,color:'#15803d'}},'Subtotal horas'),
+            h('span',{style:{fontWeight:800,color:'#15803d'}},eur(impHoras))
+          ):null
+        ):null,
+
+        // Dietas y transporte
+        (e.dieta||0)+(e.transporte||0)+(e.dietasExtra||[]).length>0 ? h('div',{},
+          sec('🍽','Dietas y Transporte'),
+          (e.dieta||0)>0?row(
+            S._shareConPrecios===true?'Dieta':'1 Dieta',
+            S._shareConPrecios===true?eur(e.dieta):''
+          ):null,
+          (e.transporte||0)>0?row(
+            (function(){var tt=(S.transportTypes||[]).find(function(t){return t.id===e._transportType;});return '1 Viaje'+(tt?' - '+tt.nombre:'');}()),
+            S._shareConPrecios===true?eur(e.transporte):''
+          ):null,
+          ...(e.dietasExtra||[]).map(d=>row(d.concepto||'Dieta extra', S._shareConPrecios===true?eur(d.importe||0):'✓'))
+        ):null,
+
+        // Otros conceptos
+        (e.otrosConceptos||[]).length>0 ? h('div',{},
+          sec('➕','Otros Conceptos'),
+          ...(e.otrosConceptos||[]).map(o=>row(o.concepto||'Concepto',eur(o.importe||0)))
+        ):null,
+
+        // Viajes
+        (e.journeys||[]).length>0 ? h('div',{},
+          sec('🚗','Viajes'),
+          ...(e.journeys||[]).map(j=>row(
+            (j.origen||'Origen')+(j.destino?' → '+j.destino:'')+(j.km?' ('+j.km+'km)':''),
+            eur((j.km||0)*(j.vehicleId?(S.vehicles.find(v=>v.id==j.vehicleId)?.precioPorKm||0):j.precioManual||0))
+          ))
+        ):null,
+
+        // Tareas
+        tareasDia.length>0 ? h('div',{},
+          sec('🔧','Tareas / O.T.'),
+          ...tareasDia.map(t=>{
+            const titulo=(t.titulo||'Sin título').replace(/<[^>]*>/g,'');
+            const lineas=titulo.split('\n').map(l=>l.trim()).filter(Boolean);
+            return h('div',{style:{
+              padding:'.5rem .8rem',marginBottom:'.4rem',
+              background:'#fefce8',borderRadius:'8px',border:'1px solid #fef08a'
+            }},
+              t.otNumero?h('div',{style:{marginBottom:'.4rem'}},
+                h('span',{style:{
+                  background:'#f59e0b',color:'#1e293b',borderRadius:'5px',
+                  padding:'.15rem .6rem',fontSize:'.75rem',fontWeight:800,
+                  letterSpacing:'.04em'
+                }},'OT '+t.otNumero)
+              ):null,
+              h('div',{style:{fontWeight:700,fontSize:'.85rem',color:'#1e293b',lineHeight:1.6}},
+                ...lineas.map(l=>h('div',{},l))
+              ),
+              t.horaInicio?h('div',{style:{fontSize:'.75rem',color:'#92400e',marginTop:'.3rem'}},
+                '🕐 '+t.horaInicio+(t.horaFin?' → '+t.horaFin:'')):null
+            );
+          })
+        ):null,
+
+        // Notas
+        e.notas?h('div',{},
+          sec('📝','Notas'),
+          h('div',{style:{
+            background:'#f8fafc',borderRadius:'8px',padding:'.7rem .9rem',
+            fontSize:'.83rem',color:'#334155',lineHeight:1.6,
+            border:'1px solid #e2e8f0'
+          },html:formatNotas(e.notas)})
+        ):null,
+
+        // Share with/without prices toggle + buttons
+        h('div',{style:{marginTop:'1rem'}},
+          h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',
+            background:'#f8fafc',borderRadius:'8px',padding:'.5rem .8rem',border:'1px solid #e2e8f0'}},
+            h('span',{style:{fontSize:'.82rem',color:'#475569',flex:1}},'Incluir precios al compartir'),
+            h('button',{
+              style:{
+                background:S._shareConPrecios===true?'#22c55e':'#94a3b8',
+                color:'#fff',border:'none',borderRadius:'20px',
+                padding:'.25rem .7rem',cursor:'pointer',fontWeight:700,fontSize:'.78rem'
+              },
+              on:{click:()=>{S._shareConPrecios=S._shareConPrecios===true?false:true;rerender();}}
+            },S._shareConPrecios===true?'✓ Sí':'✗ No')
+          ),
+          h('div',{style:{display:'flex',gap:'.5rem',marginBottom:'.5rem'}},
+            h('button',{
+              style:{flex:1,background:'#dc2626',color:'#fff',border:'none',borderRadius:'8px',
+                padding:'.65rem',fontWeight:700,fontSize:'.82rem',cursor:'pointer'},
+              on:{click:()=>generarPDFResumen(S._shareConPrecios===true)}
+            },'📄 PDF'),
+            h('button',{
+              id:'btn-compartir-img',
+              style:{flex:1,background:'#7c3aed',color:'#fff',border:'none',borderRadius:'8px',
+                padding:'.65rem',fontWeight:700,fontSize:'.82rem',cursor:'pointer'},
+              on:{click:()=>compartirComoImagen(S._shareConPrecios===true)}
+            },'📸 Imagen')
+          ),
+          h('div',{style:{display:'flex',gap:'.5rem'}},
+            h('button',{
+              style:{flex:1,background:'#25D366',color:'#fff',border:'none',borderRadius:'8px',
+                padding:'.65rem',fontWeight:700,fontSize:'.82rem',cursor:'pointer'},
+              on:{click:()=>shareResumen('whatsapp',S._shareConPrecios===true)}
+            },'📱 WhatsApp'),
+            h('button',{
+              style:{flex:1,background:'#2563eb',color:'#fff',border:'none',borderRadius:'8px',
+                padding:'.65rem',fontWeight:700,fontSize:'.82rem',cursor:'pointer'},
+              on:{click:()=>shareResumen('email',S._shareConPrecios===true)}
+            },'📧 Email'),
+            h('button',{
+              style:{flex:1,background:'#64748b',color:'#fff',border:'none',borderRadius:'8px',
+                padding:'.65rem',fontWeight:700,fontSize:'.82rem',cursor:'pointer'},
+              on:{click:()=>shareResumen('copy',S._shareConPrecios===true)}
+            },'📋 Copiar')
+          )
+        ),
+
+        // TOTAL
+        h('div',{style:{
+          background:'linear-gradient(135deg,#0f172a,#1e293b)',
+          borderRadius:'10px',padding:'1rem 1.2rem',marginTop:'.6rem',
+          display:S._shareConPrecios===true?'flex':'none',justifyContent:'space-between',alignItems:'center'
+        }},
+          h('div',{},
+            h('div',{style:{color:'rgba(255,255,255,.7)',fontSize:'.72rem',letterSpacing:'.1em'}},'TOTAL DÍA'),
+            h('div',{style:{color:'rgba(255,255,255,.6)',fontSize:'.7rem',marginTop:'.1rem'}},
+              [totalH>0?fmtH(totalH):'',tareasDia.length>0?tareasDia.length+' tarea(s)':''].filter(Boolean).join(' · '))
+          ),
+          h('div',{style:{fontSize:'2rem',fontWeight:900,color:'#4ade80'}},eur(totalI))
+        )
+      )
+    )
+  );
+}
+
+function shareResumen(method, conPrecios){
+  const e = fEntry;
+  const cp = conPrecios === true; // ONLY show prices if explicitly true
+  const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
+  const impHoras = (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0);
+  const impDietas = (e.dieta||0)+(e.dietasExtra||[]).reduce((s,d)=>s+(d.importe||0),0);
+  const impTransp = e.transporte||0;
+  const impOtros = (e.otrosConceptos||[]).reduce((s,o)=>s+(o.importe||0),0);
+  const totalI = impHoras+impDietas+impTransp+impOtros;
+  const tareasDia = S.tasks.filter(t=>t.fecha===e.fecha);
+
+  let lines = [];
+  lines.push('📋 JORNADA — '+dlbl(e.fecha).toUpperCase());
+  lines.push('─────────────────────────');
+
+  // Fichajes
+  if((e.fichajes||[]).length>0){
+    (e.fichajes||[]).forEach((f,i)=>{
+      let l = '⏱ '+(f.entrada||'—')+' → '+(f.salida||'—');
+      if(f.entrada&&f.salida) l += '  ('+fmtH(calcH(f.entrada,f.salida))+')';
+      if(f.nota) l += '\n   '+f.nota;
+      lines.push(l);
+    });
+  }
+
+  // Tareas - each description line by line, OT clear
+  if(tareasDia.length>0){
+    lines.push('');
+    lines.push('🔧 TAREAS:');
+    tareasDia.forEach(t=>{
+      const titulo = (t.titulo||'Sin título').replace(/<[^>]*>/g,'');
+      const lineas = titulo.split('\n').map(l=>l.trim()).filter(Boolean);
+      lineas.forEach((l,i)=>lines.push((i===0?'▸ ':  '  ')+l));
+      if(t.otNumero) lines.push('  📋 OT: '+t.otNumero);
+      lines.push('');
+    });
+  }
+
+  // Precios SOLO si conPrecios===true
+  if(cp){
+    lines.push('─────────────────────────');
+    lines.push('🕐 HORAS: '+fmtH(totalH));
+    if(e.horasNormales>0) lines.push('  • Normales '+e.horasNormales+'h × '+eur(e.precioHoraNormal||0)+' = '+eur((e.horasNormales||0)*(e.precioHoraNormal||0)));
+    if(e.horasExtra>0)    lines.push('  • Extra '+e.horasExtra+'h × '+eur(e.precioHoraExtra||0)+' = '+eur((e.horasExtra||0)*(e.precioHoraExtra||0)));
+    if(e.horasNocturnas>0)lines.push('  • Nocturnas '+e.horasNocturnas+'h × '+eur(e.precioHoraNocturna||0)+' = '+eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0)));
+    if(e.horasFestivas>0) lines.push('  • Festivas '+e.horasFestivas+'h × '+eur(e.precioHoraFestiva||0)+' = '+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0)));
+    if((e.dieta||0)>0) lines.push('  • Dieta: '+eur(e.dieta));
+    if((e.transporte||0)>0){
+      const ttName=(S.transportTypes||[]).find(t=>t.id===e._transportType)?.nombre||'';
+      lines.push('  • Transporte'+(ttName?' ('+ttName+')':'')+': '+eur(e.transporte));
+    }
+    (e.dietasExtra||[]).forEach(d=>lines.push('  • '+(d.concepto||'Dieta extra')+': '+eur(d.importe||0)));
+    (e.otrosConceptos||[]).forEach(o=>lines.push('  • '+(o.concepto||'Concepto')+': '+eur(o.importe||0)));
+    lines.push('─────────────────────────');
+    lines.push('💰 TOTAL: '+eur(totalI));
+  } else {
+    lines.push('');
+    lines.push('🕐 '+fmtH(totalH)+' trabajadas');
+  }
+
+  lines.push('─ TimerPro ─');
+  const txt = lines.join('\n');
+
+  if(method==='whatsapp'){
+    window.open('https://wa.me/?text='+encodeURIComponent(txt),'_blank');
+  } else if(method==='email'){
+    window.open('mailto:?subject='+encodeURIComponent('Jornada '+dlbl(e.fecha))+'&body='+encodeURIComponent(txt),'_blank');
+  } else {
+    navigator.clipboard.writeText(txt).then(()=>showAlert('✅ Copiado al portapapeles')).catch(()=>{
+      const ta=document.createElement('textarea');
+      ta.value=txt;document.body.appendChild(ta);ta.select();
+      document.execCommand('copy');document.body.removeChild(ta);
+      showAlert('✅ Copiado al portapapeles');
+    });
+  }
+}
+
+
+
+function renderModalTransportConfig(){
+  const types = S.transportTypes||[];
+  return h('div',{
+    class:'modal-bg',
+    style:{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',display:'flex',
+      alignItems:'center',justifyContent:'center',zIndex:9999,padding:'1rem'},
+    on:{click:ev=>{if(ev.target===ev.currentTarget){S.modal=null;document.querySelectorAll('.modal-bg').forEach(e=>e.remove());rerender();}}}
+  },
+    h('div',{class:'card',style:{maxWidth:'360px',width:'100%',padding:'1.2rem'}},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1rem'}},
+        h('div',{style:{fontWeight:800,fontSize:'1rem'}},'🚗 Tipos de Transporte'),
+        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>closeTransportConfig()}},'✕')
+      ),
+      ...types.map((tt,i)=>h('div',{style:{display:'flex',gap:'.5rem',alignItems:'center',marginBottom:'.5rem'}},
+        h('input',{type:'text',value:tt.nombre,placeholder:'Nombre',
+          style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
+            padding:'.4rem .6rem',color:'var(--ink)',fontSize:'.85rem'},
+          on:{input:ev=>{S.transportTypes[i].nombre=ev.target.value;},
+            change:ev=>{S.transportTypes[i].nombre=ev.target.value;
+            localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));}}}),
+        h('input',{type:'number',value:tt.precio||'',placeholder:'€/uso',min:0,step:0.01,
+          style:{width:'80px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
+            padding:'.4rem .5rem',color:'var(--ink)',fontSize:'.85rem'},
+          on:{change:ev=>{S.transportTypes[i].precio=parseFloat(ev.target.value)||0;
+            localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));}}}),
+        h('button',{class:'btn btn-r btn-sm',
+          on:{click:()=>{S.transportTypes.splice(i,1);
+            localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));rerender();}}
+        },'✕')
+      )),
+      h('button',{class:'btn btn-g btn-sm',style:{width:'100%',marginTop:'.5rem'},
+        on:{click:()=>{
+          S.transportTypes.push({id:'t'+Date.now(),nombre:'Nuevo tipo',precio:0});
+          localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));rerender();
+        }}
+      },'+ Añadir tipo'),
+      h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',marginTop:'.7rem',textAlign:'center'}},
+        'El precio se aplica automáticamente al seleccionar el tipo')
+    )
+  );
+}
+
+
+function closeTransportConfig(){
+  localStorage.setItem('transportTypes', JSON.stringify(S.transportTypes));
+  S.modal=null;
+  document.querySelectorAll('.modal-bg').forEach(e=>e.remove());
+  rerender();
+  showAlert('✅ Tipos de transporte guardados');
+}
+
+
+function generarPDFResumen(conPrecios){
+  const e = fEntry;
+  const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
+  const impHoras = (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0);
+  const impDietas = (e.dieta||0)+(e.dietasExtra||[]).reduce((s,d)=>s+(d.importe||0),0);
+  const impTransp = e.transporte||0;
+  const impOtros = (e.otrosConceptos||[]).reduce((s,o)=>s+(o.importe||0),0);
+  const totalI = impHoras+impDietas+impTransp+impOtros;
+  const tareasDia = S.tasks.filter(t=>t.fecha===e.fecha);
+  const trabajador = (S.workers||[])[0]||{};
+  const empresa = (S.companies||[])[0]||{};
+
+  const cp = conPrecios === true; // ONLY prices when explicitly true
+  const conPrecios2 = cp; // alias
+  const filas = (arr, fn) => arr.map(fn).join('');
+  const seccion = (titulo, contenido) => contenido ? `
+    <div class="seccion">
+      <div class="sec-titulo">${titulo}</div>
+      ${contenido}
+    </div>` : '';
+  const fila = (label, val) => `
+    <div class="fila">
+      <span class="flabel">${label}</span>
+      <span class="fval">${val}</span>
+    </div>`;
+
+  // Fichajes
+  const htmlFichajes = seccion('⏱ FICHAJES', filas(e.fichajes||[], (f,i) => `
+    <div class="fichaje-row">
+      <span class="fnum">${i+1}.</span>
+      <span class="ftime">${f.entrada||'—'}</span>
+      <span class="farrow">→</span>
+      <span class="ftime">${f.salida||'—'}</span>
+      ${f.entrada&&f.salida?`<span class="fbadge">${fmtH(calcH(f.entrada,f.salida))}</span>`:''}
+      ${f.nota?`<span class="fnota">${f.nota}</span>`:''}
+    </div>`));
+
+  // Horas
+  let htmlHoras = '';
+  if(totalH>0){
+    let rows = '';
+    if(e.horasNormales>0) rows += fila('Horas normales', e.horasNormales+'h' + (cp?' × '+eur(e.precioHoraNormal||0)+' = <b>'+eur((e.horasNormales||0)*(e.precioHoraNormal||0))+'</b>':''));
+    if(e.horasExtra>0)    rows += fila('Horas extra', e.horasExtra+'h' + (cp?' × '+eur(e.precioHoraExtra||0)+' = <b>'+eur((e.horasExtra||0)*(e.precioHoraExtra||0))+'</b>':''));
+    if(e.horasNocturnas>0)rows += fila('Horas nocturnas', e.horasNocturnas+'h' + (cp?' × '+eur(e.precioHoraNocturna||0)+' = <b>'+eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0))+'</b>':''));
+    if(e.horasFestivas>0) rows += fila('Horas festivas', e.horasFestivas+'h' + (cp?' × '+eur(e.precioHoraFestiva||0)+' = <b>'+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0))+'</b>':''));
+    if(conPrecios) rows += `<div class="fila subtotal"><span class="flabel">Subtotal horas</span><span class="fval">${eur(impHoras)}</span></div>`;
+    htmlHoras = seccion('🕐 HORAS E IMPORTES', rows);
+  }
+
+  // Dietas y transporte
+  let dietaRows = '';
+  if(e.dieta>0) dietaRows += fila('Dieta', conPrecios?eur(e.dieta):'✓');
+  if(e.transporte>0){
+    const ttName = e._transportType?(S.transportTypes||[]).find(t=>t.id===e._transportType)?.nombre||'':'';
+    dietaRows += fila('Transporte'+(ttName?' ('+ttName+')':''), conPrecios?eur(e.transporte):'✓');
+  }
+  (e.dietasExtra||[]).forEach(d=>{ dietaRows += fila(d.concepto||'Dieta extra', conPrecios?eur(d.importe||0):'✓'); });
+  const htmlDietas = dietaRows ? seccion('🍽 DIETAS Y TRANSPORTE', dietaRows) : '';
+
+  // Otros
+  let otrosRows = (e.otrosConceptos||[]).map(o=>fila(o.concepto||'Concepto', conPrecios?eur(o.importe||0):'✓')).join('');
+  const htmlOtros = otrosRows ? seccion('➕ OTROS CONCEPTOS', otrosRows) : '';
+
+  // Tareas con OT - full text, line by line
+  let htmlTareas = '';
+  if(tareasDia.length>0){
+    const tareasHtml = filas(tareasDia, t => {
+      const titulo = (t.titulo||'Sin título').replace(/<[^>]*>/g,'');
+      const lineas = titulo.split('\n').map(l=>l.trim()).filter(Boolean);
+      return `<div class="tarea-item">
+        ${t.otNumero?`<div class="ot-badge">OT ${t.otNumero}</div>`:''}
+        <div class="tarea-texto">${lineas.map(l=>`<div class="tarea-linea">${l}</div>`).join('')}</div>
+        ${t.horaInicio?`<div class="tarea-hora">🕐 ${t.horaInicio}${t.horaFin?' → '+t.horaFin:''}</div>`:''}
+      </div>`;
+    });
+    htmlTareas = seccion('🔧 TAREAS / ÓRDENES DE TRABAJO', tareasHtml);
+  }
+
+  // Notas
+  let htmlNotas = '';
+  if(e.notas){
+    // Preserve HTML formatting in PDF
+    const notasHtml = e.notas
+      .replace(/<b>/gi,'<strong>').replace(/<\/b>/gi,'<\/strong>')
+      .replace(/<u>/gi,'<u>').replace(/<\/u>/gi,'<\/u>');
+    htmlNotas = seccion('📝 NOTAS', `<div class="nota-linea" style="line-height:1.7">${notasHtml}</div>`);
+  }
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jornada ${e.fecha}</title>
+<style>
+  @page { margin: 15mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; background: #fff; font-size: 13px; }
+  .header { background: linear-gradient(135deg, #1e293b, #334155); color: #fff; padding: 20px 24px; border-radius: 8px 8px 0 0; margin-bottom: 0; }
+  .header-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+  .empresa-nombre { font-size: 11px; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.1em; }
+  .fecha-big { font-size: 22px; font-weight: 800; margin: 4px 0 2px; }
+  .dia-semana { font-size: 12px; opacity: 0.75; }
+  .sin-precios-badge { background: rgba(255,255,255,.2); padding: 3px 10px; border-radius: 20px; font-size: 11px; }
+  .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .kpi { background: rgba(255,255,255,.12); border-radius: 8px; padding: 10px 14px; text-align: center; }
+  .kpi-val { font-size: 22px; font-weight: 900; }
+  .kpi-label { font-size: 10px; opacity: 0.7; letter-spacing: 0.08em; margin-top: 2px; }
+  .body { padding: 0 2px; }
+  .seccion { margin-top: 18px; }
+  .sec-titulo { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 8px; }
+  .fila { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #f1f5f9; }
+  .flabel { color: #475569; }
+  .fval { font-weight: 600; }
+  .fila.subtotal { background: #f0fdf4; padding: 6px 8px; border-radius: 6px; margin-top: 4px; }
+  .fila.subtotal .flabel, .fila.subtotal .fval { color: #15803d; font-weight: 800; }
+  .fichaje-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 5px; }
+  .fnum { color: #94a3b8; min-width: 18px; font-size: 12px; }
+  .ftime { font-weight: 700; font-size: 15px; min-width: 48px; }
+  .farrow { color: #94a3b8; }
+  .fbadge { background: #dcfce7; color: #16a34a; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 700; margin-left: auto; }
+  .fnota { font-size: 11px; color: #64748b; font-style: italic; }
+  .tarea-item { background: #fefce8; border: 1px solid #fef08a; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
+  .ot-badge { display: inline-block; background: #f59e0b; color: #1e293b; border-radius: 5px; padding: 2px 10px; font-size: 11px; font-weight: 800; margin-bottom: 6px; letter-spacing: 0.05em; }
+  .tarea-texto { font-weight: 600; font-size: 13px; line-height: 1.6; }
+  .tarea-linea { padding: 1px 0; }
+  .tarea-hora { font-size: 11px; color: #92400e; margin-top: 5px; }
+  .nota-linea { padding: 2px 0; line-height: 1.6; color: #334155; }
+  .total-box { background: linear-gradient(135deg, #0f172a, #1e293b); color: #fff; border-radius: 10px; padding: 14px 18px; margin-top: 20px; display: flex; justify-content: space-between; align-items: center; }
+  .total-label { font-size: 12px; opacity: 0.7; letter-spacing: 0.1em; text-transform: uppercase; }
+  .total-val { font-size: 28px; font-weight: 900; color: #4ade80; }
+  .total-horas { font-size: 12px; opacity: 0.6; margin-top: 2px; }
+  .footer { text-align: center; font-size: 10px; color: #94a3b8; margin-top: 20px; padding-top: 10px; border-top: 1px solid #e2e8f0; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .no-print { display: none !important; }
+    .header { -webkit-print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-top">
+    <div>
+      ${empresa.nombre?`<div class="empresa-nombre">${empresa.nombre}</div>`:''}
+      <div class="fecha-big">${dlbl(e.fecha)}</div>
+      <div class="dia-semana">${cap(wday(e.fecha))}</div>
+    </div>
+    ${!cp?'<div class="sin-precios-badge">Sin precios</div>':''}
+  </div>
+  <div class="kpis">
+    <div class="kpi"><div class="kpi-val">${fmtH(totalH)}</div><div class="kpi-label">HORAS TRABAJADAS</div></div>
+    ${cp?`<div class="kpi"><div class="kpi-val">${eur(totalI)}</div><div class="kpi-label">TOTAL A COBRAR</div></div>`:''}
+  </div>
+</div>
+<div class="body">
+  ${htmlFichajes}
+  ${htmlHoras}
+  ${htmlDietas}
+  ${htmlOtros}
+  ${htmlTareas}
+  ${htmlNotas}
+  ${cp?`<div class="total-box">
+    <div><div class="total-label">Total día</div><div class="total-horas">${fmtH(totalH)}</div></div>
+    <div class="total-val">${eur(totalI)}</div>
+  </div>`:''}
+  <div class="footer">Generado con TimerPro · ${e.fecha}</div>
+</div>
+<script>
+  document.querySelector('.no-print')?.addEventListener('click',()=>window.print());
+<\/script>
+</body>
+</html>`;
+
+  const win = window.open('','_blank','width=600,height=800,scrollbars=yes');
+  if(!win){ showAlert('Activa las ventanas emergentes para ver el PDF','err'); return; }
+  win.document.write(html);
+  win.document.close();
+  setTimeout(()=>win.focus(), 300);
+}
+
+
+async function compartirComoImagen(conPrecios){
+  const btn = document.getElementById('btn-compartir-img');
+  if(btn){ btn.textContent='⏳...'; btn.disabled=true; }
+  try{
+    const e = fEntry;
+    const cp = conPrecios === true;
+    const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
+    const impH = (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0);
+    const totalI = impH+(e.transporte||0)+(e.dieta||0)
+      +(e.dietasExtra||[]).reduce(function(s,d){return s+(d.importe||0);},0)
+      +(e.otrosConceptos||[]).reduce(function(s,o){return s+(o.importe||0);},0);
+    const tareas = (S.tasks||[]).filter(function(t){return t.fecha===e.fecha;});
+
+    // Build HTML string
+    var kpis = '<div style="display:grid;grid-template-columns:'+(cp?'1fr 1fr':'1fr')+';gap:8px;margin-top:12px">'
+      +'<div style="background:rgba(255,255,255,.14);border-radius:8px;padding:10px;text-align:center">'
+      +'<div style="font-size:20px;font-weight:900">'+fmtH(totalH)+'</div>'
+      +'<div style="font-size:9px;opacity:.65;letter-spacing:.08em;margin-top:2px">HORAS TRABAJADAS</div>'
+      +'</div>'
+      +(cp?'<div style="background:rgba(255,255,255,.14);border-radius:8px;padding:10px;text-align:center">'
+        +'<div style="font-size:20px;font-weight:900">'+eur(totalI)+'</div>'
+        +'<div style="font-size:9px;opacity:.65;letter-spacing:.08em;margin-top:2px">TOTAL A COBRAR</div>'
+        +'</div>':'')
+      +'</div>';
+
+    var html = '<div style="width:460px;font-family:system-ui,Arial,sans-serif;color:#0f172a;border-radius:12px;overflow:hidden">';
+
+    // Header
+    html += '<div style="background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:18px 22px">'
+      +'<div style="font-size:10px;opacity:.6;text-transform:uppercase;letter-spacing:.08em">RESUMEN DE JORNADA</div>'
+      +'<div style="font-size:22px;font-weight:900;margin:4px 0 2px">'+dlbl(e.fecha)+'</div>'
+      +'<div style="font-size:12px;opacity:.7">'+cap(wday(e.fecha))+'</div>'
+      +kpis+'</div>';
+
+    // Body
+    html += '<div style="background:#fff;padding:14px 18px">';
+
+    var sec = function(i,t){return '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#64748b;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin:12px 0 8px">'+i+' '+t+'</div>';};
+    var row = function(l,v){return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:13px"><span style="color:#475569">'+l+'</span><span style="font-weight:700">'+v+'</span></div>';};
+
+    // Fichajes
+    if((e.fichajes||[]).length>0){
+      html += sec('⏱','FICHAJES');
+      (e.fichajes||[]).forEach(function(f,i){
+        var dur = (f.entrada&&f.salida)?(function(){var raw=calcH(f.entrada,f.salida);var dec=e.fichajes.length===1?(e.timerDeduct||0)/60:0;return '<span style="background:#dcfce7;color:#16a34a;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:auto">'+fmtH(Math.max(0,raw-dec))+'</span>';}()):'';;
+        html += '<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:4px">'
+          +'<span style="color:#94a3b8;font-size:11px">'+(i+1)+'.</span>'
+          +'<span style="font-weight:700;font-size:15px;min-width:46px">'+(f.entrada||'—')+'</span>'
+          +'<span style="color:#94a3b8">→</span>'
+          +'<span style="font-weight:700;font-size:15px;min-width:46px">'+(f.salida||'—')+'</span>'
+          +dur
+          +(f.nota?'<span style="font-size:11px;color:#64748b;font-style:italic">'+f.nota.slice(0,20)+'</span>':'')
+          +'</div>';
+      });
+    }
+
+    // Horas
+    if(totalH>0){
+      html += sec('🕐','HORAS E IMPORTES');
+      if(e.horasNormales>0) html += row('Normales', e.horasNormales+'h'+(cp?' × '+eur(e.precioHoraNormal||0)+' = '+eur((e.horasNormales||0)*(e.precioHoraNormal||0)):''));
+      if(e.horasExtra>0)    html += row('Extra',    e.horasExtra+'h'+(cp?' × '+eur(e.precioHoraExtra||0)+' = '+eur((e.horasExtra||0)*(e.precioHoraExtra||0)):''));
+      if(e.horasNocturnas>0)html += row('Nocturnas',e.horasNocturnas+'h'+(cp?' × '+eur(e.precioHoraNocturna||0)+' = '+eur((e.horasNocturnas||0)*(e.precioHoraNocturna||0)):''));
+      if(e.horasFestivas>0) html += row('Festivas', e.horasFestivas+'h'+(cp?' × '+eur(e.precioHoraFestiva||0)+' = '+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0)):''));
+    }
+
+    // Dietas y transporte
+    if((e.dieta||0)+(e.transporte||0)>0){
+      html += sec('🍽','DIETAS Y TRANSPORTE');
+      if(e.dieta>0) html += row('Dieta', cp?eur(e.dieta):'✓');
+      if(e.transporte>0){
+        var ttName='';
+        try{ var tt=(S.transportTypes||[]).find(function(t){return t.id===e._transportType;}); if(tt)ttName=tt.nombre; }catch(ex){}
+        html += row('Transporte'+(ttName?' — '+ttName:''), cp?eur(e.transporte):'✓');
+      }
+      (e.dietasExtra||[]).forEach(function(d){ html += row(d.concepto||'Dieta extra', cp?eur(d.importe||0):'✓'); });
+    }
+
+    // Tareas con OT
+    if(tareas.length>0){
+      html += sec('🔧','TAREAS / O.T.');
+      tareas.forEach(function(t){
+        var titulo=(t.titulo||'').replace(/<[^>]*>/g,'');
+        var lineas=titulo.split('\n').filter(function(l){return l.trim();});
+        html += '<div style="background:#fefce8;border:1px solid #fef08a;border-radius:8px;padding:9px 12px;margin-bottom:5px">'
+          +(t.otNumero?'<div style="margin-bottom:5px"><span style="background:#f59e0b;color:#1e293b;border-radius:4px;padding:2px 9px;font-size:10px;font-weight:800">OT '+t.otNumero+'</span></div>':'')
+          +'<div style="font-weight:700;font-size:12px;line-height:1.6">'
+          +lineas.map(function(l){return '<div>'+l+'</div>';}).join('')
+          +'</div></div>';
+      });
+    }
+
+    // Notas
+    if(e.notas){
+      html += sec('📝','NOTAS')
+        +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:12px;color:#334155;line-height:1.7">'
+        +formatNotas(e.notas)+'</div>';
+    }
+
+    // Total
+    if(cp){
+      html += '<div style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:10px;padding:12px 16px;margin-top:14px;display:flex;justify-content:space-between;align-items:center">'
+        +'<div><div style="color:rgba(255,255,255,.6);font-size:10px;letter-spacing:.1em">TOTAL DÍA</div>'
+        +'<div style="color:rgba(255,255,255,.5);font-size:10px;margin-top:2px">'+fmtH(totalH)+'</div></div>'
+        +'<div style="font-size:26px;font-weight:900;color:#4ade80">'+eur(totalI)+'</div></div>';
+    }
+
+    html += '<div style="text-align:center;font-size:9px;color:#94a3b8;margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0">TimerPro · '+e.fecha+'</div></div></div>';
+
+    // Render in-viewport at top-left, invisible but renders correctly
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;opacity:0.01;pointer-events:none;';
+    wrap.innerHTML = html;
+    document.body.appendChild(wrap);
+    await new Promise(function(r){setTimeout(r,200);});
+
+    var inner = wrap.firstChild;
+    var canvas = await html2canvas(inner, {
+      scale:2, useCORS:true, allowTaint:true,
+      backgroundColor:'#ffffff', logging:false
+    });
+    document.body.removeChild(wrap);
+
+    canvas.toBlob(async function(blob){
+      const imgUrl = URL.createObjectURL(blob);
+      const imgFile = new File([blob],'jornada-'+e.fecha+'.png',{type:'image/png'});
+
+      // Try native share first (works on mobile + modern desktop)
+      if(navigator.share && navigator.canShare && navigator.canShare({files:[imgFile]})){
+        try{
+          await navigator.share({files:[imgFile], title:'Jornada '+dlbl(e.fecha)});
+          URL.revokeObjectURL(imgUrl);
+          return;
+        }catch(ex){ if(ex.name==='AbortError'){ URL.revokeObjectURL(imgUrl); return; } }
+      }
+
+      // Desktop: show custom share panel with image preview
+      const panel = document.createElement('div');
+      panel.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
+      panel.innerHTML = '<div style="background:#fff;border-radius:16px;padding:1.2rem;max-width:420px;width:100%;font-family:system-ui">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">'
+        +'<b style="font-size:1rem">Compartir imagen</b>'
+        +'<button id="sp-close" style="background:none;border:none;font-size:1.2rem;cursor:pointer">✕</button>'
+        +'</div>'
+        +'<img src="'+imgUrl+'" style="width:100%;border-radius:10px;margin-bottom:1rem;box-shadow:0 2px 12px rgba(0,0,0,.15)">'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">'
+        +'<button id="sp-wa" style="background:#25D366;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">📱 WhatsApp</button>'
+        +'<button id="sp-em" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">📧 Email</button>'
+        +'<button id="sp-cp" style="background:#7c3aed;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">📋 Copiar</button>'
+        +'<button id="sp-dl" style="background:#475569;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">⬇️ Descargar</button>'
+        +'</div></div>';
+      document.body.appendChild(panel);
+
+      const close = function(){ document.body.removeChild(panel); URL.revokeObjectURL(imgUrl); };
+      document.getElementById('sp-close').onclick = close;
+      panel.addEventListener('click', function(ev){ if(ev.target===panel) close(); });
+
+      document.getElementById('sp-wa').onclick = async function(){
+        window.open('https://web.whatsapp.com','_blank','noopener');
+        try{
+          await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+          window.open('https://web.whatsapp.com','_blank');
+          showAlert('Imagen copiada — pégala en WhatsApp con Ctrl+V');
+        }catch(ex){
+          const a=document.createElement('a'); a.href=imgUrl; a.download='jornada-'+e.fecha+'.png';
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          showAlert('Descargada — adjúntala en WhatsApp con el clip 📎');
+        }
+        close();
+      };
+      document.getElementById('sp-em').onclick = function(){
+        const a=document.createElement('a'); a.href=imgUrl; a.download='jornada-'+e.fecha+'.png';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function(){ window.location.href='mailto:?subject=Jornada '+e.fecha; }, 500);
+        close();
+      };
+      document.getElementById('sp-cp').onclick = async function(){
+        try{
+          await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+          showAlert('✅ Imagen copiada — pega con Ctrl+V donde quieras');
+        }catch(ex){ showAlert('No se pudo copiar','err'); }
+        close();
+      };
+      document.getElementById('sp-dl').onclick = function(){
+        const a=document.createElement('a'); a.href=imgUrl; a.download='jornada-'+e.fecha+'.png';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        showAlert('✅ Imagen descargada');
+        close();
+      };
+    },'image/png',0.95);
+
+  }catch(err){
+    showAlert('Error: '+err.message,'err');
+    console.error(err);
+  }finally{
+    if(btn){ btn.textContent='📸 Imagen'; btn.disabled=false; }
+  }
+}
+
+
+function renderIAFallback(){
+  return h('div',{class:'card',style:{textAlign:'center',padding:'2rem'}},
+    h('div',{style:{fontSize:'2rem',marginBottom:'1rem'}},'🤖'),
+    h('div',{style:{fontWeight:700,marginBottom:'.5rem'}},'Asistente IA'),
+    h('div',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'1rem'}},'Powered by Groq (gratis)'),
+    h('div',{style:{fontSize:'.8rem',color:'var(--red)'}},'Error cargando. Recarga la página con Ctrl+Shift+R')
+  );
+}
+
+
+function renderIAChat(){
+  const msgs = S.iaMsgs||[];
+  return h('div',{style:{display:'flex',flexDirection:'column',height:'60vh',gap:'.5rem'}},
+    h('div',{class:'card',style:{padding:'.6rem .8rem'}},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+        h('div',{style:{flex:1}},
+          h('div',{style:{fontWeight:700,fontSize:'.9rem'}},'🤖 Asistente IA - TimerPro'),
+          h('div',{style:{fontSize:'.68rem',color:localStorage.getItem('groq_api_key')?'var(--acc)':'var(--red)',marginTop:'.1rem'}},
+            localStorage.getItem('groq_api_key')?'✓ API Key configurada':'✗ Sin API Key - escribe un mensaje para configurarla')
+        ),
+        h('button',{class:'btn btn-gh btn-sm',title:'Cambiar API Key',
+          on:{click:()=>{
+            const k=prompt('API Key de Groq (console.groq.com):',localStorage.getItem('groq_api_key')||'');
+            if(k!==null){
+              if(k.trim()){localStorage.setItem('groq_api_key',k.trim());showAlert('✅ API Key guardada');}
+              else{localStorage.removeItem('groq_api_key');showAlert('API Key eliminada');}
+              S.iaMsgs=[];rerender();
+            }
+          }}},'🔑')
+      ),
+      h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginTop:'.2rem'}},'Powered by Groq (gratis) · Analiza jornadas, calcula totales, responde preguntas')
+    ),
+    h('div',{id:'ia-msgs-page',style:{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:'.5rem',padding:'.3rem 0'}},
+      msgs.length===0
+        ? h('div',{style:{color:'var(--ink3)',fontSize:'.82rem',textAlign:'center',padding:'2rem',lineHeight:1.8}},
+            '¿Cuántas horas llevo este mes?\n¿Cuánto he ganado en abril?\nResume mi semana\n¿Cuál es mi jornada más larga?')
+        : null,
+      ...msgs.map(m=>h('div',{class:'card',style:{
+          alignSelf:m.role==='user'?'flex-end':'flex-start',
+          background:m.role==='user'?'var(--acc)':'var(--surf2)',
+          color:m.role==='user'?'#000':'var(--ink)',
+          maxWidth:'88%',padding:'.5rem .8rem',fontSize:'.83rem',
+          lineHeight:1.5,whiteSpace:'pre-wrap',margin:0
+        }},m.content))
+    ),
+    h('div',{style:{display:'flex',gap:'.5rem'}},
+      h('input',{
+        type:'text',id:'ia-input-page',
+        placeholder:'Pregunta sobre tus jornadas...',
+        style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',
+               borderRadius:'var(--r2)',padding:'.6rem .8rem',color:'var(--ink)',fontSize:'.85rem'},
+        on:{keydown:ev=>{if(ev.key==='Enter'&&!ev.shiftKey){ev.preventDefault();sendIAMsgPage();}}}
+      }),
+      h('button',{class:'btn btn-g',on:{click:sendIAMsgPage}},'Enviar'),
+      msgs.length>0?h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.iaMsgs=[];rerender();}}},'🗑'):null
+    )
+  );
+}
+
+
+async function sendIAMsgPage(){
+  const inp=document.getElementById('ia-input-page');
+  if(!inp||!inp.value.trim()) return;
+  const userMsg=inp.value.trim();
+  inp.value='';
+  if(!S.iaMsgs) S.iaMsgs=[];
+  S.iaMsgs.push({role:'user',content:userMsg});
+  rerender();
+  setTimeout(()=>{const el=document.getElementById('ia-msgs-page');if(el)el.scrollTop=el.scrollHeight;},50);
+  await sendIAMsg._core(userMsg);
+}
+
+
+sendIAMsg._core = async function(userMsg){
+  if(!S.iaMsgs) S.iaMsgs=[];
+  const entries=S.entries.slice(-30);
+  const totalH=entries.reduce((s,e)=>s+(e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0),0);
+  const totalI=entries.reduce((s,e)=>s+(e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0)+(e.dieta||0)+(e.transporte||0),0);
+  const context='Eres un asistente de TimerPro, app de control horario. Datos: '
+    +S.entries.length+' jornadas totales, '
+    +totalH.toFixed(1)+'h en ultimas 30 jornadas, '
+    +totalI.toFixed(2)+' euros total. '
+    +'Tareas: '+S.tasks.length+'. '
+    +'Responde en espanol de forma concisa y util.';
+  try{
+    let apiKey=localStorage.getItem('groq_api_key')||'';
+    if(!apiKey){
+      apiKey=prompt('Introduce tu API Key de Groq (GRATIS en console.groq.com)\nRegistro rápido con Google, sin tarjeta:');
+      if(!apiKey){ S.iaMsgs.pop(); rerender(); return; }
+      localStorage.setItem('groq_api_key', apiKey.trim());
+    }
+    const cleanMsgs = S.iaMsgs
+      .filter(m=>!m.content.startsWith('Error:')&&!m.content.startsWith('⏳'))
+      .slice(-8);
+    const groqMsgs = [{role:'system',content:context}]
+      .concat(cleanMsgs.map(m=>({role:m.role,content:m.content})));
+    const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey},
+      body:JSON.stringify({model:'llama-3.1-8b-instant',messages:groqMsgs,max_tokens:600,temperature:0.7})
+    });
+    if(!res.ok){
+      if(res.status===401||res.status===403){localStorage.removeItem('groq_api_key');S.iaMsgs=[];}
+      throw new Error('Error '+res.status+': '+(await res.text()).slice(0,200));
+    }
+    const data=await res.json();
+    const reply=data.choices?.[0]?.message?.content||'Sin respuesta';
+    S.iaMsgs.push({role:'assistant',content:reply});
+  }catch(e){
+    const msg = e.message||'';
+    const isQuota = msg.includes('quota')||msg.includes('429')||msg.includes('RESOURCE_EXHAUSTED');
+    S.iaMsgs.push({role:'assistant',content:isQuota
+      ? '⏳ Límite de peticiones alcanzado. Espera 1 minuto y vuelve a intentarlo.\n(Es el límite gratuito de Gemini, se resetea cada minuto)'
+      : 'Error: '+msg});
+  }
+  rerender();
+  setTimeout(()=>{
+    const el=document.getElementById('ia-msgs')||document.getElementById('ia-msgs-page');
+    if(el) el.scrollTop=el.scrollHeight;
+  },100);
+};
+
+async function sendIAMsg(){
+  const inp = document.getElementById('ia-input');
+  if(!inp||!inp.value.trim()) return;
+  const userMsg = inp.value.trim();
+  inp.value='';
+  if(!S.iaMsgs) S.iaMsgs=[];
+  S.iaMsgs.push({role:'user',content:userMsg});
+  rerender();
+
+  // Build context from user data
+  const entries = S.entries.slice(-30); // last 30 entries
+  const totalH = entries.reduce((s,e)=>s+(e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0),0);
+  const totalI = entries.reduce((s,e)=>s+(e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0)+(e.dieta||0)+(e.transporte||0),0);
+  const context = 'Eres un asistente de TimerPro, app de control horario. Datos del usuario: '
+    +'Jornadas: '+S.entries.length
+    +', Ultimas 30: '+totalH.toFixed(1)+'h, '+totalI.toFixed(2)+'eur total'
+    +', Tareas: '+S.tasks.length
+    +'. Responde en espanol, conciso y util.';
+
+  try{
+    const res = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:500,
+        system:context,
+        messages:S.iaMsgs.map(m=>({role:m.role,content:m.content}))
+      })
+    });
+    const data = await res.json();
+    const reply = data.content?.[0]?.text || 'Sin respuesta';
+    S.iaMsgs.push({role:'assistant',content:reply});
+  }catch(e){
+    S.iaMsgs.push({role:'assistant',content:'Error conectando con IA: '+e.message});
+  }
+  rerender();
+  setTimeout(()=>{
+    const msgs=document.getElementById('ia-msgs');
+    if(msgs) msgs.scrollTop=msgs.scrollHeight;
+  },100);
+}
+
+
 function renderModal(){
+  if(S.modal==='ia') return renderModalIA();
+  if(S.modal==='transportConfig') return renderModalTransportConfig();
+  if(S.modal==='resumendia') return renderModalResumenDia();
   if(S.modal==='export') return renderModalExport();
   if(S.modal==='dl') return renderModalDl();
   if(S.modal==='qr') return renderModalQR();
@@ -2524,8 +3663,28 @@ function renderModalExport(){
     h('div',{class:'modal-box'},
       h('div',{class:'modal-title'},'Exportar Informe'),
       h('div',{class:'field'},
-        h('label',{},'FILTRAR MES (opcional)'),
-        h('input',{type:'month',value:filterMonth,on:{change:ev=>{filterMonth=ev.target.value;rerender();}}})
+        h('label',{},'FILTRAR POR PERÍODO'),
+        h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.5rem',marginBottom:'.4rem'}},
+          h('div',{},
+            h('label',{style:{fontSize:'.7rem',opacity:.7,display:'block',marginBottom:'.2rem'}},'DESDE'),
+            h('input',{type:'date',value:filterFrom,style:{width:'100%'},
+              on:{change:ev=>{filterFrom=ev.target.value;filterMonth='';rerender();}}})
+          ),
+          h('div',{},
+            h('label',{style:{fontSize:'.7rem',opacity:.7,display:'block',marginBottom:'.2rem'}},'HASTA'),
+            h('input',{type:'date',value:filterTo,style:{width:'100%'},
+              on:{change:ev=>{filterTo=ev.target.value;filterMonth='';rerender();}}})
+          )
+        ),
+        h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.3rem'}},
+          h('label',{style:{fontSize:'.7rem',opacity:.7}},'O FILTRAR POR MES'),
+          h('input',{type:'month',value:filterMonth,style:{flex:1},
+            on:{change:ev=>{filterMonth=ev.target.value;filterFrom='';filterTo='';rerender();}}})
+        ),
+        (filterFrom||filterTo||filterMonth)?h('button',{
+          style:{fontSize:'.72rem',background:'transparent',border:'1px solid var(--ink3)',borderRadius:'20px',padding:'.2rem .7rem',cursor:'pointer',color:'var(--ink2)'},
+          on:{click:()=>{filterFrom='';filterTo='';filterMonth='';rerender();}}
+        },'✕ Quitar filtro'):null
       ),
       h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.6rem',marginTop:'.5rem'}},
         expBtn('PDF','PDF','Con importes','#dc2626',exportPDFReal),
@@ -2849,36 +4008,45 @@ function scheduleDraftSave(){
   if(draftSaveTimer) clearTimeout(draftSaveTimer);
   draftSaveTimer = setTimeout(()=>{
     const notasEl=document.getElementById('notas-editor');
-    if(notasEl) fEntry.notas=notasEl.value||notasEl.innerHTML||fEntry.notas||'';
+    if(notasEl && notasEl.innerHTML.trim()){
+      fEntry.notas=notasEl.innerHTML;
+      localStorage.setItem('notas_'+fEntry.fecha, notasEl.innerHTML);
+    }
+    // Note: don't read from localStorage notas_fecha - fEntry.notas is source of truth
     saveDraft();
   }, 1500);
 }
 
 let _draftSaving=false;
+// Read all fichaje text inputs from DOM into fEntry (shared helper)
+function captureFichajeFromDOM(){
+  (fEntry.fichajes||[]).forEach((fj,i)=>{
+    const eEl=document.getElementById('fich-ent-'+fj._fid);
+    const sEl=document.getElementById('fich-sal-'+fj._fid);
+    const row=eEl&&eEl.closest('.fich-row');
+    if(eEl&&eEl.value) fEntry.fichajes[i].entrada=eEl.value;
+    if(sEl&&sEl.value) fEntry.fichajes[i].salida=sEl.value;
+    if(row){
+      const nota=row.querySelector('textarea');
+      const sel=row.querySelector('select');
+      if(nota) fEntry.fichajes[i].nota=nota.value||fEntry.fichajes[i].nota||'';
+      if(sel) fEntry.fichajes[i].taskId=sel.value||fEntry.fichajes[i].taskId||'';
+    }
+  });
+}
+
 async function saveDraft(){
-  // Always capture latest DOM values before saving
+  // Capture all DOM values before saving draft
   const notasEl=document.getElementById('notas-editor');
-  if(notasEl) fEntry.notas=notasEl.value||notasEl.innerHTML||fEntry.notas||'';
-  const notasEditors=document.querySelectorAll('[contenteditable="true"]');
-  notasEditors.forEach(el=>{
-    if(el.id==='notas-editor' && el.innerHTML) fEntry.notas=el.innerHTML;
-  });
-  const fichRows=document.querySelectorAll('.fich-row');
-  fichRows.forEach((row,i)=>{
-    if(!fEntry.fichajes[i]) return;
-    const times=row.querySelectorAll('input[type="time"]');
-    if(times[0]&&times[0].value) fEntry.fichajes[i].entrada=times[0].value;
-    if(times[1]&&times[1].value) fEntry.fichajes[i].salida=times[1].value;
-    const nota=row.querySelector('textarea');
-    if(nota) fEntry.fichajes[i].nota=nota.value;
-  });
+  if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
+  // fEntry.fichajes maintained by input handlers
   if(!fEntry.fecha||_draftSaving) return;
   _draftSaving=true;
   try{
     const draft={...fEntry,_draft:true,_savedAt:new Date().toISOString()};
-    // Find ANY existing entry for this date (draft or not)
+    // Find existing entries for this date
     const allForDate=S.entries.filter(e=>e.fecha===fEntry.fecha);
-    const finalized=allForDate.find(e=>!e._draft);
+    const finalized=allForDate.find(e=>!e._draft && e.id===fEntry.id); // only match same id
     const draftEntry=allForDate.find(e=>e._draft);
     // Remove duplicate entries for same date (keep newest)
     if(allForDate.length>1){
@@ -2891,10 +4059,15 @@ async function saveDraft(){
       }
     }
     if(fEntry.id){
-      // We have an ID - just update
-      await dbPut(ST.entries,draft);
-      S.entries=S.entries.map(e=>e.id===fEntry.id?{...draft}:e);
-      if(!S.entries.find(e=>e.id===fEntry.id)) S.entries.push({...draft});
+      // Only update if entry is a draft - never overwrite finalized with draft
+      const existingEntry=S.entries.find(e=>e.id===fEntry.id);
+      if(existingEntry && !existingEntry._draft){
+        // Entry is finalized - skip draft save to avoid corruption
+      } else {
+        await dbPut(ST.entries,draft);
+        S.entries=S.entries.map(e=>e.id===fEntry.id?{...draft}:e);
+        if(!S.entries.find(e=>e.id===fEntry.id)) S.entries.push({...draft});
+      }
     } else if(finalized){
       // Don't overwrite a finalized entry with a draft
       fEntry.id=finalized.id;
@@ -2977,17 +4150,14 @@ function gpsDisplay(loc){
     const d=JSON.parse(loc);
     const lat=parseFloat(d.lat),lng=parseFloat(d.lng);
     if(!lat||!lng) throw new Error('no coords');
-    const zoom=16,tile=latLngToTile(lat,lng,zoom);
-    const t0='https://tile.openstreetmap.org/'+zoom+'/'+(tile.x-1)+'/'+tile.y+'.png';
-    const t1='https://tile.openstreetmap.org/'+zoom+'/'+tile.x+'/'+tile.y+'.png';
-    const t2='https://tile.openstreetmap.org/'+zoom+'/'+(tile.x+1)+'/'+tile.y+'.png';
+    const _osmSrc='https://www.openstreetmap.org/export/embed.html?bbox='+(lng-0.003)+','+(lat-0.002)+','+(lng+0.003)+','+(lat+0.002)+'&layer=mapnik&marker='+lat+','+lng;
     return h('div',{style:{marginTop:'.4rem'}},
       h('a',{href:d.url,target:'_blank',rel:'noopener',style:{display:'block',textDecoration:'none'}},
         h('div',{style:{position:'relative',borderRadius:'var(--r)',overflow:'hidden',border:'2px solid var(--acc)',maxWidth:'300px',cursor:'pointer',boxShadow:'var(--sh)',height:'130px',backgroundColor:'#e8f4f8'}},
-          h('div',{style:{position:'absolute',top:0,left:0,right:0,bottom:0,display:'flex'}},
-            h('img',{src:t0,style:{flex:1,objectFit:'cover'}}),
-            h('img',{src:t1,style:{flex:1,objectFit:'cover'}}),
-            h('img',{src:t2,style:{flex:1,objectFit:'cover'}})
+          h('iframe',{src:_osmSrc,style:{width:'100%',height:'100%',border:'none'},loading:'lazy',frameborder:'0'}),
+          h('div',{style:{display:'none',position:'absolute',inset:0,alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'.3rem',color:'var(--ink2)',fontSize:'.75rem'}},
+            h('span',{style:{fontSize:'1.5rem'}},'🗺️'),
+            h('span',{},'Ver en Google Maps')
           ),
           h('div',{style:{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-100%)',fontSize:'2rem',lineHeight:1,filter:'drop-shadow(0 2px 4px rgba(0,0,0,.5))'}},"\u{1F4CD}"),
           h('div',{style:{position:'absolute',bottom:'0',left:'0',right:'0',background:'rgba(0,0,0,.75)',color:'#fff',padding:'.35rem .6rem',fontSize:'.72rem',display:'flex',alignItems:'center',gap:'.4rem'}},
@@ -3049,7 +4219,7 @@ async function captureGPS(tipo){
       const lng=pos.coords.longitude.toFixed(6);
       const acc=Math.round(pos.coords.accuracy);
       // Static map preview using OpenStreetMap (free, no API key)
-      const mapImg='https://staticmap.openstreetmap.de/staticmap.php?center='+lat+','+lng+'&zoom=16&size=300x150&markers='+lat+','+lng+',red-pushpin';
+      const mapImg='';
       const mapsUrl='https://www.google.com/maps?q='+lat+','+lng;
       const loc=JSON.stringify({lat,lng,url:mapsUrl,label:lat+', '+lng,acc});
       if(tipo==='entrada')fEntry.ubicacionEntrada=loc;
@@ -3065,11 +4235,28 @@ async function captureGPS(tipo){
   );
 }
 
+let _isSaving = false;
+
+// Backup all entries to localStorage as secondary safety net
+function _backupEntriesToLS(){
+  try{
+    const backup = S.entries.filter(e=>!e._draft).map(e=>({
+      ...e,
+      fotosGastos:[],  // strip photos to save space
+      notas: (e.notas||'').slice(0,500)  // limit notas size
+    }));
+    localStorage.setItem('_entriesBackup', JSON.stringify(backup));
+    localStorage.setItem('_entriesBackupTs', Date.now().toString());
+  }catch(ex){ /* localStorage might be full */ }
+}
+
 async function saveEntry(){
   if(!fEntry.fecha){showAlert('Selecciona una fecha','err');return;}
+  if(_isSaving) return;
+  _isSaving = true;
   // Read notas from contenteditable div (not textarea)
   const notasEl = document.getElementById('notas-editor');
-  if(notasEl) fEntry.notas = notasEl.value||notasEl.innerHTML||fEntry.notas||'';
+  if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
   // Also capture all form inputs before saving
   captureFormState();
   // Extra safety: read any focused contenteditable
@@ -3078,28 +4265,52 @@ async function saveEntry(){
   }
   try{
     // Check for duplicate date
-    const existing = S.entries.find(e=>e.fecha===fEntry.fecha && e.id!==fEntry.id);
+    const existing = S.entries.find(e=>e.fecha===fEntry.fecha && e.id!==fEntry.id && !e._draft);
     if(existing){
       if(!confirm('Ya existe una jornada para el '+fEntry.fecha+'. ¿Sobreescribir con los datos actuales?')) return;
       // Merge: delete old, save new with old id
       fEntry.id = existing.id;
       editingEntry = true;
     }
+    // Delete any draft entries for this date before saving final
+    const draftsForDate = S.entries.filter(e=>e.fecha===fEntry.fecha && e._draft && e.id!==fEntry.id);
+    for(const d of draftsForDate){
+      try{ await dbDel(ST.entries, d.id); }catch(e){}
+    }
+    S.entries = S.entries.filter(e=>!(e.fecha===fEntry.fecha && e._draft && e.id!==fEntry.id));
+
+    // BULLETPROOF: read ALL fichaje times directly from DOM right before saving
+    // Read ALL fichaje inputs directly before saving
+    document.querySelectorAll('.fich-row').forEach((row,i)=>{
+      if(!fEntry.fichajes[i]) return;
+      const ti=Array.from(row.querySelectorAll('input[type="text"]'));
+      if(ti[0]&&ti[0].value) fEntry.fichajes[i].entrada=ti[0].value;
+      if(ti[1]&&ti[1].value) fEntry.fichajes[i].salida=ti[1].value;
+      const nota=row.querySelector('textarea');
+      if(nota) fEntry.fichajes[i].nota=nota.value||fEntry.fichajes[i].nota||'';
+    });
+    console.log('SAVE fichajes:', JSON.stringify((fEntry.fichajes||[]).map(f=>({e:f.entrada,s:f.salida}))));
     if(editingEntry&&fEntry.id){
       await dbPut(ST.entries,{...fEntry,_draft:false});
       S.entries=S.entries.map(e=>e.id===fEntry.id?{...fEntry,_draft:false}:e);
+      _backupEntriesToLS(); _lsSave();
     } else {
       const id=await dbPut(ST.entries,{...fEntry,_draft:false});
       fEntry.id=id;
       S.entries.push({...fEntry,id,_draft:false});
+      _backupEntriesToLS(); _lsSave();
     }
     editingEntry=false;
+    localStorage.removeItem('_fEntry');
+    // Clear notas localStorage key for this date to avoid future contamination
+    localStorage.removeItem('notas_'+fEntry.fecha);
     fEntry=defEntry();
     localStorage.setItem('lastSave',new Date().toISOString());
     saveLocalBackup();
     showAlert('Jornada guardada ✓');
+    _isSaving = false;
     rerender();
-  }catch(e){showAlert(e.message,'err');}
+  }catch(e){ _isSaving = false; showAlert(e.message,'err');}
 }
 
 // Clean up any existing duplicates
@@ -3124,11 +4335,66 @@ function cancelEditing(){
   rerender();
 }
 
+function pauseAndSaveTimerForDay(){
+  // Called when switching away from current day
+  // Saves timer state tied to current day's fecha
+  if(timerRunning){
+    timerElapsed = Math.floor((Date.now()-timerStart)/1000);
+    clearInterval(timerInterval);
+    timerInterval=null;
+    timerRunning=false;
+    localStorage.setItem('timerState', JSON.stringify({
+      running:false, start:timerStart, fecha:fEntry.fecha||today(),
+      elapsed:timerElapsed, deduct:timerDeduct
+    }));
+  }
+}
+
+function restoreTimerForDay(fecha){
+  // Restore timer state for the new day
+  timerRunning=false;
+  timerStart=null;
+  timerElapsed=0;
+  {const _td=localStorage.getItem('timerDeduct');timerDeduct=_td?parseInt(_td)||30:30;}
+  if(timerInterval){ clearInterval(timerInterval); timerInterval=null; }
+  try{
+    const saved=localStorage.getItem('timerState');
+    if(!saved) return;
+    const ts=JSON.parse(saved);
+    if(ts.fecha !== fecha) return; // timer belongs to a different day
+    timerStart=ts.start;
+    timerElapsed=ts.elapsed||Math.floor((Date.now()-ts.start)/1000);
+    timerDeduct=ts.deduct||30;
+    if(ts.running){
+      timerRunning=true;
+      timerStart=Date.now()-timerElapsed*1000;
+      timerInterval=setInterval(()=>{ timerElapsed=Math.floor((Date.now()-timerStart)/1000); updateTitle(); },1000);
+    }
+  }catch(e){}
+}
+
 function loadHistorial(entry){
+  // Save current day's notas before switching
+  try{
+    const notasEl=document.getElementById('notas-editor');
+    if(notasEl && fEntry.fecha && notasEl.innerHTML.trim()){
+      fEntry.notas=notasEl.innerHTML;
+      localStorage.setItem('notas_'+fEntry.fecha, notasEl.innerHTML);
+      persistEntry();
+    }
+  }catch(e){}
+  pauseAndSaveTimerForDay(); // save current day's timer before switching
+  // Clear stale _fEntry so restoreEntry can't merge old day's data
+  localStorage.removeItem('_fEntry');
+  // Load the new day — flag tells captureFormState to NOT read old DOM
+  _skipDomCapture=true;
   fEntry={...entry,fichajes:[...(entry.fichajes||[])],dietasExtra:[...(entry.dietasExtra||[])],otrosConceptos:[...(entry.otrosConceptos||[])],journeys:[...(entry.journeys||[])]};
+  if(fEntry.notas) fEntry.notas=formatNotas(fEntry.notas);
   editingEntry=true;
   S.tab='fichar';
+  restoreTimerForDay(entry.fecha); // restore this day's timer if it has one
   rerender();
+  requestAnimationFrame(()=>{ _skipDomCapture=false; });
 }
 
 async function deleteEntry(id){
@@ -3503,7 +4769,7 @@ async function importJSON(file){
     const text=await file.text();
     const data=JSON.parse(text);
     if(!confirm('¿Importar datos? Se reemplazarán los actuales.'))return;
-    await Promise.all(Object.values(ST).filter(s=>s!=='snapshots').map(s=>dbClear(s)));
+    await Promise.all([ST.entries,ST.tasks].map(s=>dbClear(s)));
     for(const e of(data.entries||[]))await dbPut(ST.entries,e);
     for(const t of(data.tasks||[]))await dbPut(ST.tasks,t);
     for(const s of(data.sites||[]))await dbPut(ST.sites,s);
@@ -4735,8 +6001,7 @@ async function driveAutoLoad(force){
       syncStatus='ok';
       lastSync=new Date().toLocaleTimeString('es-ES');
       localStorage.setItem('lastSync',lastSync);
-      // Reset active entry to show fresh data
-      if(!editingEntry) fEntry=defEntry();
+      // Keep current form data - do NOT reset fEntry
       showAlert('☁️ Datos actualizados desde Drive ('+S.entries.length+' jornadas, '+S.tasks.length+' tareas)');
       rerender();
     }catch(e){ console.error('Import error:',e); showAlert('Error importando: '+e.message,'err'); }
@@ -4824,6 +6089,48 @@ async function saveDriveUrl(){
   driveSync();
 }
 
+
+// Safe silent sync - downloads from Drive and adds missing entries WITHOUT clearing local
+async function _safeSilentSync(){
+  if(!driveUrl || _syncInProgress) return;
+  try{
+    await new Promise((resolve)=>{
+      const cb='silent_'+Date.now();
+      const sc=document.createElement('script');
+      let done=false;
+      window[cb]=async function(result){
+        done=true; delete window[cb]; sc.remove();
+        if(result&&result.ok&&result.data){
+          const driveEntries=result.data.entries||[];
+          const localDates=new Set(S.entries.map(e=>e.fecha));
+          let added=0;
+          for(const e of driveEntries){
+            if(!localDates.has(e.fecha)){
+              if(e.notas) e.notas=formatNotas(e.notas);
+              S.entries.push(e);
+              try{ await dbPut(ST.entries,e); }catch(ex){}
+              added++;
+            }
+          }
+          if(added>0){
+            driveHasNew=false;
+            rerender();
+            console.log('Auto-sync: added '+added+' entries from Drive');
+          }
+          // Check if Drive has newer data for existing dates
+          const driveTs=result.data.exportedAt?new Date(result.data.exportedAt).getTime():0;
+          const localTs=new Date(localStorage.getItem('lastSave')||0).getTime();
+          if(driveTs > localTs+5000) driveHasNew=true;
+        }
+        resolve();
+      };
+      setTimeout(()=>{ if(!done){delete window[cb];sc.remove();resolve();} },15000);
+      sc.src=driveUrl+'?action=load&callback='+cb+'&t='+Date.now();
+      document.body.appendChild(sc);
+    });
+  }catch(ex){ console.log('Silent sync error:',ex); }
+}
+
 // ── DRIVE SYNC ────────────────────────────────────────
 
 // ── CHUNKED SAVE ──────────────────────────────────────
@@ -4841,9 +6148,57 @@ function jsonpGet(params, callback, timeout){
 }
 
 let _syncInProgress=false;
+let _warmupDone=false; // track if script is warm
+
+function warmupDriveScript(){
+  // Fire a lightweight ping to wake up the Apps Script (cold start takes 30-40s)
+  if(!driveUrl || _warmupDone) return;
+  const cbName='warm_'+Date.now();
+  const s=document.createElement('script');
+  window[cbName]=function(res){ 
+    delete window[cbName]; s.remove(); 
+    _warmupDone=true;
+    console.log('Drive script warmed up');
+  };
+  setTimeout(()=>{ delete window[cbName]; s.remove(); }, 10000);
+  s.src=driveUrl+'?action=ping&callback='+cbName+'&t='+Date.now();
+  document.body.appendChild(s);
+}
+
 async function driveSync(){
-  if(!driveUrl||_syncInProgress) return;
+  if(!driveUrl){ showAlert('Configura la URL de Drive en Sincronizar','err'); return; }
+  if(_syncInProgress){ showAlert('Sync en curso, espera...'); return; }
   _syncInProgress=true;
+
+  // SAFE UPLOAD: First read current Drive data, merge with local, then upload
+  // This prevents phone entries from being overwritten by PC upload
+  try{
+    await new Promise((resolve)=>{
+      const cb='preSync_'+Date.now();
+      const sc=document.createElement('script');
+      let done=false;
+      window[cb]=async function(result){
+        done=true; delete window[cb]; sc.remove();
+        if(result&&result.ok&&result.data){
+          const driveEntries=result.data.entries||[];
+          // Merge Drive entries into local S.entries (Drive wins for dates not in local)
+          const localDates=new Set(S.entries.map(e=>e.fecha));
+          driveEntries.forEach(e=>{
+            if(!localDates.has(e.fecha)){
+              // Drive has an entry we don't have locally - add it
+              if(e.notas) e.notas=formatNotas(e.notas);
+              S.entries.push(e);
+              dbPut(ST.entries,e).catch(()=>{});
+            }
+          });
+        }
+        resolve();
+      };
+      setTimeout(()=>{ if(!done){delete window[cb];sc.remove();resolve();} },8000);
+      sc.src=driveUrl+'?action=load&callback='+cb+'&t='+Date.now();
+      document.body.appendChild(sc);
+    });
+  }catch(ex){ /* if pre-read fails, continue with upload anyway */ }
 
   // Capture all current form data
   captureFormState();
@@ -4859,6 +6214,44 @@ async function driveSync(){
 
   // Build combined payload - strip HTML from descriptions
   const stripHtml=s=>(s||'').replace(/<[^>]*>/g,'').slice(0,300);
+  // Strip all large/unnecessary fields to keep payload small for JSONP GET
+  // compactLoc: extract lat/lng/url for sync without mapImg (saves space, preserves GPS)
+  const compactLoc = loc => {
+    if(!loc) return '';
+    try{
+      const d=JSON.parse(loc);
+      if(d.lat && d.lng) return JSON.stringify({lat:Math.round(d.lat*10000)/10000,lng:Math.round(d.lng*10000)/10000,label:(d.label||'').slice(0,30)});
+      return (loc||'').slice(0,50);
+    }catch(e){ return (loc||'').slice(0,50); }
+  };
+  const stripHtmlNotas = n => {
+    if(!n) return '';
+    if(n.indexOf('<')===-1) return n.slice(0,1200);
+    var nl=String.fromCharCode(10);
+    var r=n;
+    r=r.replace(/<br>/gi,nl).replace(/<br[^>]*>/gi,nl);
+    r=r.replace(/<[/]div>/gi,nl).replace(/<[/]p>/gi,nl).replace(/<[/]li>/gi,nl);
+    r=r.replace(/<b>/gi,'**').replace(/<[/]b>/gi,'**');
+    r=r.replace(/<strong>/gi,'**').replace(/<[/]strong>/gi,'**');
+    r=r.replace(/<u>/gi,'__').replace(/<[/]u>/gi,'__');
+    r=r.replace(/<[^>]*>/g,'');
+    r=r.replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
+    r=r.split(nl+nl+nl).join(nl+nl);
+    return r.trim().slice(0,1200);
+  };
+
+  const cleanEntry = e => ({
+    id:e.id, fecha:e.fecha, _draft:e._draft||false,
+    fichajes:(e.fichajes||[]).map(f=>({entrada:f.entrada,salida:f.salida,nota:f.nota||'',taskId:f.taskId||''})),
+    horasNormales:e.horasNormales||0, precioHoraNormal:e.precioHoraNormal||0,
+    horasExtra:e.horasExtra||0, precioHoraExtra:e.precioHoraExtra||0,
+    horasNocturnas:e.horasNocturnas||0, precioHoraNocturna:e.precioHoraNocturna||0,
+    horasFestivas:e.horasFestivas||0, precioHoraFestiva:e.precioHoraFestiva||0,
+    dieta:e.dieta||0, transporte:e.transporte||0,
+    notas:stripHtmlNotas(e.notas),
+    ubicacionEntrada:compactLoc(e.ubicacionEntrada),
+    ubicacionSalida:compactLoc(e.ubicacionSalida),
+  });
   const payload={
     version:data.version,
     exportedAt:new Date().toISOString(),
@@ -4868,11 +6261,11 @@ async function driveSync(){
     activeCompanyId:data.activeCompanyId,
     worker:data.worker,
     company:data.company,
-    tasks:(data.tasks||[]).map(t=>({...t,descripcion:stripHtml(t.descripcion),fotos:[]})),
-    sites:data.sites,
-    workorders:data.workorders,
-    vehicles:data.vehicles,
-    entries:(data.entries||[]).map(e=>({...e,fotosGastos:[]})),
+    tasks:(data.tasks||[]).map(t=>({id:t.id,titulo:t.titulo,fecha:t.fecha,horaInicio:t.horaInicio,horaFin:t.horaFin,descripcion:stripHtml(t.descripcion),siteId:t.siteId,usaOT:t.usaOT,otNumero:t.otNumero})),
+    sites:(data.sites||[]).map(s=>({id:s.id,nombre:s.nombre,direccion:s.direccion})),
+    workorders:data.workorders||[],
+    vehicles:(data.vehicles||[]).map(v=>({id:v.id,nombre:v.nombre,matricula:v.matricula})),
+    entries:(data.entries||[]).map(cleanEntry),
     lastSync:new Date().toISOString()
   };
 
@@ -4881,20 +6274,49 @@ async function driveSync(){
 
   console.log('Sync payload:',payloadStr.length,'bytes, encoded:',encoded.length);
 
-  // Use direct save action (writes to main file, more reliable)
-  jsonpGet('action=save&d='+encoded,(err,res)=>{
-    _syncInProgress=false;
-    if(!err&&res&&res.ok){
-      syncStatus='ok';
-      localStorage.setItem('lastDriveLoad',Date.now().toString());
-      localStorage.setItem('lastSave',new Date().toISOString());
-      showAlert('✅ Guardado en Drive: '+payload.entries.length+' jornadas');
-    } else {
-      syncStatus='err';
-      showAlert('Error Drive: '+(err||res&&res.error||'timeout'),'err');
-    }
-    rerender();
-  }, 60000);
+  let _retries = 0;
+  const MAX_RETRIES = 3;
+
+  function attemptSync(){
+    const timeoutMs = 55000 + (_retries * 15000); // 55s, 70s, 85s
+    jsonpGet('action=save&d='+encoded, (err,res)=>{
+      if(!err && res && res.ok){
+        _syncInProgress=false;
+        syncStatus='ok';
+        _warmupDone=true;
+        if(window._driveRetryTimer){clearInterval(window._driveRetryTimer);window._driveRetryTimer=null;}
+        localStorage.setItem('lastDriveLoad', Date.now().toString());
+        localStorage.setItem('lastSave', new Date().toISOString());
+        lastSync = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+        localStorage.setItem('lastSync', lastSync);
+        showAlert('✅ Guardado en Drive: '+payload.entries.length+' jornadas');
+        rerender();
+      } else if(_retries < MAX_RETRIES){
+        _retries++;
+        console.log('Drive reintento',_retries,'de',MAX_RETRIES,'por:',err||res?.error);
+        syncStatus='syncing';
+        rerender();
+        setTimeout(attemptSync, 5000);
+      } else {
+        // All retries failed — schedule silent background retry every 2 min
+        _syncInProgress=false;
+        _warmupDone=false;
+        syncStatus='err';
+        rerender();
+        // Schedule silent background retry — no popup, no interruption
+        if(!window._driveRetryTimer){
+          window._driveRetryTimer = setInterval(()=>{
+            if(syncStatus==='ok'){ clearInterval(window._driveRetryTimer); window._driveRetryTimer=null; return; }
+            console.log('Drive: reintento automático en background...');
+            clearInterval(window._driveRetryTimer);
+            window._driveRetryTimer=null;
+            driveSync();
+          }, 120000); // retry every 2 minutes silently
+        }
+      }
+    }, timeoutMs);
+  }
+  attemptSync();
 }
 
 
@@ -4904,62 +6326,41 @@ async function driveSync(){
 
 
 function buildSyncData(){
-  function cleanLoc(loc){
-    if(!loc) return loc;
-    try{const d=JSON.parse(loc);delete d.mapImg;return JSON.stringify(d);}
-    catch(e){return loc;}
+  // MINIMAL payload: skeleton data only - always fits in URL
+  // Full data (notes, GPS, sites) is transferred via file export/import
+  const _cut=(()=>{const d=new Date();d.setDate(d.getDate()-60);return d.toISOString().slice(0,10);})();
+  let allEntries=[...S.entries];
+  if(fEntry.fecha && !allEntries.find(e=>e.fecha===fEntry.fecha) && (fEntry.horasNormales||fEntry.fichajes?.length)){
+    allEntries.push({...fEntry});
   }
-  // Merge current fEntry into S.entries so GPS/notes from form are included
-  let entries = S.entries.map(e=>{
-    if(fEntry.fecha && e.fecha===fEntry.fecha){
-      // Overlay fEntry data (has latest GPS, notes, etc.)
-      return {
-        ...e,
-        ...fEntry,
-        id: e.id, // keep existing id
-        ubicacionEntrada: cleanLoc(fEntry.ubicacionEntrada||e.ubicacionEntrada),
-        ubicacionSalida: cleanLoc(fEntry.ubicacionSalida||e.ubicacionSalida)
-      };
-    }
-    return {
-      ...e,
-      ubicacionEntrada:cleanLoc(e.ubicacionEntrada),
-      ubicacionSalida:cleanLoc(e.ubicacionSalida)
-    };
+  const mini=e=>({
+    id:e.id||Date.now(),
+    fecha:e.fecha,
+    fichajes:(e.fichajes||[]).map(f=>({entrada:f.entrada||'',salida:f.salida||''})),
+    horasNormales:+(e.horasNormales||0).toFixed(2),
+    horasExtra:+(e.horasExtra||0).toFixed(2),
+    horasNocturnas:+(e.horasNocturnas||0).toFixed(2),
+    horasFestivas:+(e.horasFestivas||0).toFixed(2),
+    precioHoraNormal:+(e.precioHoraNormal||0).toFixed(2),
+    precioHoraExtra:+(e.precioHoraExtra||0).toFixed(2),
+    dieta:+(e.dieta||0).toFixed(2),
+    transporte:+(e.transporte||0).toFixed(2),
+    _transportType:e._transportType||'',
+    timerDeduct:e.timerDeduct||30,
+    notas:stripHtmlNotas(e.notas||'').slice(0,200),
+    dietasExtra:(e.dietasExtra||[]).slice(0,2),
+    otrosConceptos:(e.otrosConceptos||[]).slice(0,2),
+    journeys:(e.journeys||[]).slice(0,3).map(j=>({km:j.km||0,tipo:j.tipo||''})),
   });
-  // If fEntry has data but no matching entry yet, add it
-  if(fEntry.fecha && !S.entries.find(e=>e.fecha===fEntry.fecha) && (fEntry.ubicacionEntrada||fEntry.notas||fEntry.horasNormales)){
-    entries.push({...fEntry, ubicacionEntrada:cleanLoc(fEntry.ubicacionEntrada), ubicacionSalida:cleanLoc(fEntry.ubicacionSalida)});
-  }
   return {
-    version:2,
-    exportedAt:new Date().toISOString(),
-    entries:entries.map(e=>({...e,fotosGastos:[]})),
-    tasks:S.tasks.map(t=>({...t,fotos:[],descripcion:(t.descripcion||'').replace(/<[^>]*>/g,'').slice(0,500)})),
-    sites:S.sites,
-    workorders:S.workorders,
-    vehicles:S.vehicles,
-    workers:workers.map(w=>({
-      id:w.id,nombre:w.nombre,apellidos:w.apellidos,dni:w.dni,cargo:w.cargo,
-      departamento:w.departamento,email:w.email,telefono:w.telefono,
-      numSS:w.numSS,fechaAlta:w.fechaAlta,convenio:w.convenio
-    })),
-    companies:companies.map(c=>({
-      id:c.id,nombre:c.nombre,cif:c.cif,direccion:c.direccion,ciudad:c.ciudad,
-      cp:c.cp,telefono:c.telefono,email:c.email,web:c.web
-    })),
-    activeWorkerId, activeCompanyId,
-    worker:(()=>{const w=workers.find(x=>x.id===activeWorkerId)||workers[0]||{};
-      return {nombre:w.nombre||fWorker.nombre,apellidos:w.apellidos||fWorker.apellidos,
-      dni:w.dni||fWorker.dni,cargo:w.cargo||fWorker.cargo,
-      departamento:w.departamento||fWorker.departamento,email:w.email||fWorker.email,
-      telefono:w.telefono||fWorker.telefono,numSS:w.numSS||fWorker.numSS,
-      fechaAlta:w.fechaAlta||fWorker.fechaAlta,convenio:w.convenio||fWorker.convenio};})(),
-    company:(()=>{const c=companies.find(x=>x.id===activeCompanyId)||companies[0]||{};
-      return {nombre:c.nombre||fCompany.nombre,cif:c.cif||fCompany.cif,
-      direccion:c.direccion||fCompany.direccion,ciudad:c.ciudad||fCompany.ciudad,
-      cp:c.cp||fCompany.cp,telefono:c.telefono||fCompany.telefono,
-      email:c.email||fCompany.email,web:c.web||fCompany.web};})()
+    v:3,
+    ts:Date.now(),
+    entries:allEntries.filter(e=>e.fecha>=_cut).map(mini),
+    tasks:S.tasks.slice(-8).map(t=>({id:t.id,titulo:(t.titulo||'').slice(0,35),fecha:t.fecha||'',otNumero:(t.otNumero||'').slice(0,12)})),
+    sites:(S.sites||[]).slice(0,20).map(s=>({id:s.id,nombre:(s.nombre||'').slice(0,25),lat:+(s.lat||0).toFixed(5),lng:+(s.lng||0).toFixed(5)})),
+    tt:S.transportTypes||[],
+    wid:activeWorkerId,cid:activeCompanyId,
+    driveUrl:driveUrl||''
   };
 }
 
@@ -4969,104 +6370,163 @@ function buildSyncData(){
 function _doLoad(force, verifyMode, confirmMode){
   if(!driveUrl) return;
   syncStatus='syncing'; rerender();
-  const cbName='load_'+Date.now();
-  const script=document.createElement('script');
-  let done=false;
 
-  window[cbName]=async function(result){
-    done=true; delete window[cbName]; script.remove();
-    if(!result||!result.ok){
-      syncStatus='err';
-      showAlert('Error cargando Drive: '+(result&&result.error||'sin datos'),'err');
-      rerender(); return;
-    }
-    const d=result.data;
-    if(!d||!d.entries||d.entries.length===0){
+  let attempts=0;
+  function attempt(){
+    attempts++;
+    const cbName='load_'+Date.now();
+    const script=document.createElement('script');
+    let done=false;
+
+    window[cbName]=async function(result){
+      done=true; delete window[cbName]; script.remove();
+      if(!result||!result.ok){
+        syncStatus='err';
+        showAlert('Drive: sin datos. Intenta de nuevo.','err');
+        rerender(); return;
+      }
       syncStatus='ok';
-      showAlert('Drive vacío — guarda algo primero desde el PC','err');
-      rerender(); return;
-    }
+      await importDriveData(result.data||result, verifyMode);
+    };
 
-    await importDriveData(d, verifyMode);
-  };
+    // Timeout: 60s on first attempt, 45s on retry
+    setTimeout(()=>{
+      if(!done){
+        delete window[cbName]; script.remove();
+        if(attempts<2){
+          // Retry once automatically
+          showAlert('Drive tardando... reintentando...','err');
+          setTimeout(attempt, 3000);
+        } else {
+          syncStatus='err';
+          showAlert('Drive no responde. El servicio puede estar ocupado, espera 1 minuto e inténtalo de nuevo.','err');
+          rerender();
+        }
+      }
+    }, attempts===1?60000:45000);
 
-  setTimeout(()=>{
-    if(!done){
-      delete window[cbName]; script.remove();
-      syncStatus='err';
-      showAlert('Sin respuesta de Drive. Comprueba conexión.','err');
-      rerender();
-    }
-  },20000);
+    script.src=driveUrl+'?action=load&callback='+cbName+'&t='+Date.now();
+    document.body.appendChild(script);
+  }
 
-  script.src=driveUrl+'?action=load&callback='+cbName+'&t='+Date.now();
-  document.body.appendChild(script);
+  // Warm up first, then load
+  warmupDriveScript();
+  setTimeout(attempt, _warmupDone?0:5000);
+}
+
+
+
+// Export full data as JSON file for device-to-device sync
+async function exportSyncFile(){
+  try{
+    const entries = await dbAll(ST.entries);
+    const tasks = await dbAll(ST.tasks);
+    const sites = await dbAll(ST.sites);
+    const data = {
+      version:3,
+      exportedAt:new Date().toISOString(),
+      entries: entries.map(e=>({...e,fotosGastos:[]})),
+      tasks: tasks.map(t=>({id:t.id,titulo:t.titulo||'',fecha:t.fecha||'',otNumero:t.otNumero||''})),
+      sites: sites.map(s=>({id:s.id,nombre:s.nombre||'',lat:s.lat||0,lng:s.lng||0,url:s.url||''})),
+      transportTypes: S.transportTypes||[],
+      activeWorkerId, activeCompanyId,
+    };
+    const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'timerpro-sync-'+new Date().toISOString().slice(0,10)+'.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showAlert('✅ Archivo exportado — '+entries.length+' jornadas, '+sites.length+' sitios');
+  }catch(ex){ showAlert('Error al exportar: '+ex.message,'err'); }
 }
 
 async function importDriveData(d, verifyMode){
-  if(S.entries.length>0) await createSnapshot('Antes de cargar Drive - '+new Date().toLocaleString('es-ES'));
-  try{
-    // Save ALL local photos before clearing (Drive strips them for size)
-    const localWorkers = [...workers];
-    const localWorkerMap = {};
-    localWorkers.forEach(w=>{ if(w.id) localWorkerMap[w.id]=w; });
-    const localCompanies = [...companies];
-    const localCompanyMap = {};
-    localCompanies.forEach(c=>{ if(c.id) localCompanyMap[c.id]=c; });
-    const savedWorkerFoto = fWorker.foto||'';
-    const savedWorkerFirma = fWorker.firma||'';
-    const savedCompanyLogo = fCompany.logo||'';
-    // Save local task photos (keyed by id)
-    const localTaskMap = {};
-    S.tasks.forEach(t=>{ if(t.id) localTaskMap[t.id]={fotos:t.fotos||[]}; });
-    // Save local entry fotosGastos (keyed by fecha)
-    const localEntryMap = {};
-    S.entries.forEach(e=>{ if(e.fecha) localEntryMap[e.fecha]={fotosGastos:e.fotosGastos||[]}; });
+  // SAFETY: Always read from IndexedDB as ground truth
+  let localEntries = [];
+  try{ localEntries = await dbAll(ST.entries); }catch(ex){ localEntries=[...S.entries]; }
+  localEntries = localEntries.filter(e=>!e._draft);
 
-    await Promise.all(Object.values(ST).filter(s=>s!=='snapshots').map(s=>dbClear(s)));
-    for(const e of(d.entries||[])){
-      // Restore fotosGastos from local if Drive stripped them
-      const localE = localEntryMap[e.fecha]||{};
-      await dbPut(ST.entries,{...e, fotosGastos:e.fotosGastos&&e.fotosGastos.length?e.fotosGastos:localE.fotosGastos||[]});
-    }
-    for(const t of(d.tasks||[])){
-      // Restore fotos from local if Drive stripped them
-      const localT = localTaskMap[t.id]||{};
-      await dbPut(ST.tasks,{...t, fotos:t.fotos&&t.fotos.length?t.fotos:localT.fotos||[]});
-    }
-    for(const s of(d.sites||[]))    await dbPut(ST.sites,s);
-    for(const w of(d.workorders||[]))await dbPut(ST.workorders,w);
-    for(const v of(d.vehicles||[])) await dbPut(ST.vehicles,v);
-    for(const w of(d.workers||[])){
-      const local = localWorkerMap[w.id]||{};
-      await dbPut(ST.workers,{...w, foto:w.foto||local.foto||'', firma:w.firma||local.firma||''});
-    }
-    for(const c of(d.companies||[])){
-      const local = localCompanyMap[c.id]||{};
-      await dbPut(ST.companies,{...c, logo:c.logo||local.logo||''});
-    }
-    if(d.worker)  fWorker={...defWorker,...d.worker, foto:d.worker.foto||savedWorkerFoto, firma:d.worker.firma||savedWorkerFirma};
-    if(d.company) fCompany={...defCompany,...d.company, logo:d.company.logo||savedCompanyLogo};
-    activeWorkerId=d.activeWorkerId||null;
-    activeCompanyId=d.activeCompanyId||null;
-    await loadData();
-    syncStatus='ok';
-    lastSync=new Date().toLocaleTimeString('es-ES');
-    localStorage.setItem('lastSync',lastSync);
-    driveHasNew=false; // cleared after loading
-    if(!editingEntry) fEntry=defEntry();
-    if(verifyMode){
-      showAlert('✅ Drive OK: '+S.entries.length+' jornadas guardadas correctamente');
+  // Create snapshot before any changes
+  try{ if(localEntries.length>0) await createSnapshot('Antes de Drive - '+new Date().toLocaleString('es-ES')); }catch(ex){}
+
+  // Handle both mini (v:3) and legacy formats
+  const driveEntries = (d.entries||[]).map(e=>({
+    ...e,
+    // Map mini format fields to full format if needed
+    fecha: e.fecha,
+    id: e.id||Date.now(),
+  }));
+  if(d.tt) { const localTT=new Set((S.transportTypes||[]).map(t=>t.id)); d.tt.forEach(t=>{if(!localTT.has(t.id))S.transportTypes.push(t);}); localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes)); }
+  if(d.wid) activeWorkerId=d.wid;
+  if(d.cid) activeCompanyId=d.cid;
+  if(d.driveUrl && !driveUrl){ driveUrl=d.driveUrl; localStorage.setItem('driveUrl',d.driveUrl); showAlert('✅ URL de Drive configurada automáticamente'); }
+  
+  // MERGE: Build map by fecha, keep newest version of each day
+  const byDate = {};
+  
+  // First: load ALL local entries (ground truth)
+  localEntries.forEach(e=>{ byDate[e.fecha] = e; });
+  
+  // Second: add Drive entries ONLY if newer or not in local
+  driveEntries.forEach(e=>{
+    if(e.notas) e.notas = formatNotas(e.notas);
+    const local = byDate[e.fecha];
+    if(!local) {
+      // Drive has entry we don't have locally - add it
+      byDate[e.fecha] = e;
     } else {
-      saveLocalBackup();
-    showAlert('✅ Cargado: '+S.entries.length+' jornadas, '+S.tasks.length+' tareas');
+      // Both have this date - keep whichever was saved more recently
+      if((e.id||0) > (local.id||0)) byDate[e.fecha] = e;
     }
-    rerender();
-  }catch(e){
-    syncStatus='err';
-    showAlert('Error importando: '+e.message,'err');
-    rerender();
+  });
+  
+  const merged = Object.values(byDate).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  
+  // Update S.entries with merged data
+  S.entries = merged;
+  
+  // Save merged entries to IndexedDB (additive - never clear first)
+  try{
+    for(const e of merged){
+      await dbPut(ST.entries, e);
+    }
+  }catch(ex){ console.error('Error saving merged entries:', ex); }
+  
+  // Tasks: add Drive tasks that aren't local
+  const localTaskIds = new Set((S.tasks||[]).map(t=>t.id));
+  for(const t of (d.tasks||[])){
+    if(t.id && !localTaskIds.has(t.id)){
+      S.tasks.push(t);
+      try{ await dbPut(ST.tasks, t); }catch(ex){}
+    }
   }
+  
+  // Sites: add Drive sites that aren't local (by id)
+  const localSiteIds = new Set((S.sites||[]).map(s=>s.id));
+  for(const s of (d.sites||[])){
+    if(s.id && !localSiteIds.has(s.id)){
+      S.sites.push(s);
+      try{ await dbPut(ST.sites, s); }catch(ex){}
+      _lsSave();
+    }
+  }
+  
+  // Transport types: merge
+  if(d.transportTypes && d.transportTypes.length){
+    const localTT = new Set((S.transportTypes||[]).map(t=>t.id));
+    d.transportTypes.forEach(t=>{ if(!localTT.has(t.id)) S.transportTypes.push(t); });
+    localStorage.setItem('transportTypes', JSON.stringify(S.transportTypes));
+  }
+  
+  // Update active worker/company if set in Drive
+  if(d.activeWorkerId) activeWorkerId=d.activeWorkerId;
+  if(d.activeCompanyId) activeCompanyId=d.activeCompanyId;
+  
+  localStorage.setItem('lastSave', new Date().toISOString());
+  showAlert('✅ '+merged.length+' jornadas ('+driveEntries.length+' Drive + '+localEntries.length+' local fusionadas)');
+  rerender();
 }
 
 async function mergeDriveData(d){
@@ -5080,13 +6540,13 @@ async function mergeDriveData(d){
     const driveDates = new Set(driveEntries.map(e=>e.fecha));
 
     // Add all Drive entries
-    driveEntries.forEach(e=>merged.push(e));
-
-    // Add local entries not in Drive
-    localEntries.forEach(e=>{
-      if(!driveDates.has(e.fecha)){
-        merged.push(e);
-      }
+    const _dbd={},_lbd={};
+    driveEntries.forEach(e=>{_dbd[e.fecha]=e;});
+    localEntries.forEach(e=>{_lbd[e.fecha]=e;});
+    new Set([...Object.keys(_dbd),...Object.keys(_lbd)]).forEach(f=>{
+      const de=_dbd[f],le=_lbd[f];
+      if(de&&le) merged.push((de.id||0)>=(le.id||0)?de:le);
+      else merged.push(de||le);
     });
 
     // Sort by date
@@ -5113,6 +6573,50 @@ async function loadData(){
     dbAll(ST.entries),dbAll(ST.tasks),dbAll(ST.sites),dbAll(ST.workorders),dbAll(ST.vehicles),
     dbAll(ST.workers),dbAll(ST.companies)
   ]);
+  // Restore from localStorage backup if IndexedDB has fewer entries
+  try{
+    const lsBackup = JSON.parse(localStorage.getItem('_entriesBackup')||'[]');
+    if(lsBackup.length > S.entries.length){
+      const dbDates = new Set(S.entries.map(e=>e.fecha));
+      let restored = 0;
+      for(const e of lsBackup){
+        if(!dbDates.has(e.fecha)){
+          S.entries.push(e);
+          await dbPut(ST.entries, e).catch(()=>{});
+          restored++;
+        }
+      }
+      if(restored > 0) console.log('Restored '+restored+' entries from localStorage backup');
+    }
+  }catch(ex){}
+
+  // PRIMARY STORAGE: Load from localStorage and merge
+  try{
+    const lsData=_lsLoad();
+    if(lsData&&lsData.entries){
+      const dbDates=new Set(S.entries.map(e=>e.fecha));
+      let n=0;
+      for(const e of lsData.entries){
+        if(!dbDates.has(e.fecha)&&!e._draft){
+          if(e.notas)e.notas=formatNotas(e.notas);
+          S.entries.push(e);await dbPut(ST.entries,e).catch(()=>{});n++;
+        }
+      }
+      if(lsData.sites&&lsData.sites.length&&!S.sites.length){
+        S.sites=lsData.sites;for(const s of lsData.sites)await dbPut(ST.sites,s).catch(()=>{});
+      }
+      if(n>0)console.log('Restored '+n+' from localStorage');
+    }
+    const old=JSON.parse(localStorage.getItem('_entriesBackup')||'[]');
+    if(old.length){const d2=new Set(S.entries.map(e=>e.fecha));for(const e of old){if(!d2.has(e.fecha)){if(e.notas)e.notas=formatNotas(e.notas);S.entries.push(e);await dbPut(ST.entries,e).catch(()=>{});}}}
+  }catch(ex){}
+
+    // Strip old staticmap URLs from saved locations (cleanup legacy data)
+  S.entries.forEach(e=>{
+    ['ubicacionEntrada','ubicacionSalida'].forEach(k=>{
+      if(e[k]){try{const d=JSON.parse(e[k]);if(d.mapImg){delete d.mapImg;e[k]=JSON.stringify(d);}}catch(ex){}}
+    });
+  });
   // Load active worker/company
   const settings=(await dbAll(ST.settings))[0]||{};
   if(settings.activeWorkerId) activeWorkerId=settings.activeWorkerId;
@@ -5258,6 +6762,7 @@ function handleOnline(){
   rerender();
   // Auto-sync if there are pending changes
   if(driveUrl && S.entries.length > 0){
+    setTimeout(warmupDriveScript, 1000); // warm up script on startup
     setTimeout(()=>{
       checkDriveForNewData();
       if(pendingSync){ pendingSync=false; showAlert('Datos pendientes - pulsa Subir cuando puedas'); }
@@ -5304,7 +6809,12 @@ function startTimer(){
     updateTitle();
     let anyRunning=false;
     Object.values(fichajeTimers).forEach(ft=>{ if(ft.running) anyRunning=true; });
-    if(anyRunning) rerender();
+    if(anyRunning){
+      // Don't rebuild DOM while user is typing in a fichaje time input (now type=text with id prefix)
+      const active = document.activeElement;
+      const typingFichaje = active && active.id && (active.id.startsWith('fich-ent-') || active.id.startsWith('fich-sal-'));
+      if(!typingFichaje) rerender();
+    }
   },1000);
   rerender();
 }
@@ -5326,6 +6836,7 @@ function resetTimer(){
 }
 
 function finishTimer(){
+  // fEntry.fichajes already up to date
   const totalSecs=timerElapsed;
   const netSecs=Math.max(0,timerElapsed-timerDeduct*60);
   const netHours=Math.round(netSecs/36)/100;
@@ -5551,6 +7062,26 @@ async function checkAndRestoreFromLocalBackup(){
 }
 
 // Descarga JSON de emergencia
+async function recoverFromIndexedDB(){
+  try{
+    const all = await dbAll(ST.entries);
+    if(!all||all.length===0){
+      showAlert('No se encontraron datos en IndexedDB','err');
+      return;
+    }
+    showAlert('Recuperando '+all.length+' entradas de IndexedDB...');
+    S.entries = all;
+    // Also try tasks, sites, vehicles
+    try{ const t=await dbAll(ST.tasks); if(t&&t.length) S.tasks=t; }catch(e){}
+    try{ const s=await dbAll(ST.sites); if(s&&s.length) S.sites=s; }catch(e){}
+    try{ const v=await dbAll(ST.vehicles); if(v&&v.length) S.vehicles=v; }catch(e){}
+    showAlert('✅ Recuperadas '+all.length+' jornadas de IndexedDB');
+    rerender();
+  }catch(e){
+    showAlert('Error recuperando: '+e.message,'err');
+  }
+}
+
 function emergencyExport(){
   try{
     const backup = {
@@ -5674,162 +7205,11 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
           window[cb]=async function(result){
             done=true; delete window[cb]; sc.remove();
             if(result&&result.ok&&result.data){
-              // Silent boot load - MERGE, never lose local data
+              // Boot: NEVER import from Drive automatically - only notify
+              // User must manually sync to get Drive data
               const d=result.data;
               try{
-                const driveTs = new Date(d.exportedAt||0).getTime();
+                const driveTs = new Date(d.exportedAt||d.ts||0).getTime();
                 const localTs = parseInt(localStorage.getItem('lastDriveLoad')||'0');
-                const lastSaveTs = new Date(localStorage.getItem('lastSave')||0).getTime();
-                // STRICT: Skip boot load if we have ANY local entries
-                // Only load from Drive if this is a fresh install (no local data)
-                if(S.entries.length > 0){
-                  console.log('Skipping boot load: local data exists ('+S.entries.length+' entries)');
-                  // Just show notification if Drive has newer data
-                  if(driveTs > localTs + 5000) driveHasNew=true;
-                  syncStatus='ok'; rerender(); res(); return;
-                }
-                // Build local maps for merging
-                const savedFoto=fWorker.foto||'', savedFirma=fWorker.firma||'', savedLogo=fCompany.logo||'';
-                const localEntryMap={}; S.entries.forEach(e=>{localEntryMap[e.fecha]=e;});
-                const localWorkerMap={}; workers.forEach(w=>{if(w.id)localWorkerMap[w.id]=w;});
-                const localCompanyMap={}; companies.forEach(c=>{if(c.id)localCompanyMap[c.id]=c;});
-
-                // MERGE entries: keep local if newer or not in Drive
-                const driveEntryMap={};
-                (d.entries||[]).forEach(e=>{driveEntryMap[e.fecha]=e;});
-                // Add/update entries from Drive that don't exist locally or are newer
-                for(const [fecha,de] of Object.entries(driveEntryMap)){
-                  const le=localEntryMap[fecha];
-                  if(!le){
-                    // Drive has entry we don't have locally - add it
-                    await dbPut(ST.entries,{...de,fotosGastos:de.fotosGastos||[]});
-                    S.entries.push({...de});
-                  } else if(!le._draft && driveTs > localTs){
-                    // Drive data is newer than last load - update
-                    await dbPut(ST.entries,{...de,id:le.id,fotosGastos:le.fotosGastos||de.fotosGastos||[]});
-                    S.entries=S.entries.map(e=>e.fecha===fecha?{...de,id:le.id,fotosGastos:le.fotosGastos||[]}:e);
-                  }
-                  // If local has a draft or is newer - keep local
-                }
-                // Merge other collections (replace if Drive has them)
-                if((d.tasks||[]).length>0){ await dbClear(ST.tasks); for(const t of d.tasks) await dbPut(ST.tasks,t); }
-                if((d.sites||[]).length>0){ await dbClear(ST.sites); for(const s of d.sites) await dbPut(ST.sites,s); }
-                if((d.workorders||[]).length>0){ await dbClear(ST.workorders); for(const w of d.workorders) await dbPut(ST.workorders,w); }
-                if((d.vehicles||[]).length>0){ await dbClear(ST.vehicles); for(const v of d.vehicles) await dbPut(ST.vehicles,v); }
-                if((d.workers||[]).length>0){ await dbClear(ST.workers); for(const w of d.workers){ const lw=localWorkerMap[w.id]||{}; await dbPut(ST.workers,{...w,foto:lw.foto||savedFoto,firma:w.firma||lw.firma||savedFirma}); } }
-                if((d.companies||[]).length>0){ await dbClear(ST.companies); for(const co of d.companies){ const lc=localCompanyMap[co.id]||{}; await dbPut(ST.companies,{...co,logo:lc.logo||savedLogo}); } }
-                if(d.worker&&d.worker.nombre) fWorker={...defWorker,...d.worker,foto:savedFoto,firma:d.worker.firma||savedFirma};
-                if(d.company&&d.company.nombre) fCompany={...defCompany,...d.company,logo:savedLogo};
-                if(d.activeWorkerId) activeWorkerId=d.activeWorkerId;
-                if(d.activeCompanyId) activeCompanyId=d.activeCompanyId;
-                await loadData();
-                localStorage.setItem('lastDriveLoad', Date.now().toString());
-                syncStatus='ok';
-              }catch(e){ console.warn('Boot load error:',e); syncStatus='ok'; }
-            } else {
-              syncStatus='ok';
-            }
-            rerender(); res();
-          };
-          setTimeout(()=>{ if(!done){delete window[cb];sc.remove();syncStatus='ok';rerender();res();} },15000);
-          sc.src=driveUrl+'?action=load&callback='+cb+'&t='+Date.now();
-          document.body.appendChild(sc);
-        });
-      }catch(e){ syncStatus='ok'; }
-    }
-    // Fix any existing duplicates on startup
-    await deduplicateEntries();
-    // Load task draft if any
-    loadFTaskDraft();
-    // Load most recent entry on boot
-    if(S.entries.length>0 && !editingEntry){
-      const lastEntry=[...S.entries].sort((a,b)=>b.fecha.localeCompare(a.fecha))[0];
-      if(lastEntry){
-        fEntry={...lastEntry,fichajes:[...(lastEntry.fichajes||[]).map(f=>({...f}))]};
-        editingEntry=!!lastEntry.id;
-      }
-    }
-    // Restore timer state if was running
-    const savedTimer=localStorage.getItem('timerState');
-    if(savedTimer){
-      try{
-        const ts=JSON.parse(savedTimer);
-        if(ts.running && ts.start){
-          timerStart=ts.start;
-          timerElapsed=Math.floor((Date.now()-ts.start)/1000);
-          timerDeduct=ts.deduct||30;
-          timerRunning=true;
-          timerInterval=setInterval(()=>{
-            timerElapsed=Math.floor((Date.now()-timerStart)/1000);
-            updateTitle();
-          },1000);
-          showAlert('⏱ Jornada en curso desde '+new Date(ts.start).toTimeString().slice(0,5));
-        }
-      }catch(e){}
-    }
-    // Restore draft if exists for today
-    const todayDraft = S.entries.find(e=>e.fecha===today()&&e._draft);
-    if(todayDraft){ fEntry={...todayDraft}; editingEntry=true; }
-    if(driveUrl && syncStatus!=='ok') syncStatus='ok';
-    // Auto sync: idle-based (see trackActivity above)
-    // Auto backup weekly
-    if(driveUrl){
-      const lastBackup=localStorage.getItem('lastBackup')||'';
-      const weekAgo=new Date();weekAgo.setDate(weekAgo.getDate()-7);
-      if(!lastBackup||new Date(lastBackup)<weekAgo){
-        localStorage.setItem('lastBackup',new Date().toISOString());
-      }
-    }
-    // Load Firebase config if saved
-    const savedCfg=localStorage.getItem('fbConfig');
-    if(savedCfg){ try{ fbConfig=JSON.parse(savedCfg); await initFirebase(); }catch(e){} }
-    await loadVacaciones();
-    renderApp();
-    startClock();
-    updateTitle();
-    autoSnapshot();
-    // Clean URL param on load
-    if(location.search){ history.replaceState(null,'',location.pathname); }
-    // Version check: on startup after 10s, then every 5 minutes
-    setTimeout(checkForUpdate, 10000);
-    setInterval(checkForUpdate, 5 * 60 * 1000);
-    // Adaptive Drive check: 30s active, 8s inactive (>10s idle)
-    lastActivity = Date.now(); // reset on startup
-    let _idleSyncTimer = null;
-    let _idleCheckTimer = null;
-    const IDLE_MS = 30000; // 30 seconds
-
-    function trackActivity(){
-      lastActivity = Date.now();
-      // Reset idle timers on any user action
-      clearTimeout(_idleSyncTimer);
-      clearTimeout(_idleCheckTimer);
-      // Schedule auto-sync after 30s idle
-      _idleSyncTimer = setTimeout(()=>{
-        if(!_syncInProgress && isOnline && driveUrl){
-          console.log('Auto-sync: 30s idle');
-          driveSync();
-        }
-      }, IDLE_MS);
-      // Schedule drive check after 35s idle
-      _idleCheckTimer = setTimeout(()=>{
-        checkDriveForNewData();
-      }, IDLE_MS + 5000);
-    }
-
-    // Track all user interactions
-    ['click','touchstart','keydown','scroll','input','mousedown'].forEach(ev=>
-      document.addEventListener(ev, trackActivity, {passive:true})
-    );
-    // Start first idle timer
-    trackActivity();
-  } catch(e) {
-    document.getElementById('app').innerHTML = 
-      '<div style="color:red;padding:20px;font-family:monospace">Error: ' + e.message + '<br>' + e.stack + '</div>';
-  }
-})();
-
-
-</script>
-</body>
-</html>
+                if(driveTs > localTs + 5000) driveHasNew=true;
+                console.log('Boot: Drive checked, local data preserved. Entries: '+S.entries.length);
