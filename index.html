@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780183000000 -->
+<!-- v1780184000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -87,7 +87,7 @@ nav{display:flex;align-items:center;justify-content:space-between;padding:.6rem 
 .tab.active{color:var(--acc);border-bottom-color:var(--acc)}
 .tab:hover:not(.active){color:var(--ink);background:var(--surf2)}
 main{flex:1;overflow-y:auto;padding:1rem}
-.card{background:var(--surf);border:1px solid var(--brd);border-radius:var(--r);padding:1rem;margin-bottom:.8rem}
+.card{background:var(--surf);border:1px solid var(--brd);border-radius:var(--r);padding:1rem;margin-bottom:.8rem;transition:background .3s,border .3s}
 .sec-title{font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);margin-bottom:.8rem}
 .empty{text-align:center;padding:2rem;color:var(--ink3);font-size:.85rem}
 .field{display:flex;flex-direction:column;gap:.3rem;margin-bottom:.7rem}
@@ -709,6 +709,28 @@ function renderMain(){
 // ══════════════════════════════════════════════════════════
 // FICHAR
 // ══════════════════════════════════════════════════════════
+
+// ── AUTO CÁLCULO HORAS DESDE FICHAJES ──────────────────
+function autoCalcHorasFromFichajes(){
+  if(!fEntry.fichajes || fEntry.fichajes.length===0) return;
+  document.querySelectorAll('.fich-row').forEach((row,i)=>{
+    if(!fEntry.fichajes[i]) return;
+    const ti=Array.from(row.querySelectorAll('input[type="text"]'));
+    if(ti[0]&&ti[0].value) fEntry.fichajes[i].entrada=ti[0].value;
+    if(ti[1]&&ti[1].value) fEntry.fichajes[i].salida=ti[1].value;
+  });
+  let totalMins=0;
+  fEntry.fichajes.forEach(fj=>{
+    if(fj.entrada&&fj.salida) totalMins+=calcH(fj.entrada,fj.salida)*60;
+  });
+  if(totalMins===0) return;
+  const netMins=Math.max(0,totalMins-timerDeduct);
+  const netHours=Math.round(netMins*100/60)/100;
+  fEntry.horasNormales=netHours;
+  if(fEntry.precioHoraNormal>0)
+    fEntry.importeNormales=Math.round(netHours*fEntry.precioHoraNormal*100)/100;
+}
+
 function renderFichar(){
   const e = fEntry;
   const today_entries = S.entries.filter(x=>x.fecha===e.fecha);
@@ -783,7 +805,7 @@ function renderFichar(){
           'Descanso:',
           h('input',{type:'number',min:'0',max:'480',value:timerDeduct,
             style:{width:'52px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.85rem',textAlign:'center'},
-            on:{input:ev=>{timerDeduct=parseInt(ev.target.value)||0;localStorage.setItem('timerDeduct',timerDeduct);}}},
+            on:{input:ev=>{timerDeduct=parseInt(ev.target.value)||0;localStorage.setItem('timerDeduct',timerDeduct);autoCalcHorasFromFichajes();}}},
           'min'
         )
       ),
@@ -891,7 +913,7 @@ function renderFichar(){
         h('button',{
           class:'btn btn-b btn-sm',
           style:{fontSize:'.72rem',padding:'.25rem .6rem'},
-          on:{click:()=>{ S.modal='resumendia'; S._shareConPrecios=false; rerender(); }}
+          on:{click:()=>{ autoCalcHorasFromFichajes(); S.modal='resumendia'; S._shareConPrecios=false; rerender(); }}
         },'📊 Resumen')
       ),
       ...e.fichajes.map((fj,i)=>renderFichaje(fj,i)),
