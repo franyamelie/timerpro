@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780133527654 -->
+<!-- v1780135018501 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -387,7 +387,7 @@ let pendingSync=false;
 let timerRunning=false;
 let lastActivity=Date.now(); // declared globally so all functions can access it
 let timerStart=null;
-let timerDeduct=30;
+let timerDeduct=0;
 let fichajeTimers={}; // {_fid: {running, start, elapsed}} // minutes to deduct
 let timerElapsed=0; // seconds elapsed
 let timerInterval=null;
@@ -1029,10 +1029,18 @@ function renderFichar(){
                 fEntry._transportType=tt.id;
                 if(tt.precio>0) fEntry.transporte=tt.precio;
                 rerender();
+                _lsSave();
               }}
             },tt.nombre+(tt.precio>0?' ('+eur(tt.precio)+')':'')))
           ),
-          importeField(e.transporte, v=>{fEntry.transporte=v;rerender()})
+          importeField(e.transporte, v=>{
+            fEntry.transporte=v;
+            if(fEntry._transportType){
+              const _ti=S.transportTypes.findIndex(t=>t.id===fEntry._transportType);
+              if(_ti>=0){S.transportTypes[_ti].precio=v;localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));}
+            }
+            rerender();
+          })
         )
       )
     ),
@@ -2678,7 +2686,7 @@ function renderModalResumenDia(){
   const impViajes = (e.journeys||[]).reduce((s,j)=>s+(j.km||0)*(j.vehicleId?
     (S.vehicles.find(v=>v.id==j.vehicleId)?.precioPorKm||0):j.precioManual||0),0);
   const totalI = impHoras+impDietas+impTransp+impOtros+impViajes;
-  const tareasDia = S.tasks.filter(t=>t.fecha===e.fecha);
+  const tareasDia = S.tasks;
 
   const sec = (icon,title)=>h('div',{style:{
     display:'flex',alignItems:'center',gap:'.5rem',
