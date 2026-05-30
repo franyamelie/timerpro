@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780165000000 -->
+<!-- v1780166000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -6047,127 +6047,7 @@ let _syncInProgress=false;
 let _warmupDone=false; // track if script is warm
 
 
-async function driveSync(){
-  if(!driveUrl||_syncInProgress) return;
-  _syncInProgress=true;
 
-  // Capture all current form data
-  captureFormState();
-  const notasEl=document.getElementById('notas-editor');
-  if(notasEl&&notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
-  if(fEntry.fecha) await saveDraft();
-
-  let data;
-  try{ data=await buildSyncDataWithPhotos(); }
-  catch(e){ _syncInProgress=false; return; }
-
-  syncStatus='syncing'; rerender();
-
-  // Build combined payload - strip HTML from descriptions
-  const stripHtml=s=>(s||'').replace(/<[^>]*>/g,'').slice(0,300);
-  // Strip all large/unnecessary fields to keep payload small for JSONP GET
-  // compactLoc: extract lat/lng/url for sync without mapImg (saves space, preserves GPS)
-  const compactLoc = loc => {
-    if(!loc) return '';
-    try{
-      const d=JSON.parse(loc);
-      if(d.lat && d.lng) return JSON.stringify({lat:Math.round(d.lat*10000)/10000,lng:Math.round(d.lng*10000)/10000,label:(d.label||'').slice(0,30)});
-      return (loc||'').slice(0,50);
-    }catch(e){ return (loc||'').slice(0,50); }
-  };
-  const stripHtmlNotas = n => {
-    if(!n) return '';
-    // If already plain text, return as-is
-    if(!/<[a-z]/i.test(n)) return n.slice(0,600);
-    // Convert HTML to plain text preserving line structure
-    return n
-      .replace(/<br\s*\/?>/gi,'\n')
-      .replace(/<\/(p|div|li)>/gi,'\n')
-      .replace(/<(b|strong)[^>]*>/gi,'**').replace(/<\/(b|strong)>/gi,'**')
-      .replace(/<u[^>]*>/gi,'__').replace(/<\/u>/gi,'__')
-      .replace(/<[^>]*>/g,'')
-      .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
-      .replace(/\n{3,}/g,'\n\n').trim().slice(0,600);
-  };
-
-  const cleanEntry = e => ({
-    id:e.id, fecha:e.fecha, _draft:e._draft||false,
-    fichajes:(e.fichajes||[]).map(f=>({entrada:f.entrada,salida:f.salida,nota:f.nota||'',taskId:f.taskId||''})),
-    horasNormales:e.horasNormales||0, precioHoraNormal:e.precioHoraNormal||0,
-    horasExtra:e.horasExtra||0, precioHoraExtra:e.precioHoraExtra||0,
-    horasNocturnas:e.horasNocturnas||0, precioHoraNocturna:e.precioHoraNocturna||0,
-    horasFestivas:e.horasFestivas||0, precioHoraFestiva:e.precioHoraFestiva||0,
-    dieta:e.dieta||0, transporte:e.transporte||0,
-    notas:stripHtmlNotas(e.notas),
-    ubicacionEntrada:compactLoc(e.ubicacionEntrada),
-    ubicacionSalida:compactLoc(e.ubicacionSalida),
-  });
-  const payload={
-    version:data.version,
-    exportedAt:new Date().toISOString(),
-    workers:data.workers,
-    companies:data.companies,
-    activeWorkerId:data.activeWorkerId,
-    activeCompanyId:data.activeCompanyId,
-    worker:data.worker,
-    company:data.company,
-    tasks:(data.tasks||[]).map(t=>({id:t.id,titulo:t.titulo,fecha:t.fecha,horaInicio:t.horaInicio,horaFin:t.horaFin,descripcion:stripHtml(t.descripcion),siteId:t.siteId,usaOT:t.usaOT,otNumero:t.otNumero})),
-    sites:(data.sites||[]).map(s=>({id:s.id,nombre:s.nombre,direccion:s.direccion})),
-    workorders:data.workorders||[],
-    vehicles:(data.vehicles||[]).map(v=>({id:v.id,nombre:v.nombre,matricula:v.matricula})),
-    entries:(data.entries||[]).map(cleanEntry),
-    lastSync:new Date().toISOString()
-  };
-
-  const payloadStr=JSON.stringify(payload);
-  const encoded=encodeURIComponent(payloadStr);
-
-  console.log('Sync payload:',payloadStr.length,'bytes, encoded:',encoded.length);
-
-  let _retries = 0;
-  const MAX_RETRIES = 3;
-
-  function attemptSync(){
-    const timeoutMs = 55000 + (_retries * 15000); // 55s, 70s, 85s
-    jsonpGet('action=save&d='+encoded, (err,res)=>{
-      if(!err && res && res.ok){
-        _syncInProgress=false;
-        syncStatus='ok';
-        _warmupDone=true;
-        if(window._driveRetryTimer){clearInterval(window._driveRetryTimer);window._driveRetryTimer=null;}
-        localStorage.setItem('lastDriveLoad', Date.now().toString());
-        localStorage.setItem('lastSave', new Date().toISOString());
-        lastSync = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
-        localStorage.setItem('lastSync', lastSync);
-        showAlert('✅ Guardado en Drive: '+payload.entries.length+' jornadas');
-        rerender();
-      } else if(_retries < MAX_RETRIES){
-        _retries++;
-        console.log('Drive reintento',_retries,'de',MAX_RETRIES,'por:',err||res?.error);
-        syncStatus='syncing';
-        rerender();
-        setTimeout(attemptSync, 5000);
-      } else {
-        // All retries failed — schedule silent background retry every 2 min
-        _syncInProgress=false;
-        _warmupDone=false;
-        syncStatus='err';
-        rerender();
-        // Schedule silent background retry — no popup, no interruption
-        if(!window._driveRetryTimer){
-          window._driveRetryTimer = setInterval(()=>{
-            if(syncStatus==='ok'){ clearInterval(window._driveRetryTimer); window._driveRetryTimer=null; return; }
-            console.log('Drive: reintento automático en background...');
-            clearInterval(window._driveRetryTimer);
-            window._driveRetryTimer=null;
-            driveSync();
-          }, 120000); // retry every 2 minutes silently
-        }
-      }
-    }, timeoutMs);
-  }
-  attemptSync();
-}
 
 
 
