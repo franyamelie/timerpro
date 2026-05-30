@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780185000000 -->
+<!-- v1780186000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -729,6 +729,26 @@ function autoCalcHorasFromFichajes(){
   fEntry.horasNormales=netHours;
   if(fEntry.precioHoraNormal>0)
     fEntry.importeNormales=Math.round(netHours*fEntry.precioHoraNormal*100)/100;
+}
+
+
+// ── CONFIRMACIÓN CON COLOR ──────────────────────────────
+function confirmColor(msg, color, onOk){
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:var(--surf);border-radius:12px;padding:1.5rem;max-width:340px;width:100%;text-align:center;border-top:5px solid '+color;
+  box.innerHTML = '<div style="font-size:1.5rem;margin-bottom:.8rem">'+(color==='#22c55e'?'☁️⬆️':'☁️⬇️')+'</div>'
+    +'<div style="font-weight:700;font-size:1rem;margin-bottom:.5rem;color:var(--ink)">'+msg+'</div>'
+    +'<div style="display:flex;gap:.8rem;justify-content:center;margin-top:1.2rem">'
+    +'<button id="cc-ok" style="background:'+color+';color:'+(color==='#22c55e'?'#000':'#fff')+';border:none;border-radius:8px;padding:.6rem 1.4rem;font-weight:700;font-size:.9rem;cursor:pointer">Sí, continuar</button>'
+    +'<button id="cc-cancel" style="background:var(--surf3);color:var(--ink);border:none;border-radius:8px;padding:.6rem 1.4rem;font-weight:700;font-size:.9rem;cursor:pointer">Cancelar</button>'
+    +'</div>';
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', ev=>{ if(ev.target===overlay){ document.body.removeChild(overlay); } });
+  document.getElementById('cc-ok').onclick = ()=>{ document.body.removeChild(overlay); onOk(); };
+  document.getElementById('cc-cancel').onclick = ()=>{ document.body.removeChild(overlay); };
 }
 
 function renderFichar(){
@@ -2366,10 +2386,10 @@ function renderSincronizar(){
         h('span',{style:{fontWeight:700}},S.entries.length+' jornadas')
       ),
       h('div',{class:'btn-row',style:{flexDirection:'column',marginTop:'.5rem'}},
-        h('button',{class:'btn btn-g btn-full btn-lg',style:{opacity:isOnline?1:.5},on:{click:()=>{if(!isOnline){showAlert('Sin conexion. Los datos se subiran cuando vuelva el internet.','err');pendingSync=true;return;}if(!confirm('¿Seguro que quieres SUBIR todos los datos al Drive? Esto sobreescribirá los datos en la nube.'))return;driveSync();}}},
+        h('button',{class:'btn btn-g btn-full btn-lg',style:{opacity:isOnline?1:.5},on:{click:()=>{if(!isOnline){showAlert('Sin conexion. Los datos se subiran cuando vuelva el internet.','err');pendingSync=true;return;}confirmColor('¿Seguro que quieres SUBIR todos los datos a la nube? Sobreescribirá los datos en la nube.','#22c55e',()=>driveSync()); return;}}},
           isOnline?'☁️ Subir TODO a Drive':'☁️ Subir (sin conexion)'
         ),
-        h('button',{class:'btn btn-b btn-full btn-lg',on:{click:()=>{if(!confirm('¿Seguro que quieres CARGAR desde Drive? Esto sobreescribirá los datos locales.'))return;_doLoad(true,false,true);}}},
+        h('button',{class:'btn btn-b btn-full btn-lg',on:{click:()=>{confirmColor('¿Seguro que quieres CARGAR desde la nube? Sobreescribirá los datos locales.','#3b82f6',()=>_doLoad(true,false,true)); return;}}},
           '⬇️ Cargar TODO desde Drive'
         )
       ),
@@ -3849,8 +3869,8 @@ function renderModalDriveAccount(){
       h('div',{class:'sum-row'},h('span',{class:'sum-label'},'Ultima subida'),h('span',{},lastSync||'—')),
       h('div',{class:'sum-row'},h('span',{class:'sum-label'},'Jornadas locales'),h('span',{style:{fontWeight:700}},S.entries.length+' jornadas')),
       h('div',{class:'btn-row',style:{flexDirection:'column',marginTop:'.5rem'}},
-        h('button',{class:'btn btn-g btn-full',on:{click:()=>{S.modal=null;rerender();if(!confirm('¿Seguro que quieres SUBIR todos los datos a la nube?'))return;driveSync();}}},'Subir TODO a Drive'),
-        h('button',{class:'btn btn-b btn-full',on:{click:()=>{S.modal=null;rerender();if(!confirm('¿Seguro que quieres CARGAR desde la nube? Sobreescribirá los datos locales.'))return;_doLoad(true,false,true);}}},'Cargar TODO desde Drive'),
+        h('button',{class:'btn btn-g btn-full',on:{click:()=>{S.modal=null;rerender();confirmColor('¿Seguro que quieres SUBIR todos los datos a la nube? Sobreescribirá los datos en la nube.','#22c55e',()=>driveSync()); return;}}},'Subir TODO a Drive'),
+        h('button',{class:'btn btn-b btn-full',on:{click:()=>{S.modal=null;rerender();confirmColor('¿Seguro que quieres CARGAR desde la nube? Sobreescribirá los datos locales.','#3b82f6',()=>_doLoad(true,false,true)); return;}}},'Cargar TODO desde Drive'),
         h('button',{class:'btn btn-gh btn-full',on:{click:()=>{S.modal=null;rerender();}}},'Cerrar')
       )
     )
