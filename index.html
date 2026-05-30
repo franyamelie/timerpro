@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780163500000 -->
+<!-- v1780164000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -374,7 +374,7 @@ let fbConfig=null; // loaded from localStorage
 let syncStatus=''; // '', 'syncing', 'ok', 'err'
 let syncTimer=null;
 let deferredInstall=null;
-let driveUrl='https://script.google.com/macros/s/AKfycbydDnUkKDvyQSWC0at2RFMem69hS2gaC7BygQW0I1mdsiDPrZL02lvXwNQ80falP85gVw/exec'; // URL fija - ya configurada
+let driveUrl='https://script.google.com/macros/s/AKfycbzE1jMIbFs4xMQKtdO5syVDSHMyuNBJqnNcQTyj8T5Qy34SPFU1XJsqKOXrrFMn-zZAxQ/exec'; // URL fija - ya configurada
 let lastSync='';
 let driveHasNew=false; // Drive has newer data than local
 let driveChecked=false; // Has been checked at least once
@@ -6041,33 +6041,11 @@ async function saveDriveUrl(){
 // Sends data in small chunks to avoid Google URL length limit (~2KB)
 function testSave(){ driveSync(); }
 
-function jsonpGet(params, callback, timeout){
-  const cbName='cb_'+Date.now()+'_'+Math.random().toString(36).slice(2);
-  const s=document.createElement('script');
-  let done=false;
-  window[cbName]=function(res){ done=true; delete window[cbName]; s.remove(); callback(null,res); };
-  setTimeout(()=>{ if(!done){ delete window[cbName]; s.remove(); callback('timeout'); } }, timeout||30000);
-  s.src=driveUrl+'?callback='+cbName+'&t='+Date.now()+'&'+params;
-  document.body.appendChild(s);
-}
+
 
 let _syncInProgress=false;
 let _warmupDone=false; // track if script is warm
 
-function warmupDriveScript(){
-  // Fire a lightweight ping to wake up the Apps Script (cold start takes 30-40s)
-  if(!driveUrl || _warmupDone) return;
-  const cbName='warm_'+Date.now();
-  const s=document.createElement('script');
-  window[cbName]=function(res){ 
-    delete window[cbName]; s.remove(); 
-    _warmupDone=true;
-    console.log('Drive script warmed up');
-  };
-  setTimeout(()=>{ delete window[cbName]; s.remove(); }, 10000);
-  s.src=driveUrl+'?action=ping&callback='+cbName+'&t='+Date.now();
-  document.body.appendChild(s);
-}
 
 async function driveSync(){
   if(!driveUrl||_syncInProgress) return;
@@ -6196,6 +6174,150 @@ async function driveSync(){
 
 
 
+
+
+// ── JSONBIN SYNC ─────────────────────────────────────────
+const JSONBIN_KEY = '$2a$10$7r5N6eiuZ.oKKj/sEbvE2OauHNVX5CRN/aQC5hOxv9sf8ZHwR2Fp.';
+const JSONBIN_BASE = 'https://api.jsonbin.io/v3';
+let jsonbinId = localStorage.getItem('jsonbinId') || '';
+
+async function jsonbinSave(data){
+  const payload = {
+    entries: data.entries.map(e=>({...e, fotosGastos:[]})),
+    tasks: data.tasks,
+    sites: data.sites,
+    workorders: data.workorders,
+    vehicles: data.vehicles,
+    workers: data.workers,
+    companies: data.companies,
+    activeWorkerId: data.activeWorkerId,
+    activeCompanyId: data.activeCompanyId,
+    exportedAt: new Date().toISOString()
+  };
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Master-Key': JSONBIN_KEY,
+    'X-Bin-Private': 'true'
+  };
+  if(jsonbinId){
+    // Update existing bin
+    const r = await fetch(JSONBIN_BASE+'/b/'+jsonbinId, {
+      method:'PUT', headers, body: JSON.stringify(payload)
+    });
+    if(!r.ok) throw new Error('JSONBin update failed: '+r.status);
+    return await r.json();
+  } else {
+    // Create new bin
+    headers['X-Bin-Name'] = 'TimerPro';
+    const r = await fetch(JSONBIN_BASE+'/b', {
+      method:'POST', headers, body: JSON.stringify(payload)
+    });
+    if(!r.ok) throw new Error('JSONBin create failed: '+r.status);
+    const result = await r.json();
+    jsonbinId = result.metadata.id;
+    localStorage.setItem('jsonbinId', jsonbinId);
+    return result;
+  }
+}
+
+async function jsonbinLoad(){
+  if(!jsonbinId){
+    // Try to find existing bin
+    const r = await fetch(JSONBIN_BASE+'/b?page=1', {
+      headers:{'X-Master-Key': JSONBIN_KEY}
+    });
+    if(r.ok){
+      const result = await r.json();
+      const bins = result.result || [];
+      const tp = bins.find(b=>b.snippetMeta?.name==='TimerPro' || b.name==='TimerPro');
+      if(tp){ jsonbinId=tp.id; localStorage.setItem('jsonbinId',jsonbinId); }
+    }
+    if(!jsonbinId) return null;
+  }
+  const r = await fetch(JSONBIN_BASE+'/b/'+jsonbinId+'/latest', {
+    headers:{'X-Master-Key': JSONBIN_KEY}
+  });
+  if(!r.ok) throw new Error('JSONBin load failed: '+r.status);
+  const result = await r.json();
+  return result.record;
+}
+
+async function driveSync(){
+  if(_syncInProgress) return;
+  _syncInProgress = true;
+  captureFormState();
+  const notasEl=document.getElementById('notas-editor');
+  if(notasEl&&notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
+  if(fEntry.fecha) await saveDraft();
+
+  syncStatus='syncing'; rerender();
+  try{
+    const data = await buildSyncDataWithPhotos();
+    await jsonbinSave(data);
+    _syncInProgress = false;
+    syncStatus='ok';
+    lastSync = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+    localStorage.setItem('lastSync', lastSync);
+    localStorage.setItem('lastSave', new Date().toISOString());
+    localStorage.setItem('lastDriveLoad', Date.now().toString());
+    showAlert('✅ Guardado en la nube: '+S.entries.length+' jornadas');
+    rerender();
+  }catch(e){
+    _syncInProgress = false;
+    syncStatus='err';
+    showAlert('Error guardando: '+e.message,'err');
+    rerender();
+  }
+}
+
+async function _doLoad(force, verifyMode, confirmMode){
+  syncStatus='syncing'; rerender();
+  try{
+    const d = await jsonbinLoad();
+    if(!d||!d.entries||d.entries.length===0){
+      syncStatus='ok';
+      showAlert('Nube vacía — guarda algo primero','err');
+      rerender(); return;
+    }
+    await importDriveData(d, verifyMode);
+  }catch(e){
+    syncStatus='err';
+    showAlert('Error cargando: '+e.message,'err');
+    rerender();
+  }
+}
+
+function warmupDriveScript(){ /* no-op with JSONBin */ }
+function checkDriveForNewData(){
+  if(!jsonbinId) return;
+  fetch(JSONBIN_BASE+'/b/'+jsonbinId+'/latest', {
+    headers:{'X-Master-Key': JSONBIN_KEY}
+  }).then(r=>r.json()).then(result=>{
+    const d = result.record;
+    if(!d) return;
+    const exportedAt = new Date(d.exportedAt||0).getTime();
+    const lastLoaded = parseInt(localStorage.getItem('lastDriveLoad')||'0');
+    const newHasNew = exportedAt > lastLoaded + 3000;
+    if(newHasNew !== driveHasNew || !driveChecked){
+      driveChecked = true;
+      driveHasNew = newHasNew;
+      requestAnimationFrame(()=>{
+        document.querySelectorAll('.drive-badge').forEach((el,i)=>{
+          const active = i===0 ? driveHasNew : (driveChecked&&!driveHasNew);
+          const bg = i===0 ? 'var(--acc)' : 'var(--red)';
+          const col = i===0 ? '#000' : '#fff';
+          el.style.background = active ? bg : 'var(--surf3)';
+          el.style.color = active ? col : 'var(--ink3)';
+          el.style.border = '1px solid '+(active ? bg : 'var(--brd)');
+          const dot = el.querySelector('.badge-dot');
+          if(dot) dot.style.background = active ? col : 'var(--ink3)';
+        });
+      });
+    }
+    driveChecked = true;
+    driveHasNew = newHasNew;
+  }).catch(()=>{});
+}
 
 function buildSyncData(){
   function cleanLoc(loc){
@@ -7064,7 +7186,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     // Load persistent settings
     try{
       const td=localStorage.getItem('timerDeduct');
-      if(td!==null) timerDeduct=parseInt(td)||30;
+      if(td!==null) timerDeduct=parseInt(td)||0;
       const tt=localStorage.getItem('transportTypes');
       if(tt) S.transportTypes=JSON.parse(tt)||S.transportTypes;
       const dd=localStorage.getItem('dietaDefault');
