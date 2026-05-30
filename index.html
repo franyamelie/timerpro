@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780184000000 -->
+<!-- v1780185000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -33,15 +33,15 @@
 }
 .light{
   --time-invert:0;
-  --bg:#f5efe6;--bg2:#ede4d8;--bg3:#e4d9c8;
-  --surf:#fdf8f2;--surf2:#f7f0e6;--surf3:#ede4d6;
-  --ink:#2c1a0e;--ink2:#6b4226;--ink3:#9c6b45;
-  --brd:rgba(120,70,30,.2);
-  --sh:0 2px 12px rgba(120,70,30,.15);
-  --acc:#16a34a;--acc2:#15803d;--acc-lt:rgba(22,163,74,.18);
-  --red:#dc2626;--red-lt:rgba(220,38,38,.14);
-  --blu:#1d6fa8;--blu-lt:rgba(29,111,168,.14);
-  --yel:#b45309;--yel-lt:rgba(180,83,9,.14);
+  --bg:#c8a97e;--bg2:#bc9d72;--bg3:#b09166;
+  --surf:#dfc4a0;--surf2:#d4b890;--surf3:#c8ac80;
+  --ink:#1a0e05;--ink2:#3d2010;--ink3:#6b3a1a;
+  --brd:rgba(80,40,10,.35);
+  --sh:0 2px 12px rgba(80,40,10,.25);
+  --acc:#15803d;--acc2:#166534;--acc-lt:rgba(21,128,61,.2);
+  --red:#b91c1c;--red-lt:rgba(185,28,28,.15);
+  --blu:#1d4ed8;--blu-lt:rgba(29,78,216,.15);
+  --yel:#92400e;--yel-lt:rgba(146,64,14,.15);
 }
 input[type="time"]{
   cursor:pointer;
@@ -3849,8 +3849,8 @@ function renderModalDriveAccount(){
       h('div',{class:'sum-row'},h('span',{class:'sum-label'},'Ultima subida'),h('span',{},lastSync||'—')),
       h('div',{class:'sum-row'},h('span',{class:'sum-label'},'Jornadas locales'),h('span',{style:{fontWeight:700}},S.entries.length+' jornadas')),
       h('div',{class:'btn-row',style:{flexDirection:'column',marginTop:'.5rem'}},
-        h('button',{class:'btn btn-g btn-full',on:{click:()=>{S.modal=null;rerender();driveSync();}}},'Subir TODO a Drive'),
-        h('button',{class:'btn btn-b btn-full',on:{click:()=>{S.modal=null;rerender();_doLoad(true,false,true);}}},'Cargar TODO desde Drive'),
+        h('button',{class:'btn btn-g btn-full',on:{click:()=>{S.modal=null;rerender();if(!confirm('¿Seguro que quieres SUBIR todos los datos a la nube?'))return;driveSync();}}},'Subir TODO a Drive'),
+        h('button',{class:'btn btn-b btn-full',on:{click:()=>{S.modal=null;rerender();if(!confirm('¿Seguro que quieres CARGAR desde la nube? Sobreescribirá los datos locales.'))return;_doLoad(true,false,true);}}},'Cargar TODO desde Drive'),
         h('button',{class:'btn btn-gh btn-full',on:{click:()=>{S.modal=null;rerender();}}},'Cerrar')
       )
     )
