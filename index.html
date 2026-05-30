@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780078113408 -->
+<!-- v1780133527654 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -206,22 +206,8 @@ main{flex:1;overflow-y:auto;padding:1rem}
 </head>
 <body>
 <div id="app"></div>
-<script>
-function _lsSave(){
-  try{
-    const data={entries:S.entries.filter(e=>!e._draft).map(e=>({...e,fotosGastos:[]})),sites:S.sites||[],tasks:S.tasks||[],transportTypes:S.transportTypes||[],savedAt:Date.now()};
-    localStorage.setItem('_tp_primary',JSON.stringify(data));
-  }catch(ex){}
-}
-function _lsLoad(){
-  try{const d=JSON.parse(localStorage.getItem('_tp_primary')||'null');return(d&&Array.isArray(d.entries))?d:null;}catch(ex){return null;}
-}
-
-function formatNotas(n){
-  if(!n) return '';
-  if(n.indexOf('<br')!==-1||n.indexOf('<div')!==-1||n.indexOf('<b>')!==-1||n.indexOf('<u>')!==-1) return n;
-  return n.split(String.fromCharCode(10)).join('<br>');
-}
+<script>function _lsSave(){try{localStorage.setItem('_tp_bk',JSON.stringify({e:S.entries.filter(function(x){return !x._draft;}).map(function(x){var c={...x};c.fotosGastos=[];return c;}),s:S.sites||[],t:Date.now()}));}catch(ex){}}
+function _lsLoad(){try{var d=JSON.parse(localStorage.getItem('_tp_bk')||'null');return(d&&d.e)?d:null;}catch(ex){return null;}}
 
 
 
@@ -1128,7 +1114,7 @@ function renderFichar(){
         h('div',{
           id:'notas-editor',
           contenteditable:'true',
-          html:formatNotas(fEntry.notas),
+          html:fEntry.notas||'',
           spellcheck:true, lang:'es',
           style:{
             minHeight:'80px',background:'var(--surf2)',border:'1px solid var(--brd)',
@@ -2354,39 +2340,6 @@ function renderSincronizar(){
         ),
         h('button',{class:'btn btn-b btn-full btn-lg',on:{click:()=>_doLoad(true,false,true)}},
           '⬇️ Cargar TODO desde Drive'
-        ),
-        h('button',{class:'btn btn-full btn-lg',style:{background:'#7c3aed',color:'#fff'},
-          on:{click:()=>{if(!isOnline){showAlert('Sin conexión','err');return;}showAlert('Cargando desde Drive...');_doLoad(true,false,false);setTimeout(()=>{warmupDriveScript();setTimeout(driveSync,_warmupDone?0:2000);},10000);}}},
-          '🔄 Sync bidireccional'
-        )
-      ),
-      // FILE SYNC - 100% reliable, no internet needed
-      h('div',{class:'card',style:{marginBottom:'1rem',border:'2px solid #0ea5e9'}},
-        h('div',{class:'sec-title',style:{color:'#0ea5e9'}},'📂 TRANSFERIR DATOS ENTRE DISPOSITIVOS'),
-        h('p',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.8rem'}},
-          'Exporta desde el móvil, importa en el PC. Sin Drive, sin internet, sin pérdida de datos.'
-        ),
-        h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.5rem'}},
-          h('button',{class:'btn btn-g btn-full btn-lg',on:{click:()=>exportSyncFile()}},
-            '📤 Exportar archivo sync'
-          ),
-          h('button',{class:'btn btn-full btn-lg',style:{background:'#0ea5e9',color:'#fff'},
-            on:{click:()=>{
-              const inp=document.createElement('input');
-              inp.type='file'; inp.accept='.json';
-              inp.onchange=ev=>{
-                const f=ev.target.files[0]; if(!f) return;
-                const r=new FileReader();
-                r.onload=e=>{
-                  try{ const d=JSON.parse(e.target.result); importDriveData(d,false); }
-                  catch(ex){ showAlert('Error al leer el archivo','err'); }
-                };
-                r.readAsText(f);
-              };
-              inp.click();
-            }}},
-            '📥 Importar archivo sync'
-          )
         )
       ),
       h('div',{style:{fontSize:'.75rem',color:'var(--ink3)',marginTop:'.5rem',textAlign:'center'}},
@@ -2832,7 +2785,7 @@ function renderModalResumenDia(){
             S._shareConPrecios===true?eur(e.dieta):''
           ):null,
           (e.transporte||0)>0?row(
-            (function(){var tt=(S.transportTypes||[]).find(function(t){return t.id===e._transportType;});return '1 Viaje'+(tt?' - '+tt.nombre:'');}()),
+            (function(){var tt=(S.transportTypes||[]).find(function(t){return t.id===e._transportType;});return 'Transporte'+(tt?' - '+tt.nombre:'');}()),
             S._shareConPrecios===true?eur(e.transporte):''
           ):null,
           ...(e.dietasExtra||[]).map(d=>row(d.concepto||'Dieta extra', S._shareConPrecios===true?eur(d.importe||0):'✓'))
@@ -2886,7 +2839,7 @@ function renderModalResumenDia(){
             background:'#f8fafc',borderRadius:'8px',padding:'.7rem .9rem',
             fontSize:'.83rem',color:'#334155',lineHeight:1.6,
             border:'1px solid #e2e8f0'
-          },html:formatNotas(e.notas)})
+          },html:e.notas})
         ):null,
 
         // Share with/without prices toggle + buttons
@@ -3361,7 +3314,7 @@ async function compartirComoImagen(conPrecios){
     if(e.notas){
       html += sec('📝','NOTAS')
         +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:12px;color:#334155;line-height:1.7">'
-        +formatNotas(e.notas)+'</div>';
+        +e.notas+'</div>';
     }
 
     // Total
@@ -3423,7 +3376,6 @@ async function compartirComoImagen(conPrecios){
       panel.addEventListener('click', function(ev){ if(ev.target===panel) close(); });
 
       document.getElementById('sp-wa').onclick = async function(){
-        window.open('https://web.whatsapp.com','_blank','noopener');
         try{
           await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
           window.open('https://web.whatsapp.com','_blank');
@@ -4150,11 +4102,12 @@ function gpsDisplay(loc){
     const d=JSON.parse(loc);
     const lat=parseFloat(d.lat),lng=parseFloat(d.lng);
     if(!lat||!lng) throw new Error('no coords');
-    const _osmSrc='https://www.openstreetmap.org/export/embed.html?bbox='+(lng-0.003)+','+(lat-0.002)+','+(lng+0.003)+','+(lat+0.002)+'&layer=mapnik&marker='+lat+','+lng;
+    const mapImgUrl = d.mapImg || ('https://staticmap.openstreetmap.de/staticmap.php?center='+lat+','+lng+'&zoom=16&size=300x130&markers='+lat+','+lng+',red-pushpin');
     return h('div',{style:{marginTop:'.4rem'}},
       h('a',{href:d.url,target:'_blank',rel:'noopener',style:{display:'block',textDecoration:'none'}},
         h('div',{style:{position:'relative',borderRadius:'var(--r)',overflow:'hidden',border:'2px solid var(--acc)',maxWidth:'300px',cursor:'pointer',boxShadow:'var(--sh)',height:'130px',backgroundColor:'#e8f4f8'}},
-          h('iframe',{src:_osmSrc,style:{width:'100%',height:'100%',border:'none'},loading:'lazy',frameborder:'0'}),
+          h('img',{src:mapImgUrl,style:{width:'100%',height:'100%',objectFit:'cover'},
+            onerror:"this.style.display='none';this.nextSibling.style.display='flex'"}),
           h('div',{style:{display:'none',position:'absolute',inset:0,alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'.3rem',color:'var(--ink2)',fontSize:'.75rem'}},
             h('span',{style:{fontSize:'1.5rem'}},'🗺️'),
             h('span',{},'Ver en Google Maps')
@@ -4219,7 +4172,7 @@ async function captureGPS(tipo){
       const lng=pos.coords.longitude.toFixed(6);
       const acc=Math.round(pos.coords.accuracy);
       // Static map preview using OpenStreetMap (free, no API key)
-      const mapImg='';
+      const mapImg='https://staticmap.openstreetmap.de/staticmap.php?center='+lat+','+lng+'&zoom=16&size=300x150&markers='+lat+','+lng+',red-pushpin';
       const mapsUrl='https://www.google.com/maps?q='+lat+','+lng;
       const loc=JSON.stringify({lat,lng,url:mapsUrl,label:lat+', '+lng,acc});
       if(tipo==='entrada')fEntry.ubicacionEntrada=loc;
@@ -4236,20 +4189,6 @@ async function captureGPS(tipo){
 }
 
 let _isSaving = false;
-
-// Backup all entries to localStorage as secondary safety net
-function _backupEntriesToLS(){
-  try{
-    const backup = S.entries.filter(e=>!e._draft).map(e=>({
-      ...e,
-      fotosGastos:[],  // strip photos to save space
-      notas: (e.notas||'').slice(0,500)  // limit notas size
-    }));
-    localStorage.setItem('_entriesBackup', JSON.stringify(backup));
-    localStorage.setItem('_entriesBackupTs', Date.now().toString());
-  }catch(ex){ /* localStorage might be full */ }
-}
-
 async function saveEntry(){
   if(!fEntry.fecha){showAlert('Selecciona una fecha','err');return;}
   if(_isSaving) return;
@@ -4293,12 +4232,11 @@ async function saveEntry(){
     if(editingEntry&&fEntry.id){
       await dbPut(ST.entries,{...fEntry,_draft:false});
       S.entries=S.entries.map(e=>e.id===fEntry.id?{...fEntry,_draft:false}:e);
-      _backupEntriesToLS(); _lsSave();
+      _lsSave();
     } else {
       const id=await dbPut(ST.entries,{...fEntry,_draft:false});
       fEntry.id=id;
       S.entries.push({...fEntry,id,_draft:false});
-      _backupEntriesToLS(); _lsSave();
     }
     editingEntry=false;
     localStorage.removeItem('_fEntry');
@@ -4355,7 +4293,7 @@ function restoreTimerForDay(fecha){
   timerRunning=false;
   timerStart=null;
   timerElapsed=0;
-  {const _td=localStorage.getItem('timerDeduct');timerDeduct=_td?parseInt(_td)||30:30;}
+  timerDeduct=30;
   if(timerInterval){ clearInterval(timerInterval); timerInterval=null; }
   try{
     const saved=localStorage.getItem('timerState');
@@ -4389,7 +4327,7 @@ function loadHistorial(entry){
   // Load the new day — flag tells captureFormState to NOT read old DOM
   _skipDomCapture=true;
   fEntry={...entry,fichajes:[...(entry.fichajes||[])],dietasExtra:[...(entry.dietasExtra||[])],otrosConceptos:[...(entry.otrosConceptos||[])],journeys:[...(entry.journeys||[])]};
-  if(fEntry.notas) fEntry.notas=formatNotas(fEntry.notas);
+  // notas come from the DB entry — don't override with localStorage
   editingEntry=true;
   S.tab='fichar';
   restoreTimerForDay(entry.fecha); // restore this day's timer if it has one
@@ -4769,7 +4707,7 @@ async function importJSON(file){
     const text=await file.text();
     const data=JSON.parse(text);
     if(!confirm('¿Importar datos? Se reemplazarán los actuales.'))return;
-    await Promise.all([ST.entries,ST.tasks].map(s=>dbClear(s)));
+    await Promise.all(Object.values(ST).filter(s=>s!=='snapshots').map(s=>dbClear(s)));
     for(const e of(data.entries||[]))await dbPut(ST.entries,e);
     for(const t of(data.tasks||[]))await dbPut(ST.tasks,t);
     for(const s of(data.sites||[]))await dbPut(ST.sites,s);
@@ -6089,48 +6027,6 @@ async function saveDriveUrl(){
   driveSync();
 }
 
-
-// Safe silent sync - downloads from Drive and adds missing entries WITHOUT clearing local
-async function _safeSilentSync(){
-  if(!driveUrl || _syncInProgress) return;
-  try{
-    await new Promise((resolve)=>{
-      const cb='silent_'+Date.now();
-      const sc=document.createElement('script');
-      let done=false;
-      window[cb]=async function(result){
-        done=true; delete window[cb]; sc.remove();
-        if(result&&result.ok&&result.data){
-          const driveEntries=result.data.entries||[];
-          const localDates=new Set(S.entries.map(e=>e.fecha));
-          let added=0;
-          for(const e of driveEntries){
-            if(!localDates.has(e.fecha)){
-              if(e.notas) e.notas=formatNotas(e.notas);
-              S.entries.push(e);
-              try{ await dbPut(ST.entries,e); }catch(ex){}
-              added++;
-            }
-          }
-          if(added>0){
-            driveHasNew=false;
-            rerender();
-            console.log('Auto-sync: added '+added+' entries from Drive');
-          }
-          // Check if Drive has newer data for existing dates
-          const driveTs=result.data.exportedAt?new Date(result.data.exportedAt).getTime():0;
-          const localTs=new Date(localStorage.getItem('lastSave')||0).getTime();
-          if(driveTs > localTs+5000) driveHasNew=true;
-        }
-        resolve();
-      };
-      setTimeout(()=>{ if(!done){delete window[cb];sc.remove();resolve();} },15000);
-      sc.src=driveUrl+'?action=load&callback='+cb+'&t='+Date.now();
-      document.body.appendChild(sc);
-    });
-  }catch(ex){ console.log('Silent sync error:',ex); }
-}
-
 // ── DRIVE SYNC ────────────────────────────────────────
 
 // ── CHUNKED SAVE ──────────────────────────────────────
@@ -6166,39 +6062,8 @@ function warmupDriveScript(){
 }
 
 async function driveSync(){
-  if(!driveUrl){ showAlert('Configura la URL de Drive en Sincronizar','err'); return; }
-  if(_syncInProgress){ showAlert('Sync en curso, espera...'); return; }
+  if(!driveUrl||_syncInProgress) return;
   _syncInProgress=true;
-
-  // SAFE UPLOAD: First read current Drive data, merge with local, then upload
-  // This prevents phone entries from being overwritten by PC upload
-  try{
-    await new Promise((resolve)=>{
-      const cb='preSync_'+Date.now();
-      const sc=document.createElement('script');
-      let done=false;
-      window[cb]=async function(result){
-        done=true; delete window[cb]; sc.remove();
-        if(result&&result.ok&&result.data){
-          const driveEntries=result.data.entries||[];
-          // Merge Drive entries into local S.entries (Drive wins for dates not in local)
-          const localDates=new Set(S.entries.map(e=>e.fecha));
-          driveEntries.forEach(e=>{
-            if(!localDates.has(e.fecha)){
-              // Drive has an entry we don't have locally - add it
-              if(e.notas) e.notas=formatNotas(e.notas);
-              S.entries.push(e);
-              dbPut(ST.entries,e).catch(()=>{});
-            }
-          });
-        }
-        resolve();
-      };
-      setTimeout(()=>{ if(!done){delete window[cb];sc.remove();resolve();} },8000);
-      sc.src=driveUrl+'?action=load&callback='+cb+'&t='+Date.now();
-      document.body.appendChild(sc);
-    });
-  }catch(ex){ /* if pre-read fails, continue with upload anyway */ }
 
   // Capture all current form data
   captureFormState();
@@ -6226,18 +6091,17 @@ async function driveSync(){
   };
   const stripHtmlNotas = n => {
     if(!n) return '';
-    if(n.indexOf('<')===-1) return n.slice(0,1200);
-    var nl=String.fromCharCode(10);
-    var r=n;
-    r=r.replace(/<br>/gi,nl).replace(/<br[^>]*>/gi,nl);
-    r=r.replace(/<[/]div>/gi,nl).replace(/<[/]p>/gi,nl).replace(/<[/]li>/gi,nl);
-    r=r.replace(/<b>/gi,'**').replace(/<[/]b>/gi,'**');
-    r=r.replace(/<strong>/gi,'**').replace(/<[/]strong>/gi,'**');
-    r=r.replace(/<u>/gi,'__').replace(/<[/]u>/gi,'__');
-    r=r.replace(/<[^>]*>/g,'');
-    r=r.replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
-    r=r.split(nl+nl+nl).join(nl+nl);
-    return r.trim().slice(0,1200);
+    // If already plain text, return as-is
+    if(!/<[a-z]/i.test(n)) return n.slice(0,600);
+    // Convert HTML to plain text preserving line structure
+    return n
+      .replace(/<br\s*\/?>/gi,'\n')
+      .replace(/<\/(p|div|li)>/gi,'\n')
+      .replace(/<(b|strong)[^>]*>/gi,'**').replace(/<\/(b|strong)>/gi,'**')
+      .replace(/<u[^>]*>/gi,'__').replace(/<\/u>/gi,'__')
+      .replace(/<[^>]*>/g,'')
+      .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+      .replace(/\n{3,}/g,'\n\n').trim().slice(0,600);
   };
 
   const cleanEntry = e => ({
@@ -6326,41 +6190,52 @@ async function driveSync(){
 
 
 function buildSyncData(){
-  // MINIMAL payload: skeleton data only - always fits in URL
-  // Full data (notes, GPS, sites) is transferred via file export/import
-  const _cut=(()=>{const d=new Date();d.setDate(d.getDate()-60);return d.toISOString().slice(0,10);})();
-  let allEntries=[...S.entries];
-  if(fEntry.fecha && !allEntries.find(e=>e.fecha===fEntry.fecha) && (fEntry.horasNormales||fEntry.fichajes?.length)){
-    allEntries.push({...fEntry});
+  function cleanLoc(loc){
+    if(!loc) return loc;
+    try{const d=JSON.parse(loc);delete d.mapImg;return JSON.stringify(d);}
+    catch(e){return loc;}
   }
-  const mini=e=>({
-    id:e.id||Date.now(),
-    fecha:e.fecha,
-    fichajes:(e.fichajes||[]).map(f=>({entrada:f.entrada||'',salida:f.salida||''})),
-    horasNormales:+(e.horasNormales||0).toFixed(2),
-    horasExtra:+(e.horasExtra||0).toFixed(2),
-    horasNocturnas:+(e.horasNocturnas||0).toFixed(2),
-    horasFestivas:+(e.horasFestivas||0).toFixed(2),
-    precioHoraNormal:+(e.precioHoraNormal||0).toFixed(2),
-    precioHoraExtra:+(e.precioHoraExtra||0).toFixed(2),
-    dieta:+(e.dieta||0).toFixed(2),
-    transporte:+(e.transporte||0).toFixed(2),
-    _transportType:e._transportType||'',
-    timerDeduct:e.timerDeduct||30,
-    notas:stripHtmlNotas(e.notas||'').slice(0,200),
-    dietasExtra:(e.dietasExtra||[]).slice(0,2),
-    otrosConceptos:(e.otrosConceptos||[]).slice(0,2),
-    journeys:(e.journeys||[]).slice(0,3).map(j=>({km:j.km||0,tipo:j.tipo||''})),
+  // Merge current fEntry into S.entries so GPS/notes from form are included
+  let entries = S.entries.map(e=>{
+    if(fEntry.fecha && e.fecha===fEntry.fecha){
+      // Overlay fEntry data (has latest GPS, notes, etc.)
+      return {
+        ...e,
+        ...fEntry,
+        id: e.id, // keep existing id
+        ubicacionEntrada: cleanLoc(fEntry.ubicacionEntrada||e.ubicacionEntrada),
+        ubicacionSalida: cleanLoc(fEntry.ubicacionSalida||e.ubicacionSalida)
+      };
+    }
+    return {
+      ...e,
+      ubicacionEntrada:cleanLoc(e.ubicacionEntrada),
+      ubicacionSalida:cleanLoc(e.ubicacionSalida)
+    };
   });
+  // If fEntry has data but no matching entry yet, add it
+  if(fEntry.fecha && !S.entries.find(e=>e.fecha===fEntry.fecha) && (fEntry.ubicacionEntrada||fEntry.notas||fEntry.horasNormales)){
+    entries.push({...fEntry, ubicacionEntrada:cleanLoc(fEntry.ubicacionEntrada), ubicacionSalida:cleanLoc(fEntry.ubicacionSalida)});
+  }
   return {
-    v:3,
-    ts:Date.now(),
-    entries:allEntries.filter(e=>e.fecha>=_cut).map(mini),
-    tasks:S.tasks.slice(-8).map(t=>({id:t.id,titulo:(t.titulo||'').slice(0,35),fecha:t.fecha||'',otNumero:(t.otNumero||'').slice(0,12)})),
-    sites:(S.sites||[]).slice(0,20).map(s=>({id:s.id,nombre:(s.nombre||'').slice(0,25),lat:+(s.lat||0).toFixed(5),lng:+(s.lng||0).toFixed(5)})),
-    tt:S.transportTypes||[],
-    wid:activeWorkerId,cid:activeCompanyId,
-    driveUrl:driveUrl||''
+    version:2,
+    exportedAt:new Date().toISOString(),
+    entries:entries.map(e=>({...e,fotosGastos:[]})),
+    tasks:S.tasks.slice(-10).map(t=>({id:t.id,titulo:(t.titulo||'').replace(/<[^>]*>/g,'').slice(0,30),fecha:t.fecha||'',otNumero:(t.otNumero||'').slice(0,15)})),
+
+
+    activeWorkerId, activeCompanyId,
+    worker:(()=>{const w=workers.find(x=>x.id===activeWorkerId)||workers[0]||{};
+      return {nombre:w.nombre||fWorker.nombre,apellidos:w.apellidos||fWorker.apellidos,
+      dni:w.dni||fWorker.dni,cargo:w.cargo||fWorker.cargo,
+      departamento:w.departamento||fWorker.departamento,email:w.email||fWorker.email,
+      telefono:w.telefono||fWorker.telefono,numSS:w.numSS||fWorker.numSS,
+      fechaAlta:w.fechaAlta||fWorker.fechaAlta,convenio:w.convenio||fWorker.convenio};})(),
+    company:(()=>{const c=companies.find(x=>x.id===activeCompanyId)||companies[0]||{};
+      return {nombre:c.nombre||fCompany.nombre,cif:c.cif||fCompany.cif,
+      direccion:c.direccion||fCompany.direccion,ciudad:c.ciudad||fCompany.ciudad,
+      cp:c.cp||fCompany.cp,telefono:c.telefono||fCompany.telefono,
+      email:c.email||fCompany.email,web:c.web||fCompany.web};})()
   };
 }
 
@@ -6370,163 +6245,104 @@ function buildSyncData(){
 function _doLoad(force, verifyMode, confirmMode){
   if(!driveUrl) return;
   syncStatus='syncing'; rerender();
+  const cbName='load_'+Date.now();
+  const script=document.createElement('script');
+  let done=false;
 
-  let attempts=0;
-  function attempt(){
-    attempts++;
-    const cbName='load_'+Date.now();
-    const script=document.createElement('script');
-    let done=false;
-
-    window[cbName]=async function(result){
-      done=true; delete window[cbName]; script.remove();
-      if(!result||!result.ok){
-        syncStatus='err';
-        showAlert('Drive: sin datos. Intenta de nuevo.','err');
-        rerender(); return;
-      }
+  window[cbName]=async function(result){
+    done=true; delete window[cbName]; script.remove();
+    if(!result||!result.ok){
+      syncStatus='err';
+      showAlert('Error cargando Drive: '+(result&&result.error||'sin datos'),'err');
+      rerender(); return;
+    }
+    const d=result.data;
+    if(!d||!d.entries||d.entries.length===0){
       syncStatus='ok';
-      await importDriveData(result.data||result, verifyMode);
-    };
+      showAlert('Drive vacío — guarda algo primero desde el PC','err');
+      rerender(); return;
+    }
 
-    // Timeout: 60s on first attempt, 45s on retry
-    setTimeout(()=>{
-      if(!done){
-        delete window[cbName]; script.remove();
-        if(attempts<2){
-          // Retry once automatically
-          showAlert('Drive tardando... reintentando...','err');
-          setTimeout(attempt, 3000);
-        } else {
-          syncStatus='err';
-          showAlert('Drive no responde. El servicio puede estar ocupado, espera 1 minuto e inténtalo de nuevo.','err');
-          rerender();
-        }
-      }
-    }, attempts===1?60000:45000);
+    await importDriveData(d, verifyMode);
+  };
 
-    script.src=driveUrl+'?action=load&callback='+cbName+'&t='+Date.now();
-    document.body.appendChild(script);
-  }
+  setTimeout(()=>{
+    if(!done){
+      delete window[cbName]; script.remove();
+      syncStatus='err';
+      showAlert('Sin respuesta de Drive. Comprueba conexión.','err');
+      rerender();
+    }
+  },20000);
 
-  // Warm up first, then load
-  warmupDriveScript();
-  setTimeout(attempt, _warmupDone?0:5000);
-}
-
-
-
-// Export full data as JSON file for device-to-device sync
-async function exportSyncFile(){
-  try{
-    const entries = await dbAll(ST.entries);
-    const tasks = await dbAll(ST.tasks);
-    const sites = await dbAll(ST.sites);
-    const data = {
-      version:3,
-      exportedAt:new Date().toISOString(),
-      entries: entries.map(e=>({...e,fotosGastos:[]})),
-      tasks: tasks.map(t=>({id:t.id,titulo:t.titulo||'',fecha:t.fecha||'',otNumero:t.otNumero||''})),
-      sites: sites.map(s=>({id:s.id,nombre:s.nombre||'',lat:s.lat||0,lng:s.lng||0,url:s.url||''})),
-      transportTypes: S.transportTypes||[],
-      activeWorkerId, activeCompanyId,
-    };
-    const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'timerpro-sync-'+new Date().toISOString().slice(0,10)+'.json';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showAlert('✅ Archivo exportado — '+entries.length+' jornadas, '+sites.length+' sitios');
-  }catch(ex){ showAlert('Error al exportar: '+ex.message,'err'); }
+  script.src=driveUrl+'?action=load&callback='+cbName+'&t='+Date.now();
+  document.body.appendChild(script);
 }
 
 async function importDriveData(d, verifyMode){
-  // SAFETY: Always read from IndexedDB as ground truth
-  let localEntries = [];
-  try{ localEntries = await dbAll(ST.entries); }catch(ex){ localEntries=[...S.entries]; }
-  localEntries = localEntries.filter(e=>!e._draft);
-
-  // Create snapshot before any changes
-  try{ if(localEntries.length>0) await createSnapshot('Antes de Drive - '+new Date().toLocaleString('es-ES')); }catch(ex){}
-
-  // Handle both mini (v:3) and legacy formats
-  const driveEntries = (d.entries||[]).map(e=>({
-    ...e,
-    // Map mini format fields to full format if needed
-    fecha: e.fecha,
-    id: e.id||Date.now(),
-  }));
-  if(d.tt) { const localTT=new Set((S.transportTypes||[]).map(t=>t.id)); d.tt.forEach(t=>{if(!localTT.has(t.id))S.transportTypes.push(t);}); localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes)); }
-  if(d.wid) activeWorkerId=d.wid;
-  if(d.cid) activeCompanyId=d.cid;
-  if(d.driveUrl && !driveUrl){ driveUrl=d.driveUrl; localStorage.setItem('driveUrl',d.driveUrl); showAlert('✅ URL de Drive configurada automáticamente'); }
-  
-  // MERGE: Build map by fecha, keep newest version of each day
-  const byDate = {};
-  
-  // First: load ALL local entries (ground truth)
-  localEntries.forEach(e=>{ byDate[e.fecha] = e; });
-  
-  // Second: add Drive entries ONLY if newer or not in local
-  driveEntries.forEach(e=>{
-    if(e.notas) e.notas = formatNotas(e.notas);
-    const local = byDate[e.fecha];
-    if(!local) {
-      // Drive has entry we don't have locally - add it
-      byDate[e.fecha] = e;
-    } else {
-      // Both have this date - keep whichever was saved more recently
-      if((e.id||0) > (local.id||0)) byDate[e.fecha] = e;
-    }
-  });
-  
-  const merged = Object.values(byDate).sort((a,b)=>a.fecha.localeCompare(b.fecha));
-  
-  // Update S.entries with merged data
-  S.entries = merged;
-  
-  // Save merged entries to IndexedDB (additive - never clear first)
+  if(S.entries.length>0) await createSnapshot('Antes de cargar Drive - '+new Date().toLocaleString('es-ES'));
   try{
-    for(const e of merged){
-      await dbPut(ST.entries, e);
+    // Save ALL local photos before clearing (Drive strips them for size)
+    const localWorkers = [...workers];
+    const localWorkerMap = {};
+    localWorkers.forEach(w=>{ if(w.id) localWorkerMap[w.id]=w; });
+    const localCompanies = [...companies];
+    const localCompanyMap = {};
+    localCompanies.forEach(c=>{ if(c.id) localCompanyMap[c.id]=c; });
+    const savedWorkerFoto = fWorker.foto||'';
+    const savedWorkerFirma = fWorker.firma||'';
+    const savedCompanyLogo = fCompany.logo||'';
+    // Save local task photos (keyed by id)
+    const localTaskMap = {};
+    S.tasks.forEach(t=>{ if(t.id) localTaskMap[t.id]={fotos:t.fotos||[]}; });
+    // Save local entry fotosGastos (keyed by fecha)
+    const localEntryMap = {};
+    S.entries.forEach(e=>{ if(e.fecha) localEntryMap[e.fecha]={fotosGastos:e.fotosGastos||[]}; });
+
+    await Promise.all(Object.values(ST).filter(s=>s!=='snapshots').map(s=>dbClear(s)));
+    for(const e of(d.entries||[])){
+      // Restore fotosGastos from local if Drive stripped them
+      const localE = localEntryMap[e.fecha]||{};
+      await dbPut(ST.entries,{...e, fotosGastos:e.fotosGastos&&e.fotosGastos.length?e.fotosGastos:localE.fotosGastos||[]});
     }
-  }catch(ex){ console.error('Error saving merged entries:', ex); }
-  
-  // Tasks: add Drive tasks that aren't local
-  const localTaskIds = new Set((S.tasks||[]).map(t=>t.id));
-  for(const t of (d.tasks||[])){
-    if(t.id && !localTaskIds.has(t.id)){
-      S.tasks.push(t);
-      try{ await dbPut(ST.tasks, t); }catch(ex){}
+    for(const t of(d.tasks||[])){
+      // Restore fotos from local if Drive stripped them
+      const localT = localTaskMap[t.id]||{};
+      await dbPut(ST.tasks,{...t, fotos:t.fotos&&t.fotos.length?t.fotos:localT.fotos||[]});
     }
-  }
-  
-  // Sites: add Drive sites that aren't local (by id)
-  const localSiteIds = new Set((S.sites||[]).map(s=>s.id));
-  for(const s of (d.sites||[])){
-    if(s.id && !localSiteIds.has(s.id)){
-      S.sites.push(s);
-      try{ await dbPut(ST.sites, s); }catch(ex){}
-      _lsSave();
+    for(const s of(d.sites||[]))    await dbPut(ST.sites,s);
+    for(const w of(d.workorders||[]))await dbPut(ST.workorders,w);
+    for(const v of(d.vehicles||[])) await dbPut(ST.vehicles,v);
+    for(const w of(d.workers||[])){
+      const local = localWorkerMap[w.id]||{};
+      await dbPut(ST.workers,{...w, foto:w.foto||local.foto||'', firma:w.firma||local.firma||''});
     }
+    for(const c of(d.companies||[])){
+      const local = localCompanyMap[c.id]||{};
+      await dbPut(ST.companies,{...c, logo:c.logo||local.logo||''});
+    }
+    if(d.worker)  fWorker={...defWorker,...d.worker, foto:d.worker.foto||savedWorkerFoto, firma:d.worker.firma||savedWorkerFirma};
+    if(d.company) fCompany={...defCompany,...d.company, logo:d.company.logo||savedCompanyLogo};
+    activeWorkerId=d.activeWorkerId||null;
+    activeCompanyId=d.activeCompanyId||null;
+    await loadData();
+    syncStatus='ok';
+    lastSync=new Date().toLocaleTimeString('es-ES');
+    localStorage.setItem('lastSync',lastSync);
+    driveHasNew=false; // cleared after loading
+    // Do NOT reset fEntry - keep current form data
+    if(verifyMode){
+      showAlert('✅ Drive OK: '+S.entries.length+' jornadas guardadas correctamente');
+    } else {
+      saveLocalBackup();
+    showAlert('✅ Cargado: '+S.entries.length+' jornadas, '+S.tasks.length+' tareas');
+    }
+    rerender();
+  }catch(e){
+    syncStatus='err';
+    showAlert('Error importando: '+e.message,'err');
+    rerender();
   }
-  
-  // Transport types: merge
-  if(d.transportTypes && d.transportTypes.length){
-    const localTT = new Set((S.transportTypes||[]).map(t=>t.id));
-    d.transportTypes.forEach(t=>{ if(!localTT.has(t.id)) S.transportTypes.push(t); });
-    localStorage.setItem('transportTypes', JSON.stringify(S.transportTypes));
-  }
-  
-  // Update active worker/company if set in Drive
-  if(d.activeWorkerId) activeWorkerId=d.activeWorkerId;
-  if(d.activeCompanyId) activeCompanyId=d.activeCompanyId;
-  
-  localStorage.setItem('lastSave', new Date().toISOString());
-  showAlert('✅ '+merged.length+' jornadas ('+driveEntries.length+' Drive + '+localEntries.length+' local fusionadas)');
-  rerender();
 }
 
 async function mergeDriveData(d){
@@ -6540,13 +6356,13 @@ async function mergeDriveData(d){
     const driveDates = new Set(driveEntries.map(e=>e.fecha));
 
     // Add all Drive entries
-    const _dbd={},_lbd={};
-    driveEntries.forEach(e=>{_dbd[e.fecha]=e;});
-    localEntries.forEach(e=>{_lbd[e.fecha]=e;});
-    new Set([...Object.keys(_dbd),...Object.keys(_lbd)]).forEach(f=>{
-      const de=_dbd[f],le=_lbd[f];
-      if(de&&le) merged.push((de.id||0)>=(le.id||0)?de:le);
-      else merged.push(de||le);
+    driveEntries.forEach(e=>merged.push(e));
+
+    // Add local entries not in Drive
+    localEntries.forEach(e=>{
+      if(!driveDates.has(e.fecha)){
+        merged.push(e);
+      }
     });
 
     // Sort by date
@@ -6573,55 +6389,12 @@ async function loadData(){
     dbAll(ST.entries),dbAll(ST.tasks),dbAll(ST.sites),dbAll(ST.workorders),dbAll(ST.vehicles),
     dbAll(ST.workers),dbAll(ST.companies)
   ]);
-  // Restore from localStorage backup if IndexedDB has fewer entries
-  try{
-    const lsBackup = JSON.parse(localStorage.getItem('_entriesBackup')||'[]');
-    if(lsBackup.length > S.entries.length){
-      const dbDates = new Set(S.entries.map(e=>e.fecha));
-      let restored = 0;
-      for(const e of lsBackup){
-        if(!dbDates.has(e.fecha)){
-          S.entries.push(e);
-          await dbPut(ST.entries, e).catch(()=>{});
-          restored++;
-        }
-      }
-      if(restored > 0) console.log('Restored '+restored+' entries from localStorage backup');
-    }
-  }catch(ex){}
-
-  // PRIMARY STORAGE: Load from localStorage and merge
-  try{
-    const lsData=_lsLoad();
-    if(lsData&&lsData.entries){
-      const dbDates=new Set(S.entries.map(e=>e.fecha));
-      let n=0;
-      for(const e of lsData.entries){
-        if(!dbDates.has(e.fecha)&&!e._draft){
-          if(e.notas)e.notas=formatNotas(e.notas);
-          S.entries.push(e);await dbPut(ST.entries,e).catch(()=>{});n++;
-        }
-      }
-      if(lsData.sites&&lsData.sites.length&&!S.sites.length){
-        S.sites=lsData.sites;for(const s of lsData.sites)await dbPut(ST.sites,s).catch(()=>{});
-      }
-      if(n>0)console.log('Restored '+n+' from localStorage');
-    }
-    const old=JSON.parse(localStorage.getItem('_entriesBackup')||'[]');
-    if(old.length){const d2=new Set(S.entries.map(e=>e.fecha));for(const e of old){if(!d2.has(e.fecha)){if(e.notas)e.notas=formatNotas(e.notas);S.entries.push(e);await dbPut(ST.entries,e).catch(()=>{});}}}
-  }catch(ex){}
-
-    // Strip old staticmap URLs from saved locations (cleanup legacy data)
-  S.entries.forEach(e=>{
-    ['ubicacionEntrada','ubicacionSalida'].forEach(k=>{
-      if(e[k]){try{const d=JSON.parse(e[k]);if(d.mapImg){delete d.mapImg;e[k]=JSON.stringify(d);}}catch(ex){}}
-    });
-  });
   // Load active worker/company
   const settings=(await dbAll(ST.settings))[0]||{};
   if(settings.activeWorkerId) activeWorkerId=settings.activeWorkerId;
   if(settings.activeCompanyId) activeCompanyId=settings.activeCompanyId;
   // Legacy single worker/company migration
+  try{var _ld=_lsLoad();if(_ld&&_ld.e&&_ld.e.length>S.entries.length){var _ds=new Set(S.entries.map(function(x){return x.fecha;}));_ld.e.forEach(function(e){if(!_ds.has(e.fecha)){S.entries.push(e);dbPut(ST.entries,e).catch(function(){});}});if(_ld.s&&_ld.s.length&&!S.sites.length){S.sites=_ld.s;_ld.s.forEach(function(x){dbPut(ST.sites,x).catch(function(){});});}}}catch(_ex){}
   if(settings.worker && workers.length===0){
     const id=await dbPut(ST.workers,settings.worker);
     workers=[{...settings.worker,id}];
@@ -7205,11 +6978,194 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
           window[cb]=async function(result){
             done=true; delete window[cb]; sc.remove();
             if(result&&result.ok&&result.data){
-              // Boot: NEVER import from Drive automatically - only notify
-              // User must manually sync to get Drive data
+              // Silent boot load - MERGE, never lose local data
               const d=result.data;
               try{
-                const driveTs = new Date(d.exportedAt||d.ts||0).getTime();
+                const driveTs = new Date(d.exportedAt||0).getTime();
                 const localTs = parseInt(localStorage.getItem('lastDriveLoad')||'0');
-                if(driveTs > localTs + 5000) driveHasNew=true;
-                console.log('Boot: Drive checked, local data preserved. Entries: '+S.entries.length);
+                const lastSaveTs = new Date(localStorage.getItem('lastSave')||0).getTime();
+                // STRICT: Skip boot load if we have ANY local entries
+                // Only load from Drive if this is a fresh install (no local data)
+                if(S.entries.length > 0){
+                  console.log('Skipping boot load: local data exists ('+S.entries.length+' entries)');
+                  // Just show notification if Drive has newer data
+                  if(driveTs > localTs + 5000) driveHasNew=true;
+                  syncStatus='ok'; rerender(); res(); return;
+                }
+                // Build local maps for merging
+                const savedFoto=fWorker.foto||'', savedFirma=fWorker.firma||'', savedLogo=fCompany.logo||'';
+                const localEntryMap={}; S.entries.forEach(e=>{localEntryMap[e.fecha]=e;});
+                const localWorkerMap={}; workers.forEach(w=>{if(w.id)localWorkerMap[w.id]=w;});
+                const localCompanyMap={}; companies.forEach(c=>{if(c.id)localCompanyMap[c.id]=c;});
+
+                // MERGE entries: keep local if newer or not in Drive
+                const driveEntryMap={};
+                (d.entries||[]).forEach(e=>{driveEntryMap[e.fecha]=e;});
+                // Add/update entries from Drive that don't exist locally or are newer
+                for(const [fecha,de] of Object.entries(driveEntryMap)){
+                  const le=localEntryMap[fecha];
+                  if(!le){
+                    // Drive has entry we don't have locally - add it
+                    await dbPut(ST.entries,{...de,fotosGastos:de.fotosGastos||[]});
+                    S.entries.push({...de});
+                  } else if(!le._draft && driveTs > localTs){
+                    // Drive data is newer than last load - update
+                    await dbPut(ST.entries,{...de,id:le.id,fotosGastos:le.fotosGastos||de.fotosGastos||[]});
+                    S.entries=S.entries.map(e=>e.fecha===fecha?{...de,id:le.id,fotosGastos:le.fotosGastos||[]}:e);
+                  }
+                  // If local has a draft or is newer - keep local
+                }
+                // Merge other collections (replace if Drive has them)
+                if((d.tasks||[]).length>0){ await dbClear(ST.tasks); for(const t of d.tasks) await dbPut(ST.tasks,t); }
+                if((d.sites||[]).length>0){ await dbClear(ST.sites); for(const s of d.sites) await dbPut(ST.sites,s); }
+                if((d.workorders||[]).length>0){ await dbClear(ST.workorders); for(const w of d.workorders) await dbPut(ST.workorders,w); }
+                if((d.vehicles||[]).length>0){ await dbClear(ST.vehicles); for(const v of d.vehicles) await dbPut(ST.vehicles,v); }
+                if((d.workers||[]).length>0){ await dbClear(ST.workers); for(const w of d.workers){ const lw=localWorkerMap[w.id]||{}; await dbPut(ST.workers,{...w,foto:lw.foto||savedFoto,firma:w.firma||lw.firma||savedFirma}); } }
+                if((d.companies||[]).length>0){ await dbClear(ST.companies); for(const co of d.companies){ const lc=localCompanyMap[co.id]||{}; await dbPut(ST.companies,{...co,logo:lc.logo||savedLogo}); } }
+                if(d.worker&&d.worker.nombre) fWorker={...defWorker,...d.worker,foto:savedFoto,firma:d.worker.firma||savedFirma};
+                if(d.company&&d.company.nombre) fCompany={...defCompany,...d.company,logo:savedLogo};
+                if(d.activeWorkerId) activeWorkerId=d.activeWorkerId;
+                if(d.activeCompanyId) activeCompanyId=d.activeCompanyId;
+                await loadData();
+                localStorage.setItem('lastDriveLoad', Date.now().toString());
+                syncStatus='ok';
+              }catch(e){ console.warn('Boot load error:',e); syncStatus='ok'; }
+            } else {
+              syncStatus='ok';
+            }
+            rerender(); res();
+          };
+          setTimeout(()=>{ if(!done){delete window[cb];sc.remove();syncStatus='ok';rerender();res();} },15000);
+          sc.src=driveUrl+'?action=load&callback='+cb+'&t='+Date.now();
+          document.body.appendChild(sc);
+        });
+      }catch(e){ syncStatus='ok'; }
+    }
+    // Fix any existing duplicates on startup
+    await deduplicateEntries();
+    // Load task draft if any
+    loadFTaskDraft();
+    // Load most recent entry on boot
+    if(S.entries.length>0 && !editingEntry){
+      const lastEntry=[...S.entries].sort((a,b)=>b.fecha.localeCompare(a.fecha))[0];
+      if(lastEntry){
+        fEntry={...lastEntry,fichajes:[...(lastEntry.fichajes||[]).map(f=>({...f}))]};
+        editingEntry=!!lastEntry.id;
+      }
+    }
+    // Load persistent settings
+    try{
+      const td=localStorage.getItem('timerDeduct');
+      if(td!==null) timerDeduct=parseInt(td)||30;
+      const tt=localStorage.getItem('transportTypes');
+      if(tt) S.transportTypes=JSON.parse(tt)||S.transportTypes;
+      const dd=localStorage.getItem('dietaDefault');
+      if(dd) S.dietaDefault=parseFloat(dd)||0;
+    }catch(e){}
+    // Restore timer state if was running
+    const savedTimer=localStorage.getItem('timerState');
+    if(savedTimer){
+      try{
+        const ts=JSON.parse(savedTimer);
+        if(ts.running && ts.start){
+          timerStart=ts.start;
+          timerElapsed=Math.floor((Date.now()-ts.start)/1000);
+          timerDeduct=ts.deduct||30;
+          timerRunning=true;
+          timerInterval=setInterval(()=>{
+            timerElapsed=Math.floor((Date.now()-timerStart)/1000);
+            updateTitle();
+          },1000);
+          showAlert('⏱ Jornada en curso desde '+new Date(ts.start).toTimeString().slice(0,5));
+        }
+      }catch(e){}
+    }
+    // Restore draft if exists for today
+    const todayDraft = S.entries.find(e=>e.fecha===today()&&e._draft);
+    if(todayDraft){ fEntry={...todayDraft}; editingEntry=true; }
+    if(driveUrl && syncStatus!=='ok') syncStatus='ok';
+    // Auto sync: idle-based (see trackActivity above)
+    // Auto backup weekly
+    if(driveUrl){
+      const lastBackup=localStorage.getItem('lastBackup')||'';
+      const weekAgo=new Date();weekAgo.setDate(weekAgo.getDate()-7);
+      if(!lastBackup||new Date(lastBackup)<weekAgo){
+        localStorage.setItem('lastBackup',new Date().toISOString());
+      }
+    }
+    // Load Firebase config if saved
+    const savedCfg=localStorage.getItem('fbConfig');
+    if(savedCfg){ try{ fbConfig=JSON.parse(savedCfg); await initFirebase(); }catch(e){} }
+    await loadVacaciones();
+    renderApp();
+    startClock();
+    updateTitle();
+    autoSnapshot();
+    // Clean URL param on load
+    if(location.search){ history.replaceState(null,'',location.pathname); }
+    // Version check: on startup after 10s, then every 5 minutes
+    setTimeout(checkForUpdate, 10000);
+    setInterval(checkForUpdate, 5 * 60 * 1000);
+    // Adaptive Drive check: 30s active, 8s inactive (>10s idle)
+    lastActivity = Date.now(); // reset on startup
+    let _idleSyncTimer = null;
+    let _idleCheckTimer = null;
+    const IDLE_MS = 90000; // 90 seconds idle before auto-sync
+
+    function trackActivity(){
+      lastActivity = Date.now();
+      // Reset idle timers on any user action
+      clearTimeout(_idleSyncTimer);
+      clearTimeout(_idleCheckTimer);
+      // Schedule auto-sync after 30s idle
+      _idleSyncTimer = setTimeout(()=>{
+        if(!_syncInProgress && isOnline && driveUrl){
+          console.log('Auto-sync: 90s idle');
+          driveSync();
+        }
+      }, IDLE_MS);
+      // Schedule drive check after 35s idle
+      _idleCheckTimer = setTimeout(()=>{
+        checkDriveForNewData();
+      }, IDLE_MS + 5000);
+    }
+
+    // Track all user interactions
+    ['click','touchstart','keydown','scroll','input','mousedown'].forEach(ev=>
+      document.addEventListener(ev, trackActivity, {passive:true})
+    );
+    // Start first idle timer
+    // ── CONTINUOUS FORM SAVE (every 500ms) ──────────────
+    // Saves ALL visible form field values to fEntry/fTask
+    // regardless of events - prevents ANY data loss on tab switch
+    setInterval(()=>{
+      if(_isSaving) return; // don't interfere during save
+      // Save notas de jornada
+      const notasEl = document.getElementById('notas-editor');
+      if(notasEl && notasEl.innerHTML.trim()) {
+        fEntry.notas = notasEl.innerHTML;
+      }
+      // fichajes maintained by event handlers - no DOM polling needed
+      // Save numeric inputs by data-field attribute
+      document.querySelectorAll('input[data-field]').forEach(el => {
+        const f = el.dataset.field;
+        if(f && el.value !== '') fEntry[f] = parseFloat(el.value) || 0;
+      });
+      // Save task form if on tareas tab
+      if(S.tab === 'tareas') {
+        const taskTitle = document.querySelector('input[placeholder="Título de la tarea"]');
+        if(taskTitle && taskTitle.value) fTask.titulo = taskTitle.value;
+      }
+    }, 500);
+
+  } catch(e) {
+    document.getElementById('app').innerHTML = 
+      '<div style="color:red;padding:20px;font-family:monospace">Error: ' + e.message + '<br>' + e.stack + '</div>';
+  }
+})();
+
+
+
+</script>
+</body>
+</html>
