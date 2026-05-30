@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780135018501 -->
+<!-- v1780141000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -286,7 +286,7 @@ const defEntry = () => ({
   horasExtra:0, precioHoraExtra:0, importeExtra:0, horasNocturnas:0, precioHoraNocturna:0, importeNocturnas:0,
   horasFestivas:0, precioHoraFestiva:0, importeFestivas:0, dieta:0, dietasExtra:[], transporte:0,
   otrosConceptos:[], notas:'', journeys:[], ubicacionEntrada:'', ubicacionSalida:'',
-  entradaLocked:false, fotosGastos:[], timerDeduct:30
+  entradaLocked:false, fotosGastos:[], timerDeduct:0
 });
 const defFichaje = () => ({_fid:Date.now(), entrada:'', salida:'', nota:'', editing:false, taskId:'', timerRunning:false, timerStart:null});
 const defTask = f => ({fecha:f||today(), titulo:'', horaInicio:nowTime(), horaFin:'', descripcion:'', siteId:'', workOrderId:'', otNumero:'', usaOT:false, fotos:[]});
@@ -374,7 +374,7 @@ let fbConfig=null; // loaded from localStorage
 let syncStatus=''; // '', 'syncing', 'ok', 'err'
 let syncTimer=null;
 let deferredInstall=null;
-let driveUrl='https://script.google.com/macros/s/AKfycbzE1jMIbFs4xMQKtdO5syVDSHMyuNBJqnNcQTyj8T5Qy34SPFU1XJsqKOXrrFMn-zZAxQ/exec'; // URL fija - ya configurada
+let driveUrl='https://script.google.com/macros/s/AKfycbxAk7_96LAlNOqHGgISvG1-J2ehcxZ-nCCUfrk2yCQD3RZmobFhNGhCZRommr35flI0vQ/exec'; // URL fija - ya configurada
 let lastSync='';
 let driveHasNew=false; // Drive has newer data than local
 let driveChecked=false; // Has been checked at least once
@@ -709,6 +709,33 @@ function renderMain(){
 // ══════════════════════════════════════════════════════════
 // FICHAR
 // ══════════════════════════════════════════════════════════
+
+// ── AUTO CÁLCULO HORAS DESDE FICHAJES ──────────────────
+// Calcula horas normales sumando fichajes menos descanso
+function autoCalcHorasFromFichajes(){
+  if(!fEntry.fichajes || fEntry.fichajes.length===0) return;
+  // Leer horas directamente del DOM por si no se han sincronizado aún
+  document.querySelectorAll('.fich-row').forEach((row,i)=>{
+    if(!fEntry.fichajes[i]) return;
+    const ti=Array.from(row.querySelectorAll('input[type="text"]'));
+    if(ti[0]&&ti[0].value) fEntry.fichajes[i].entrada=ti[0].value;
+    if(ti[1]&&ti[1].value) fEntry.fichajes[i].salida=ti[1].value;
+  });
+  let totalMins=0;
+  fEntry.fichajes.forEach(fj=>{
+    if(fj.entrada&&fj.salida){
+      const raw=calcH(fj.entrada,fj.salida);
+      totalMins+=raw*60;
+    }
+  });
+  if(totalMins===0) return;
+  const netMins=Math.max(0,totalMins-timerDeduct);
+  const netHours=Math.round(netMins*100/60)/100;
+  fEntry.horasNormales=netHours;
+  if(fEntry.precioHoraNormal>0)
+    fEntry.importeNormales=Math.round(netHours*fEntry.precioHoraNormal*100)/100;
+}
+
 function renderFichar(){
   const e = fEntry;
   const today_entries = S.entries.filter(x=>x.fecha===e.fecha);
@@ -783,7 +810,7 @@ function renderFichar(){
           'Descanso:',
           h('input',{type:'number',min:'0',max:'480',value:timerDeduct,
             style:{width:'52px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.85rem',textAlign:'center'},
-            on:{input:ev=>{timerDeduct=parseInt(ev.target.value)||0;localStorage.setItem('timerDeduct',timerDeduct);}}},
+            on:{input:ev=>{timerDeduct=parseInt(ev.target.value)||0;localStorage.setItem('timerDeduct',timerDeduct);autoCalcHorasFromFichajes();}}},
           'min'
         )
       ),
@@ -891,7 +918,7 @@ function renderFichar(){
         h('button',{
           class:'btn btn-b btn-sm',
           style:{fontSize:'.72rem',padding:'.25rem .6rem'},
-          on:{click:()=>{ S.modal='resumendia'; S._shareConPrecios=false; rerender(); }}
+          on:{click:()=>{ autoCalcHorasFromFichajes(); S.modal='resumendia'; S._shareConPrecios=false; rerender(); }}
         },'📊 Resumen')
       ),
       ...e.fichajes.map((fj,i)=>renderFichaje(fj,i)),
@@ -4301,7 +4328,7 @@ function restoreTimerForDay(fecha){
   timerRunning=false;
   timerStart=null;
   timerElapsed=0;
-  timerDeduct=30;
+  timerDeduct=0;
   if(timerInterval){ clearInterval(timerInterval); timerInterval=null; }
   try{
     const saved=localStorage.getItem('timerState');
@@ -4310,7 +4337,7 @@ function restoreTimerForDay(fecha){
     if(ts.fecha !== fecha) return; // timer belongs to a different day
     timerStart=ts.start;
     timerElapsed=ts.elapsed||Math.floor((Date.now()-ts.start)/1000);
-    timerDeduct=ts.deduct||30;
+    timerDeduct=ts.deduct||0;
     if(ts.running){
       timerRunning=true;
       timerStart=Date.now()-timerElapsed*1000;
@@ -7064,7 +7091,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     // Load persistent settings
     try{
       const td=localStorage.getItem('timerDeduct');
-      if(td!==null) timerDeduct=parseInt(td)||30;
+      if(td!==null) timerDeduct=parseInt(td)||0;
       const tt=localStorage.getItem('transportTypes');
       if(tt) S.transportTypes=JSON.parse(tt)||S.transportTypes;
       const dd=localStorage.getItem('dietaDefault');
