@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780164000000 -->
+<!-- v1780165000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -6179,7 +6179,8 @@ async function driveSync(){
 // ── JSONBIN SYNC ─────────────────────────────────────────
 const JSONBIN_KEY = '$2a$10$7r5N6eiuZ.oKKj/sEbvE2OauHNVX5CRN/aQC5hOxv9sf8ZHwR2Fp.';
 const JSONBIN_BASE = 'https://api.jsonbin.io/v3';
-let jsonbinId = localStorage.getItem('jsonbinId') || '';
+let jsonbinId = localStorage.getItem('jsonbinId') || '6a1b255421f9ee59d29e75e1';
+if(!localStorage.getItem('jsonbinId')) localStorage.setItem('jsonbinId','6a1b255421f9ee59d29e75e1');
 
 async function jsonbinSave(data){
   const payload = {
