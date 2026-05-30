@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780166000000 -->
+<!-- v1780183000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -33,11 +33,11 @@
 }
 .light{
   --time-invert:0;
-  --bg:#b8d4e8;--bg2:#a8c8e0;--bg3:#98bcd8;
-  --surf:#cfe2f0;--surf2:#c0d8ec;--surf3:#b0cce4;
-  --ink:#071e2c;--ink2:#1a4a66;--ink3:#2e7aaa;
-  --brd:rgba(10,60,100,.25);
-  --sh:0 2px 12px rgba(10,60,100,.2);
+  --bg:#f5efe6;--bg2:#ede4d8;--bg3:#e4d9c8;
+  --surf:#fdf8f2;--surf2:#f7f0e6;--surf3:#ede4d6;
+  --ink:#2c1a0e;--ink2:#6b4226;--ink3:#9c6b45;
+  --brd:rgba(120,70,30,.2);
+  --sh:0 2px 12px rgba(120,70,30,.15);
   --acc:#16a34a;--acc2:#15803d;--acc-lt:rgba(22,163,74,.18);
   --red:#dc2626;--red-lt:rgba(220,38,38,.14);
   --blu:#1d6fa8;--blu-lt:rgba(29,111,168,.14);
@@ -1725,6 +1725,7 @@ function renderCalendario(){
           return h('div',{class:cls,
             on:{
               click:()=>{selDate=ds;rerender();},
+              dblclick:()=>goToDay(ds),
               contextmenu:ev=>{
                 ev.preventDefault();
                 // Right click = toggle vacation
@@ -2343,10 +2344,10 @@ function renderSincronizar(){
         h('span',{style:{fontWeight:700}},S.entries.length+' jornadas')
       ),
       h('div',{class:'btn-row',style:{flexDirection:'column',marginTop:'.5rem'}},
-        h('button',{class:'btn btn-g btn-full btn-lg',style:{opacity:isOnline?1:.5},on:{click:()=>{if(!isOnline){showAlert('Sin conexion. Los datos se subiran cuando vuelva el internet.','err');pendingSync=true;return;}warmupDriveScript();setTimeout(driveSync,_warmupDone?0:2000);}}},
+        h('button',{class:'btn btn-g btn-full btn-lg',style:{opacity:isOnline?1:.5},on:{click:()=>{if(!isOnline){showAlert('Sin conexion. Los datos se subiran cuando vuelva el internet.','err');pendingSync=true;return;}if(!confirm('¿Seguro que quieres SUBIR todos los datos al Drive? Esto sobreescribirá los datos en la nube.'))return;driveSync();}}},
           isOnline?'☁️ Subir TODO a Drive':'☁️ Subir (sin conexion)'
         ),
-        h('button',{class:'btn btn-b btn-full btn-lg',on:{click:()=>_doLoad(true,false,true)}},
+        h('button',{class:'btn btn-b btn-full btn-lg',on:{click:()=>{if(!confirm('¿Seguro que quieres CARGAR desde Drive? Esto sobreescribirá los datos locales.'))return;_doLoad(true,false,true);}}},
           '⬇️ Cargar TODO desde Drive'
         )
       ),
@@ -6102,25 +6103,25 @@ async function jsonbinSave(data){
 }
 
 async function jsonbinLoad(){
-  if(!jsonbinId){
-    // Try to find existing bin
-    const r = await fetch(JSONBIN_BASE+'/b?page=1', {
-      headers:{'X-Master-Key': JSONBIN_KEY}
-    });
-    if(r.ok){
-      const result = await r.json();
-      const bins = result.result || [];
-      const tp = bins.find(b=>b.snippetMeta?.name==='TimerPro' || b.name==='TimerPro');
-      if(tp){ jsonbinId=tp.id; localStorage.setItem('jsonbinId',jsonbinId); }
+  const url = JSONBIN_BASE+'/b/'+jsonbinId+'/latest';
+  console.log('Loading from JSONBin:', url);
+  const r = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'X-Master-Key': JSONBIN_KEY,
+      'X-Bin-Meta': 'false',
+      'Content-Type': 'application/json'
     }
-    if(!jsonbinId) return null;
-  }
-  const r = await fetch(JSONBIN_BASE+'/b/'+jsonbinId+'/latest', {
-    headers:{'X-Master-Key': JSONBIN_KEY}
   });
-  if(!r.ok) throw new Error('JSONBin load failed: '+r.status);
-  const result = await r.json();
-  return result.record;
+  console.log('JSONBin response status:', r.status);
+  if(!r.ok){
+    const txt = await r.text();
+    console.error('JSONBin error:', txt);
+    throw new Error('JSONBin error '+r.status+': '+txt.slice(0,100));
+  }
+  const data = await r.json();
+  console.log('JSONBin loaded, entries:', data?.entries?.length || data?.record?.entries?.length);
+  return data.record || data;
 }
 
 async function driveSync(){
@@ -6155,15 +6156,21 @@ async function _doLoad(force, verifyMode, confirmMode){
   syncStatus='syncing'; rerender();
   try{
     const d = await jsonbinLoad();
-    if(!d||!d.entries||d.entries.length===0){
+    if(!d||!d.entries){
       syncStatus='ok';
-      showAlert('Nube vacía — guarda algo primero','err');
+      showAlert('Sin datos en la nube — sube primero desde el PC','err');
+      rerender(); return;
+    }
+    if(d.entries.length===0){
+      syncStatus='ok';
+      showAlert('Nube vacía — guarda algo primero desde el PC','err');
       rerender(); return;
     }
     await importDriveData(d, verifyMode);
   }catch(e){
     syncStatus='err';
-    showAlert('Error cargando: '+e.message,'err');
+    console.error('Load error:', e);
+    showAlert('Error: '+e.message,'err');
     rerender();
   }
 }
@@ -7067,7 +7074,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     // Load persistent settings
     try{
       const td=localStorage.getItem('timerDeduct');
-      if(td!==null) timerDeduct=parseInt(td)||0;
+      timerDeduct=0; localStorage.setItem('timerDeduct',0);
       const tt=localStorage.getItem('transportTypes');
       if(tt) S.transportTypes=JSON.parse(tt)||S.transportTypes;
       const dd=localStorage.getItem('dietaDefault');
