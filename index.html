@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780228000000 -->
+<!-- v1780229000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -770,9 +770,11 @@ function renderDayCard(){
   const jornada = e.tipoJornada||e.jornada||'';
   const sitio = e.ubicacionEntrada||'';
 
-  return h('div',{class:'card',style:{padding:'.7rem',marginBottom:'.6rem',borderLeft:'4px solid var(--acc)',display:'grid',gridTemplateColumns:'auto 1fr',gap:'.8rem',alignItems:'center'}},[
+  const worked = horasT>0||fichajes>0||importeT>0;
+  const cardColor = worked ? 'var(--acc)' : 'var(--red)';
+  return h('div',{class:'card',style:{padding:'.7rem',marginBottom:'.6rem',borderLeft:'4px solid '+cardColor,display:'grid',gridTemplateColumns:'auto 1fr',gap:'.8rem',alignItems:'center',cursor:'pointer'},on:{click:()=>{S.modal='minicalendar';rerender();}}},[
     // Left: calendar block
-    h('div',{style:{textAlign:'center',background:'var(--acc)',borderRadius:'10px',padding:'.4rem .6rem',minWidth:'52px'}},[
+    h('div',{style:{textAlign:'center',background:cardColor,borderRadius:'10px',padding:'.4rem .6rem',minWidth:'52px'}},[
       h('div',{style:{fontSize:'.65rem',fontWeight:800,color:'#000',letterSpacing:'.08em',textTransform:'uppercase'}},dias[fecha.getDay()].toUpperCase()),
       h('div',{style:{fontSize:'1.6rem',fontWeight:900,color:'#000',lineHeight:1}},fecha.getDate()),
       h('div',{style:{fontSize:'.6rem',fontWeight:700,color:'#000',letterSpacing:'.05em'}},meses[fecha.getMonth()].toUpperCase()),
@@ -3681,6 +3683,7 @@ async function sendIAMsg(){
 function renderModal(){
   if(S.modal==='ia') return renderModalIA();
   if(S.modal==='transportConfig') return renderModalTransportConfig();
+    if(S.modal==='minicalendar') { S.modal=null; S.view='cal'; rerender(); return null; }
   if(S.modal==='resumendia') return renderModalResumenDia();
   if(S.modal==='export') return renderModalExport();
   if(S.modal==='dl') return renderModalDl();
