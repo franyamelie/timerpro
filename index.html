@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780225000000 -->
+<!-- v1780226000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -795,7 +795,7 @@ function renderDayCard(){
       ])
     ]),
     // Body
-    h('div',{style:'padding:.6rem 1rem'}),[
+    h('div',{style:'padding:.6rem 1rem'},[
       // Horas
       horasT>0 ? h('div',{style:'display:flex;align-items:center;gap:.6rem;margin-bottom:.5rem'},[
         h('span',{style:'font-size:1.1rem'},'🕐'),
@@ -847,7 +847,7 @@ function renderDayCard(){
         ])
       ]) : null,
       // Total importe
-      total>0 ? h('div',{style:'margin-top:.6rem;padding:.6rem .8rem;background:var(--surf2);border-radius:10px;display:flex;justify-content:space-between;align-items:center'}),[
+      total>0 ? h('div',{style:'margin-top:.6rem;padding:.6rem .8rem;background:var(--surf2);border-radius:10px;display:flex;justify-content:space-between;align-items:center'},[
         h('div',{style:'font-size:.75rem;font-weight:700;color:var(--ink2);letter-spacing:.08em'},'TOTAL DÍA'),
         h('div',{style:'font-size:1.3rem;font-weight:900;color:var(--ink)'},total.toFixed(2)+' €')
       ]) : null,
