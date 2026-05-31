@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780247000000 -->
+<!-- v1780248000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1689,7 +1689,7 @@ function renderTareas(){
   );
 }
 
-async async function adjuntarTareaADia(t){
+async function adjuntarTareaADia(t){
   // Show date picker modal instead of prompt
   const fecha = await new Promise(resolve => {
     const overlay = document.createElement('div');
@@ -1721,7 +1721,7 @@ async async function adjuntarTareaADia(t){
   const idx = S.tasks.findIndex(x=>x.id===t.id);
   if(idx<0) return;
   S.tasks[idx] = {...S.tasks[idx], fecha:fecha};
-  try{ await dbPut(ST.tasks, S.tasks[idx]); }catch(ex){}
+  try{ dbPut(ST.tasks, S.tasks[idx]); }catch(ex){}
   // Also link to entry for that day
   const entryIdx = S.entries.findIndex(e=>e.fecha===fecha);
   if(entryIdx>=0){
@@ -1730,7 +1730,7 @@ async async function adjuntarTareaADia(t){
     if(!journeys.find(j=>j.id===t.id)){
       journeys.push({id:t.id, titulo:t.titulo, otNumero:t.otNumero});
       S.entries[entryIdx] = {...entry, journeys};
-      try{ await dbPut(ST.entries, S.entries[entryIdx]); }catch(ex){}
+      try{ dbPut(ST.entries, S.entries[entryIdx]); }catch(ex){}
     }
   }
   showAlert('✅ Tarea adjuntada al '+dlbl(fecha));
