@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780252000000 -->
+<!-- v1780253000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -718,7 +718,10 @@ function renderMain(){
 
 // ── AUTO CÁLCULO HORAS DESDE FICHAJES ──────────────────
 function autoCalcHorasFromFichajes(){
+  // Solo calcular si no hay horas introducidas manualmente
   if(!fEntry.fichajes || fEntry.fichajes.length===0) return;
+  // Si ya hay horas normales o extras introducidas manualmente, no sobreescribir
+  if(fEntry.horasNormales>0 || fEntry.horasExtra>0) return;
   document.querySelectorAll('.fich-row').forEach((row,i)=>{
     if(!fEntry.fichajes[i]) return;
     const ti=Array.from(row.querySelectorAll('input[type="text"]'));
