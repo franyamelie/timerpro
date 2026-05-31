@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780219000000 -->
+<!-- v1780221000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -203,6 +203,7 @@ main{flex:1;overflow-y:auto;padding:1rem}
 .clock-btns{display:flex;gap:.4rem;justify-content:center;margin-top:.5rem;flex-wrap:wrap;}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 <div id="app"></div>
@@ -6116,66 +6117,9 @@ const JSONBIN_BASE = 'https://api.jsonbin.io/v3';
 let jsonbinId = localStorage.getItem('jsonbinId') || '6a1b255421f9ee59d29e75e1';
 if(!localStorage.getItem('jsonbinId')) localStorage.setItem('jsonbinId','6a1b255421f9ee59d29e75e1');
 
-async function jsonbinSave(data){
-  const payload = {
-    entries: data.entries.map(e=>({...e, fotosGastos:[]})),
-    tasks: data.tasks,
-    sites: data.sites,
-    workorders: data.workorders,
-    vehicles: data.vehicles,
-    workers: data.workers,
-    companies: data.companies,
-    activeWorkerId: data.activeWorkerId,
-    activeCompanyId: data.activeCompanyId,
-    exportedAt: new Date().toISOString()
-  };
-  const headers = {
-    'Content-Type': 'application/json',
-    'X-Master-Key': JSONBIN_KEY,
-    'X-Bin-Private': 'true'
-  };
-  if(jsonbinId){
-    // Update existing bin
-    const r = await fetch(JSONBIN_BASE+'/b/'+jsonbinId, {
-      method:'PUT', headers, body: JSON.stringify(payload)
-    });
-    if(!r.ok) throw new Error('JSONBin update failed: '+r.status);
-    return await r.json();
-  } else {
-    // Create new bin
-    headers['X-Bin-Name'] = 'TimerPro';
-    const r = await fetch(JSONBIN_BASE+'/b', {
-      method:'POST', headers, body: JSON.stringify(payload)
-    });
-    if(!r.ok) throw new Error('JSONBin create failed: '+r.status);
-    const result = await r.json();
-    jsonbinId = result.metadata.id;
-    localStorage.setItem('jsonbinId', jsonbinId);
-    return result;
-  }
-}
 
-async function jsonbinLoad(){
-  const url = JSONBIN_BASE+'/b/'+jsonbinId+'/latest';
-  console.log('Loading from JSONBin:', url);
-  const r = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'X-Master-Key': JSONBIN_KEY,
-      'X-Bin-Meta': 'false',
-      'Content-Type': 'application/json'
-    }
-  });
-  console.log('JSONBin response status:', r.status);
-  if(!r.ok){
-    const txt = await r.text();
-    console.error('JSONBin error:', txt);
-    throw new Error('JSONBin error '+r.status+': '+txt.slice(0,100));
-  }
-  const data = await r.json();
-  console.log('JSONBin loaded, entries:', data?.entries?.length || data?.record?.entries?.length);
-  return data.record || data;
-}
+
+
 
 async function driveSync(){
   if(_syncInProgress) return;
@@ -6259,6 +6203,194 @@ function checkDriveForNewData(){
     driveHasNew = newHasNew;
   }).catch(()=>{});
 }
+
+
+// ── GOOGLE DRIVE OAUTH2 SYNC ─────────────────────────
+const GDRIVE_CLIENT_ID = '322929735993-rasn2bg5nrppq35to944f4g2tqpbo423.apps.googleusercontent.com';
+const GDRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const GDRIVE_FILE_NAME = 'TimerPro_Datos.json';
+let gdriveToken = localStorage.getItem('gdrive_token') || '';
+let gdriveFileId = localStorage.getItem('gdrive_file_id') || '';
+let gdriveTokenExpiry = parseInt(localStorage.getItem('gdrive_token_expiry') || '0');
+
+function gdriveTokenValid(){
+  return gdriveToken && Date.now() < gdriveTokenExpiry - 60000;
+}
+
+function gdriveLogin(){
+  return new Promise((resolve, reject) => {
+    const params = new URLSearchParams({
+      client_id: GDRIVE_CLIENT_ID,
+      redirect_uri: 'https://franyamelie.github.io/timerpro',
+      response_type: 'token',
+      scope: GDRIVE_SCOPE,
+      prompt: 'consent'
+    });
+    const popup = window.open('https://accounts.google.com/o/oauth2/v2/auth?'+params, 'gdrive_auth', 'width=500,height=600');
+    const interval = setInterval(() => {
+      try {
+        const url = popup.location.href;
+        if(url.includes('access_token')){
+          clearInterval(interval);
+          popup.close();
+          const hash = new URLSearchParams(url.split('#')[1]);
+          const token = hash.get('access_token');
+          const expiresIn = parseInt(hash.get('expires_in') || '3600');
+          gdriveToken = token;
+          gdriveTokenExpiry = Date.now() + expiresIn * 1000;
+          localStorage.setItem('gdrive_token', token);
+          localStorage.setItem('gdrive_token_expiry', gdriveTokenExpiry.toString());
+          resolve(token);
+        }
+        if(popup.closed && !gdriveToken){
+          clearInterval(interval);
+          reject(new Error('Login cancelado'));
+        }
+      } catch(e) { /* cross-origin, wait */ }
+    }, 500);
+  });
+}
+
+async function gdriveEnsureToken(){
+  if(!gdriveTokenValid()){
+    gdriveToken = '';
+    localStorage.removeItem('gdrive_token');
+    await gdriveLogin();
+  }
+}
+
+async function gdriveFindFile(){
+  const r = await fetch(
+    'https://www.googleapis.com/drive/v3/files?q=name%3D%22'+GDRIVE_FILE_NAME+'%22+and+trashed%3Dfalse&fields=files(id,name)',
+    {headers: {'Authorization': 'Bearer '+gdriveToken}}
+  );
+  const d = await r.json();
+  if(d.files && d.files.length > 0){
+    gdriveFileId = d.files[0].id;
+    localStorage.setItem('gdrive_file_id', gdriveFileId);
+    return gdriveFileId;
+  }
+  return null;
+}
+
+async function gdriveSaveData(data){
+  await gdriveEnsureToken();
+  const payload = JSON.stringify({
+    entries: data.entries.map(e=>({...e, fotosGastos:[]})),
+    tasks: data.tasks,
+    sites: data.sites,
+    workorders: data.workorders,
+    vehicles: data.vehicles,
+    workers: data.workers,
+    companies: data.companies,
+    activeWorkerId: data.activeWorkerId,
+    activeCompanyId: data.activeCompanyId,
+    exportedAt: new Date().toISOString()
+  });
+  const blob = new Blob([payload], {type:'application/json'});
+  
+  let fileId = gdriveFileId || await gdriveFindFile();
+  
+  if(fileId){
+    // Update existing file
+    const r = await fetch('https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media', {
+      method: 'PATCH',
+      headers: {'Authorization':'Bearer '+gdriveToken, 'Content-Type':'application/json'},
+      body: blob
+    });
+    if(!r.ok) throw new Error('Drive update error: '+r.status);
+  } else {
+    // Create new file
+    const meta = JSON.stringify({name: GDRIVE_FILE_NAME, mimeType:'application/json'});
+    const form = new FormData();
+    form.append('metadata', new Blob([meta], {type:'application/json'}));
+    form.append('file', blob);
+    const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: {'Authorization':'Bearer '+gdriveToken},
+      body: form
+    });
+    if(!r.ok) throw new Error('Drive create error: '+r.status);
+    const result = await r.json();
+    gdriveFileId = result.id;
+    localStorage.setItem('gdrive_file_id', gdriveFileId);
+  }
+}
+
+async function gdriveLoadData(){
+  await gdriveEnsureToken();
+  let fileId = gdriveFileId || await gdriveFindFile();
+  if(!fileId) return null;
+  const r = await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media', {
+    headers: {'Authorization':'Bearer '+gdriveToken}
+  });
+  if(!r.ok) throw new Error('Drive load error: '+r.status);
+  return await r.json();
+}
+
+// Override driveSync and _doLoad to use Google Drive OAuth
+async function driveSync(){
+  if(_syncInProgress) return;
+  _syncInProgress = true;
+  captureFormState();
+  const notasEl=document.getElementById('notas-editor');
+  if(notasEl&&notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
+  if(fEntry.fecha) await saveDraft();
+  syncStatus='syncing'; rerender();
+  try{
+    const data = await buildSyncDataWithPhotos();
+    await gdriveSaveData(data);
+    _syncInProgress = false;
+    syncStatus='ok';
+    lastSync = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+    localStorage.setItem('lastSync', lastSync);
+    localStorage.setItem('lastSave', new Date().toISOString());
+    localStorage.setItem('lastDriveLoad', Date.now().toString());
+    showAlert('✅ Guardado en Google Drive: '+S.entries.length+' jornadas');
+    rerender();
+  }catch(e){
+    _syncInProgress = false;
+    syncStatus='err';
+    showAlert('Error Drive: '+e.message,'err');
+    rerender();
+  }
+}
+
+async function _doLoad(force, verifyMode, confirmMode){
+  syncStatus='syncing'; rerender();
+  try{
+    const d = await gdriveLoadData();
+    if(!d||!d.entries||d.entries.length===0){
+      syncStatus='ok';
+      showAlert('Drive vacío — sube primero desde el PC','err');
+      rerender(); return;
+    }
+    await importDriveData(d, verifyMode);
+  }catch(e){
+    syncStatus='err';
+    showAlert('Error Drive: '+e.message,'err');
+    rerender();
+  }
+}
+
+function checkDriveForNewData(){
+  if(!gdriveTokenValid()) return;
+  gdriveFindFile().then(id=>{
+    if(!id) return;
+    fetch('https://www.googleapis.com/drive/v3/files/'+id+'?fields=modifiedTime',
+      {headers:{'Authorization':'Bearer '+gdriveToken}})
+    .then(r=>r.json()).then(d=>{
+      const modTime = new Date(d.modifiedTime||0).getTime();
+      const lastLoaded = parseInt(localStorage.getItem('lastDriveLoad')||'0');
+      driveHasNew = modTime > lastLoaded + 3000;
+      driveChecked = true;
+      rerender();
+    }).catch(()=>{});
+  });
+}
+
+function warmupDriveScript(){ /* no-op */ }
+
 
 function buildSyncData(){
   function cleanLoc(loc){
