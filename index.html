@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780248000000 -->
+<!-- v1780250000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -6221,88 +6221,12 @@ if(!localStorage.getItem('jsonbinId')) localStorage.setItem('jsonbinId','6a1b255
 
 
 
-async function driveSync(){
-  if(_syncInProgress) return;
-  _syncInProgress = true;
-  captureFormState();
-  const notasEl=document.getElementById('notas-editor');
-  if(notasEl&&notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
-  if(fEntry.fecha) await saveDraft();
 
-  syncStatus='syncing'; rerender();
-  try{
-    const data = await buildSyncDataWithPhotos();
-    await jsonbinSave(data);
-    _syncInProgress = false;
-    syncStatus='ok';
-    lastSync = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
-    localStorage.setItem('lastSync', lastSync);
-    localStorage.setItem('lastSave', new Date().toISOString());
-    localStorage.setItem('lastDriveLoad', Date.now().toString());
-    showAlert('✅ Guardado en la nube: '+S.entries.length+' jornadas');
-    rerender();
-  }catch(e){
-    _syncInProgress = false;
-    syncStatus='err';
-    showAlert('Error guardando: '+e.message,'err');
-    rerender();
-  }
-}
 
-async function _doLoad(force, verifyMode, confirmMode){
-  syncStatus='syncing'; rerender();
-  try{
-    const d = await jsonbinLoad();
-    if(!d||!d.entries){
-      syncStatus='ok';
-      showAlert('Sin datos en la nube — sube primero desde el PC','err');
-      rerender(); return;
-    }
-    if(d.entries.length===0){
-      syncStatus='ok';
-      showAlert('Nube vacía — guarda algo primero desde el PC','err');
-      rerender(); return;
-    }
-    await importDriveData(d, verifyMode);
-  }catch(e){
-    syncStatus='err';
-    console.error('Load error:', e);
-    showAlert('Error: '+e.message,'err');
-    rerender();
-  }
-}
 
-function warmupDriveScript(){ /* no-op with JSONBin */ }
-function checkDriveForNewData(){
-  if(!jsonbinId) return;
-  fetch(JSONBIN_BASE+'/b/'+jsonbinId+'/latest', {
-    headers:{'X-Master-Key': JSONBIN_KEY}
-  }).then(r=>r.json()).then(result=>{
-    const d = result.record;
-    if(!d) return;
-    const exportedAt = new Date(d.exportedAt||0).getTime();
-    const lastLoaded = parseInt(localStorage.getItem('lastDriveLoad')||'0');
-    const newHasNew = exportedAt > lastLoaded + 3000;
-    if(newHasNew !== driveHasNew || !driveChecked){
-      driveChecked = true;
-      driveHasNew = newHasNew;
-      requestAnimationFrame(()=>{
-        document.querySelectorAll('.drive-badge').forEach((el,i)=>{
-          const active = i===0 ? driveHasNew : (driveChecked&&!driveHasNew);
-          const bg = i===0 ? 'var(--acc)' : 'var(--red)';
-          const col = i===0 ? '#000' : '#fff';
-          el.style.background = active ? bg : 'var(--surf3)';
-          el.style.color = active ? col : 'var(--ink3)';
-          el.style.border = '1px solid '+(active ? bg : 'var(--brd)');
-          const dot = el.querySelector('.badge-dot');
-          if(dot) dot.style.background = active ? col : 'var(--ink3)';
-        });
-      });
-    }
-    driveChecked = true;
-    driveHasNew = newHasNew;
-  }).catch(()=>{});
-}
+
+
+
 
 
 // ── GOOGLE DRIVE OAUTH2 SYNC ─────────────────────────
@@ -6472,21 +6396,7 @@ async function _doLoad(force, verifyMode, confirmMode){
   }
 }
 
-function checkDriveForNewData(){
-  if(!gdriveTokenValid()) return;
-  gdriveFindFile().then(id=>{
-    if(!id) return;
-    fetch('https://www.googleapis.com/drive/v3/files/'+id+'?fields=modifiedTime',
-      {headers:{'Authorization':'Bearer '+gdriveToken}})
-    .then(r=>r.json()).then(d=>{
-      const modTime = new Date(d.modifiedTime||0).getTime();
-      const lastLoaded = parseInt(localStorage.getItem('lastDriveLoad')||'0');
-      driveHasNew = modTime > lastLoaded + 3000;
-      driveChecked = true;
-      rerender();
-    }).catch(()=>{});
-  });
-}
+
 
 function warmupDriveScript(){ /* no-op */ }
 
@@ -6544,42 +6454,6 @@ function buildSyncData(){
 
 
 
-function _doLoad(force, verifyMode, confirmMode){
-  if(!driveUrl) return;
-  syncStatus='syncing'; rerender();
-  const cbName='load_'+Date.now();
-  const script=document.createElement('script');
-  let done=false;
-
-  window[cbName]=async function(result){
-    done=true; delete window[cbName]; script.remove();
-    if(!result||!result.ok){
-      syncStatus='err';
-      showAlert('Error cargando Drive: '+(result&&result.error||'sin datos'),'err');
-      rerender(); return;
-    }
-    const d=result.data;
-    if(!d||!d.entries||d.entries.length===0){
-      syncStatus='ok';
-      showAlert('Drive vacío — guarda algo primero desde el PC','err');
-      rerender(); return;
-    }
-
-    await importDriveData(d, verifyMode);
-  };
-
-  setTimeout(()=>{
-    if(!done){
-      delete window[cbName]; script.remove();
-      syncStatus='err';
-      showAlert('Sin respuesta de Drive. Comprueba conexión.','err');
-      rerender();
-    }
-  },20000);
-
-  script.src=driveUrl+'?action=load&callback='+cbName+'&t='+Date.now();
-  document.body.appendChild(script);
-}
 
 async function importDriveData(d, verifyMode){
   if(S.entries.length>0) await createSnapshot('Antes de cargar Drive - '+new Date().toLocaleString('es-ES'));
