@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780251000000 -->
+<!-- v1780252000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -274,6 +274,8 @@ const S = {
   dietaDefault:0,
   precioHoraNormalDefault:0,
   precioHoraExtraDefault:0,
+  precioHoraNocturnaDefault:0,
+  precioHoraFestivaDefault:0,
   // Jornada activa
   entry:null,
   // Modales
@@ -874,7 +876,7 @@ function renderFichar(){
           'Descanso:',
           h('input',{type:'number',min:'0',max:'480',value:timerDeduct,
             style:{width:'52px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.85rem',textAlign:'center'},
-            on:{input:ev=>{timerDeduct=parseInt(ev.target.value)||0;localStorage.setItem('timerDeduct',timerDeduct);autoCalcHorasFromFichajes();}}},
+            on:{input:ev=>{timerDeduct=0;localStorage.setItem('timerDeduct',timerDeduct);autoCalcHorasFromFichajes();}}},
           'min'
         )
       ),
@@ -1014,7 +1016,19 @@ function renderFichar(){
         const dispId='imp-'+tipo.toLowerCase();
         return h('div',{style:{display:'grid',gridTemplateColumns:'1fr auto 1fr auto',gap:'.4rem',alignItems:'center',marginBottom:'.5rem'}},
           h('div',{class:'field',style:{margin:0}},
-            h('label',{},tipo.toUpperCase()),
+            h('div',{style:{display:'flex',alignItems:'center',gap:'.3rem'}},
+              h('label',{style:{margin:0}},tipo.toUpperCase()),
+              h('button',{
+                title:'Precio por defecto',
+                style:{background:'none',border:'none',cursor:'pointer',fontSize:'.7rem',color:'var(--ink3)',padding:'0'},
+                on:{click:ev=>{
+                  ev.stopPropagation();
+                  const key='precioHora'+tipo+'Default';
+                  const p=prompt('€/hora '+tipo+' por defecto:',S[key]||0);
+                  if(p!==null){S[key]=parseFloat(p)||0;localStorage.setItem(key,S[key]);showAlert('✅ '+tipo+': '+eur(S[key])+'/h');rerender();}
+                }}
+              },'⚙️')
+            ),
             h('input',{type:'text',inputmode:'decimal',
               value:horas||'',placeholder:'0',
               on:{
@@ -1704,16 +1718,19 @@ async function adjuntarTareaADia(t){
   if(idx<0) return;
   S.tasks[idx] = {...S.tasks[idx], fecha:fecha};
   try{ dbPut(ST.tasks, S.tasks[idx]); }catch(ex){}
-  // Also link to entry for that day
+  // Link to entry for that day
+  let entry = S.entries.find(e=>e.fecha===fecha);
+  if(!entry){
+    // Create empty entry for that day
+    entry = {...defEntry(), fecha:fecha};
+    S.entries.push(entry);
+  }
   const entryIdx = S.entries.findIndex(e=>e.fecha===fecha);
-  if(entryIdx>=0){
-    const entry = S.entries[entryIdx];
-    const journeys = entry.journeys||[];
-    if(!journeys.find(j=>j.id===t.id)){
-      journeys.push({id:t.id, titulo:t.titulo, otNumero:t.otNumero});
-      S.entries[entryIdx] = {...entry, journeys};
-      try{ dbPut(ST.entries, S.entries[entryIdx]); }catch(ex){}
-    }
+  const journeys = S.entries[entryIdx].journeys||[];
+  if(!journeys.find(j=>j.id===t.id)){
+    journeys.push({id:t.id, titulo:t.titulo, otNumero:t.otNumero, fecha:fecha});
+    S.entries[entryIdx] = {...S.entries[entryIdx], journeys};
+    try{ dbPut(ST.entries, S.entries[entryIdx]); }catch(ex){}
   }
   showAlert('✅ Tarea adjuntada al '+dlbl(fecha));
   rerender();
@@ -4427,7 +4444,7 @@ function restoreTimerForDay(fecha){
   timerRunning=false;
   timerStart=null;
   timerElapsed=0;
-  timerDeduct=30;
+  timerDeduct=0;
   if(timerInterval){ clearInterval(timerInterval); timerInterval=null; }
   try{
     const saved=localStorage.getItem('timerState');
@@ -7223,6 +7240,10 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
       if(phn) S.precioHoraNormalDefault=parseFloat(phn)||0;
       const phe=localStorage.getItem('precioHoraExtraDefault');
       if(phe) S.precioHoraExtraDefault=parseFloat(phe)||0;
+      const phn2=localStorage.getItem('precioHoraNocturnaDefault');
+      if(phn2) S.precioHoraNocturnaDefault=parseFloat(phn2)||0;
+      const phf=localStorage.getItem('precioHoraFestivaDefault');
+      if(phf) S.precioHoraFestivaDefault=parseFloat(phf)||0;
     }catch(e){}
     // Restore timer state if was running
     const savedTimer=localStorage.getItem('timerState');
