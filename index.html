@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780188000000 -->
+<!-- v1780219000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -5027,7 +5027,7 @@ function showClockPicker(currentVal, onConfirm){
 function renderClock(){
   document.querySelectorAll('.clock-modal').forEach(e=>e.remove());
   if(!_clockState) return;
-  const{hour,minute,mode}=_clockState;
+  const{hour,minute,mode,onConfirm}=_clockState;
 
   const modal=document.createElement('div');
   modal.className='clock-modal';
@@ -5038,130 +5038,130 @@ function renderClock(){
 
   // Title
   const title=document.createElement('div');
-  title.className='clock-title';
+  title.style.cssText='font-size:.8rem;font-weight:600;color:var(--ink3);letter-spacing:.08em;margin-bottom:.6rem;text-transform:uppercase';
   title.textContent='Seleccionar hora';
   box.appendChild(title);
 
-  // Display HH:MM
-  const display=document.createElement('div');
-  display.className='clock-display';
+  // HH:MM display
+  const disp=document.createElement('div');
+  disp.style.cssText='display:flex;align-items:center;justify-content:center;gap:.3rem;margin-bottom:1rem';
   const dh=document.createElement('div');
-  dh.className='clock-display-h'+(mode==='hour'?' active':'');
+  dh.style.cssText='font-size:3rem;font-weight:800;padding:.2rem .5rem;border-radius:10px;cursor:pointer;min-width:80px;text-align:center;background:'+(mode==='hour'?'var(--acc)':'var(--surf3)')+';color:'+(mode==='hour'?'#000':'var(--ink)');
   dh.textContent=String(hour).padStart(2,'0');
   dh.onclick=()=>{_clockState.mode='hour';renderClock();};
   const sep=document.createElement('div');
-  sep.className='clock-display-sep';
+  sep.style.cssText='font-size:3rem;font-weight:800;color:var(--ink)';
   sep.textContent=':';
   const dm=document.createElement('div');
-  dm.className='clock-display-m'+(mode==='minute'?' active':'');
+  dm.style.cssText='font-size:3rem;font-weight:800;padding:.2rem .5rem;border-radius:10px;cursor:pointer;min-width:80px;text-align:center;background:'+(mode==='minute'?'var(--acc)':'var(--surf3)')+';color:'+(mode==='minute'?'#000':'var(--ink)');
   dm.textContent=String(minute).padStart(2,'0');
   dm.onclick=()=>{_clockState.mode='minute';renderClock();};
-  display.appendChild(dh);display.appendChild(sep);display.appendChild(dm);
-  box.appendChild(display);
+  disp.append(dh,sep,dm);
+  box.appendChild(disp);
 
   // Clock face
-  const size=280;
-  const cx=size/2, cy=size/2;
+  const SIZE=280, CX=140, CY=140;
   const face=document.createElement('div');
-  face.style.cssText='position:relative;width:'+size+'px;height:'+size+'px;border-radius:50%;background:var(--surf2);margin:0 auto .8rem;touch-action:none;';
+  face.style.cssText='position:relative;width:'+SIZE+'px;height:'+SIZE+'px;border-radius:50%;background:var(--surf2);margin:0 auto 1rem;user-select:none;';
 
   if(mode==='hour'){
     // Outer ring: 1-12
-    const outerR = size*0.38;
-    // Inner ring: 13-23, 0
-    const innerR = size*0.24;
-    
     for(let h=1;h<=12;h++){
-      const angle=(h/12)*2*Math.PI - Math.PI/2;
-      const x=cx+outerR*Math.cos(angle);
-      const y=cy+outerR*Math.sin(angle);
+      const ang=(h/12)*2*Math.PI-Math.PI/2;
+      const r=SIZE*0.39;
+      const x=CX+r*Math.cos(ang), y=CY+r*Math.sin(ang);
       const el=document.createElement('div');
-      el.style.cssText='position:absolute;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.05rem;font-weight:700;cursor:pointer;transform:translate(-50%,-50%);left:'+x+'px;top:'+y+'px;color:var(--ink);transition:background .1s';
+      const sel=h===hour;
+      el.style.cssText='position:absolute;width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;font-weight:700;cursor:pointer;transform:translate(-50%,-50%);left:'+x+'px;top:'+y+'px;transition:background .12s;background:'+(sel?'var(--acc)':'transparent')+';color:'+(sel?'#000':'var(--ink)');
       el.textContent=String(h).padStart(2,'0');
-      if(h===hour) el.style.cssText+=';background:var(--acc);color:#000';
-      el.onmouseenter=()=>{if(h!==hour)el.style.background='var(--surf3)';};
-      el.onmouseleave=()=>{if(h!==hour)el.style.background='';};
-      el.onclick=()=>{_clockState.hour=h;_clockState.mode='minute';renderClock();};
+      el.addEventListener('mouseenter',()=>{if(!sel)el.style.background='var(--surf3)';});
+      el.addEventListener('mouseleave',()=>{if(!sel)el.style.background='transparent';});
+      el.addEventListener('click',()=>{_clockState.hour=h;_clockState.mode='minute';renderClock();});
       face.appendChild(el);
     }
     // Inner ring: 13-23, 0
-    const innerHours=[13,14,15,16,17,18,19,20,21,22,23,0];
-    innerHours.forEach((h,idx)=>{
-      const angle=(idx/12)*2*Math.PI - Math.PI/2;
-      const x=cx+innerR*Math.cos(angle);
-      const y=cy+innerR*Math.sin(angle);
+    const inner=[13,14,15,16,17,18,19,20,21,22,23,0];
+    inner.forEach((h,idx)=>{
+      const ang=(idx/12)*2*Math.PI-Math.PI/2;
+      const r=SIZE*0.24;
+      const x=CX+r*Math.cos(ang), y=CY+r*Math.sin(ang);
       const el=document.createElement('div');
-      el.style.cssText='position:absolute;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:600;cursor:pointer;transform:translate(-50%,-50%);left:'+x+'px;top:'+y+'px;color:var(--ink2);transition:background .1s';
+      const sel=h===hour;
+      el.style.cssText='position:absolute;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.82rem;font-weight:600;cursor:pointer;transform:translate(-50%,-50%);left:'+x+'px;top:'+y+'px;transition:background .12s;background:'+(sel?'var(--acc)':'transparent')+';color:'+(sel?'#000':'var(--ink2)');
       el.textContent=String(h).padStart(2,'0');
-      if(h===hour) el.style.cssText+=';background:var(--acc);color:#000';
-      el.onmouseenter=()=>{if(h!==hour)el.style.background='var(--surf3)';};
-      el.onmouseleave=()=>{if(h!==hour)el.style.background='';};
-      el.onclick=()=>{_clockState.hour=h;_clockState.mode='minute';renderClock();};
+      el.addEventListener('mouseenter',()=>{if(!sel)el.style.background='var(--surf3)';});
+      el.addEventListener('mouseleave',()=>{if(!sel)el.style.background='transparent';});
+      el.addEventListener('click',()=>{_clockState.hour=h;_clockState.mode='minute';renderClock();});
       face.appendChild(el);
     });
+    // Hand
+    const selH=hour;
+    const isOuter=selH>=1&&selH<=12;
+    const ang=((isOuter?selH:(selH===0?12:selH-12))/12)*2*Math.PI-Math.PI/2;
+    const r=isOuter?SIZE*0.39:SIZE*0.24;
+    const hx=CX+r*Math.cos(ang), hy=CY+r*Math.sin(ang);
+    const line=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    line.style.cssText='position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none';
+    const ln=document.createElementNS('http://www.w3.org/2000/svg','line');
+    ln.setAttribute('x1',CX);ln.setAttribute('y1',CY);
+    ln.setAttribute('x2',hx);ln.setAttribute('y2',hy);
+    ln.setAttribute('stroke','var(--acc)');ln.setAttribute('stroke-width','2');ln.setAttribute('stroke-linecap','round');
+    const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    dot.setAttribute('cx',CX);dot.setAttribute('cy',CY);dot.setAttribute('r','4');dot.setAttribute('fill','var(--acc)');
+    line.appendChild(ln);line.appendChild(dot);
+    face.appendChild(line);
   } else {
-    // Minutes: 0,5,10...55 on outer ring
-    const minuteR = size*0.38;
+    // Minutes: 00,05,10...55
     for(let idx=0;idx<12;idx++){
       const m=idx*5;
-      const angle=(idx/12)*2*Math.PI - Math.PI/2;
-      const x=cx+minuteR*Math.cos(angle);
-      const y=cy+minuteR*Math.sin(angle);
+      const ang=(idx/12)*2*Math.PI-Math.PI/2;
+      const r=SIZE*0.39;
+      const x=CX+r*Math.cos(ang), y=CY+r*Math.sin(ang);
       const el=document.createElement('div');
-      el.style.cssText='position:absolute;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.05rem;font-weight:700;cursor:pointer;transform:translate(-50%,-50%);left:'+x+'px;top:'+y+'px;color:var(--ink);transition:background .1s';
+      const sel=m===Math.round(minute/5)*5%60;
+      el.style.cssText='position:absolute;width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;font-weight:700;cursor:pointer;transform:translate(-50%,-50%);left:'+x+'px;top:'+y+'px;transition:background .12s;background:'+(sel?'var(--acc)':'transparent')+';color:'+(sel?'#000':'var(--ink)');
       el.textContent=String(m).padStart(2,'0');
-      const isSelected=m===Math.round(minute/5)*5;
-      if(isSelected) el.style.cssText+=';background:var(--acc);color:#000';
-      el.onmouseenter=()=>{if(!isSelected)el.style.background='var(--surf3)';};
-      el.onmouseleave=()=>{if(!isSelected)el.style.background='';};
-      el.onclick=()=>{
+      el.addEventListener('mouseenter',()=>{if(!sel)el.style.background='var(--surf3)';});
+      el.addEventListener('mouseleave',()=>{if(!sel)el.style.background='transparent';});
+      el.addEventListener('click',()=>{
         _clockState.minute=m;
         const v=String(_clockState.hour).padStart(2,'0')+':'+String(m).padStart(2,'0');
-        if(_clockState.onConfirm) _clockState.onConfirm(v);
-        _clockState=null; modal.remove();
-      };
+        if(onConfirm)onConfirm(v);
+        _clockState=null;modal.remove();
+      });
       face.appendChild(el);
     }
+    // Hand
+    const ang=(Math.round(minute/5)%12/12)*2*Math.PI-Math.PI/2;
+    const r=SIZE*0.39;
+    const hx=CX+r*Math.cos(ang), hy=CY+r*Math.sin(ang);
+    const line=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    line.style.cssText='position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none';
+    const ln=document.createElementNS('http://www.w3.org/2000/svg','line');
+    ln.setAttribute('x1',CX);ln.setAttribute('y1',CY);
+    ln.setAttribute('x2',hx);ln.setAttribute('y2',hy);
+    ln.setAttribute('stroke','var(--acc)');ln.setAttribute('stroke-width','2');ln.setAttribute('stroke-linecap','round');
+    const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    dot.setAttribute('cx',CX);dot.setAttribute('cy',CY);dot.setAttribute('r','4');dot.setAttribute('fill','var(--acc)');
+    line.appendChild(ln);line.appendChild(dot);
+    face.appendChild(line);
   }
-
-  // Hand line
-  const selVal = mode==='hour' ? hour : Math.round(minute/5)*5;
-  const total = mode==='hour' ? 12 : 12;
-  const selIdx = mode==='hour' 
-    ? (hour>0&&hour<=12 ? hour : (hour===0?11.5:hour-12))
-    : minute/5;
-  const handAngle=(selIdx/total)*360-90;
-  const handR = mode==='hour' ? (hour>12||hour===0 ? size*0.24 : size*0.38) : size*0.38;
-  const hand=document.createElement('div');
-  hand.style.cssText='position:absolute;bottom:50%;left:50%;width:2px;border-radius:2px;background:var(--acc);transform-origin:bottom center;transform:translateX(-50%) rotate('+(handAngle+90)+'deg);height:'+handR+'px;';
-  face.appendChild(hand);
-  const center=document.createElement('div');
-  center.style.cssText='position:absolute;top:50%;left:50%;width:10px;height:10px;border-radius:50%;background:var(--acc);transform:translate(-50%,-50%);';
-  face.appendChild(center);
   box.appendChild(face);
 
   // Buttons
   const btns=document.createElement('div');
-  btns.className='clock-btns';
-  const btnAhora=document.createElement('button');
-  btnAhora.className='btn btn-gh';btnAhora.textContent='Ahora';
-  btnAhora.onclick=()=>{
-    const now=new Date();
-    const v=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
-    if(_clockState.onConfirm) _clockState.onConfirm(v);
-    _clockState=null;modal.remove();
-  };
-  const btnOK=document.createElement('button');
-  btnOK.className='btn btn-g';btnOK.textContent='Aceptar';
-  btnOK.onclick=()=>{
+  btns.style.cssText='display:flex;gap:.6rem;justify-content:center';
+  const mkBtn=(txt,cls,fn)=>{const b=document.createElement('button');b.className='btn '+cls;b.textContent=txt;b.onclick=fn;return b;};
+  btns.appendChild(mkBtn('Ahora','btn-gh',()=>{
+    const n=new Date();
+    const v=String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');
+    if(onConfirm)onConfirm(v);_clockState=null;modal.remove();
+  }));
+  btns.appendChild(mkBtn('Aceptar','btn-g',()=>{
     const v=String(hour).padStart(2,'0')+':'+String(minute).padStart(2,'0');
-    if(_clockState.onConfirm) _clockState.onConfirm(v);
-    _clockState=null;modal.remove();
-  };
-  const btnCancel=document.createElement('button');
-  btnCancel.className='btn btn-r';btnCancel.textContent='Cancelar';
-  btnCancel.onclick=()=>{_clockState=null;modal.remove();};
-  btns.appendChild(btnAhora);btns.appendChild(btnOK);btns.appendChild(btnCancel);
+    if(onConfirm)onConfirm(v);_clockState=null;modal.remove();
+  }));
+  btns.appendChild(mkBtn('Cancelar','btn-r',()=>{_clockState=null;modal.remove();}));
   box.appendChild(btns);
   modal.appendChild(box);
   document.body.appendChild(modal);
