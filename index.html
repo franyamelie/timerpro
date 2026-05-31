@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780238500000 -->
+<!-- v1780247000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -272,6 +272,8 @@ const S = {
   entries:[], tasks:[], sites:[], workorders:[], vehicles:[], settings:{},
   transportTypes:[{id:'coche',nombre:'Coche',precio:0},{id:'camion',nombre:'Camión',precio:0}],
   dietaDefault:0,
+  precioHoraNormalDefault:0,
+  precioHoraExtraDefault:0,
   // Jornada activa
   entry:null,
   // Modales
@@ -1012,7 +1014,25 @@ function renderFichar(){
         const dispId='imp-'+tipo.toLowerCase();
         return h('div',{style:{display:'grid',gridTemplateColumns:'1fr auto 1fr auto',gap:'.4rem',alignItems:'center',marginBottom:'.5rem'}},
           h('div',{class:'field',style:{margin:0}},
-            h('label',{},tipo.toUpperCase()),
+            h('div',{style:{display:'flex',alignItems:'center',gap:'.3rem'}},
+              h('label',{style:{margin:0}},tipo.toUpperCase()),
+              (tipo==='Normales'||tipo==='Extra')?h('button',{
+                title:'Precio '+tipo.toLowerCase()+' por defecto',
+                style:{background:'none',border:'none',cursor:'pointer',fontSize:'.7rem',color:'var(--ink3)',padding:'0',lineHeight:1},
+                on:{click:ev=>{
+                  ev.stopPropagation();
+                  const key='precioHora'+tipo+'Default';
+                  const cur=S[key]||0;
+                  const p=prompt('Precio hora '+tipo.toLowerCase()+' por defecto (€):',cur);
+                  if(p!==null){
+                    S[key]=parseFloat(p)||0;
+                    localStorage.setItem(key,S[key]);
+                    showAlert('✅ '+tipo+': '+eur(S[key])+'/h por defecto');
+                    rerender();
+                  }
+                }}
+              },'⚙️'):null
+            ),
             h('input',{type:'text',inputmode:'decimal',
               value:horas||'',placeholder:'0',
               on:{
@@ -1040,7 +1060,7 @@ function renderFichar(){
           h('div',{class:'field',style:{margin:0}},
             h('label',{},'€/HORA'),
             h('input',{type:'text',inputmode:'decimal',
-              value:precio||'',placeholder:'0,00',
+              value:precio||(S['precioHora'+tipo+'Default']&&!e[pk]?S['precioHora'+tipo+'Default']:precio)||'',placeholder:'0,00',
               on:{
                 input:ev=>{
                   const v=ev.target.value.replace(',','.');
@@ -1669,18 +1689,51 @@ function renderTareas(){
   );
 }
 
-async function adjuntarTareaADia(t){
-  const fecha = prompt('¿A qué día adjuntar esta tarea?\nFormato: AAAA-MM-DD\nEjemplo: 2026-05-26\n\nDía actual de la tarea: '+t.fecha, t.fecha||today());
-  if(!fecha || fecha === t.fecha) return;
-  // Validate format
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)){ showAlert('Formato incorrecto. Usa AAAA-MM-DD','err'); return; }
+async async function adjuntarTareaADia(t){
+  // Show date picker modal instead of prompt
+  const fecha = await new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:var(--surf);border-radius:14px;padding:1.5rem;max-width:320px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.4)';
+    box.innerHTML = '<div style="font-weight:800;font-size:1rem;color:var(--ink);margin-bottom:1rem">📅 Adjuntar tarea al día</div>'
+      +'<div style="font-size:.85rem;color:var(--ink2);margin-bottom:.3rem">'+t.titulo+'</div>'
+      +'<div style="font-size:.8rem;color:var(--ink3);margin-bottom:.8rem">OT: '+t.otNumero+'</div>'
+      +'<input type="date" id="adj-date" value="'+(t.fecha||today())+'" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--brd);background:var(--surf2);color:var(--ink);font-size:1rem;margin-bottom:1rem">'
+      +'<div style="display:flex;gap:.6rem;justify-content:flex-end">'
+      +'<button id="adj-cancel" style="padding:.5rem 1rem;border-radius:8px;border:1px solid var(--brd);background:var(--surf3);color:var(--ink);cursor:pointer;font-weight:600">Cancelar</button>'
+      +'<button id="adj-ok" style="padding:.5rem 1rem;border-radius:8px;border:none;background:var(--acc);color:#000;cursor:pointer;font-weight:700">Adjuntar</button>'
+      +'</div>';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    document.getElementById('adj-ok').onclick = () => {
+      const v = document.getElementById('adj-date').value;
+      document.body.removeChild(overlay);
+      resolve(v);
+    };
+    document.getElementById('adj-cancel').onclick = () => {
+      document.body.removeChild(overlay);
+      resolve(null);
+    };
+  });
+  if(!fecha) return;
+  // Update task date
   const idx = S.tasks.findIndex(x=>x.id===t.id);
   if(idx<0) return;
   S.tasks[idx] = {...S.tasks[idx], fecha:fecha};
-  fTask = defTask();
-  // Save updated task to DB
   try{ await dbPut(ST.tasks, S.tasks[idx]); }catch(ex){}
-  showAlert('✅ Tarea adjuntada al día '+dlbl(fecha));
+  // Also link to entry for that day
+  const entryIdx = S.entries.findIndex(e=>e.fecha===fecha);
+  if(entryIdx>=0){
+    const entry = S.entries[entryIdx];
+    const journeys = entry.journeys||[];
+    if(!journeys.find(j=>j.id===t.id)){
+      journeys.push({id:t.id, titulo:t.titulo, otNumero:t.otNumero});
+      S.entries[entryIdx] = {...entry, journeys};
+      try{ await dbPut(ST.entries, S.entries[entryIdx]); }catch(ex){}
+    }
+  }
+  showAlert('✅ Tarea adjuntada al '+dlbl(fecha));
   rerender();
 }
 
@@ -7310,6 +7363,10 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
       if(tt) S.transportTypes=JSON.parse(tt)||S.transportTypes;
       const dd=localStorage.getItem('dietaDefault');
       if(dd) S.dietaDefault=parseFloat(dd)||0;
+      const phn=localStorage.getItem('precioHoraNormalDefault');
+      if(phn) S.precioHoraNormalDefault=parseFloat(phn)||0;
+      const phe=localStorage.getItem('precioHoraExtraDefault');
+      if(phe) S.precioHoraExtraDefault=parseFloat(phe)||0;
     }catch(e){}
     // Restore timer state if was running
     const savedTimer=localStorage.getItem('timerState');
