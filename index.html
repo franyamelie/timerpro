@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780186000000 -->
+<!-- v1780186500000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -7157,6 +7157,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     const savedCfg=localStorage.getItem('fbConfig');
     if(savedCfg){ try{ fbConfig=JSON.parse(savedCfg); await initFirebase(); }catch(e){} }
     await loadVacaciones();
+    if(!localStorage.getItem('groq_api_key')) localStorage.setItem('groq_api_key','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');
     renderApp();
     startClock();
     updateTitle();
