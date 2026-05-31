@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780227000000 -->
+<!-- v1780228000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -167,9 +167,10 @@ main{flex:1;overflow-y:auto;padding:1rem}
 .photo-del::after{content:'✕';position:absolute;top:2px;right:2px;background:rgba(0,0,0,.7);color:#fff;font-size:.55rem;width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;line-height:14px;text-align:center}
 .qr-wrap{text-align:center;padding:1rem}
 .qr-wrap img{max-width:200px;border-radius:var(--r);border:4px solid #fff}
-::-webkit-scrollbar{width:4px;height:4px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--surf3);border-radius:2px}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:var(--surf2);border-radius:4px}
+::-webkit-scrollbar-thumb{background:var(--ink3);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:var(--ink2)}
 .locked-badge{display:inline-flex;align-items:center;gap:.3rem;background:var(--acc-lt);color:var(--acc);padding:.2rem .6rem;border-radius:20px;font-size:.72rem;font-weight:700}
 .sep{height:1px;background:var(--brd);margin:.8rem 0}
 @media(min-width:720px){main{padding:1.2rem 1.5rem}.grid-2{grid-template-columns:repeat(2,1fr)}}
@@ -753,6 +754,46 @@ function confirmColor(msg, color, onOk){
 }
 
 
+
+// ── TARJETA RESUMEN DÍA ─────────────────────────────
+function renderDayCard(){
+  const e = S.entries.find(x=>x.fecha===fEntry.fecha) || fEntry;
+  if(!e||!e.fecha) return null;
+  const fecha = new Date(e.fecha+'T12:00:00');
+  const dias=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const meses=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const mesesL=['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
+  const horasT = Math.round(((e.horasNormales||0)+(e.horasExtra||0))*100)/100;
+  const importeT = Math.round(((e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0)+(e.dieta||0)+(e.transporte||0)+(e.otrosConceptos||[]).reduce((a,b)=>a+(b.importe||0),0))*100)/100;
+  const fichajes = (e.fichajes||[]).filter(f=>f.entrada&&f.salida).length;
+  const tareas = (S.tasks||[]).filter(t=>t.fecha&&t.fecha===e.fecha).length;
+  const jornada = e.tipoJornada||e.jornada||'';
+  const sitio = e.ubicacionEntrada||'';
+
+  return h('div',{class:'card',style:{padding:'.7rem',marginBottom:'.6rem',borderLeft:'4px solid var(--acc)',display:'grid',gridTemplateColumns:'auto 1fr',gap:'.8rem',alignItems:'center'}},[
+    // Left: calendar block
+    h('div',{style:{textAlign:'center',background:'var(--acc)',borderRadius:'10px',padding:'.4rem .6rem',minWidth:'52px'}},[
+      h('div',{style:{fontSize:'.65rem',fontWeight:800,color:'#000',letterSpacing:'.08em',textTransform:'uppercase'}},dias[fecha.getDay()].toUpperCase()),
+      h('div',{style:{fontSize:'1.6rem',fontWeight:900,color:'#000',lineHeight:1}},fecha.getDate()),
+      h('div',{style:{fontSize:'.6rem',fontWeight:700,color:'#000',letterSpacing:'.05em'}},meses[fecha.getMonth()].toUpperCase()),
+    ]),
+    // Right: data
+    h('div',{style:{display:'flex',flexDirection:'column',gap:'.2rem'}},[
+      h('div',{style:{fontSize:'.95rem',fontWeight:800,color:'var(--ink)',letterSpacing:'.02em'}},
+        dias[fecha.getDay()]+', '+fecha.getDate()+' de '+mesesL[fecha.getMonth()]+' '+fecha.getFullYear()
+      ),
+      h('div',{style:{display:'flex',gap:'.8rem',flexWrap:'wrap'}},[
+        horasT>0?h('span',{style:{fontSize:'.78rem',color:'var(--ink2)',fontWeight:600}},'⏱ '+horasT+'h'):null,
+        fichajes>0?h('span',{style:{fontSize:'.78rem',color:'var(--ink2)',fontWeight:600}},'📍 '+fichajes+' fichaje'+(fichajes>1?'s':'')):null,
+        tareas>0?h('span',{style:{fontSize:'.78rem',color:'var(--ink2)',fontWeight:600}},'🔧 '+tareas+' tarea'+(tareas>1?'s':'')):null,
+        jornada?h('span',{style:{fontSize:'.78rem',color:'var(--ink2)',fontWeight:600}},'📋 '+jornada):null,
+      ]),
+      sitio?h('div',{style:{fontSize:'.75rem',color:'var(--ink3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},'📍 '+sitio):null,
+      importeT>0?h('div',{style:{fontSize:'1rem',fontWeight:800,color:'var(--acc)',marginTop:'.1rem'}},importeT.toFixed(2)+' €'):null,
+      (!horasT&&!fichajes&&!tareas&&!importeT)?h('div',{style:{fontSize:'.78rem',color:'var(--ink3)',fontStyle:'italic'}},'Sin datos registrados'):null,
+    ])
+  ]);
+}
 function renderFichar(){
   const e = fEntry;
   const today_entries = S.entries.filter(x=>x.fecha===e.fecha);
@@ -813,6 +854,7 @@ function renderFichar(){
       )
     ):null,
 
+    renderDayCard(),
     // ── TEMPORIZADOR JORNADA ──
     h('div',{class:'card',style:{border:'2px solid '+(timerRunning?'var(--acc)':'var(--brd)'),transition:'border .3s'}},
       h('div',{class:'sec-title',style:{marginBottom:'.5rem'}},'Temporizador de Jornada'),
@@ -2731,7 +2773,7 @@ function renderModalResumenDia(){
   const impViajes = (e.journeys||[]).reduce((s,j)=>s+(j.km||0)*(j.vehicleId?
     (S.vehicles.find(v=>v.id==j.vehicleId)?.precioPorKm||0):j.precioManual||0),0);
   const totalI = impHoras+impDietas+impTransp+impOtros+impViajes;
-  const tareasDia = (S.tasks||[]).filter(t=> t.fecha === e.fecha || (e.journeys||[]).some(j=>j.id===t.id));
+  const tareasDia = (S.tasks||[]).filter(t=> t.fecha && t.fecha === e.fecha);
 
   const sec = (icon,title)=>h('div',{style:{
     display:'flex',alignItems:'center',gap:'.5rem',
