@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780229000000 -->
+<!-- v1780238500000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -768,11 +768,12 @@ function renderDayCard(){
   const fichajes = (e.fichajes||[]).filter(f=>f.entrada&&f.salida).length;
   const tareas = (S.tasks||[]).filter(t=>t.fecha&&t.fecha===e.fecha).length;
   const jornada = e.tipoJornada||e.jornada||'';
-  const sitio = e.ubicacionEntrada||'';
+  let sitio = e.ubicacionEntrada||'';
+  try{ if(sitio&&sitio.startsWith('{')){ const s=JSON.parse(sitio); sitio=s.label||s.url||sitio; } }catch(ex){}
 
   const worked = horasT>0||fichajes>0||importeT>0;
   const cardColor = worked ? 'var(--acc)' : 'var(--red)';
-  return h('div',{class:'card',style:{padding:'.7rem',marginBottom:'.6rem',borderLeft:'4px solid '+cardColor,display:'grid',gridTemplateColumns:'auto 1fr',gap:'.8rem',alignItems:'center',cursor:'pointer'},on:{click:()=>{S.modal='minicalendar';rerender();}}},[
+  return h('div',{class:'card',style:{padding:'.7rem',marginBottom:'.6rem',borderLeft:'4px solid '+cardColor,display:'grid',gridTemplateColumns:'auto 1fr',gap:'.8rem',alignItems:'center',cursor:'pointer'},on:{click:()=>{S.tab='calendario';rerender();}}},[
     // Left: calendar block
     h('div',{style:{textAlign:'center',background:cardColor,borderRadius:'10px',padding:'.4rem .6rem',minWidth:'52px'}},[
       h('div',{style:{fontSize:'.65rem',fontWeight:800,color:'#000',letterSpacing:'.08em',textTransform:'uppercase'}},dias[fecha.getDay()].toUpperCase()),
@@ -4400,7 +4401,7 @@ function restoreTimerForDay(fecha){
     if(ts.fecha !== fecha) return; // timer belongs to a different day
     timerStart=ts.start;
     timerElapsed=ts.elapsed||Math.floor((Date.now()-ts.start)/1000);
-    timerDeduct=ts.deduct||0;
+    timerDeduct=0;
     if(ts.running){
       timerRunning=true;
       timerStart=Date.now()-timerElapsed*1000;
@@ -7318,7 +7319,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
         if(ts.running && ts.start){
           timerStart=ts.start;
           timerElapsed=Math.floor((Date.now()-ts.start)/1000);
-          timerDeduct=ts.deduct||0;
+          timerDeduct=0;
           timerRunning=true;
           timerInterval=setInterval(()=>{
             timerElapsed=Math.floor((Date.now()-timerStart)/1000);
