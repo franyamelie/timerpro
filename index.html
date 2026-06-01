@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780352000000 -->
+<!-- v1780353000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2529,135 +2529,157 @@ function exportXLSX(conPrecios){
   try{
     const from=S.resFrom||firstDayOfMonth();
     const to=S.resTo||today();
-    const entries=S.entries
-      .filter(e=>e.fecha>=from&&e.fecha<=to&&!e._draft)
-      .sort((a,b)=>a.fecha.localeCompare(b.fecha));
-    if(!entries.length){showAlert('No hay jornadas en el rango','err');return;}
+    const ents=S.entries.filter(e=>e.fecha>=from&&e.fecha<=to&&!e._draft).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    if(!ents.length){showAlert('No hay jornadas en el rango','err');return;}
 
     const n=v=>parseFloat((v||0).toFixed(2));
     const fh=h=>{if(!h)return '';return h%1===0?h+'h':Math.floor(h)+'h '+Math.round((h%1)*60)+'m';};
     const worker=workers.find(w=>w.id===activeWorkerId)||{};
     const company=companies.find(c=>c.id===activeCompanyId)||{};
 
-    // ── HOJA 1: DETALLE POR DÍA ──
-    const headers=['Fecha','Día',
-      'H. Normales','H. Extra','H. Nocturnas','H. Festivas','Total Horas','Fichajes',
-      ...(conPrecios?['€/h Norm','€ Normales','€/h Extra','€ Extra','€/h Noc','€ Nocturnas','€/h Fest','€ Festivas']:[] ),
-      'Dieta','Dietas extra','Transporte','Tipo transporte',
-      ...(conPrecios?['€ Dieta total','€ Transporte','Otros conceptos','TOTAL DÍA']:[]),
-      'Tareas / OT','Entrada','Salida','Notas'
-    ];
-
-    // Counters for summary
+    // Counters
     let totHN=0,totHE=0,totHNoc=0,totHFes=0;
     let totIN=0,totIE=0,totINoc=0,totIFes=0,totD=0,totT=0,totO=0;
-    let nDietaJornadas=0,totTranspCoche=0,totTranspCamion=0,totTranspOtro=0;
-    let nCoche=0,nCamion=0,nOtroT=0;
+    let nDietaJ=0,totTCoche=0,totTCamion=0,totTOtro=0,nCoche=0,nCamion=0,nOtroT=0;
 
-    const rows=entries.map(e=>{
+    // ── HOJA 1: DETALLE ──
+    const hd=['Fecha','Día','H.Normales','H.Extra','H.Nocturnas','H.Festivas','Fichajes',
+      ...(conPrecios?['€/h Norm','€ Norm','€/h Extra','€ Extra','€/h Noc','€ Noc','€/h Fest','€ Fest']:[]),
+      'Dieta','Dietas extra','Transporte','Tipo transp.',
+      ...(conPrecios?['€ Dieta total','€ Transporte','Otros','TOTAL']:['Total horas']),
+      'Tareas/OT','Entrada','Salida','Notas'];
+
+    const rows=ents.map(e=>{
       const hN=n(e.horasNormales),hE=n(e.horasExtra),hNoc=n(e.horasNocturnas),hFes=n(e.horasFestivas);
       const iN=n(e.importeNormales),iE=n(e.importeExtra),iNoc=n(e.importeNocturnas),iFes=n(e.importeFestivas);
-      const dietaBase=n(e.dieta);
-      const dietasExtra=(e.dietasExtra||[]);
-      const dietaExtraTotal=n(dietasExtra.reduce((a,d)=>a+(d.importe||0),0));
-      const dietaTotal=n(dietaBase+dietaExtraTotal);
+      const dBase=n(e.dieta);
+      const dExtra=(e.dietasExtra||[]);
+      const dExtraT=n(dExtra.reduce((a,d)=>a+(d.importe||0),0));
+      const dTotal=n(dBase+dExtraT);
       const transp=n(e.transporte);
       const tt=e._transportType||'';
-      const ttName=tt==='coche'?'Coche':tt==='camion'?'Camión':tt||'';
+      const ttN=tt==='coche'?'Coche':tt==='camion'?'Camión':tt||'';
       const otros=n((e.otrosConceptos||[]).reduce((a,o)=>a+(o.importe||0),0));
-      const total=n(iN+iE+iNoc+iFes+dietaTotal+transp+otros);
+      const total=n(iN+iE+iNoc+iFes+dTotal+transp+otros);
       const totalH=n(hN+hE+hNoc+hFes);
-
       totHN+=hN;totHE+=hE;totHNoc+=hNoc;totHFes+=hFes;
       totIN+=iN;totIE+=iE;totINoc+=iNoc;totIFes+=iFes;
-      totD+=dietaTotal;totT+=transp;totO+=otros;
-      if(dietaTotal>0) nDietaJornadas++;
-      if(transp>0){
-        if(tt==='coche'){totTranspCoche+=transp;nCoche++;}
-        else if(tt==='camion'){totTranspCamion+=transp;nCamion++;}
-        else{totTranspOtro+=transp;nOtroT++;}
-      }
-
-      const tareas=(S.tasks||[]).filter(t=>t.fecha===e.fecha).map(t=>(t.titulo||'')+(t.otNumero?' (OT:'+t.otNumero+')':'')).join('; ');
+      totD+=dTotal;totT+=transp;totO+=otros;
+      if(dTotal>0) nDietaJ++;
+      if(transp>0){if(tt==='coche'){totTCoche+=transp;nCoche++;}else if(tt==='camion'){totTCamion+=transp;nCamion++;}else{totTOtro+=transp;nOtroT++;}}
       let locE='',locS='';
       try{locE=JSON.parse(e.ubicacionEntrada).label||'';}catch(ex){locE=e.ubicacionEntrada||'';}
       try{locS=JSON.parse(e.ubicacionSalida).label||'';}catch(ex){locS=e.ubicacionSalida||'';}
       const notas=(e.notas||'').replace(/<[^>]*>/g,' ').trim();
-      const dietasExtraStr=dietasExtra.map(d=>(d.concepto||'Extra')+': '+(d.importe||0).toFixed(2)+'€').join('; ');
-
-      return [
-        e.fecha, cap(wday(e.fecha)),
-        fh(hN),fh(hE),fh(hNoc),fh(hFes),fh(totalH),(e.fichajes||[]).filter(f=>f.entrada&&f.salida).length,
+      const tareas=(S.tasks||[]).filter(t=>t.fecha===e.fecha).map(t=>(t.titulo||'')+(t.otNumero?' (OT:'+t.otNumero+')':'')).join('; ');
+      const dExtraStr=dExtra.map(d=>(d.concepto||'Extra')+':'+n(d.importe||0)+'€').join('; ');
+      const fParts=e.fecha.split('-');
+      const fDisplay=(fParts[2]||'')+'/'+(fParts[1]||'')+'/'+(fParts[0]||'');
+      return [fDisplay,cap(wday(e.fecha)),
+        fh(hN),fh(hE),fh(hNoc),fh(hFes),
+        (e.fichajes||[]).filter(f=>f.entrada&&f.salida).length,
         ...(conPrecios?[n(e.precioHoraNormal),iN,n(e.precioHoraExtra),iE,n(e.precioHoraNocturna),iNoc,n(e.precioHoraFestiva),iFes]:[]),
-        dietaBase||'',dietasExtraStr||'',transp||'',ttName,
-        ...(conPrecios?[dietaTotal||'',transp||'',otros||'',total]:[]),
-        tareas,locE,locS,notas
-      ];
+        dBase||'',dExtraStr||'',transp||'',ttN,
+        ...(conPrecios?[dTotal||'',transp||'',otros||'',total]:[fh(totalH)]),
+        tareas,locE,locS,notas];
     });
 
-    // ── FILA TOTALES ──
-    const totRow=['TOTALES','',
-      fh(totHN),fh(totHE),fh(totHNoc),fh(totHFes),fh(totHN+totHE+totHNoc+totHFes),'',
-      ...(conPrecios?['','',n(totIN),'',n(totIE),'',n(totINoc),'',n(totIFes)]:[]),
+    const totRow=['TOTALES','',fh(totHN),fh(totHE),fh(totHNoc),fh(totHFes),'',
+      ...(conPrecios?['',n(totIN),'',n(totIE),'',n(totINoc),'',n(totIFes)]:[]),
       '','','','',
-      ...(conPrecios?[n(totD),n(totT),n(totO),n(totIN+totIE+totINoc+totIFes+totD+totT+totO)]:[]),
-      '','','',''
-    ];
+      ...(conPrecios?[n(totD),n(totT),n(totO),n(totIN+totIE+totINoc+totIFes+totD+totT+totO)]:[fh(totHN+totHE+totHNoc+totHFes)]),
+      '','','',''];
 
-    // ── HOJA 2: RESUMEN ──
-    const resumenRows=[
-      ['RESUMEN DEL PERÍODO',''],
-      ['Empresa',company.nombre||''],
-      ['Trabajador',worker.nombre||''],
-      ['Período',from+' al '+to],
-      ['Jornadas',entries.length],
-      ['',''],
-      ['HORAS','TOTAL'],
-      ['Horas normales',fh(totHN)],
-      ['Horas extra',fh(totHE)],
-      ['Horas nocturnas',fh(totHNoc)],
-      ['Horas festivas',fh(totHFes)],
-      ['TOTAL HORAS',fh(totHN+totHE+totHNoc+totHFes)],
-      ['',''],
-    ];
-    if(conPrecios){
-      resumenRows.push(
-        ['IMPORTES','TOTAL'],
-        ['Horas normales',n(totIN)],
-        ['Horas extra',n(totIE)],
-        ['Horas nocturnas',n(totINoc)],
-        ['Horas festivas',n(totIFes)],
-        ['',''],
-        ['DIETAS',''],
-        ['Jornadas con dieta',nDietaJornadas],
-        ['Total dietas',n(totD)],
-        ['',''],
-        ['TRANSPORTE',''],
-      );
-      if(nCoche>0) resumenRows.push(['Coche ('+nCoche+' viajes)',n(totTranspCoche)]);
-      if(nCamion>0) resumenRows.push(['Camión ('+nCamion+' viajes)',n(totTranspCamion)]);
-      if(nOtroT>0) resumenRows.push(['Otros ('+nOtroT+' viajes)',n(totTranspOtro)]);
-      resumenRows.push(
-        ['Total transporte',n(totT)],
-        ['',''],
-        ['Otros conceptos',n(totO)],
-        ['',''],
-        ['TOTAL GENERAL',n(totIN+totIE+totINoc+totIFes+totD+totT+totO)]
-      );
+    // Desglose row
+    let desgloseStr='';
+    if(nCoche>0) desgloseStr+='Coche: '+nCoche+' viaje'+(nCoche>1?'s':'')+' ('+n(totTCoche).toFixed(2)+'€)  ';
+    if(nCamion>0) desgloseStr+='Camión: '+nCamion+' viaje'+(nCamion>1?'s':'')+' ('+n(totTCamion).toFixed(2)+'€)  ';
+    if(nOtroT>0) desgloseStr+='Otros transp.: '+nOtroT+' ('+n(totTOtro).toFixed(2)+'€)  ';
+    if(nDietaJ>0) desgloseStr+='Dietas: '+nDietaJ+' jornada'+(nDietaJ>1?'s':'')+' ('+n(totD).toFixed(2)+'€)';
+    const desgloseRow=[desgloseStr,'','','','','','','','','','','','','',
+      ...(conPrecios?['','','','Horas totales: '+fh(totHN+totHE+totHNoc+totHFes)]:['']),
+      '','','',''];
+
+    const ws1=XLSX.utils.aoa_to_sheet([hd,...rows,totRow,desgloseRow]);
+
+    // ── ESTILOS ──
+    const range=XLSX.utils.decode_range(ws1['!ref']);
+    const numRows=rows.length;
+
+    // Header row style (row 0)
+    for(let c=range.s.c;c<=range.e.c;c++){
+      const cell=XLSX.utils.encode_cell({r:0,c});
+      if(!ws1[cell]) ws1[cell]={v:'',t:'s'};
+      ws1[cell].s={fill:{fgColor:{rgb:'1E293B'}},font:{color:{rgb:'FFFFFF'},bold:true,sz:10},alignment:{horizontal:'center',wrapText:false}};
+    }
+    // Data rows - alternating
+    for(let r=1;r<=numRows;r++){
+      const bg=r%2===0?'F8FAFC':'FFFFFF';
+      const isTotal=r===numRows;
+      for(let c=range.s.c;c<=range.e.c;c++){
+        const cell=XLSX.utils.encode_cell({r,c});
+        if(!ws1[cell]) continue;
+        const isAmtCol=conPrecios&&c>=range.e.c;
+        ws1[cell].s={
+          fill:{fgColor:{rgb:bg}},
+          font:{sz:10,color:{rgb:isAmtCol?'166534':'1E293B'},bold:c===range.e.c},
+          border:{bottom:{style:'thin',color:{rgb:'E2E8F0'}}},
+          alignment:{horizontal:c>1?'right':'left'}
+        };
+      }
+    }
+    // Totals row
+    const tRow=numRows+1;
+    for(let c=range.s.c;c<=range.e.c;c++){
+      const cell=XLSX.utils.encode_cell({r:tRow,c});
+      if(!ws1[cell]) ws1[cell]={v:'',t:'s'};
+      ws1[cell].s={fill:{fgColor:{rgb:'1E293B'}},font:{color:{rgb:c===range.e.c?'4ADE80':'FFFFFF'},bold:true,sz:10},alignment:{horizontal:c>1?'right':'left'}};
+    }
+    // Desglose row
+    const dRow=numRows+2;
+    for(let c=range.s.c;c<=range.e.c;c++){
+      const cell=XLSX.utils.encode_cell({r:dRow,c});
+      if(!ws1[cell]) ws1[cell]={v:'',t:'s'};
+      ws1[cell].s={fill:{fgColor:{rgb:'0F172A'}},font:{color:{rgb:'94A3B8'},sz:9},alignment:{horizontal:c===range.e.c?'right':'left'}};
     }
 
-    const ws1=XLSX.utils.aoa_to_sheet([headers,...rows,totRow]);
-    const ws2=XLSX.utils.aoa_to_sheet(resumenRows);
+    // Column widths
+    ws1['!cols']=hd.map((h,i)=>({wch:Math.max((h+'').length+2,i===0?12:10)}));
 
-    // Style column widths
-    ws1['!cols']=headers.map(h=>({wch:Math.max((h+'').length+2,12)}));
+    // ── HOJA 2: RESUMEN ──
+    const resRows=[
+      [company.nombre||'TimerPro','Informe de jornadas'],
+      [worker.nombre||'','Del '+from+' al '+to],
+      ['Jornadas',ents.length],['',''],
+      ['HORAS','TOTAL'],
+      ['Horas normales',fh(totHN)],['Horas extra',fh(totHE)],
+      ['Horas nocturnas',fh(totHNoc)],['Horas festivas',fh(totHFes)],
+      ['TOTAL HORAS',fh(totHN+totHE+totHNoc+totHFes)],['',''],
+    ];
+    if(conPrecios){
+      resRows.push(
+        ['IMPORTES',''],
+        ['Horas normales',n(totIN)],['Horas extra',n(totIE)],
+        ['Horas nocturnas',n(totINoc)],['Horas festivas',n(totIFes)],['',''],
+        ['DIETAS',''],
+        ['Jornadas con dieta',nDietaJ],['Total dietas',n(totD)],['',''],
+        ['TRANSPORTE',''],
+      );
+      if(nCoche>0) resRows.push(['Coche ('+nCoche+' viajes)',n(totTCoche)]);
+      if(nCamion>0) resRows.push(['Camión ('+nCamion+' viajes)',n(totTCamion)]);
+      if(nOtroT>0) resRows.push(['Otros ('+nOtroT+' viajes)',n(totTOtro)]);
+      resRows.push(['Total transporte',n(totT)],['',''],
+        ['Otros conceptos',n(totO)],['',''],
+        ['TOTAL GENERAL',n(totIN+totIE+totINoc+totIFes+totD+totT+totO)]);
+    }
+    const ws2=XLSX.utils.aoa_to_sheet(resRows);
     ws2['!cols']=[{wch:30},{wch:20}];
 
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws1,'Jornadas');
     XLSX.utils.book_append_sheet(wb,ws2,'Resumen');
     XLSX.writeFile(wb,'TimerPro_'+from+'_'+to+'.xlsx');
-    showAlert('✅ Excel descargado (2 hojas: Jornadas + Resumen)');
+    showAlert('✅ Excel descargado');
   }catch(e){
     showAlert('Error Excel: '+e.message,'err');
     console.error(e);
