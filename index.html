@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780254500000 -->
+<!-- v1780347000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1382,7 +1382,7 @@ function renderFichar(){
       h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.8rem'}},
         h('div',{class:'sec-title',style:{margin:0,flex:1}},'Historial de Jornadas'),
         h('input',{type:'search',placeholder:'Buscar...',value:histSearch,
-          style:{fontSize:'.78rem',padding:'.3rem .6rem',borderRadius:'var(--r2)',border:'1px solid var(--brd)',background:'var(--surf2)',color:'var(--ink)',width:'120px'},
+          style:{fontSize:'.78rem',padding:'.3rem .6rem',borderRadius:'var(--r2)',border:'1px solid var(--brd)',background:'var(--surf2)',color:'var(--ink)',width:'160px'},
           on:{input:ev=>{histSearch=ev.target.value;rerender();}}})
       ),
       S.entries.length===0
@@ -1402,8 +1402,9 @@ function renderFichar(){
                 mesNombre.includes(q)||
                 en.notas?.toLowerCase().includes(q)||
                 wday(en.fecha)?.toLowerCase().includes(q)||
+                (en.tipoJornada||'').toLowerCase().includes(q)||
                 (en.tipoJornada||'').toLowerCase().includes(q);
-            }).slice().reverse().slice(0,30).map(en=>
+            }).sort((a,b)=>b.fecha.localeCompare(a.fecha)).map(en=>
               h('div',{class:'sum-row',style:{cursor:'pointer'},on:{click:()=>loadHistorial(en)}},
                 h('div',{},
                   h('div',{style:{fontWeight:700,fontSize:'.85rem'}},`${cap(wday(en.fecha))}, ${dlbl(en.fecha)}`),
@@ -2289,12 +2290,118 @@ function filterTasks(){
   });
 }
 
+
+// ── EXPORT FUNCTIONS ─────────────────────────────────────
+function openExportModal(mode){
+  const from = S.resFrom||firstDayOfMonth();
+  const to = S.resTo||today();
+  const entries = S.entries
+    .filter(e=>e.fecha>=from && e.fecha<=to && !e._draft)
+    .sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  
+  if(entries.length===0){
+    showAlert('No hay jornadas en el rango seleccionado','err');
+    return;
+  }
+  
+  const conPrecios = mode==='con';
+  const eur = v=>v.toFixed(2).replace('.',',')+'€';
+  const fmtH = h=>h%1===0?h+'h':(Math.floor(h)+'h '+Math.round((h%1)*60)+'m');
+  
+  // Build HTML for PDF
+  let rows = '';
+  let totH=0,totE=0,totI=0;
+  entries.forEach(e=>{
+    const h=(e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
+    const imp=(e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0)+(e.dieta||0)+(e.transporte||0);
+    totH+=h; totI+=imp;
+    rows+=`<tr>
+      <td>${dlbl(e.fecha)}</td>
+      <td>${fmtH(e.horasNormales||0)}</td>
+      <td>${fmtH(e.horasExtra||0)}</td>
+      <td>${(e.fichajes||[]).length}</td>
+      ${conPrecios?`<td>${eur(imp)}</td>`:''}
+    </tr>`;
+  });
+  
+  const worker = workers.find(w=>w.id===activeWorkerId)||{};
+  const company = companies.find(c=>c.id===activeCompanyId)||{};
+  
+  const htmlContent = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <style>
+    body{font-family:Arial,sans-serif;padding:20px;color:#1a1a1a}
+    h1{font-size:18px;margin-bottom:4px}
+    .sub{color:#666;font-size:13px;margin-bottom:20px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th{background:#1a1a2e;color:#fff;padding:8px;text-align:left}
+    td{padding:7px 8px;border-bottom:1px solid #e2e8f0}
+    tr:nth-child(even){background:#f8fafc}
+    .total{font-weight:bold;background:#f0fdf4;padding:10px;margin-top:15px;border-radius:6px}
+  </style></head><body>
+  <h1>${company.nombre||'TimerPro'} — Informe de jornadas</h1>
+  <div class="sub">${worker.nombre||''} · Del ${dlbl(from)} al ${dlbl(to)}</div>
+  <table>
+    <thead><tr>
+      <th>Fecha</th><th>H. Normales</th><th>H. Extra</th><th>Fichajes</th>
+      ${conPrecios?'<th>Importe</th>':''}
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="total">
+    Total: ${fmtH(totH)} · ${entries.length} jornadas
+    ${conPrecios?' · '+eur(totI):''}
+  </div>
+  </body></html>`;
+  
+  const w = window.open('','_blank');
+  w.document.write(htmlContent);
+  w.document.close();
+  setTimeout(()=>w.print(),500);
+}
+
+function exportXLSX(conPrecios){
+  try{
+    const from = S.resFrom||firstDayOfMonth();
+    const to = S.resTo||today();
+    const entries = S.entries
+      .filter(e=>e.fecha>=from && e.fecha<=to && !e._draft)
+      .sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    
+    if(entries.length===0){showAlert('No hay jornadas en el rango','err');return;}
+    
+    const eur = v=>parseFloat(v.toFixed(2));
+    const fmtH = h=>h%1===0?h+'h':(Math.floor(h)+'h '+Math.round((h%1)*60)+'m');
+    
+    const headers = ['Fecha','Día','H.Normales','H.Extra','H.Nocturnas','H.Festivas','Fichajes',
+      ...(conPrecios?['€ Normales','€ Extra','€ Nocturnas','€ Festivas','Dieta','Transporte','TOTAL']:[])];
+
+    const rows = entries.map(e=>{
+      const total=(e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0)+(e.dieta||0)+(e.transporte||0);
+      return [
+        e.fecha,
+        cap(wday(e.fecha)),
+        e.horasNormales||0, e.horasExtra||0, e.horasNocturnas||0, e.horasFestivas||0,
+        (e.fichajes||[]).length,
+        ...(conPrecios?[eur(e.importeNormales||0),eur(e.importeExtra||0),eur(e.importeNocturnas||0),eur(e.importeFestivas||0),eur(e.dieta||0),eur(e.transporte||0),eur(total)]:[])
+      ];
+    });
+    
+    const ws = XLSX.utils.aoa_to_sheet([headers,...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Jornadas');
+    XLSX.writeFile(wb,`TimerPro_${from}_${to}.xlsx`);
+    showAlert('✅ Excel descargado');
+  }catch(e){
+    showAlert('Error Excel: '+e.message,'err');
+  }
+}
+
 function renderResumen(){
   // Date range
   const from = S.resFrom||firstDayOfMonth();
   const to   = S.resTo  ||today();
   const entries = S.entries
-    .filter(e=>e.fecha>=from && e.fecha<=to && e.horasNormales+e.horasExtra+e.horasNocturnas+e.horasFestivas>0)
+    .filter(e=>e.fecha>=from && e.fecha<=to && !e._draft)
     .sort((a,b)=>a.fecha.localeCompare(b.fecha));
 
   // Totals
@@ -6454,7 +6561,10 @@ function buildSyncData(){
     version:2,
     exportedAt:new Date().toISOString(),
     entries:entries.map(e=>({...e,fotosGastos:[]})),
-    tasks:S.tasks.slice(-10).map(t=>({id:t.id,titulo:(t.titulo||'').replace(/<[^>]*>/g,'').slice(0,30),fecha:t.fecha||'',otNumero:(t.otNumero||'').slice(0,15)})),
+    tasks:S.tasks.map(t=>({id:t.id,titulo:(t.titulo||'').replace(/<[^>]*>/g,''),fecha:t.fecha||'',otNumero:(t.otNumero||'')})),
+    sites:S.sites||[],
+    workorders:S.workorders||[],
+    vehicles:S.vehicles||[],
 
 
     activeWorkerId, activeCompanyId,
