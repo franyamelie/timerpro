@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780349000000 -->
+<!-- v1780351000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -804,6 +804,71 @@ function renderDayCard(){
     ])
   ]);
 }
+
+function _renderHistorial(){
+  const q = (histSearch||'').toLowerCase().trim();
+  const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const filtered = S.entries.filter(en=>{
+    if(!q) return true;
+    const f=en.fecha||'';
+    const parts=f.split('-');
+    const mesNombre=parts[1]?meses[parseInt(parts[1])-1]||'':'';
+    return f.includes(q)||(parts[2]||'').includes(q)||(parts[1]||'').includes(q)||(parts[0]||'').includes(q)||
+      mesNombre.includes(q)||(en.notas||'').replace(/<[^>]*>/g,'').toLowerCase().includes(q)||
+      (wday(en.fecha)||'').toLowerCase().includes(q)||(en.tipoJornada||'').toLowerCase().includes(q);
+  }).sort((a,b)=>b.fecha.localeCompare(a.fecha));
+  
+  const container = document.getElementById('historial-list');
+  if(!container){ rerender(); return; }
+  
+  // Clear and rebuild
+  while(container.firstChild) container.removeChild(container.firstChild);
+  
+  if(filtered.length===0){
+    const msg=document.createElement('div');
+    msg.style.cssText='padding:1rem;text-align:center;color:var(--ink3);font-size:.85rem';
+    msg.textContent='Sin resultados para "'+q+'"';
+    container.appendChild(msg);
+    return;
+  }
+  
+  filtered.forEach(en=>{
+    const h=(en.horasNormales||0)+(en.horasExtra||0)+(en.horasNocturnas||0)+(en.horasFestivas||0);
+    const fi=(en.fichajes||[]).length;
+    const row=document.createElement('div');
+    row.className='sum-row';
+    row.style.cssText='cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:.5rem .3rem;border-bottom:1px solid var(--brd)';
+    row.onclick=()=>loadHistorial(en);
+    
+    const info=document.createElement('div');
+    const title=document.createElement('div');
+    title.style.cssText='font-weight:700;font-size:.85rem';
+    title.textContent=cap(wday(en.fecha))+', '+dlbl(en.fecha);
+    const sub=document.createElement('div');
+    sub.style.cssText='font-size:.72rem;color:var(--ink2)';
+    sub.textContent=fmtH(h)+' · '+fi+' fichaje'+(fi!==1?'s':'');
+    info.appendChild(title);
+    info.appendChild(sub);
+    
+    const btns=document.createElement('div');
+    btns.style.cssText='display:flex;gap:.3rem';
+    const editBtn=document.createElement('button');
+    editBtn.className='btn btn-b btn-sm';
+    editBtn.textContent='✏️';
+    editBtn.onclick=ev=>{ev.stopPropagation();loadHistorial(en);};
+    const delBtn=document.createElement('button');
+    delBtn.className='btn btn-r btn-sm';
+    delBtn.textContent='🗑';
+    delBtn.onclick=ev=>{ev.stopPropagation();deleteEntry(en.id);};
+    btns.appendChild(editBtn);
+    btns.appendChild(delBtn);
+    
+    row.appendChild(info);
+    row.appendChild(btns);
+    container.appendChild(row);
+  });
+}
+
 function renderFichar(){
   const e = fEntry;
   const today_entries = S.entries.filter(x=>x.fecha===e.fecha);
@@ -1383,11 +1448,11 @@ function renderFichar(){
         h('div',{class:'sec-title',style:{margin:0,flex:1}},'Historial de Jornadas'),
         h('input',{type:'search',placeholder:'Buscar...',value:histSearch,
           style:{fontSize:'.78rem',padding:'.3rem .6rem',borderRadius:'var(--r2)',border:'1px solid var(--brd)',background:'var(--surf2)',color:'var(--ink)',width:'160px'},
-          on:{input:ev=>{histSearch=ev.target.value;rerender();}}})
+          on:{input:ev=>{histSearch=ev.target.value;_renderHistorial();}}})
       ),
       S.entries.length===0
         ? h('div',{class:'empty'},'Sin jornadas guardadas')
-        : h('div',{},
+        : h('div',{id:'historial-list'},
             ...S.entries.filter(en=>{
               if(!histSearch)return true;
               const q=histSearch.toLowerCase();
@@ -2332,11 +2397,18 @@ function openExportModal(mode){
 
   let diasHtml = '';
   let totHN=0,totHE=0,totHNoc=0,totHFes=0,totIN=0,totIE=0,totINoc=0,totIFes=0,totD=0,totT=0,totO=0,totViaj=0;
+  let totTranspCoche=0,totTranspCamion=0,totTranspOtro=0,nCoche=0,nCamion=0,nOtroTransp=0;
 
   entries.forEach(e=>{
     const hN=e.horasNormales||0, hE=e.horasExtra||0, hNoc=e.horasNocturnas||0, hFes=e.horasFestivas||0;
     const iN=e.importeNormales||0, iE=e.importeExtra||0, iNoc=e.importeNocturnas||0, iFes=e.importeFestivas||0;
     const dieta=e.dieta||0, transp=e.transporte||0;
+    const tt=e._transportType||'';
+    if(transp>0){
+      if(tt==='coche'){totTranspCoche+=transp;nCoche++;}
+      else if(tt==='camion'){totTranspCamion+=transp;nCamion++;}
+      else if(transp>0){totTranspOtro+=transp;nOtroTransp++;}
+    }
     const dietasE=(e.dietasExtra||[]).reduce((a,d)=>a+(d.importe||0),0);
     const otros=(e.otrosConceptos||[]).reduce((a,o)=>a+(o.importe||0),0);
     const viajes=(e.journeys||[]).reduce((a,j)=>a+(j.precioManual||0),0);
@@ -2427,8 +2499,10 @@ function openExportModal(mode){
       ${totHE>0?`<tr><td>Horas extra</td><td>${fh(totHE)}</td>${cp?'<td>'+eur2(totIE)+'</td>':''}</tr>`:''}
       ${totHNoc>0?`<tr><td>Horas nocturnas</td><td>${fh(totHNoc)}</td>${cp?'<td>'+eur2(totINoc)+'</td>':''}</tr>`:''}
       ${totHFes>0?`<tr><td>Horas festivas</td><td>${fh(totHFes)}</td>${cp?'<td>'+eur2(totIFes)+'</td>':''}</tr>`:''}
-      ${cp&&totD>0?`<tr><td>Dietas</td><td>—</td><td>${eur2(totD)}</td></tr>`:''}
-      ${cp&&totT>0?`<tr><td>Transporte</td><td>—</td><td>${eur2(totT)}</td></tr>`:''}
+      ${cp&&totD>0?`<tr><td>Dietas (${entries.filter(e=>(e.dieta||0)+(e.dietasExtra||[]).reduce((a,d)=>a+(d.importe||0),0)>0).length} jornadas)</td><td>—</td><td>${eur2(totD)}</td></tr>`:''}
+      ${cp&&totTranspCoche>0?`<tr><td>Transporte coche (${nCoche} viajes)</td><td>—</td><td>${eur2(totTranspCoche)}</td></tr>`:''}
+      ${cp&&totTranspCamion>0?`<tr><td>Transporte camión (${nCamion} viajes)</td><td>—</td><td>${eur2(totTranspCamion)}</td></tr>`:''}
+      ${cp&&totTranspOtro>0?`<tr><td>Transporte otros (${nOtroTransp} viajes)</td><td>—</td><td>${eur2(totTranspOtro)}</td></tr>`:''}
       ${cp&&totO>0?`<tr><td>Otros</td><td>—</td><td>${eur2(totO)}</td></tr>`:''}
       ${cp&&totViaj>0?`<tr><td>Viajes</td><td>—</td><td>${eur2(totViaj)}</td></tr>`:''}
       ${cp?`<tr class="gran-total"><td>TOTAL</td><td>${fh(totHN+totHE+totHNoc+totHFes)}</td><td>${totTotal.toFixed(2).replace('.',',')} €</td></tr>`:`<tr class="gran-total"><td>TOTAL HORAS</td><td colspan="2">${fh(totHN+totHE+totHNoc+totHFes)}</td></tr>`}
@@ -2457,43 +2531,130 @@ function exportXLSX(conPrecios){
       .sort((a,b)=>a.fecha.localeCompare(b.fecha));
     if(!entries.length){showAlert('No hay jornadas en el rango','err');return;}
 
-    const fh=h=>h>0?(h%1===0?h+'h':Math.floor(h)+'h '+Math.round((h%1)*60)+'m'):'';
-    const n=v=>v||0;
+    const n=v=>parseFloat((v||0).toFixed(2));
+    const fh=h=>{if(!h)return '';return h%1===0?h+'h':Math.floor(h)+'h '+Math.round((h%1)*60)+'m';};
+    const worker=workers.find(w=>w.id===activeWorkerId)||{};
+    const company=companies.find(c=>c.id===activeCompanyId)||{};
 
-    const headers=['Fecha','Día','H.Normales','H.Extra','H.Nocturnas','H.Festivas',
-      'Fichajes','Tareas','Entrada','Salida',
-      ...(conPrecios?['€/h Normal','€ Normal','€/h Extra','€ Extra','€/h Noc','€ Noc','€/h Fest','€ Fest','Dieta','Transporte','Otros','TOTAL']:['Horas Total'])];
+    // ── HOJA 1: DETALLE POR DÍA ──
+    const headers=['Fecha','Día',
+      'H. Normales','H. Extra','H. Nocturnas','H. Festivas','Total Horas','Fichajes',
+      ...(conPrecios?['€/h Norm','€ Normales','€/h Extra','€ Extra','€/h Noc','€ Nocturnas','€/h Fest','€ Festivas']:[] ),
+      'Dieta','Dietas extra','Transporte','Tipo transporte',
+      ...(conPrecios?['€ Dieta total','€ Transporte','Otros conceptos','TOTAL DÍA']:[]),
+      'Tareas / OT','Entrada','Salida','Notas'
+    ];
+
+    // Counters for summary
+    let totHN=0,totHE=0,totHNoc=0,totHFes=0;
+    let totIN=0,totIE=0,totINoc=0,totIFes=0,totD=0,totT=0,totO=0;
+    let nDietaJornadas=0,totTranspCoche=0,totTranspCamion=0,totTranspOtro=0;
+    let nCoche=0,nCamion=0,nOtroT=0;
 
     const rows=entries.map(e=>{
-      const tareas=(S.tasks||[]).filter(t=>t.fecha===e.fecha).map(t=>t.titulo||'').join(', ');
+      const hN=n(e.horasNormales),hE=n(e.horasExtra),hNoc=n(e.horasNocturnas),hFes=n(e.horasFestivas);
+      const iN=n(e.importeNormales),iE=n(e.importeExtra),iNoc=n(e.importeNocturnas),iFes=n(e.importeFestivas);
+      const dietaBase=n(e.dieta);
+      const dietasExtra=(e.dietasExtra||[]);
+      const dietaExtraTotal=n(dietasExtra.reduce((a,d)=>a+(d.importe||0),0));
+      const dietaTotal=n(dietaBase+dietaExtraTotal);
+      const transp=n(e.transporte);
+      const tt=e._transportType||'';
+      const ttName=tt==='coche'?'Coche':tt==='camion'?'Camión':tt||'';
+      const otros=n((e.otrosConceptos||[]).reduce((a,o)=>a+(o.importe||0),0));
+      const total=n(iN+iE+iNoc+iFes+dietaTotal+transp+otros);
+      const totalH=n(hN+hE+hNoc+hFes);
+
+      totHN+=hN;totHE+=hE;totHNoc+=hNoc;totHFes+=hFes;
+      totIN+=iN;totIE+=iE;totINoc+=iNoc;totIFes+=iFes;
+      totD+=dietaTotal;totT+=transp;totO+=otros;
+      if(dietaTotal>0) nDietaJornadas++;
+      if(transp>0){
+        if(tt==='coche'){totTranspCoche+=transp;nCoche++;}
+        else if(tt==='camion'){totTranspCamion+=transp;nCamion++;}
+        else{totTranspOtro+=transp;nOtroT++;}
+      }
+
+      const tareas=(S.tasks||[]).filter(t=>t.fecha===e.fecha).map(t=>(t.titulo||'')+(t.otNumero?' (OT:'+t.otNumero+')':'')).join('; ');
       let locE='',locS='';
       try{locE=JSON.parse(e.ubicacionEntrada).label||'';}catch(ex){locE=e.ubicacionEntrada||'';}
       try{locS=JSON.parse(e.ubicacionSalida).label||'';}catch(ex){locS=e.ubicacionSalida||'';}
-      const otros=n((e.otrosConceptos||[]).reduce((a,o)=>a+(o.importe||0),0))+n((e.dietasExtra||[]).reduce((a,d)=>a+(d.importe||0),0));
-      const total=n(e.importeNormales)+n(e.importeExtra)+n(e.importeNocturnas)+n(e.importeFestivas)+n(e.dieta)+n(e.transporte)+otros;
+      const notas=(e.notas||'').replace(/<[^>]*>/g,' ').trim();
+      const dietasExtraStr=dietasExtra.map(d=>(d.concepto||'Extra')+': '+(d.importe||0).toFixed(2)+'€').join('; ');
+
       return [
-        e.fecha,cap(wday(e.fecha)),
-        n(e.horasNormales),n(e.horasExtra),n(e.horasNocturnas),n(e.horasFestivas),
-        (e.fichajes||[]).filter(f=>f.entrada&&f.salida).length,
-        tareas,locE,locS,
-        ...(conPrecios?[
-          n(e.precioHoraNormal),n(e.importeNormales),
-          n(e.precioHoraExtra),n(e.importeExtra),
-          n(e.precioHoraNocturna),n(e.importeNocturnas),
-          n(e.precioHoraFestiva),n(e.importeFestivas),
-          n(e.dieta),n(e.transporte),otros,total
-        ]:[n(e.horasNormales)+n(e.horasExtra)+n(e.horasNocturnas)+n(e.horasFestivas)])
+        e.fecha, cap(wday(e.fecha)),
+        fh(hN),fh(hE),fh(hNoc),fh(hFes),fh(totalH),(e.fichajes||[]).filter(f=>f.entrada&&f.salida).length,
+        ...(conPrecios?[n(e.precioHoraNormal),iN,n(e.precioHoraExtra),iE,n(e.precioHoraNocturna),iNoc,n(e.precioHoraFestiva),iFes]:[]),
+        dietaBase||'',dietasExtraStr||'',transp||'',ttName,
+        ...(conPrecios?[dietaTotal||'',transp||'',otros||'',total]:[]),
+        tareas,locE,locS,notas
       ];
     });
 
-    const ws=XLSX.utils.aoa_to_sheet([headers,...rows]);
-    // Auto column width
-    const colW=headers.map((h,i)=>({wch:Math.max(h.length,12)}));
-    ws['!cols']=colW;
+    // ── FILA TOTALES ──
+    const totRow=['TOTALES','',
+      fh(totHN),fh(totHE),fh(totHNoc),fh(totHFes),fh(totHN+totHE+totHNoc+totHFes),'',
+      ...(conPrecios?['','',n(totIN),'',n(totIE),'',n(totINoc),'',n(totIFes)]:[]),
+      '','','','',
+      ...(conPrecios?[n(totD),n(totT),n(totO),n(totIN+totIE+totINoc+totIFes+totD+totT+totO)]:[]),
+      '','','',''
+    ];
+
+    // ── HOJA 2: RESUMEN ──
+    const resumenRows=[
+      ['RESUMEN DEL PERÍODO',''],
+      ['Empresa',company.nombre||''],
+      ['Trabajador',worker.nombre||''],
+      ['Período',from+' al '+to],
+      ['Jornadas',entries.length],
+      ['',''],
+      ['HORAS','TOTAL'],
+      ['Horas normales',fh(totHN)],
+      ['Horas extra',fh(totHE)],
+      ['Horas nocturnas',fh(totHNoc)],
+      ['Horas festivas',fh(totHFes)],
+      ['TOTAL HORAS',fh(totHN+totHE+totHNoc+totHFes)],
+      ['',''],
+    ];
+    if(conPrecios){
+      resumenRows.push(
+        ['IMPORTES','TOTAL'],
+        ['Horas normales',n(totIN)],
+        ['Horas extra',n(totIE)],
+        ['Horas nocturnas',n(totINoc)],
+        ['Horas festivas',n(totIFes)],
+        ['',''],
+        ['DIETAS',''],
+        ['Jornadas con dieta',nDietaJornadas],
+        ['Total dietas',n(totD)],
+        ['',''],
+        ['TRANSPORTE',''],
+      );
+      if(nCoche>0) resumenRows.push(['Coche ('+nCoche+' viajes)',n(totTranspCoche)]);
+      if(nCamion>0) resumenRows.push(['Camión ('+nCamion+' viajes)',n(totTranspCamion)]);
+      if(nOtroT>0) resumenRows.push(['Otros ('+nOtroT+' viajes)',n(totTranspOtro)]);
+      resumenRows.push(
+        ['Total transporte',n(totT)],
+        ['',''],
+        ['Otros conceptos',n(totO)],
+        ['',''],
+        ['TOTAL GENERAL',n(totIN+totIE+totINoc+totIFes+totD+totT+totO)]
+      );
+    }
+
+    const ws1=XLSX.utils.aoa_to_sheet([headers,...rows,totRow]);
+    const ws2=XLSX.utils.aoa_to_sheet(resumenRows);
+
+    // Style column widths
+    ws1['!cols']=headers.map(h=>({wch:Math.max((h+'').length+2,12)}));
+    ws2['!cols']=[{wch:30},{wch:20}];
+
     const wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,ws,'Jornadas');
+    XLSX.utils.book_append_sheet(wb,ws1,'Jornadas');
+    XLSX.utils.book_append_sheet(wb,ws2,'Resumen');
     XLSX.writeFile(wb,'TimerPro_'+from+'_'+to+'.xlsx');
-    showAlert('✅ Excel descargado');
+    showAlert('✅ Excel descargado (2 hojas: Jornadas + Resumen)');
   }catch(e){
     showAlert('Error Excel: '+e.message,'err');
     console.error(e);
