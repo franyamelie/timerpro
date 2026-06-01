@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780253000000 -->
+<!-- v1780254500000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1232,6 +1232,15 @@ function renderFichar(){
           contenteditable:'true',
           html:fEntry.notas||'',
           spellcheck:true, lang:'es',
+          on:{keydown:ev=>{
+            if(ev.key==='Enter'){
+              setTimeout(()=>{
+                if(document.queryCommandState('bold')) document.execCommand('bold');
+                if(document.queryCommandState('underline')) document.execCommand('underline');
+                if(document.queryCommandState('italic')) document.execCommand('italic');
+              },10);
+            }
+          }},
           style:{
             minHeight:'80px',background:'var(--surf2)',border:'1px solid var(--brd)',
             borderRadius:'var(--r2)',padding:'.5rem .6rem',color:'var(--ink)',
@@ -1382,8 +1391,18 @@ function renderFichar(){
             ...S.entries.filter(en=>{
               if(!histSearch)return true;
               const q=histSearch.toLowerCase();
-              return en.fecha?.includes(q)||en.notas?.toLowerCase().includes(q)||
-                wday(en.fecha)?.toLowerCase().includes(q);
+              const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+              const f=en.fecha||'';
+              const parts=f.split('-');
+              const mesNombre=parts[1]?meses[parseInt(parts[1])-1]||'':'';
+              return f.includes(q)||
+                (parts[2]&&parts[2].includes(q))||
+                (parts[1]&&parts[1].includes(q))||
+                (parts[0]&&parts[0].includes(q))||
+                mesNombre.includes(q)||
+                en.notas?.toLowerCase().includes(q)||
+                wday(en.fecha)?.toLowerCase().includes(q)||
+                (en.tipoJornada||'').toLowerCase().includes(q);
             }).slice().reverse().slice(0,30).map(en=>
               h('div',{class:'sum-row',style:{cursor:'pointer'},on:{click:()=>loadHistorial(en)}},
                 h('div',{},
@@ -2185,11 +2204,11 @@ function renderOrdenes(){
           ...S.workorders.map(w=>h('div',{class:'card'},
             h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
               h('div',{},
-                h('div',{style:{fontWeight:700,display:'flex',gap:'.4rem',alignItems:'center'}},
-                  h('span',{class:'badge badge-y'},w.codigo),
+                h('div',{style:{fontWeight:700,display:'flex',gap:'.4rem',alignItems:'center',flexWrap:'wrap'}},
+                  h('span',{class:'badge badge-y'},w.codigo||w.otNumero||''),
                   w.cliente?h('span',{style:{fontSize:'.8rem',fontWeight:400,color:'var(--ink2)'}},w.cliente):null
                 ),
-                w.descripcion?h('div',{style:{fontSize:'.82rem',color:'var(--ink2)',marginTop:'.2rem'}},w.descripcion):null,
+                (w.titulo||w.descripcion)?h('div',{style:{fontSize:'.82rem',color:'var(--ink)',marginTop:'.2rem',fontWeight:600}},w.titulo||w.descripcion||''):null,
                 w.notas?h('div',{style:{fontSize:'.75rem',color:'var(--ink3)'}},w.notas):null
               ),
               h('div',{style:{display:'flex',gap:'.3rem'}},
