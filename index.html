@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780351000000 -->
+<!-- v1780352000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -813,7 +813,10 @@ function _renderHistorial(){
     const f=en.fecha||'';
     const parts=f.split('-');
     const mesNombre=parts[1]?meses[parseInt(parts[1])-1]||'':'';
-    return f.includes(q)||(parts[2]||'').includes(q)||(parts[1]||'').includes(q)||(parts[0]||'').includes(q)||
+    // Convert stored YYYY-MM-DD to dd/mm/aaaa for display search
+    const fDisplay=parts[2]+'/'+parts[1]+'/'+(parts[0]||'');
+    return fDisplay.includes(q)||f.includes(q)||
+      (parts[2]||'').includes(q)||(parts[1]||'').includes(q)||(parts[0]||'').includes(q)||
       mesNombre.includes(q)||(en.notas||'').replace(/<[^>]*>/g,'').toLowerCase().includes(q)||
       (wday(en.fecha)||'').toLowerCase().includes(q)||(en.tipoJornada||'').toLowerCase().includes(q);
   }).sort((a,b)=>b.fecha.localeCompare(a.fecha));
@@ -1446,7 +1449,7 @@ function renderFichar(){
     h('div',{class:'card'},
       h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.8rem'}},
         h('div',{class:'sec-title',style:{margin:0,flex:1}},'Historial de Jornadas'),
-        h('input',{type:'search',placeholder:'Buscar...',value:histSearch,
+        h('input',{type:'search',placeholder:'Buscar (dd/mm/aaaa, mes, año...)',value:histSearch,
           style:{fontSize:'.78rem',padding:'.3rem .6rem',borderRadius:'var(--r2)',border:'1px solid var(--brd)',background:'var(--surf2)',color:'var(--ink)',width:'160px'},
           on:{input:ev=>{histSearch=ev.target.value;_renderHistorial();}}})
       ),
