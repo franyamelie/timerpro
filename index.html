@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780347000000 -->
+<!-- v1780348000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2009,17 +2009,42 @@ function renderDayDetail(ds){
         class:'btn btn-g',
         style:{flex:1,fontWeight:700},
         on:{click:()=>goToDay(ds)}
-      }, entry?'✏️ Ir y editar día':'📋 Ir a este día'),
+      }, entry?'✏️ Editar':'📋 Ir al día'),
+
+      // Save directly from calendar
+      entry && entry._draft
+        ? h('button',{
+            class:'btn btn-b btn-sm',
+            title:'Finalizar jornada',
+            on:{click:async()=>{
+              const e={...entry,_draft:false};
+              await dbPut(ST.entries,e);
+              S.entries=S.entries.map(x=>x.id===e.id?e:x);
+              showAlert('✅ Jornada guardada');
+              selDate=null;
+              rerender();
+            }}
+          },'💾')
+        : null,
 
       // Vacations toggle
       h('button',{
         class:'btn btn-sm '+(isVac?'btn-y':'btn-gh'),
         on:{click:()=>toggleVacacion(ds)}
-      }, isVac?'☀ Quitar vacaciones':'☀ Vacaciones'),
+      }, isVac?'☀ Quitar':'☀ Vacac.'),
 
       // Delete if entry exists
       entry
-        ? h('button',{class:'btn btn-r btn-sm',on:{click:()=>deleteEntry(entry.id)}},'🗑')
+        ? h('button',{
+            class:'btn btn-r btn-sm',
+            on:{click:()=>{
+              confirmColor('¿Eliminar la jornada del '+dlbl(ds)+'?','#ef4444',()=>{
+                deleteEntry(entry.id);
+                selDate=null;
+                rerender();
+              });
+            }}
+          },'🗑')
         : null,
 
       // Close detail
