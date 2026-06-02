@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<!-- v1780353000000 -->
+<!-- v1780355000000 -->
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -2534,6 +2534,7 @@ function exportXLSX(conPrecios){
 
     const n=v=>parseFloat((v||0).toFixed(2));
     const fh=h=>{if(!h)return '';return h%1===0?h+'h':Math.floor(h)+'h '+Math.round((h%1)*60)+'m';};
+    const eur2=v=>v>0?n(v).toFixed(2).replace('.',',')+'€':'';
     const worker=workers.find(w=>w.id===activeWorkerId)||{};
     const company=companies.find(c=>c.id===activeCompanyId)||{};
 
@@ -2542,14 +2543,8 @@ function exportXLSX(conPrecios){
     let totIN=0,totIE=0,totINoc=0,totIFes=0,totD=0,totT=0,totO=0;
     let nDietaJ=0,totTCoche=0,totTCamion=0,totTOtro=0,nCoche=0,nCamion=0,nOtroT=0;
 
-    // ── HOJA 1: DETALLE ──
-    const hd=['Fecha','Día','H.Normales','H.Extra','H.Nocturnas','H.Festivas','Fichajes',
-      ...(conPrecios?['€/h Norm','€ Norm','€/h Extra','€ Extra','€/h Noc','€ Noc','€/h Fest','€ Fest']:[]),
-      'Dieta','Dietas extra','Transporte','Tipo transp.',
-      ...(conPrecios?['€ Dieta total','€ Transporte','Otros','TOTAL']:['Total horas']),
-      'Tareas/OT','Entrada','Salida','Notas'];
-
-    const rows=ents.map(e=>{
+    // Build rows
+    const dataRows=ents.map(e=>{
       const hN=n(e.horasNormales),hE=n(e.horasExtra),hNoc=n(e.horasNocturnas),hFes=n(e.horasFestivas);
       const iN=n(e.importeNormales),iE=n(e.importeExtra),iNoc=n(e.importeNocturnas),iFes=n(e.importeFestivas);
       const dBase=n(e.dieta);
@@ -2561,7 +2556,6 @@ function exportXLSX(conPrecios){
       const ttN=tt==='coche'?'Coche':tt==='camion'?'Camión':tt||'';
       const otros=n((e.otrosConceptos||[]).reduce((a,o)=>a+(o.importe||0),0));
       const total=n(iN+iE+iNoc+iFes+dTotal+transp+otros);
-      const totalH=n(hN+hE+hNoc+hFes);
       totHN+=hN;totHE+=hE;totHNoc+=hNoc;totHFes+=hFes;
       totIN+=iN;totIE+=iE;totINoc+=iNoc;totIFes+=iFes;
       totD+=dTotal;totT+=transp;totO+=otros;
@@ -2572,118 +2566,222 @@ function exportXLSX(conPrecios){
       try{locS=JSON.parse(e.ubicacionSalida).label||'';}catch(ex){locS=e.ubicacionSalida||'';}
       const notas=(e.notas||'').replace(/<[^>]*>/g,' ').trim();
       const tareas=(S.tasks||[]).filter(t=>t.fecha===e.fecha).map(t=>(t.titulo||'')+(t.otNumero?' (OT:'+t.otNumero+')':'')).join('; ');
-      const dExtraStr=dExtra.map(d=>(d.concepto||'Extra')+':'+n(d.importe||0)+'€').join('; ');
       const fParts=e.fecha.split('-');
-      const fDisplay=(fParts[2]||'')+'/'+(fParts[1]||'')+'/'+(fParts[0]||'');
-      return [fDisplay,cap(wday(e.fecha)),
-        fh(hN),fh(hE),fh(hNoc),fh(hFes),
-        (e.fichajes||[]).filter(f=>f.entrada&&f.salida).length,
-        ...(conPrecios?[n(e.precioHoraNormal),iN,n(e.precioHoraExtra),iE,n(e.precioHoraNocturna),iNoc,n(e.precioHoraFestiva),iFes]:[]),
-        dBase||'',dExtraStr||'',transp||'',ttN,
-        ...(conPrecios?[dTotal||'',transp||'',otros||'',total]:[fh(totalH)]),
-        tareas,locE,locS,notas];
+      const fDisp=(fParts[2]||'')+'/'+(fParts[1]||'')+'/'+(fParts[0]||'');
+      return {fDisp,dia:cap(wday(e.fecha)),hN,hE,hNoc,hFes,fichajes:(e.fichajes||[]).filter(f=>f.entrada&&f.salida).length,
+        pN:n(e.precioHoraNormal),iN,pE:n(e.precioHoraExtra),iE,pNoc:n(e.precioHoraNocturna),iNoc,pFes:n(e.precioHoraFestiva),iFes,
+        dBase,dExtraStr:dExtra.map(d=>(d.concepto||'Extra')+':'+n(d.importe||0).toFixed(2)+'€').join('; '),
+        transp,ttN,dTotal,otros,total,tareas,locE,locS,notas};
     });
 
-    const totRow=['TOTALES','',fh(totHN),fh(totHE),fh(totHNoc),fh(totHFes),'',
-      ...(conPrecios?['',n(totIN),'',n(totIE),'',n(totINoc),'',n(totIFes)]:[]),
-      '','','','',
-      ...(conPrecios?[n(totD),n(totT),n(totO),n(totIN+totIE+totINoc+totIFes+totD+totT+totO)]:[fh(totHN+totHE+totHNoc+totHFes)]),
-      '','','',''];
+    // Build desglose string
+    let des='';
+    if(nCoche>0) des+='Coche: '+nCoche+' viaje'+(nCoche>1?'s':'')+' ('+n(totTCoche).toFixed(2)+'€)   ';
+    if(nCamion>0) des+='Camión: '+nCamion+' viaje'+(nCamion>1?'s':'')+' ('+n(totTCamion).toFixed(2)+'€)   ';
+    if(nOtroT>0) des+='Otros: '+nOtroT+' ('+n(totTOtro).toFixed(2)+'€)   ';
+    if(nDietaJ>0) des+='Dietas: '+nDietaJ+' jornada'+(nDietaJ>1?'s':'')+' ('+n(totD).toFixed(2)+'€)';
 
-    // Desglose row
-    let desgloseStr='';
-    if(nCoche>0) desgloseStr+='Coche: '+nCoche+' viaje'+(nCoche>1?'s':'')+' ('+n(totTCoche).toFixed(2)+'€)  ';
-    if(nCamion>0) desgloseStr+='Camión: '+nCamion+' viaje'+(nCamion>1?'s':'')+' ('+n(totTCamion).toFixed(2)+'€)  ';
-    if(nOtroT>0) desgloseStr+='Otros transp.: '+nOtroT+' ('+n(totTOtro).toFixed(2)+'€)  ';
-    if(nDietaJ>0) desgloseStr+='Dietas: '+nDietaJ+' jornada'+(nDietaJ>1?'s':'')+' ('+n(totD).toFixed(2)+'€)';
-    const desgloseRow=[desgloseStr,'','','','','','','','','','','','','',
-      ...(conPrecios?['','','','Horas totales: '+fh(totHN+totHE+totHNoc+totHFes)]:['']),
-      '','','',''];
+    const totalG=n(totIN+totIE+totINoc+totIFes+totD+totT+totO);
+    const totalH=fh(n(totHN+totHE+totHNoc+totHFes));
 
-    const ws1=XLSX.utils.aoa_to_sheet([hd,...rows,totRow,desgloseRow]);
+    // CSS styles identical to PDF
+    const css=`
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:Arial,sans-serif;font-size:11px;color:#1e293b}
+      .hdr{background:#1e293b;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center}
+      .hdr-title{font-size:13px;font-weight:700}
+      .hdr-sub{font-size:10px;color:#94a3b8;margin-top:2px}
+      .hdr-date{font-size:10px;color:#94a3b8}
+      table{width:100%;border-collapse:collapse;font-size:11px}
+      thead tr{background:#334155;color:#fff}
+      thead th{padding:6px 10px;text-align:right;font-weight:600;white-space:nowrap;border:1px solid #475569}
+      thead th:first-child,thead th:nth-child(2){text-align:left}
+      tbody tr:nth-child(even){background:#f8fafc}
+      tbody tr:nth-child(odd){background:#ffffff}
+      tbody td{padding:5px 10px;border:1px solid #e2e8f0;text-align:right;white-space:nowrap}
+      tbody td:first-child,tbody td:nth-child(2){text-align:left;font-weight:600}
+      .amt{color:#166534;font-weight:700}
+      .empty{color:#94a3b8}
+      tfoot .tot-row{background:#1e293b;color:#fff}
+      tfoot .tot-row td{padding:7px 10px;border:1px solid #334155;font-weight:700;text-align:right}
+      tfoot .tot-row td:first-child{text-align:left}
+      tfoot .tot-row .grand{color:#4ade80}
+      tfoot .des-row{background:#0f172a;color:#94a3b8}
+      tfoot .des-row td{padding:5px 10px;border:1px solid #1e293b;font-size:10px}
+      thead th.green{background:#166534;color:#4ade80}
+    `;
 
-    // ── ESTILOS ──
-    const range=XLSX.utils.decode_range(ws1['!ref']);
-    const numRows=rows.length;
+    // Build header columns
+    const cpCols=conPrecios?`
+      <th>€/h Norm</th><th>€ Norm</th><th>€/h Extra</th><th>€ Extra</th>
+      <th>€/h Noc</th><th>€ Noc</th><th>€/h Fest</th><th>€ Fest</th>
+      <th>€ Dieta</th><th>Transp.</th><th class="green">TOTAL</th>`:'<th>Total Horas</th>';
 
-    // Header row style (row 0)
-    for(let c=range.s.c;c<=range.e.c;c++){
-      const cell=XLSX.utils.encode_cell({r:0,c});
-      if(!ws1[cell]) ws1[cell]={v:'',t:'s'};
-      ws1[cell].s={fill:{fgColor:{rgb:'1E293B'}},font:{color:{rgb:'FFFFFF'},bold:true,sz:10},alignment:{horizontal:'center',wrapText:false}};
-    }
-    // Data rows - alternating
-    for(let r=1;r<=numRows;r++){
-      const bg=r%2===0?'F8FAFC':'FFFFFF';
-      const isTotal=r===numRows;
-      for(let c=range.s.c;c<=range.e.c;c++){
-        const cell=XLSX.utils.encode_cell({r,c});
-        if(!ws1[cell]) continue;
-        const isAmtCol=conPrecios&&c>=range.e.c;
-        ws1[cell].s={
-          fill:{fgColor:{rgb:bg}},
-          font:{sz:10,color:{rgb:isAmtCol?'166534':'1E293B'},bold:c===range.e.c},
-          border:{bottom:{style:'thin',color:{rgb:'E2E8F0'}}},
-          alignment:{horizontal:c>1?'right':'left'}
-        };
-      }
-    }
-    // Totals row
-    const tRow=numRows+1;
-    for(let c=range.s.c;c<=range.e.c;c++){
-      const cell=XLSX.utils.encode_cell({r:tRow,c});
-      if(!ws1[cell]) ws1[cell]={v:'',t:'s'};
-      ws1[cell].s={fill:{fgColor:{rgb:'1E293B'}},font:{color:{rgb:c===range.e.c?'4ADE80':'FFFFFF'},bold:true,sz:10},alignment:{horizontal:c>1?'right':'left'}};
-    }
-    // Desglose row
-    const dRow=numRows+2;
-    for(let c=range.s.c;c<=range.e.c;c++){
-      const cell=XLSX.utils.encode_cell({r:dRow,c});
-      if(!ws1[cell]) ws1[cell]={v:'',t:'s'};
-      ws1[cell].s={fill:{fgColor:{rgb:'0F172A'}},font:{color:{rgb:'94A3B8'},sz:9},alignment:{horizontal:c===range.e.c?'right':'left'}};
-    }
+    let tbody='';
+    dataRows.forEach((r,idx2)=>{
+      const cpCells=conPrecios
+        ?`<td>${r.pN?r.pN.toFixed(2):''}</td><td>${eur2(r.iN)}</td><td>${r.pE?r.pE.toFixed(2):''}</td><td>${eur2(r.iE)}</td>`
+         +`<td>${r.pNoc?r.pNoc.toFixed(2):''}</td><td>${eur2(r.iNoc)}</td><td>${r.pFes?r.pFes.toFixed(2):''}</td><td>${eur2(r.iFes)}</td>`
+         +`<td>${eur2(r.dTotal)}</td><td>${eur2(r.transp)}</td><td class="amt">${eur2(r.total)}</td>`
+        :`<td>${fh(r.hN+r.hE+r.hNoc+r.hFes)}</td>`;
+      tbody+=`<tr>
+        <td>${r.fDisp}</td><td>${r.dia}</td>
+        <td>${fh(r.hN)||'<span class="empty">—</span>'}</td>
+        <td>${fh(r.hE)||'<span class="empty">—</span>'}</td>
+        <td>${fh(r.hNoc)||'<span class="empty">—</span>'}</td>
+        <td>${fh(r.hFes)||'<span class="empty">—</span>'}</td>
+        <td>${r.fichajes}</td>
+        ${cpCells}
+      </tr>`;
+    });
 
-    // Column widths
-    ws1['!cols']=hd.map((h,i)=>({wch:Math.max((h+'').length+2,i===0?12:10)}));
+    const totCpCells=conPrecios
+      ?`<td></td><td>${eur2(totIN)}</td><td></td><td>${eur2(totIE)}</td>`
+       +`<td></td><td>${eur2(totINoc)}</td><td></td><td>${eur2(totIFes)}</td>`
+       +`<td>${eur2(totD)}</td><td>${eur2(totT)}</td><td class="grand">${totalG.toFixed(2).replace('.',',')+'€'}</td>`
+      :`<td>${totalH}</td>`;
 
-    // ── HOJA 2: RESUMEN ──
-    const resRows=[
-      [company.nombre||'TimerPro','Informe de jornadas'],
-      [worker.nombre||'','Del '+from+' al '+to],
-      ['Jornadas',ents.length],['',''],
-      ['HORAS','TOTAL'],
-      ['Horas normales',fh(totHN)],['Horas extra',fh(totHE)],
-      ['Horas nocturnas',fh(totHNoc)],['Horas festivas',fh(totHFes)],
-      ['TOTAL HORAS',fh(totHN+totHE+totHNoc+totHFes)],['',''],
-    ];
-    if(conPrecios){
-      resRows.push(
-        ['IMPORTES',''],
-        ['Horas normales',n(totIN)],['Horas extra',n(totIE)],
-        ['Horas nocturnas',n(totINoc)],['Horas festivas',n(totIFes)],['',''],
-        ['DIETAS',''],
-        ['Jornadas con dieta',nDietaJ],['Total dietas',n(totD)],['',''],
-        ['TRANSPORTE',''],
-      );
-      if(nCoche>0) resRows.push(['Coche ('+nCoche+' viajes)',n(totTCoche)]);
-      if(nCamion>0) resRows.push(['Camión ('+nCamion+' viajes)',n(totTCamion)]);
-      if(nOtroT>0) resRows.push(['Otros ('+nOtroT+' viajes)',n(totTOtro)]);
-      resRows.push(['Total transporte',n(totT)],['',''],
-        ['Otros conceptos',n(totO)],['',''],
-        ['TOTAL GENERAL',n(totIN+totIE+totINoc+totIFes+totD+totT+totO)]);
-    }
-    const ws2=XLSX.utils.aoa_to_sheet(resRows);
-    ws2['!cols']=[{wch:30},{wch:20}];
+    const ncols=7+(conPrecios?11:1);
+    const htmlContent=`<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="UTF-8">
+<style>${css}</style>
+</head><body>
+<div class="hdr">
+  <div>
+    <div class="hdr-title">${company.nombre||'TimerPro'} — Informe de jornadas</div>
+    <div class="hdr-sub">${worker.nombre||''} · Del ${dlbl(from)} al ${dlbl(to)} · ${ents.length} jornadas</div>
+  </div>
+  <div class="hdr-date">Generado: ${new Date().toLocaleDateString('es-ES')}</div>
+</div>
+<table>
+  <thead><tr>
+    <th>Fecha</th><th>Día</th>
+    <th>H.Norm</th><th>H.Extra</th><th>H.Noc</th><th>H.Fest</th><th>Fich.</th>
+    ${cpCols}
+  </tr></thead>
+  <tbody>${tbody}</tbody>
+  <tfoot>
+    <tr class="tot-row">
+      <td colspan="2">TOTALES</td>
+      <td>${fh(totHN)}</td><td>${fh(totHE)}</td><td>${fh(totHNoc)}</td><td>${fh(totHFes)}</td><td></td>
+      ${totCpCells}
+    </tr>
+    <tr class="des-row">
+      <td colspan="${Math.floor(ncols/2)}">${des}</td>
+      <td colspan="${ncols-Math.floor(ncols/2)}" style="text-align:right">Horas totales: ${totalH}</td>
+    </tr>
+  </tfoot>
+</table>
+</body></html>`;
 
-    const wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,ws1,'Jornadas');
-    XLSX.utils.book_append_sheet(wb,ws2,'Resumen');
-    XLSX.writeFile(wb,'TimerPro_'+from+'_'+to+'.xlsx');
+    // Download as .xls (HTML-based Excel)
+    const blob=new Blob([htmlContent],{type:'application/vnd.ms-excel;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='TimerPro_'+from+'_'+to+'.xls';
+    a.click();
+    URL.revokeObjectURL(url);
     showAlert('✅ Excel descargado');
   }catch(e){
     showAlert('Error Excel: '+e.message,'err');
     console.error(e);
   }
+}
+
+
+function exportPlantilla(){
+  const from = S.resFrom||firstDayOfMonth();
+  const to = S.resTo||today();
+  const worker = workers.find(w=>w.id===activeWorkerId)||{};
+  const company = companies.find(c=>c.id===activeCompanyId)||{};
+
+  // Generate all days in range
+  const days = [];
+  let cur = new Date(from+'T12:00:00');
+  const end = new Date(to+'T12:00:00');
+  while(cur <= end){
+    const yyyy = cur.getFullYear();
+    const mm = String(cur.getMonth()+1).padStart(2,'0');
+    const dd = String(cur.getDate()).padStart(2,'0');
+    days.push({fecha:yyyy+'-'+mm+'-'+dd, fDisp:dd+'/'+mm+'/'+yyyy, dia:cap(wday(yyyy+'-'+mm+'-'+dd))});
+    cur.setDate(cur.getDate()+1);
+  }
+
+  const css=`
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,sans-serif;font-size:11px;color:#1e293b}
+    .hdr{background:#1e293b;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center}
+    .hdr-title{font-size:13px;font-weight:700}
+    .hdr-sub{font-size:10px;color:#94a3b8;margin-top:2px}
+    table{width:100%;border-collapse:collapse;font-size:11px}
+    thead tr{background:#334155;color:#fff}
+    thead th{padding:6px 10px;text-align:center;font-weight:600;white-space:nowrap;border:1px solid #475569}
+    thead th:first-child,thead th:nth-child(2){text-align:left}
+    tbody tr:nth-child(even){background:#f0f4f8}
+    tbody tr:nth-child(odd){background:#ffffff}
+    tbody td{padding:6px 10px;border:1px solid #e2e8f0;text-align:center;min-width:70px}
+    tbody td:first-child{text-align:left;font-weight:600;white-space:nowrap;background:#f8fafc}
+    tbody td:nth-child(2){text-align:left;color:#475569;background:#f8fafc}
+    tfoot .tot-row{background:#1e293b;color:#fff}
+    tfoot .tot-row td{padding:7px 10px;border:1px solid #334155;font-weight:700;text-align:center}
+    tfoot .tot-row td:first-child{text-align:left}
+    thead th.green{background:#166534;color:#4ade80}
+  `;
+
+  let tbody = '';
+  days.forEach(d=>{
+    tbody+=`<tr>
+      <td>${d.fDisp}</td>
+      <td>${d.dia}</td>
+      <td></td><td></td><td></td><td></td>
+      <td></td>
+      <td></td><td></td>
+      <td></td><td></td>
+      <td></td>
+    </tr>`;
+  });
+
+  const ncols = 12;
+  const htmlContent=`<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="UTF-8"><style>${css}</style></head><body>
+<div class="hdr">
+  <div>
+    <div class="hdr-title">${company.nombre||'TimerPro'} — Plantilla de jornadas</div>
+    <div class="hdr-sub">${worker.nombre||''} · Del ${dlbl(from)} al ${dlbl(to)} · ${days.length} días</div>
+  </div>
+  <div style="font-size:10px;color:#94a3b8">Generado: ${new Date().toLocaleDateString('es-ES')}</div>
+</div>
+<table>
+  <thead><tr>
+    <th>Fecha</th><th>Día</th>
+    <th>H.Normales</th><th>H.Extra</th><th>H.Nocturnas</th><th>H.Festivas</th>
+    <th>Fichajes<br><small>(HH:MM→HH:MM)</small></th>
+    <th>€/h Norm</th><th>€/h Extra</th>
+    <th>Dieta (€)</th><th>Transporte (€)</th>
+    <th class="green">Notas / OT</th>
+  </tr></thead>
+  <tbody>${tbody}</tbody>
+  <tfoot>
+    <tr class="tot-row">
+      <td colspan="2">TOTALES</td>
+      <td></td><td></td><td></td><td></td><td></td>
+      <td></td><td></td><td></td><td></td><td></td>
+    </tr>
+  </tfoot>
+</table>
+</body></html>`;
+
+  const blob=new Blob([htmlContent],{type:'application/vnd.ms-excel;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='TimerPro_Plantilla_'+from+'_'+to+'.xls';
+  a.click();
+  URL.revokeObjectURL(url);
+  showAlert('✅ Plantilla descargada ('+days.length+' días)');
 }
 
 function renderResumen(){
@@ -2867,10 +2965,11 @@ function renderResumen(){
       h('div',{class:'card'},
         h('div',{class:'sec-title'},'Exportar'),
         h('div',{class:'grid-2',style:{gap:'.5rem'}},
-          h('button',{class:'btn btn-g btn-full',on:{click:()=>openExportModal('con')}},'PDF con importes'),
-          h('button',{class:'btn btn-gh btn-full',on:{click:()=>openExportModal('sin')}},'PDF sin importes'),
-          h('button',{class:'btn btn-b btn-full',on:{click:()=>exportXLSX(true)}},'Excel con importes'),
-          h('button',{class:'btn btn-gh btn-full',on:{click:()=>exportXLSX(false)}},'Excel sin importes')
+          h('button',{class:'btn btn-g btn-full',on:{click:()=>openExportModal('con')}},'📄 PDF con importes'),
+          h('button',{class:'btn btn-gh btn-full',on:{click:()=>openExportModal('sin')}},'📄 PDF sin importes'),
+          h('button',{class:'btn btn-b btn-full',on:{click:()=>exportXLSX(true)}},'📊 Excel con importes'),
+          h('button',{class:'btn btn-gh btn-full',on:{click:()=>exportXLSX(false)}},'📊 Excel sin importes'),
+          h('button',{class:'btn btn-pur btn-full',on:{click:()=>exportPlantilla()}},'📥 Descargar plantilla en blanco')
         )
       )
     )
