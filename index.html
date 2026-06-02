@@ -7882,5 +7882,329 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
 
 
 </script>
+  <script>
+// ═══════════════════════════════════════════════════════════════════
+// TIMERPRO — MEJORAS INTEGRADAS
+// GPS iframe OSM | Fichar Rápido | Gráfica Semanal | Olvido Fichar
+// Búsqueda Mejorada | Auto-sync Drive | Drive OAuth mejorado
+// ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
+// MEJORAS TIMERPRO v2 - GPS, QuickFichar, etc
+// ═══════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// OVERRIDE: gpsDisplay - usar iframe OSM en vez de staticmap (que falla)
+// ═══════════════════════════════════════════════════════
+window._gpsDisplay_orig = typeof gpsDisplay !== 'undefined' ? gpsDisplay : null;
+function gpsDisplay(loc){
+  if(!loc) return h('div',{style:{fontSize:'.75rem',color:'var(--ink3)'}},'No registrada');
+  try{
+    const d=JSON.parse(loc);
+    const lat=parseFloat(d.lat),lng=parseFloat(d.lng);
+    if(!lat||!lng) throw new Error('no coords');
+    const mapsUrl='https://www.google.com/maps?q='+lat+','+lng;
+    const osmBbox=(lng-0.003)+','+(lat-0.002)+','+(lng+0.003)+','+(lat+0.002);
+    const osmUrl='https://www.openstreetmap.org/export/embed.html?bbox='+osmBbox+'&layer=mapnik&marker='+lat+','+lng;
+    return h('div',{style:{marginTop:'.4rem'}},
+      h('a',{href:mapsUrl,target:'_blank',rel:'noopener',style:{display:'block',textDecoration:'none'}},
+        h('div',{style:{position:'relative',borderRadius:'var(--r)',overflow:'hidden',border:'2px solid var(--acc)',maxWidth:'300px',cursor:'pointer',boxShadow:'var(--sh)',height:'130px',backgroundColor:'#e8f4f8'}},
+          h('iframe',{src:osmUrl,style:{width:'100%',height:'100%',border:'none',pointerEvents:'none'},loading:'lazy',title:'Ubicación'},null),
+          h('div',{style:{position:'absolute',bottom:'0',left:'0',right:'0',background:'rgba(0,0,0,.75)',color:'#fff',padding:'.35rem .6rem',fontSize:'.72rem',display:'flex',alignItems:'center',gap:'.4rem'}},
+            h('div',{style:{flex:1}},
+              h('div',{style:{fontWeight:700,fontSize:'.78rem'}},d.acc?'±'+d.acc+'m de precisión':'Ubicación GPS'),
+              h('div',{style:{opacity:.8,fontSize:'.68rem'}},d.label||lat.toFixed(4)+', '+lng.toFixed(4))
+            ),
+            h('div',{style:{background:'var(--acc)',color:'#000',padding:'.2rem .5rem',borderRadius:'20px',fontSize:'.68rem',fontWeight:700}},'Maps →')
+          )
+        )
+      )
+    );
+  }catch(e){
+    let label=loc,url='';
+    try{const d=JSON.parse(loc);label=d.label||d.address||loc;url=d.url||'';}catch(ex){}
+    if(url) return h('a',{href:url,target:'_blank',rel:'noopener',style:{fontSize:'.8rem',color:'var(--acc)',textDecoration:'none'}},label);
+    return h('div',{style:{fontSize:'.75rem',color:'var(--ink2)'}},label);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// OVERRIDE: finishTimer - actualizar fichaje abierto existente
+// ═══════════════════════════════════════════════════════
+window._finishTimer_orig = typeof finishTimer !== 'undefined' ? finishTimer : null;
+function finishTimer(){
+  const totalSecs=timerElapsed;
+  const netSecs=Math.max(0,timerElapsed-timerDeduct*60);
+  const netHours=Math.round(netSecs/36)/100;
+  const now=new Date();
+  const manualEnd=document.getElementById('timer-end-manual')?.value;
+  const endTime=manualEnd||pad(now.getHours())+':'+pad(now.getMinutes());
+  const startTs=timerStart+(timerDeduct*60*1000/2);
+  const startDate=new Date(startTs);
+  const startTime=pad(startDate.getHours())+':'+pad(startDate.getMinutes());
+  stopTimer();
+  // Buscar fichaje abierto (entrada sin salida)
+  const openIdx=fEntry.fichajes.findIndex(fj=>fj.entrada&&!fj.salida);
+  if(openIdx>=0){
+    fEntry.fichajes[openIdx].salida=endTime;
+    fEntry.fichajes[openIdx].nota=(fEntry.fichajes[openIdx].nota?(fEntry.fichajes[openIdx].nota+' | '):'')+'⏱ '+formatTimerFull(totalSecs)+(timerDeduct>0?' (-'+timerDeduct+'min)':'');
+  } else {
+    fEntry.fichajes.push({_fid:Date.now(),entrada:startTime,salida:endTime,nota:'⏱ '+formatTimerFull(totalSecs)+(timerDeduct>0?' (-'+timerDeduct+'min descanso)':''),editing:false,taskId:''});
+  }
+  if(!fEntry.horasNormales||fEntry.horasNormales===0){
+    fEntry.horasNormales=netHours;
+    if(fEntry.precioHoraNormal>0) fEntry.importeNormales=Math.round(netHours*fEntry.precioHoraNormal*100)/100;
+  }
+  localStorage.removeItem('timerState');
+  resetTimer();
+  showAlert('✅ '+startTime+' → '+endTime+' | Total: '+formatTimerFull(totalSecs)+' | Neto: '+fmtH(netHours));
+  scheduleDraftSave();
+  rerender();
+}
+
+// ═══════════════════════════════════════════════════════
+// NUEVO: Notificación olvido fichar
+// ═══════════════════════════════════════════════════════
+function checkFichajeOlvidado(){
+  if(S.tab!=='fichar') return;
+  const now2=new Date(),hNow=now2.getHours()*60+now2.getMinutes();
+  if(hNow<480||hNow>1380) return;
+  (fEntry.fichajes||[]).forEach(fj=>{
+    if(!fj.entrada||fj.salida) return;
+    const [hh,mm]=fj.entrada.split(':').map(Number);
+    const mins=hNow-(hh*60+mm);
+    if(mins>600&&!document.getElementById('olvido-banner')){
+      const b=document.createElement('div');
+      b.id='olvido-banner';
+      b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9998;background:#f59e0b;color:#000;padding:.55rem .9rem;display:flex;align-items:center;gap:.7rem;font-size:.8rem;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.3)';
+      b.innerHTML='⚠️ Llevas '+Math.floor(mins/60)+'h '+Math.round(mins%60)+'m desde la entrada ('+fj.entrada+'). ¿Olvidaste la salida?';
+      const bt=document.createElement('button');
+      bt.textContent='📍 Salida ahora';
+      bt.style.cssText='background:#000;color:#fff;border:none;padding:.3rem .7rem;border-radius:5px;cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0';
+      bt.onclick=()=>{
+        const idx=fEntry.fichajes.findIndex(f=>f.entrada===fj.entrada&&!f.salida);
+        if(idx>=0){fEntry.fichajes[idx].salida=nowTime();scheduleDraftSave();rerender();}
+        b.remove();
+      };
+      const bc=document.createElement('button');
+      bc.innerHTML='✕';
+      bc.style.cssText='background:none;border:none;padding:.2rem .5rem;cursor:pointer;margin-left:auto;font-size:1rem;flex-shrink:0';
+      bc.onclick=()=>b.remove();
+      b.appendChild(bt);b.appendChild(bc);
+      document.body.appendChild(b);
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// NUEVO: Fichar Rápido
+// ═══════════════════════════════════════════════════════
+function quickFichar(){
+  const hora=nowTime();
+  const ult=fEntry.fichajes.length>0?fEntry.fichajes[fEntry.fichajes.length-1]:null;
+  if(!ult||(ult.entrada&&ult.salida)){
+    fEntry.fichajes.push({_fid:Date.now(),entrada:hora,salida:'',nota:'',editing:false,taskId:''});
+    showAlert('✅ ENTRADA: '+hora);
+  } else if(ult.entrada&&!ult.salida){
+    fEntry.fichajes[fEntry.fichajes.length-1].salida=hora;
+    showAlert('✅ SALIDA: '+hora+' · '+fmtH(calcH(ult.entrada,hora)));
+  }
+  scheduleDraftSave();rerender();
+}
+
+function renderQuickFichar(){
+  const ult=fEntry.fichajes.length>0?fEntry.fichajes[fEntry.fichajes.length-1]:null;
+  const activo=ult&&ult.entrada&&!ult.salida;
+  let dur='';
+  if(activo){try{dur=fmtH(calcH(ult.entrada,nowTime()));}catch(e){}}
+  return h('div',{
+    style:{background:activo?'rgba(239,68,68,.07)':'rgba(34,197,94,.07)',border:'2px solid '+(activo?'var(--red)':'var(--acc)'),borderRadius:'var(--r)',padding:'.65rem .9rem',marginBottom:'.5rem',display:'flex',alignItems:'center',gap:'.8rem',cursor:'pointer',transition:'all .15s'},
+    on:{click:quickFichar}
+  },
+    h('div',{style:{width:'44px',height:'44px',borderRadius:'50%',background:activo?'var(--red)':'var(--acc)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.2rem',flexShrink:0,boxShadow:'0 3px 8px '+(activo?'rgba(239,68,68,.3)':'rgba(34,197,94,.3)')}},activo?'⏸':'▶'),
+    h('div',{style:{flex:1}},
+      h('div',{style:{fontWeight:800,fontSize:'.88rem',color:'var(--ink)'}},activo?'⏱ En jornada · Entrada '+ult.entrada:'▶ Iniciar jornada'),
+      h('div',{style:{fontSize:'.71rem',color:'var(--ink2)',marginTop:'.1rem'}},activo?'Llevas '+dur+' · Toca para SALIDA':'Toca para registrar ENTRADA ahora')
+    ),
+    h('div',{style:{background:activo?'var(--red)':'var(--acc)',color:activo?'#fff':'#000',borderRadius:'var(--r2)',padding:'.3rem .65rem',fontWeight:800,fontSize:'.73rem',flexShrink:0,letterSpacing:'.05em'}},activo?'SALIDA':'ENTRADA')
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// NUEVO: Mini gráfica semanal
+// ═══════════════════════════════════════════════════════
+function renderMiniWeekChart(){
+  const hoy=today();
+  const dObj=new Date(hoy+'T12:00:00');
+  const dow=dObj.getDay()===0?7:dObj.getDay();
+  const lun=new Date(dObj);lun.setDate(dObj.getDate()-(dow-1));
+  const dias=Array.from({length:7},(_,i)=>{
+    const dd=new Date(lun);dd.setDate(lun.getDate()+i);
+    const fecha=dd.toISOString().slice(0,10);
+    const en=S.entries.find(e=>e.fecha===fecha);
+    const h2=en?Math.round(((en.horasNormales||0)+(en.horasExtra||0)+(en.horasNocturnas||0)+(en.horasFestivas||0))*10)/10:0;
+    return {fecha,h2,isHoy:fecha===hoy,isFut:fecha>hoy,dia:WSHORT[i]};
+  });
+  const maxH=Math.max(...dias.map(d=>d.h2),8);
+  const tot=dias.reduce((s,d)=>s+d.h2,0);
+  return h('div',{class:'card',style:{padding:'.5rem .6rem',marginBottom:'.45rem'}},
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'.3rem'}},
+      h('span',{style:{fontSize:'.63rem',fontWeight:700,color:'var(--ink3)',textTransform:'uppercase',letterSpacing:'.05em'}},'Esta semana'),
+      h('span',{style:{fontSize:'.76rem',fontWeight:800,color:'var(--acc)'}},fmtH(tot))
+    ),
+    h('div',{style:{display:'flex',gap:'3px',alignItems:'flex-end',height:'38px'}},
+      ...dias.map(d=>h('div',{
+        style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:d.isFut?'default':'pointer'},
+        on:{click:()=>{if(!d.isFut){selDate=d.fecha;S.tab='calendario';rerender();}}}
+      },
+        h('div',{style:{width:'100%',height:d.h2>0?Math.max(3,Math.round((d.h2/maxH)*26))+'px':'3px',background:d.isHoy?'var(--acc)':d.isFut?'var(--surf3)':d.h2>0?'rgba(34,197,94,.5)':'var(--surf3)',borderRadius:'2px 2px 0 0',border:d.isHoy?'1px solid var(--acc)':'none',transition:'height .3s'}}),
+        h('div',{style:{fontSize:'.54rem',fontWeight:d.isHoy?800:400,color:d.isHoy?'var(--acc)':d.isFut?'var(--surf3)':'var(--ink3)'}},d.dia)
+      ))
+    )
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// OVERRIDE: renderFichar - insertar elementos nuevos al principio
+// ═══════════════════════════════════════════════════════
+const _renderFichar_orig = renderFichar;
+function renderFichar(){
+  const result = _renderFichar_orig();
+  // Inject quickFichar and miniWeekChart at the top of the result
+  const wrapper = h('div',{},
+    renderQuickFichar(),
+    renderMiniWeekChart(),
+    result
+  );
+  return wrapper;
+}
+
+// ═══════════════════════════════════════════════════════
+// OVERRIDE: attachFichajeListeners - añadir check de olvido
+// ═══════════════════════════════════════════════════════
+const _attachFichajeListeners_orig = attachFichajeListeners;
+function attachFichajeListeners(){
+  _attachFichajeListeners_orig();
+  setTimeout(checkFichajeOlvidado, 500);
+}
+
+// ═══════════════════════════════════════════════════════
+// OVERRIDE: _renderHistorial - búsqueda mejorada por sitio/importe/nota
+// ═══════════════════════════════════════════════════════
+function _renderHistorial(){
+  const q=(histSearch||'').toLowerCase().trim();
+  const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const filtered=S.entries.filter(en=>{
+    if(!q) return true;
+    const f=en.fecha||'';
+    const parts=f.split('-');
+    const mesNombre=parts[1]?meses[parseInt(parts[1])-1]||'':'';
+    const fDisplay=parts[2]+'/'+parts[1]+'/'+(parts[0]||'');
+    let sitio='';
+    try{sitio=(JSON.parse(en.ubicacionEntrada||'{}').label||'').toLowerCase();}catch(e){}
+    const imp=((en.importeNormales||0)+(en.importeExtra||0)+(en.dieta||0)+(en.transporte||0)).toFixed(2);
+    const notasFich=(en.fichajes||[]).map(fj=>(fj.nota||'').toLowerCase()).join(' ');
+    return fDisplay.includes(q)||f.includes(q)||
+      (parts[2]||'').includes(q)||(parts[1]||'').includes(q)||(parts[0]||'').includes(q)||
+      mesNombre.includes(q)||(en.notas||'').replace(/<[^>]*>/g,'').toLowerCase().includes(q)||
+      (wday(en.fecha)||'').toLowerCase().includes(q)||(en.tipoJornada||'').toLowerCase().includes(q)||
+      sitio.includes(q)||imp.includes(q)||notasFich.includes(q);
+  }).sort((a,b)=>b.fecha.localeCompare(a.fecha));
+  const container=document.getElementById('historial-list');
+  if(!container){rerender();return;}
+  while(container.firstChild) container.removeChild(container.firstChild);
+  if(filtered.length===0){
+    const msg=document.createElement('div');
+    msg.style.cssText='padding:1rem;text-align:center;color:var(--ink3);font-size:.85rem';
+    msg.textContent='Sin resultados para "'+q+'"';
+    container.appendChild(msg);
+    return;
+  }
+  filtered.forEach(en=>{
+    const h_=(en.horasNormales||0)+(en.horasExtra||0)+(en.horasNocturnas||0)+(en.horasFestivas||0);
+    const fi=(en.fichajes||[]).length;
+    const imp=(en.importeNormales||0)+(en.importeExtra||0)+(en.dieta||0)+(en.transporte||0);
+    let sitio=''; try{sitio=(JSON.parse(en.ubicacionEntrada||'{}').label||'').slice(0,18);}catch(e){}
+    const row=document.createElement('div');
+    row.className='sum-row';
+    row.style.cssText='cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:.5rem .3rem;border-bottom:1px solid var(--brd)';
+    row.onclick=()=>loadHistorial(en);
+    const info=document.createElement('div');
+    const title=document.createElement('div');
+    title.style.cssText='font-weight:700;font-size:.85rem';
+    title.textContent=cap(wday(en.fecha))+', '+dlbl(en.fecha);
+    const sub=document.createElement('div');
+    sub.style.cssText='font-size:.72rem;color:var(--ink2)';
+    sub.textContent=fmtH(h_)+' · '+fi+' fichaje'+(fi!==1?'s':'')+(imp>0?' · '+imp.toFixed(2)+'€':'')+(sitio?' · 📍'+sitio:'');
+    info.appendChild(title);info.appendChild(sub);
+    const btns=document.createElement('div');
+    btns.style.cssText='display:flex;gap:.3rem';
+    const editBtn=document.createElement('button');
+    editBtn.className='btn btn-b btn-sm'; editBtn.textContent='✏️';
+    editBtn.onclick=ev=>{ev.stopPropagation();loadHistorial(en);};
+    const delBtn=document.createElement('button');
+    delBtn.className='btn btn-r btn-sm'; delBtn.textContent='🗑';
+    delBtn.onclick=ev=>{ev.stopPropagation();deleteEntry(en.id);};
+    btns.appendChild(editBtn);btns.appendChild(delBtn);
+    row.appendChild(info);row.appendChild(btns);
+    container.appendChild(row);
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// Auto-sync al guardar jornada
+// ═══════════════════════════════════════════════════════
+const _saveEntry_orig = saveEntry;
+async function saveEntry(){
+  await _saveEntry_orig();
+  // Auto-sync a Drive 3s después de guardar
+  if(isOnline && driveUrl && !_syncInProgress){
+    setTimeout(()=>{
+      if(!_syncInProgress) driveSync();
+    }, 3000);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// Drive OAuth - guardar estado antes de redirect
+// ═══════════════════════════════════════════════════════
+const _gdriveEnsureToken_orig = gdriveEnsureToken;
+async function gdriveEnsureToken(){
+  if(!gdriveTokenValid()){
+    try{
+      sessionStorage.setItem('pre_auth_state', JSON.stringify({
+        fEntry: JSON.stringify({...fEntry, fotosGastos:[]}),
+        fecha: fEntry.fecha, savedAt: new Date().toISOString()
+      }));
+    }catch(e){}
+  }
+  return _gdriveEnsureToken_orig();
+}
+
+// Restaurar estado tras OAuth redirect - hook en init
+const _gdriveHandleRedirect_orig = gdriveHandleRedirect;
+function gdriveHandleRedirect(){
+  const result = _gdriveHandleRedirect_orig();
+  if(result){
+    try{
+      const ps=sessionStorage.getItem('pre_auth_state');
+      if(ps){
+        const psd=JSON.parse(ps);
+        const elapsed=(Date.now()-new Date(psd.savedAt).getTime())/1000;
+        if(elapsed<300&&psd.fEntry){
+          Object.assign(fEntry, JSON.parse(psd.fEntry));
+          editingEntry=!!fEntry.id;
+          setTimeout(()=>showAlert('Estado restaurado tras reautenticación ✓'), 500);
+        }
+        sessionStorage.removeItem('pre_auth_state');
+      }
+    }catch(e){}
+  }
+  return result;
+}
+
+console.log('✅ TimerPro patches v2 cargados: GPS iframe, quickFichar, miniChart, olvido fichar, búsqueda mejorada, auto-sync, Drive OAuth mejorado');
+
+</script>
 </body>
 </html>
+
+
