@@ -7882,19 +7882,14 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
 
 
 </script>
-  <script>
+ <script>
 // ═══════════════════════════════════════════════════════════════════
 // TIMERPRO — MEJORAS INTEGRADAS
 // GPS iframe OSM | Fichar Rápido | Gráfica Semanal | Olvido Fichar
 // Búsqueda Mejorada | Auto-sync Drive | Drive OAuth mejorado
 // ═══════════════════════════════════════════════════════════════════
-// ═══════════════════════════════════════════
-// MEJORAS TIMERPRO v2 - GPS, QuickFichar, etc
-// ═══════════════════════════════════════════
-// ═══════════════════════════════════════════════════════
-// OVERRIDE: gpsDisplay - usar iframe OSM en vez de staticmap (que falla)
-// ═══════════════════════════════════════════════════════
-window._gpsDisplay_orig = typeof gpsDisplay !== 'undefined' ? gpsDisplay : null;
+
+// MEJORA 1: GPS - iframe OSM en vez de staticmap (ERR_NAME_NOT_RESOLVED)
 function gpsDisplay(loc){
   if(!loc) return h('div',{style:{fontSize:'.75rem',color:'var(--ink3)'}},'No registrada');
   try{
@@ -7926,10 +7921,7 @@ function gpsDisplay(loc){
   }
 }
 
-// ═══════════════════════════════════════════════════════
-// OVERRIDE: finishTimer - actualizar fichaje abierto existente
-// ═══════════════════════════════════════════════════════
-window._finishTimer_orig = typeof finishTimer !== 'undefined' ? finishTimer : null;
+// MEJORA 2: finishTimer - actualizar fichaje abierto en vez de crear nuevo
 function finishTimer(){
   const totalSecs=timerElapsed;
   const netSecs=Math.max(0,timerElapsed-timerDeduct*60);
@@ -7941,7 +7933,6 @@ function finishTimer(){
   const startDate=new Date(startTs);
   const startTime=pad(startDate.getHours())+':'+pad(startDate.getMinutes());
   stopTimer();
-  // Buscar fichaje abierto (entrada sin salida)
   const openIdx=fEntry.fichajes.findIndex(fj=>fj.entrada&&!fj.salida);
   if(openIdx>=0){
     fEntry.fichajes[openIdx].salida=endTime;
@@ -7960,9 +7951,7 @@ function finishTimer(){
   rerender();
 }
 
-// ═══════════════════════════════════════════════════════
-// NUEVO: Notificación olvido fichar
-// ═══════════════════════════════════════════════════════
+// MEJORA 3: Notificación olvido fichar (via setInterval, sin override)
 function checkFichajeOlvidado(){
   if(S.tab!=='fichar') return;
   const now2=new Date(),hNow=now2.getHours()*60+now2.getMinutes();
@@ -7993,10 +7982,9 @@ function checkFichajeOlvidado(){
     }
   });
 }
+setInterval(checkFichajeOlvidado, 60000);
 
-// ═══════════════════════════════════════════════════════
-// NUEVO: Fichar Rápido
-// ═══════════════════════════════════════════════════════
+// MEJORA 4: Fichar Rápido
 function quickFichar(){
   const hora=nowTime();
   const ult=fEntry.fichajes.length>0?fEntry.fichajes[fEntry.fichajes.length-1]:null;
@@ -8028,9 +8016,7 @@ function renderQuickFichar(){
   );
 }
 
-// ═══════════════════════════════════════════════════════
-// NUEVO: Mini gráfica semanal
-// ═══════════════════════════════════════════════════════
+// MEJORA 5: Mini gráfica semanal
 function renderMiniWeekChart(){
   const hoy=today();
   const dObj=new Date(hoy+'T12:00:00');
@@ -8062,33 +8048,18 @@ function renderMiniWeekChart(){
   );
 }
 
-// ═══════════════════════════════════════════════════════
-// OVERRIDE: renderFichar - insertar elementos nuevos al principio
-// ═══════════════════════════════════════════════════════
+// MEJORA 6: Override renderFichar para añadir QuickFichar y gráfica
 const _renderFichar_orig = renderFichar;
 function renderFichar(){
   const result = _renderFichar_orig();
-  // Inject quickFichar and miniWeekChart at the top of the result
-  const wrapper = h('div',{},
+  return h('div',{},
     renderQuickFichar(),
     renderMiniWeekChart(),
     result
   );
-  return wrapper;
 }
 
-// ═══════════════════════════════════════════════════════
-// OVERRIDE: attachFichajeListeners - añadir check de olvido
-// ═══════════════════════════════════════════════════════
-const _attachFichajeListeners_orig = attachFichajeListeners;
-function attachFichajeListeners(){
-  _attachFichajeListeners_orig();
-  setTimeout(checkFichajeOlvidado, 500);
-}
-
-// ═══════════════════════════════════════════════════════
-// OVERRIDE: _renderHistorial - búsqueda mejorada por sitio/importe/nota
-// ═══════════════════════════════════════════════════════
+// MEJORA 7: Búsqueda historial mejorada (sitio, importe, notas fichaje)
 function _renderHistorial(){
   const q=(histSearch||'').toLowerCase().trim();
   const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -8149,23 +8120,16 @@ function _renderHistorial(){
   });
 }
 
-// ═══════════════════════════════════════════════════════
-// Auto-sync al guardar jornada
-// ═══════════════════════════════════════════════════════
+// MEJORA 8: Auto-sync a Drive al guardar jornada
 const _saveEntry_orig = saveEntry;
 async function saveEntry(){
   await _saveEntry_orig();
-  // Auto-sync a Drive 3s después de guardar
   if(isOnline && driveUrl && !_syncInProgress){
-    setTimeout(()=>{
-      if(!_syncInProgress) driveSync();
-    }, 3000);
+    setTimeout(()=>{ if(!_syncInProgress) driveSync(); }, 3000);
   }
 }
 
-// ═══════════════════════════════════════════════════════
-// Drive OAuth - guardar estado antes de redirect
-// ═══════════════════════════════════════════════════════
+// MEJORA 9: Drive OAuth - guardar estado antes de redirect
 const _gdriveEnsureToken_orig = gdriveEnsureToken;
 async function gdriveEnsureToken(){
   if(!gdriveTokenValid()){
@@ -8179,7 +8143,6 @@ async function gdriveEnsureToken(){
   return _gdriveEnsureToken_orig();
 }
 
-// Restaurar estado tras OAuth redirect - hook en init
 const _gdriveHandleRedirect_orig = gdriveHandleRedirect;
 function gdriveHandleRedirect(){
   const result = _gdriveHandleRedirect_orig();
@@ -8201,10 +8164,8 @@ function gdriveHandleRedirect(){
   return result;
 }
 
-console.log('✅ TimerPro patches v2 cargados: GPS iframe, quickFichar, miniChart, olvido fichar, búsqueda mejorada, auto-sync, Drive OAuth mejorado');
+console.log('✅ TimerPro mejoras cargadas: GPS iframe, QuickFichar, MiniChart, OlvidoFichar, BúsquedaMejorada, AutoSync, DriveOAuth');
 
 </script>
 </body>
 </html>
-
-
