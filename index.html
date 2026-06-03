@@ -8153,7 +8153,7 @@ shareResumen = function(method, conPrecios){
 };
 
 // Fix notas editor: al pulsar Enter desactivar formato
-// MutationObserver para parchear el editor cuando aparece en el DOM
+// Observa el DOM y parchea el editor con capture=true para ir antes que el handler original
 (function(){
   function patchNotasEditor(){
     const ed = document.getElementById('notas-editor');
@@ -8163,7 +8163,13 @@ shareResumen = function(method, conPrecios){
       if(ev.key !== 'Enter') return;
       ev.preventDefault();
       ev.stopImmediatePropagation();
-      document.execCommand('insertHTML', false, '<div><br></div>');
+      // Turn OFF any active formatting BEFORE inserting new line
+      if(document.queryCommandState('bold')) document.execCommand('bold');
+      if(document.queryCommandState('italic')) document.execCommand('italic');
+      if(document.queryCommandState('underline')) document.execCommand('underline');
+      // Now insert a plain new paragraph
+      document.execCommand('insertParagraph');
+      // Verify formatting is still off after insertion
       setTimeout(function(){
         if(document.queryCommandState('bold')) document.execCommand('bold');
         if(document.queryCommandState('italic')) document.execCommand('italic');
@@ -8175,7 +8181,7 @@ shareResumen = function(method, conPrecios){
   }
   const obs = new MutationObserver(patchNotasEditor);
   obs.observe(document.body, {childList:true, subtree:true});
-  patchNotasEditor(); // try immediately too
+  patchNotasEditor();
 })();
 
 // MEJORA 12: Campo título en renderFichar - inject after fecha card
@@ -8225,17 +8231,14 @@ renderDayCard = function(){
 // MEJORA: Notas en modal resumen - limpiar colores CSS variables invisibles en fondo blanco
 function cleanNotasForModal(html){
   if(!html) return '';
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  tmp.querySelectorAll('[style]').forEach(function(el){
-    el.style.color = '';
-    el.style.backgroundColor = '';
-    el.style.background = '';
+  // Use regex to strip color/background from style attributes (CSS vars invisible on white)
+  return html.replace(/style="([^"]*)"/gi, function(match, styleContent){
+    var cleaned = styleContent
+      .replace(/color\s*:[^;]+;?\s*/gi, '')
+      .replace(/background(-color)?\s*:[^;]+;?\s*/gi, '')
+      .trim().replace(/;$/, '');
+    return cleaned ? 'style="' + cleaned + '"' : '';
   });
-  tmp.querySelectorAll('font[color]').forEach(function(el){
-    el.removeAttribute('color');
-  });
-  return tmp.innerHTML;
 }
 
 const _renderModalResumenDia_orig = renderModalResumenDia;
