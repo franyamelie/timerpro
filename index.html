@@ -7882,7 +7882,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
 
 
 </script>
- <script>
+<script>
 // ═══════════════════════════════════════════════════════════════════
 // TIMERPRO — MEJORAS INTEGRADAS
 // GPS iframe OSM | Fichar Rápido | Gráfica Semanal | Olvido Fichar
@@ -8050,14 +8050,14 @@ function renderMiniWeekChart(){
 
 // MEJORA 6: Override renderFichar para añadir QuickFichar y gráfica
 const _renderFichar_orig = renderFichar;
-function renderFichar(){
+renderFichar = function(){
   const result = _renderFichar_orig();
   return h('div',{},
     renderQuickFichar(),
     renderMiniWeekChart(),
     result
   );
-}
+};
 
 // MEJORA 7: Búsqueda historial mejorada (sitio, importe, notas fichaje)
 function _renderHistorial(){
