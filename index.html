@@ -8152,17 +8152,43 @@ shareResumen = function(method, conPrecios){
   return _shareResumen_orig(method, conPrecios);
 };
 
-// Fix notas editor: al pulsar Enter, desactivar formato
+// Fix notas editor: al pulsar Enter, desactivar formato (negrita/cursiva/subrayado)
 document.addEventListener('keydown', function(ev){
   if(ev.key !== 'Enter') return;
   const el = document.activeElement;
   if(!el || el.id !== 'notas-editor') return;
-  // Desactivar negrita, cursiva, subrayado tras Enter
+
+  // Prevent default Enter behavior
+  ev.preventDefault();
+
+  // Insert a plain <br><br> or a new div without formatting
+  // Get current selection
+  const sel = window.getSelection();
+  if(!sel || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+
+  // Insert a plain text node in a new unstyled div
+  const newLine = document.createElement('div');
+  newLine.style.fontWeight = 'normal';
+  newLine.style.fontStyle = 'normal';
+  newLine.style.textDecoration = 'none';
+  const zeroWidth = document.createTextNode('​'); // zero-width space so cursor lands here
+  newLine.appendChild(zeroWidth);
+  range.insertNode(newLine);
+
+  // Move cursor inside the new div
+  const newRange = document.createRange();
+  newRange.setStart(zeroWidth, 1);
+  newRange.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(newRange);
+
+  // Update fEntry.notas
   setTimeout(()=>{
-    if(document.queryCommandState('bold')) document.execCommand('bold');
-    if(document.queryCommandState('italic')) document.execCommand('italic');
-    if(document.queryCommandState('underline')) document.execCommand('underline');
-  }, 10);
+    const edEl = document.getElementById('notas-editor');
+    if(edEl){ fEntry.notas = edEl.innerHTML; scheduleDraftSave(); }
+  }, 0);
 }, true);
 
 // MEJORA 12: Campo título en renderFichar - inject after fecha card
@@ -8209,24 +8235,33 @@ renderDayCard = function(){
 
 
 
-// MEJORA: Limpiar colores del HTML de notas para que se vean bien en el modal blanco
-function sanitizeNotasHTML(html){
+// MEJORA: Notas en modal resumen - mostrar HTML completo con color forzado
+// Strip solo colores CSS variables que son invisibles en fondo blanco
+function cleanNotasForModal(html){
   if(!html) return '';
-  // Remove inline color styles that make text invisible on white background
-  return html
-    .replace(/color\s*:\s*[^;'"]+[;'"]/gi, 'color:inherit;')
-    .replace(/background(-color)?\s*:\s*[^;'"]+[;'"]/gi, '')
-    .replace(/style=""/gi, '');
+  // Create a temporary div to parse and clean the HTML
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  // Remove color styles from all elements (CSS vars don't work outside app context)
+  tmp.querySelectorAll('[style]').forEach(el=>{
+    const s = el.getAttribute('style') || '';
+    // Remove color and background-color properties
+    const cleaned = s
+      .replace(/color\s*:[^;]+;?/gi, '')
+      .replace(/background(-color)?\s*:[^;]+;?/gi, '')
+      .trim();
+    if(cleaned) el.setAttribute('style', cleaned);
+    else el.removeAttribute('style');
+  });
+  return tmp.innerHTML;
 }
 
-// Override renderModalResumenDia para notas con HTML limpio
 const _renderModalResumenDia_orig = renderModalResumenDia;
 renderModalResumenDia = function(){
-  // Temporarily clean notas for the modal
   const originalNotas = fEntry.notas;
-  fEntry.notas = sanitizeNotasHTML(originalNotas);
+  if(originalNotas) fEntry.notas = cleanNotasForModal(originalNotas);
   const modal = _renderModalResumenDia_orig();
-  fEntry.notas = originalNotas; // restore original
+  fEntry.notas = originalNotas;
   return modal;
 };
 
