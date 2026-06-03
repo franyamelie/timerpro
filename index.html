@@ -8122,7 +8122,7 @@ function _renderHistorial(){
 
 // MEJORA 8: Auto-sync a Drive al guardar jornada
 const _saveEntry_orig = saveEntry;
-async function saveEntry(){
+saveEntry = async function(){
   await _saveEntry_orig();
   if(isOnline && driveUrl && !_syncInProgress){
     setTimeout(()=>{ if(!_syncInProgress) driveSync(); }, 3000);
@@ -8130,39 +8130,7 @@ async function saveEntry(){
 }
 
 // MEJORA 9: Drive OAuth - guardar estado antes de redirect
-const _gdriveEnsureToken_orig = gdriveEnsureToken;
-async function gdriveEnsureToken(){
-  if(!gdriveTokenValid()){
-    try{
-      sessionStorage.setItem('pre_auth_state', JSON.stringify({
-        fEntry: JSON.stringify({...fEntry, fotosGastos:[]}),
-        fecha: fEntry.fecha, savedAt: new Date().toISOString()
-      }));
-    }catch(e){}
-  }
-  return _gdriveEnsureToken_orig();
-}
-
-const _gdriveHandleRedirect_orig = gdriveHandleRedirect;
-function gdriveHandleRedirect(){
-  const result = _gdriveHandleRedirect_orig();
-  if(result){
-    try{
-      const ps=sessionStorage.getItem('pre_auth_state');
-      if(ps){
-        const psd=JSON.parse(ps);
-        const elapsed=(Date.now()-new Date(psd.savedAt).getTime())/1000;
-        if(elapsed<300&&psd.fEntry){
-          Object.assign(fEntry, JSON.parse(psd.fEntry));
-          editingEntry=!!fEntry.id;
-          setTimeout(()=>showAlert('Estado restaurado tras reautenticación ✓'), 500);
-        }
-        sessionStorage.removeItem('pre_auth_state');
-      }
-    }catch(e){}
-  }
-  return result;
-}
+// (gdriveHandleRedirect override eliminado - causaba bucle infinito)
 
 console.log('✅ TimerPro mejoras cargadas: GPS iframe, QuickFichar, MiniChart, OlvidoFichar, BúsquedaMejorada, AutoSync, DriveOAuth');
 
