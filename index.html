@@ -8152,44 +8152,31 @@ shareResumen = function(method, conPrecios){
   return _shareResumen_orig(method, conPrecios);
 };
 
-// Fix notas editor: al pulsar Enter, desactivar formato (negrita/cursiva/subrayado)
-document.addEventListener('keydown', function(ev){
-  if(ev.key !== 'Enter') return;
-  const el = document.activeElement;
-  if(!el || el.id !== 'notas-editor') return;
-
-  // Prevent default Enter behavior
-  ev.preventDefault();
-
-  // Insert a plain <br><br> or a new div without formatting
-  // Get current selection
-  const sel = window.getSelection();
-  if(!sel || sel.rangeCount === 0) return;
-  const range = sel.getRangeAt(0);
-  range.deleteContents();
-
-  // Insert a plain text node in a new unstyled div
-  const newLine = document.createElement('div');
-  newLine.style.fontWeight = 'normal';
-  newLine.style.fontStyle = 'normal';
-  newLine.style.textDecoration = 'none';
-  const zeroWidth = document.createTextNode('​'); // zero-width space so cursor lands here
-  newLine.appendChild(zeroWidth);
-  range.insertNode(newLine);
-
-  // Move cursor inside the new div
-  const newRange = document.createRange();
-  newRange.setStart(zeroWidth, 1);
-  newRange.collapse(true);
-  sel.removeAllRanges();
-  sel.addRange(newRange);
-
-  // Update fEntry.notas
-  setTimeout(()=>{
-    const edEl = document.getElementById('notas-editor');
-    if(edEl){ fEntry.notas = edEl.innerHTML; scheduleDraftSave(); }
-  }, 0);
-}, true);
+// Fix notas editor: al pulsar Enter desactivar formato
+// MutationObserver para parchear el editor cuando aparece en el DOM
+(function(){
+  function patchNotasEditor(){
+    const ed = document.getElementById('notas-editor');
+    if(!ed || ed._enterPatched) return;
+    ed._enterPatched = true;
+    ed.addEventListener('keydown', function(ev){
+      if(ev.key !== 'Enter') return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      document.execCommand('insertHTML', false, '<div><br></div>');
+      setTimeout(function(){
+        if(document.queryCommandState('bold')) document.execCommand('bold');
+        if(document.queryCommandState('italic')) document.execCommand('italic');
+        if(document.queryCommandState('underline')) document.execCommand('underline');
+        const edEl = document.getElementById('notas-editor');
+        if(edEl) fEntry.notas = edEl.innerHTML;
+      }, 0);
+    }, true);
+  }
+  const obs = new MutationObserver(patchNotasEditor);
+  obs.observe(document.body, {childList:true, subtree:true});
+  patchNotasEditor(); // try immediately too
+})();
 
 // MEJORA 12: Campo título en renderFichar - inject after fecha card
 const _renderFichar_v2 = renderFichar;
@@ -8235,23 +8222,18 @@ renderDayCard = function(){
 
 
 
-// MEJORA: Notas en modal resumen - mostrar HTML completo con color forzado
-// Strip solo colores CSS variables que son invisibles en fondo blanco
+// MEJORA: Notas en modal resumen - limpiar colores CSS variables invisibles en fondo blanco
 function cleanNotasForModal(html){
   if(!html) return '';
-  // Create a temporary div to parse and clean the HTML
   const tmp = document.createElement('div');
   tmp.innerHTML = html;
-  // Remove color styles from all elements (CSS vars don't work outside app context)
-  tmp.querySelectorAll('[style]').forEach(el=>{
-    const s = el.getAttribute('style') || '';
-    // Remove color and background-color properties
-    const cleaned = s
-      .replace(/color\s*:[^;]+;?/gi, '')
-      .replace(/background(-color)?\s*:[^;]+;?/gi, '')
-      .trim();
-    if(cleaned) el.setAttribute('style', cleaned);
-    else el.removeAttribute('style');
+  tmp.querySelectorAll('[style]').forEach(function(el){
+    el.style.color = '';
+    el.style.backgroundColor = '';
+    el.style.background = '';
+  });
+  tmp.querySelectorAll('font[color]').forEach(function(el){
+    el.removeAttribute('color');
   });
   return tmp.innerHTML;
 }
