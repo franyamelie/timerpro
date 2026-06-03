@@ -8042,15 +8042,16 @@ function renderMiniWeekChart(){
         on:{click:()=>{if(!d.isFut){selDate=d.fecha;S.tab='calendario';rerender();}}}
       },
         h('div',{
-          style:{width:'100%',height:d.h2>0?Math.max(14,Math.round((d.h2/maxH)*44))+'px':'14px',
+          style:{width:'100%',height:d.h2>0?Math.max(28,Math.round((d.h2/maxH)*52))+'px':'14px',
             background:d.isHoy?'var(--acc)':d.isFut?'var(--surf3)':d.h2>0?'rgba(34,197,94,.5)':'var(--surf3)',
             borderRadius:'3px 3px 0 0',border:d.isHoy?'1px solid var(--acc)':'none',
-            transition:'height .3s',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden'},
+            transition:'height .3s',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',overflow:'hidden',gap:'1px'},
           },
-          d.h2>0?h('span',{style:{fontSize:'.52rem',fontWeight:700,color:d.isHoy?'#000':'var(--ink)',lineHeight:1,textAlign:'center',padding:'1px'}},d.h2+'h'):null
+          d.h2>0?h('span',{style:{fontSize:'.52rem',fontWeight:800,color:d.isHoy?'#000':'var(--ink)',lineHeight:1.1}},d.h2+'h'):null,
+          h('span',{style:{fontSize:'.48rem',fontWeight:400,color:d.isHoy?'#000':'var(--ink2)',lineHeight:1.1}},
+            d.fecha.slice(8)+'/'+d.fecha.slice(5,7))
         ),
-        h('div',{style:{fontSize:'.55rem',fontWeight:d.isHoy?800:400,color:d.isHoy?'var(--acc)':d.isFut?'var(--surf3)':'var(--ink3)',marginTop:'2px'}},
-          d.dia)
+        h('div',{style:{height:'2px'}})
       ))
     )
   );
@@ -8160,32 +8161,7 @@ shareResumen = function(method, conPrecios){
   return _shareResumen_orig(method, conPrecios);
 };
 
-// Fix notas editor: desactivar formato tras Enter
-// El handler original usa setTimeout(10ms) para re-aplicar formato
-// Usamos setTimeout(20ms) para ejecutarnos DESPUÉS y desactivarlo definitivamente
-(function(){
-  function patchNotasEditor(){
-    const ed = document.getElementById('notas-editor');
-    if(!ed || ed._enterPatched) return;
-    ed._enterPatched = true;
-    ed.addEventListener('keydown', function(ev){
-      if(ev.key !== 'Enter') return;
-      // No preventDefault - dejamos que el Enter funcione normal
-      // Solo desactivamos el formato 20ms después (tras el handler original de 10ms)
-      setTimeout(function(){
-        const edEl = document.getElementById('notas-editor');
-        if(!edEl || document.activeElement !== edEl) return;
-        if(document.queryCommandState('bold')) document.execCommand('bold');
-        if(document.queryCommandState('italic')) document.execCommand('italic');
-        if(document.queryCommandState('underline')) document.execCommand('underline');
-        fEntry.notas = edEl.innerHTML;
-      }, 20);
-    }, false);
-  }
-  const obs = new MutationObserver(patchNotasEditor);
-  obs.observe(document.body, {childList:true, subtree:true});
-  patchNotasEditor();
-})();
+// Enter key: el handler original del código base ya gestiona esto correctamente
 
 // MEJORA 12: Campo título en renderFichar - inject after fecha card
 const _renderFichar_v2 = renderFichar;
@@ -8231,12 +8207,7 @@ renderDayCard = function(){
 
 
 
-// Fix notas modal: CSS directo para que el texto sea visible en fondo blanco
-(function(){
-  const s = document.createElement('style');
-  s.textContent = '[style*="background:#ffffff"] *, [style*="background: #ffffff"] * { color: #1e293b !important; }';
-  document.head.appendChild(s);
-})();
+// Notas modal: sin override - el código original ya renderiza el HTML correctamente
 
 console.log('✅ TimerPro mejoras cargadas: GPS iframe, QuickFichar, MiniChart, OlvidoFichar, BúsquedaMejorada, AutoSync, DriveOAuth');
 
