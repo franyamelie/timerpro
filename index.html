@@ -8229,25 +8229,28 @@ renderDayCard = function(){
 
 
 // MEJORA: Notas en modal resumen - limpiar colores CSS variables invisibles en fondo blanco
-function cleanNotasForModal(html){
-  if(!html) return '';
-  // Use regex to strip color/background from style attributes (CSS vars invisible on white)
-  return html.replace(/style="([^"]*)"/gi, function(match, styleContent){
-    var cleaned = styleContent
-      .replace(/color\s*:[^;]+;?\s*/gi, '')
-      .replace(/background(-color)?\s*:[^;]+;?\s*/gi, '')
-      .trim().replace(/;$/, '');
-    return cleaned ? 'style="' + cleaned + '"' : '';
-  });
-}
-
+// Fix notas modal: inyectar CSS que fuerza color oscuro en la sección notas
 const _renderModalResumenDia_orig = renderModalResumenDia;
 renderModalResumenDia = function(){
-  const originalNotas = fEntry.notas;
-  if(originalNotas) fEntry.notas = cleanNotasForModal(originalNotas);
   const modal = _renderModalResumenDia_orig();
-  fEntry.notas = originalNotas;
+  // Inject a style tag that overrides CSS vars inside the modal notas section
+  const styleEl = document.createElement('style');
+  styleEl.id = 'modal-notas-fix';
+  styleEl.textContent = '.modal-bg * { color: #1e293b !important; background: transparent !important; }';
+  setTimeout(function(){
+    if(!document.getElementById('modal-notas-fix')){
+      document.head.appendChild(styleEl);
+    }
+  }, 0);
   return modal;
+};
+
+// Remove the style when modal closes
+const _origRerender = rerender;
+rerender = function(){
+  const s = document.getElementById('modal-notas-fix');
+  if(s && !S.modal) s.remove();
+  return _origRerender();
 };
 
 console.log('✅ TimerPro mejoras cargadas: GPS iframe, QuickFichar, MiniChart, OlvidoFichar, BúsquedaMejorada, AutoSync, DriveOAuth');
