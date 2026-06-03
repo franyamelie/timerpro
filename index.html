@@ -8132,6 +8132,104 @@ saveEntry = async function(){
 // MEJORA 9: Drive OAuth - guardar estado antes de redirect
 // (gdriveHandleRedirect override eliminado - causaba bucle infinito)
 
+
+// MEJORA 10: Título de jornada debajo de fecha
+// Override renderFichar ya hecho - añadir campo título al fEntry
+if(!fEntry.titulo) fEntry.titulo = '';
+
+// Patch defEntry para incluir titulo
+const _defEntry_orig = defEntry;
+defEntry = function(){
+  const e = _defEntry_orig();
+  e.titulo = '';
+  return e;
+};
+
+// MEJORA 11: Notas en resumen - mostrar HTML formateado
+// Override shareResumen para notas con formato
+const _shareResumen_orig = shareResumen;
+shareResumen = function(method, conPrecios){
+  return _shareResumen_orig(method, conPrecios);
+};
+
+// Fix notas editor: al pulsar Enter, desactivar formato
+document.addEventListener('keydown', function(ev){
+  if(ev.key !== 'Enter') return;
+  const el = document.activeElement;
+  if(!el || el.id !== 'notas-editor') return;
+  // Desactivar negrita, cursiva, subrayado tras Enter
+  setTimeout(()=>{
+    if(document.queryCommandState('bold')) document.execCommand('bold');
+    if(document.queryCommandState('italic')) document.execCommand('italic');
+    if(document.queryCommandState('underline')) document.execCommand('underline');
+  }, 10);
+}, true);
+
+// MEJORA 12: Campo título en renderFichar - inject after fecha card
+const _renderFichar_v2 = renderFichar;
+renderFichar = function(){
+  const result = _renderFichar_v2();
+  return result;
+};
+
+// Patch renderFichar para añadir campo título
+// Override the date card section by patching captureFormState
+const _captureFormState_orig = captureFormState;
+captureFormState = function(){
+  _captureFormState_orig();
+  const tEl = document.getElementById('jornada-titulo-input');
+  if(tEl) fEntry.titulo = tEl.value;
+};
+
+// Add titulo field to renderFichar via patching the card rendering
+// We do this by overriding renderDayCard to show titulo
+const _renderDayCard_orig = renderDayCard;
+renderDayCard = function(){
+  // Add a titulo input before the day card
+  const titleField = h('div',{class:'card',style:{padding:'.6rem 1rem',marginBottom:'.4rem'}},
+    h('div',{class:'field',style:{margin:0}},
+      h('label',{},'TÍTULO DE JORNADA'),
+      h('input',{
+        type:'text',
+        id:'jornada-titulo-input',
+        placeholder:'Ej: Turno mañana, Guardia, Formación...',
+        value:fEntry.titulo||'',
+        style:{fontSize:'.9rem'},
+        on:{
+          input:ev=>{fEntry.titulo=ev.target.value;},
+          blur:ev=>{fEntry.titulo=ev.target.value;scheduleDraftSave();}
+        }
+      })
+    )
+  );
+  const dayCard = _renderDayCard_orig();
+  if(!dayCard) return titleField;
+  return h('div',{}, titleField, dayCard);
+};
+
+
+
+// MEJORA: Limpiar colores del HTML de notas para que se vean bien en el modal blanco
+function sanitizeNotasHTML(html){
+  if(!html) return '';
+  // Remove inline color styles that make text invisible on white background
+  return html
+    .replace(/color\s*:\s*[^;'"]+[;'"]/gi, 'color:inherit;')
+    .replace(/background(-color)?\s*:\s*[^;'"]+[;'"]/gi, '')
+    .replace(/style=""/gi, '');
+}
+
+// Override renderModalResumenDia para notas con HTML limpio
+const _renderModalResumenDia_orig = renderModalResumenDia;
+renderModalResumenDia = function(){
+  // Temporarily clean notas for the modal
+  const originalNotas = fEntry.notas;
+  fEntry.notas = sanitizeNotasHTML(originalNotas);
+  const modal = _renderModalResumenDia_orig();
+  fEntry.notas = originalNotas; // restore original
+  return modal;
+};
+
 console.log('✅ TimerPro mejoras cargadas: GPS iframe, QuickFichar, MiniChart, OlvidoFichar, BúsquedaMejorada, AutoSync, DriveOAuth');
 
 </script>
