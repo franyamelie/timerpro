@@ -8060,7 +8060,7 @@ function renderMiniWeekChart(){
 
 // MEJORA 6: Override renderFichar para añadir QuickFichar y gráfica
 const _renderFichar_orig = renderFichar;
-renderFichar = function(){
+window.renderFichar = function(){
   const result = _renderFichar_orig();
   return h('div',{},
     renderQuickFichar(),
@@ -8132,7 +8132,7 @@ function _renderHistorial(){
 
 // MEJORA 8: Auto-sync a Drive al guardar jornada
 const _saveEntry_orig = saveEntry;
-saveEntry = async function(){
+window.saveEntry = async function(){
   await _saveEntry_orig();
   if(isOnline && driveUrl && !_syncInProgress){
     setTimeout(()=>{ if(!_syncInProgress) driveSync(); }, 3000);
@@ -8149,7 +8149,7 @@ if(!fEntry.titulo) fEntry.titulo = '';
 
 // Patch defEntry para incluir titulo
 const _defEntry_orig = defEntry;
-defEntry = function(){
+window.defEntry = function(){
   const e = _defEntry_orig();
   e.titulo = '';
   return e;
@@ -8166,7 +8166,7 @@ shareResumen = function(method, conPrecios){
 
 // MEJORA 12: Campo título en renderFichar - inject after fecha card
 const _renderFichar_v2 = renderFichar;
-renderFichar = function(){
+window.renderFichar = function(){
   const result = _renderFichar_v2();
   return result;
 };
@@ -8174,7 +8174,7 @@ renderFichar = function(){
 // Patch renderFichar para añadir campo título
 // Override the date card section by patching captureFormState
 const _captureFormState_orig = captureFormState;
-captureFormState = function(){
+window.captureFormState = function(){
   _captureFormState_orig();
   const tEl = document.getElementById('jornada-titulo-input');
   if(tEl) fEntry.titulo = tEl.value;
@@ -8183,7 +8183,7 @@ captureFormState = function(){
 // Add titulo field to renderFichar via patching the card rendering
 // We do this by overriding renderDayCard to show titulo
 const _renderDayCard_orig = renderDayCard;
-renderDayCard = function(){
+window.renderDayCard = function(){
   // Add a titulo input before the day card
   const titleField = h('div',{class:'card',style:{padding:'.6rem 1rem',marginBottom:'.4rem'}},
     h('div',{class:'field',style:{margin:0}},
