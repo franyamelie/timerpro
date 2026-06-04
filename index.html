@@ -7873,6 +7873,14 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
       }
     }, 500);
 
+  } catch(e) {
+    document.getElementById('app').innerHTML = '<div style="color:red;padding:20px;font-family:monospace;font-size:12px">Render error: '+e.message+'</div>';
+  }
+})();
+
+
+
+</script>
 <script>
 // ═══════════════════════════════════════════════════════════════════
 // TIMERPRO — MEJORAS INTEGRADAS
