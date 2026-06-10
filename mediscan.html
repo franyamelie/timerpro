@@ -32,7 +32,9 @@
 <script type="text/babel">
 const { useState, useRef, useEffect } = React;
 
-const API = "https://api.anthropic.com/v1/messages";
+const GROQ_API = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_KEY = "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";
+const GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 const UFACTORS = { mm:1, cm:10, m:1000, in:25.4 };
 const toMM = (v,u) => (parseFloat(v)||0)*(UFACTORS[u]||1);
 const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
@@ -329,13 +331,14 @@ function MediScan3D() {
     setError(null);
     const b64=img.split(",")[1];
     try{
-      const res=await fetch(API,{
-        method:"POST",headers:{"Content-Type":"application/json"},
+      const res=await fetch(GROQ_API,{
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":`Bearer ${GROQ_KEY}`},
         body:JSON.stringify({
-          model:"claude-sonnet-4-20250514",max_tokens:1200,
+          model:GROQ_MODEL, max_tokens:1200,
           messages:[{role:"user",content:[
-            {type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}},
-            {type:"text",text:`Identifica el objeto principal y devuelve SOLO JSON válido (sin markdown):
+            {type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},
+            {type:"text",text:`Identifica el objeto principal y devuelve SOLO JSON válido (sin markdown ni texto extra):
 {
   "name": "nombre en español",
   "category": "categoría en español",
@@ -345,12 +348,12 @@ function MediScan3D() {
     { "id": "id_unico", "name": "Nombre dimensión en español", "axis": "width|height|depth|other", "markerX": 0.5, "markerY": 0.3 }
   ]
 }
-Incluye 3-6 dimensiones medibles clave del objeto. markerX/markerY = posición en imagen (0-1). NO estimes medidas.`}
+Incluye 3-6 dimensiones medibles clave del objeto. markerX/markerY = posición en imagen (0-1). NO estimes medidas. Devuelve SOLO el JSON.`}
           ]}]
         })
       });
       const data=await res.json();
-      const txt=data.content.map(c=>c.text||"").join("");
+      const txt=data.choices?.[0]?.message?.content||"";
       const parsed=JSON.parse(txt.replace(/```json|```/g,"").trim());
       parsed.parts=parsed.parts.map((p,i)=>({...p,color:PART_COLORS[i%PART_COLORS.length],markerX:clamp(p.markerX??0.5,0.06,0.94),markerY:clamp(p.markerY??0.5,0.06,0.94)}));
       setObjInfo(parsed); setMeas({}); setScreen("measure");
