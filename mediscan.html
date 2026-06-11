@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
     <title>MediScan 3D - Studio Metrology Engine</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -39,7 +39,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-    const {useState,useRef,useEffect,useCallback}=React;
+    const {useState,useRef,useEffect}=React;
 
     const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
     const uid=()=>`_${Math.random().toString(36).slice(2,9)}`;
@@ -48,15 +48,15 @@
     const TOOLS=[
       {id:"sel",icon:"↖",tip:"Mover / Ajustar"},
       {id:"pt", icon:"⬤",tip:"Punto Cota"},
-      {id:"line",icon:"━━",tip:"Línea / Tubo"},
+      {id:"line",icon:"━━",tip:"Tubo / Línea"},
       {id:"arrow",icon:"→",tip:"Flecha"},
       {id:"rect",icon:"▭",tip:"Rectángulo"},
-      {id:"circ",icon:"◯",tip:"Círculo / Brida"}
+      {id:"circ",icon:"◯",tip:"Tubo Redondo / Círculo"}
     ];
 
     const UNIT_FACTORS = { mm: 1, cm: 10, m: 1000, in: 25.4 };
 
-    /* ── MOTOR 3D VINCULADO A COTAS REALES ── */
+    /* ── MOTOR 3D VINCULADO REAL ── */
     function Studio3DView({annotations}){
       const el=useRef(null);
       useEffect(()=>{
@@ -72,11 +72,10 @@
 
         const group=new THREE.Group(); scene.add(group);
         
-        // Renderizar un objeto 3D real por cada cota ingresada por el usuario
         annotations.forEach((a, idx) => {
           if(!a.forcedValue) return;
           const valInMM = parseFloat(a.forcedValue) * (UNIT_FACTORS[a.unit] || 1);
-          const size3D = valInMM * 0.002; // Factor de escala visual para el Viewport
+          const size3D = valInMM * 0.002; 
           
           let geo;
           const mat = new THREE.MeshStandardMaterial({
@@ -88,23 +87,20 @@
           });
 
           if(a.type === "circ"){
-            // Cilindro/Perforación/Brida cilíndrica
-            geo = new THREE.CylinderGeometry(size3D/2, size3D/2, 0.3, 32);
+            // Si el usuario dibuja un círculo, se genera un tubo cilíndrico real en 3D
+            geo = new THREE.CylinderGeometry(size3D/2, size3D/2, 1.2, 32);
           } else if(a.type === "rect"){
-            // Caja/Bloque prismático
             geo = new THREE.BoxGeometry(size3D, size3D, size3D);
           } else if(a.type === "pt"){
-            // Pequeña esfera de localización
             geo = new THREE.SphereGeometry(0.15, 16, 16);
           } else {
-            // Línea / Tubo físico
+            // Líneas / Flechas generan conductos tubulares longitudinales
             geo = new THREE.CylinderGeometry(0.08, 0.08, size3D || 1, 16);
-            geo.rotateZ(Math.PI / 2); // Orientación horizontal por defecto
+            geo.rotateZ(Math.PI / 2);
           }
 
           const mesh = new THREE.Mesh(geo, mat);
-          // Dispersar los elementos en el espacio para que no se pisen
-          mesh.position.set((idx * 0.8) - (annotations.length * 0.4), 0, 0);
+          mesh.position.set((idx * 0.9) - (annotations.length * 0.45), 0, 0);
           
           const wire = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({color: 0xffffff}));
           wire.position.copy(mesh.position);
@@ -114,7 +110,6 @@
           group.add(wire);
         });
 
-        // Si no hay cotas hechas, mostrar un bloque de referencia vacío
         if(group.children.length === 0){
           const placeholderGeo = new THREE.BoxGeometry(1, 1, 1);
           const placeholderMat = new THREE.MeshBasicMaterial({color: 0x333333, wireframe: true});
@@ -153,17 +148,15 @@
       return <div ref={el} style={{width:"100%",height:"450px",cursor:"grab",borderRadius:"4px"}}/>;
     }
 
-    /* ── APLICACIÓN CENTRAL ── */
+    /* ── INTERFAZ GENERAL ── */
     function App(){
       const containerRef=useRef(null);
       const uploadRef=useRef(null);
 
       const [scr,setScr]=useState("home");
-      const [projects,setProjects]=useState(()=>JSON.parse(localStorage.getItem("ms3_projs")||"[]"));
-      const [projName,setProjName]=useState("");
       const [image,setImage]=useState(null);
-      const [tool,setTool]=useState("line"); // Herramienta inicial por defecto
-      const [anns,setAnns]=useState([]);     // Empieza totalmente vacío a petición del usuario
+      const [tool,setTool]=useState("line"); 
+      const [anns,setAnns]=useState([]);     // Cero absoluto por defecto al iniciar
       
       const [isDrawing, setIsDrawing] = useState(false);
       const [startPt, setStartPt] = useState(null);
@@ -174,17 +167,6 @@
       const [unitSelect, setUnitSelect] = useState("mm");
       const [viewTab,setViewTab]=useState("edit2d");
 
-      useEffect(()=>{ localStorage.setItem("ms3_projs", JSON.stringify(projects)); },[projects]);
-
-      const startProject=img=>{
-        setImage(img); 
-        setAnns([]); // Forzar vacío absoluto al cargar
-        setTool("line"); 
-        setProjName("Nuevo Plano " + new Date().toLocaleTimeString());
-        setScr("annotate");
-      };
-
-      // OBTENER COORDENADAS RELATIVAS AL LIENZO (0 A 1)
       const getCanvasCoords = (e) => {
         const rect = containerRef.current?.getBoundingClientRect();
         if(!rect) return {x:0, y:0};
@@ -196,9 +178,8 @@
         };
       };
 
-      // INTERACCIÓN DINÁMICA: EMPEZAR A DIBUJAR (CLICK ABAJO)
       const handleMouseDown = (e) => {
-        if(tool === "sel") return; // Si es mover, no dibuja
+        if(tool === "sel") return; 
         e.preventDefault();
         const pt = getCanvasCoords(e);
         setIsDrawing(true);
@@ -206,32 +187,27 @@
         setCurrentPt(pt);
       };
 
-      // MOVER EL RATÓN MIENTRAS SE ARRASTRA
       const handleMouseMove = (e) => {
         if(!isDrawing) return;
         const pt = getCanvasCoords(e);
         setCurrentPt(pt);
       };
 
-      // SOLTAR EL RATÓN: FINALIZAR TRAZO Y PREGUNTAR MEDIDA REAL
       const handleMouseUp = (e) => {
         if(!isDrawing) return;
         setIsDrawing(false);
         const endPt = getCanvasCoords(e);
 
-        // Evitar micro-clics accidentales en herramientas de tramo largo
         if(tool !== "pt" && Math.abs(endPt.x - startPt.x) < 0.005 && Math.abs(endPt.y - startPt.y) < 0.005) return;
 
         const id = uid();
         const color = COLS[anns.length % COLS.length];
         const points = tool === "pt" ? [startPt] : [startPt, endPt];
 
-        // Abrir ventana emergente para forzar la medida real
         setActivePromptDlg({ id, type: tool, points, color });
         setInputVal("");
       };
 
-      // GUARDAR LA COTA REGISTRADA EN LA TABLA
       const commitAnnotation = () => {
         const num = parseFloat(inputVal);
         if(!num || num <= 0 || !activePromptDlg) return;
@@ -251,7 +227,6 @@
         setActivePromptDlg(null);
       };
 
-      // MANIPULAR ARRASTRE DE NODOS EN MODO SELECCIÓN / MOVER
       const startNodeDrag = (e, annId, ptIndex) => {
         if(tool !== "sel") return;
         e.preventDefault();
@@ -278,29 +253,20 @@
       return (
         <div className="app-container">
           <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #2e2e2e",paddingBottom:"10px"}}>
-            <h1 style={{fontFamily:"'Syne',sans-serif",color:"#ff9d00",fontSize:"18px"}}>MEDISCAN 3D <span style={{color:"#fff",fontSize:"11px"}}>AutoCAD Engine</span></h1>
-            <button className="studio-btn" onClick={()=>setScr("home")}>VOLVER AL INICIO</button>
+            <h1 style={{fontFamily:"'Syne',sans-serif",color:"#ff9d00",fontSize:"18px"}}>MEDISCAN 3D</h1>
+            {image && <button className="studio-btn" onClick={()=>{setImage(null); setAnns([]); setScr("home");}}>CAMBIAR IMAGEN</button>}
           </header>
 
           {scr==="home" && (
-            <div className="fade grid-layout">
-              <div className="studio-panel" style={{textAlign:"center",padding:"60px 20px"}}>
-                <p style={{marginBottom:"15px",color:"#aaa"}}>Carga un plano industrial para iniciar el proceso de metrología digital desde cero.</p>
-                <button className="studio-btn active" style={{padding:"14px 28px",fontSize:"13px"}} onClick={()=>uploadRef.current?.click()}>📥 SELECCIONAR IMAGEN / PLANO</button>
-                <input ref={uploadRef} type="file" accept="image/*" style={{display:"none"} } onChange={e=>{const f=e.target.files[0]; if(f){const r=new FileReader(); r.onload=ev=>startProject(ev.target.result); r.readAsDataURL(f);}}}/>
-              </div>
-              <div className="studio-panel">
-                <h3 style={{color:"#ff9d00",marginBottom:"8px"}}>📋 Historial Local</h3>
-                {projects.length === 0 ? <p style={{color:"#555",fontSize:"12px"}}>No hay planos guardados.</p> : 
-                  projects.map(p=><div key={p.id} onClick={()=>{setImage(p.image);setAnns(p.anns);setProjName(p.name);setScr("annotate");}} style={{background:#111,padding:"8px",marginBottom:"4px",cursor:"pointer",border:"1px solid #333"}}>{p.name} ({p.date})</div>)
-                }
-              </div>
+            <div className="fade studio-panel" style={{textAlign:"center",padding:"8px 20px", background:"#1a1a1a"}}>
+              <p style={{marginBottom:"20px",color:"#aaa",fontSize:"14px"}}>Carga cualquier plano o imagen. Las medidas se iniciarán limpias a cero.</p>
+              <button className="studio-btn active" style={{padding:"16px 32px",fontSize:"14px"}} onClick={()=>uploadRef.current?.click()}>📥 SELECCIONAR IMAGEN / PLANO</button>
+              <input ref={uploadRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>{const f=e.target.files[0]; if(f){const r=new FileReader(); r.onload=ev=>{setImage(ev.target.result); setAnns([]); setScr("annotate");}; r.readAsDataURL(f);}}}/>
             </div>
           )}
 
           {scr==="annotate" && (
             <div className="fade grid-layout">
-              {/* ZONA DE TRABAJO IZQUIERDA (DIBUJO E INTERACCIÓN) */}
               <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
                 <div className="action-bar">
                   {TOOLS.map(t=>(
@@ -308,51 +274,36 @@
                       {t.icon} {t.tip}
                     </button>
                   ))}
-                  <span style={{marginLeft:"auto",fontSize:"11px",color:"#888",fontFamily:"monospace"}}>Modo activo: <strong>{tool.toUpperCase()}</strong></span>
                 </div>
 
-                {/* MODAL EMERGENTE POST-SOLTAR EL TRAZO */}
                 {activePromptDlg && (
                   <div className="studio-panel" style={{border:"2px solid #ff9d00",background:"#2a1f10"}}>
-                    <strong style={{color:"#ff9d00",fontSize:"12px",display:"block",marginBottom:"6px"}}>📏 ASIGNAR VALOR REAL A LA SECCIÓN ({activePromptDlg.type.toUpperCase()}):</strong>
+                    <strong style={{color:"#ff9d00",fontSize:"12px",display:"block",marginBottom:"6px"}}>📏 INTRODUCE LA MEDIDA REAL PARA ESTA SECCIÓN:</strong>
                     <div style={{display:"flex",gap:"6px"}}>
-                      <input type="number" value={inputVal} onChange={e=>setInputVal(e.target.value)} style={{flex:1}} placeholder="Ej: 150, 1200..." autoFocus/>
+                      <input type="number" value={inputVal} onChange={e=>setInputVal(e.target.value)} style={{flex:1}} placeholder="Ejemplo: 50, 120, 1500..." autoFocus/>
                       <select value={unitSelect} onChange={e=>setUnitSelect(e.target.value)}>
                         <option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option><option value="in">in</option>
                       </select>
-                      <button className="studio-btn active" onClick={commitAnnotation}>Confirmar Cota</button>
+                      <button className="studio-btn active" onClick={commitAnnotation}>Aplicar</button>
                     </div>
                   </div>
                 )}
 
-                {/* VISUALIZADOR PRINCIPAL EDITABLE 2D */}
                 {viewTab === "edit2d" && (
-                  <div 
-                    className="interactive-canvas" 
-                    ref={containerRef}
-                    onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={handleMouseUp}
-                  >
+                  <div className="interactive-canvas" ref={containerRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}>
                     <img src={image} style={{width:"100%",maxHeight:"65vh",objectFit:"contain",pointerEvents:"none"}} alt="Plano"/>
-                    
                     <svg className="canvas-svg">
-                      {/* Renderizar cotas confirmadas */}
                       {anns.map(a=>{
                         if(!a.points || a.points.length<1) return null;
                         const rect = containerRef.current?.getBoundingClientRect();
                         if(!rect) return null;
-                        
-                        const p1x = a.points[0].x * rect.width;
-                        const p1y = a.points[0].y * rect.height;
+                        const p1x = a.points[0].x * rect.width; const p1y = a.points[0].y * rect.height;
                         const p2x = a.points[1] ? (a.points[1].x * rect.width) : p1x;
                         const p2y = a.points[1] ? (a.points[1].y * rect.height) : p1y;
 
                         return (
                           <g key={a.id}>
-                            {a.type === "pt" && (
-                              <circle cx={p1x} cy={p1y} r="7" fill={a.color} className="node-handle" onMouseDown={(e)=>startNodeDrag(e,a.id,0)}/>
-                            )}
+                            {a.type === "pt" && <circle cx={p1x} cy={p1y} r="7" fill={a.color} className="node-handle" onMouseDown={(e)=>startNodeDrag(e,a.id,0)}/>}
                             {(a.type === "line" || a.type === "arrow") && (
                               <>
                                 <line x1={p1x} y1={p1y} x2={p2x} y2={p2y} stroke={a.color} strokeWidth="3"/>
@@ -374,24 +325,19 @@
                                 <circle cx={p2x} cy={p2y} r="5" fill="#fff" className="node-handle" onMouseDown={(e)=>startNodeDrag(e,a.id,1)}/>
                               </>
                             )}
-                            <text x={Math.min(p1x,p2x)} y={Math.min(p1y,p2y)-8} fill="#fff" style={{fontSize:"11px",fontFamily:"'Space Mono'",fontWeight:"bold",background:"#000",padding:"2px"}}>{a.label}: {a.forcedValue} {a.unit}</text>
+                            <text x={Math.min(p1x,p2x)} y={Math.min(p1y,p2y)-8} fill="#fff" style={{fontSize:"11px",fontFamily:"'Space Mono'",fontWeight:"bold"}}>{a.label}: {a.forcedValue} {a.unit}</text>
                           </g>
                         );
                       })}
 
-                      {/* Renderizar trazo temporal mientras se arrastra */}
                       {isDrawing && startPt && currentPt && containerRef.current && (
                         (() => {
                           const rect = containerRef.current.getBoundingClientRect();
-                          const x1 = startPt.x * rect.width;
-                          const y1 = startPt.y * rect.height;
-                          const x2 = currentPt.x * rect.width;
-                          const y2 = currentPt.y * rect.height;
-                          
+                          const x1 = startPt.x * rect.width; const y1 = startPt.y * rect.height;
+                          const x2 = currentPt.x * rect.width; const y2 = currentPt.y * rect.height;
                           if(tool === "line" || tool === "arrow") return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#fff" strokeDasharray="4" strokeWidth="2"/>;
                           if(tool === "rect") return <rect x={Math.min(x1,x2)} y={Math.min(y1,y2)} width={Math.abs(x1-x2)} height={Math.abs(y1-y2)} fill="none" stroke="#fff" strokeDasharray="4"/>;
                           if(tool === "circ") return <circle cx={x1} cy={y1} r={Math.sqrt((x2-x1)**2 + (y2-y1)**2)} fill="none" stroke="#fff" strokeDasharray="4"/>;
-                          if(tool === "pt") return <circle cx={x1} cy={y1} r="6" fill="#fff"/>;
                           return null;
                         })()
                       )}
@@ -399,23 +345,20 @@
                   </div>
                 )}
 
-                {/* MODO VECTORS 2D (CAD REAL) */}
                 {viewTab === "cad2d" && (
                   <div className="cad-viewport">
-                    <div style={{position:"absolute",top:"10px",left:"10px",fontFamily:"'Space Mono'",fontSize:"10px",color:"#00ffcc"}}>AUTOCAD VECTORIAL // ESPACIO DE TRABAJO PURIFICADO</div>
                     <svg style={{width:"100%",height:"100%"}}>
                       {anns.map(a=>{
                         if(!a.points || a.points.length<1) return null;
-                        const p1x = a.points[0].x * 700; const p1y = a.points[0].y * 400;
-                        const p2x = a.points[1] ? (a.points[1].x * 700) : p1x;
+                        const p1x = a.points[0].x * 600; const p1y = a.points[0].y * 400;
+                        const p2x = a.points[1] ? (a.points[1].x * 600) : p1x;
                         const p2y = a.points[1] ? (a.points[1].y * 400) : p1y;
                         return (
                           <g key={a.id} stroke="#00ffcc" fill="none" strokeWidth="1.5">
-                            {a.type==="pt" && <circle cx={p1x} cy={p1y} r="5" fill="#00ffcc"/>}
                             {(a.type==="line" || a.type==="arrow") && <line x1={p1x} y1={p1y} x2={p2x} y2={p2y}/>}
                             {a.type==="rect" && <rect x={Math.min(p1x,p2x)} y={Math.min(p1y,p2y)} width={Math.abs(p1x-p2x)} height={Math.abs(p1y-p2y)}/>}
                             {a.type==="circ" && <circle cx={p1x} cy={p1y} r={Math.sqrt((p2x-p1x)**2+(p2y-p1y)**2)}/>}
-                            <text x={p1x} y={p1y-6} fill="#fff" stroke="none" style={{fontSize:"10px",fontFamily:"'Space Mono'"}}>{a.label} ({a.forcedValue} {a.unit})</text>
+                            <text x={p1x} y={p1y-6} fill="#fff" stroke="none" style={{fontSize:"11px",fontFamily:"'Space Mono'"}}>{a.label} ({a.forcedValue} {a.unit})</text>
                           </g>
                         );
                       })}
@@ -423,74 +366,33 @@
                   </div>
                 )}
 
-                {/* MOSTRAR VIEWPORT INTERACTIVO 3D */}
-                {viewTab === "studio3d" && (
-                  <div style={{position:"relative"}}>
-                    <div style={{position:"absolute",top:"10px",left:"10px",fontFamily:"'Space Mono'",fontSize:"10px",color:"#ff9d00",zIndex:20}}>3D STUDIO VIEWPORT // ESTRUCTURA ASOCIADA A MEDICIONES</div>
-                    <Studio3DView annotations={anns}/>
-                  </div>
-                )}
+                {viewTab === "studio3d" && <Studio3DView annotations={anns}/>}
               </div>
 
-              {/* BARRA LATERAL DERECHA (TABS Y RESUMEN DE COTAS VINCULADO) */}
+              {/* COLUMNA DERECHA: RESUMEN VINCULADO */}
               <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
                 <div style={{display:"flex",gap:"4px",background:"#111",padding:"4px",borderRadius:"4px"}}>
                   <button className={`studio-btn ${viewTab==='edit2d'?'active':''}`} style={{flex:1}} onClick={()=>setViewTab("edit2d")}>IMAGEN BASE</button>
-                  <button className={`studio-btn ${viewTab==='cad2d'?'active':''}`} style={{flex:1}} onClick={()=>setViewTab("cad2d")}>🖥️ MODO CAD</button>
+                  <button className={`studio-btn ${viewTab==='cad2d'?'active':''}`} style={{flex:1}} onClick={()=>setViewTab("cad2d")}>🖥️ VECTORES CAD</button>
                   <button className={`studio-btn ${viewTab==='studio3d'?'active':''}`} style={{flex:1}} onClick={()=>setViewTab("studio3d")}>🎮 ESPACIO 3D</button>
                 </div>
 
-                <div className="studio-panel" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-                  <input type="text" value={projName} onChange={e=>setProjName(e.target.value)} placeholder="Nombre del Plano..."/>
-                  <button className="studio-btn active" onClick={()=>{setProjects([{id:uid(),name:projName,date:new Date().toLocaleDateString(),image,anns},...projects]);alert("Guardado correctamente.");}}>💾 GUARDAR PROYECTO</button>
-                  
-                  <hr style={{borderColor:"#2e2e2e",margin:"6px 0"}}/>
-                  <span style={{fontSize:"11px",fontFamily:"'Space Mono'",color:"#ff9d00",fontWeight:"bold"}}>📋 RESUMEN DE COTAS REALES</span>
-
-                  <div style={{maxHeight:"350px",overflowY:"auto",display:"flex",flexDirection:"column",gap:"6px"}}>
+                <div className="studio-panel">
+                  <span style={{fontSize:"12px",fontFamily:"'Space Mono'",color:"#ff9d00",fontWeight:"bold",display:"block",marginBottom:"10px"}}>📋 RESUMEN DE COMPONENTES</span>
+                  <div style={{maxHeight:"450px",overflowY:"auto",display:"flex",flexDirection:"column",gap:"6px"}}>
                     {anns.length === 0 ? (
-                      <p style={{fontSize:"11px",color:"#666",textAlign:"center",padding:"20px"}}>Ninguna cota realizada. Usa las herramientas de arriba y arrastra sobre la imagen para empezar.</p>
+                      <p style={{fontSize:"11px",color:"#666",textAlign:"center",padding:"20px"}}>Ninguna medida creada aún. Selecciona una herramienta arriba y arrastra sobre la imagen.</p>
                     ) : (
                       anns.map(a=>(
                         <div key={a.id} style={{background:"#181818",padding:"8px",borderRadius:"4px",borderLeft:`4px solid ${a.color}`,display:"flex",flexDirection:"column",gap:"4px"}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                            <input 
-                              type="text" 
-                              value={a.label} 
-                              onChange={e=>{
-                                const val=e.target.value; 
-                                setAnns(anns.map(x=>x.id===a.id?{...x,label:val}:x));
-                              }} 
-                              style={{background:"transparent",border:"none",color:"#fff",fontSize:"11px",fontWeight:"bold",fontFamily:"'Space Mono'"}}
-                            />
-                            <button style={{color:"#ff4466",background:"transparent",fontSize:"10px"}} onClick={()=>setAnns(anns.filter(x=>x.id!==a.id))}>❌ Eliminar</button>
+                            <input type="text" value={a.label} onChange={e=>setAnns(anns.map(x=>x.id===a.id?{...x,label:e.target.value}:x))} style={{background:"transparent",border:"none",color:"#fff",fontWeight:"bold"}}/>
+                            <button style={{color:"#ff4466",background:"transparent"}} onClick={()=>setAnns(anns.filter(x=>x.id!==a.id))}>❌ Borrar</button>
                           </div>
-                          
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                            <div style={{display:"flex",alignItems:"center",gap:"4px"}}>
-                              <span style={{fontSize:"10px",color:"#888"}}>Valor:</span>
-                              <input 
-                                type="number" 
-                                value={a.forcedValue} 
-                                onChange={e=>{
-                                  const val=parseFloat(e.target.value)||0;
-                                  setAnns(anns.map(x=>x.id===a.id?{...x,forcedValue:val}:x));
-                                }} 
-                                style={{width:"70px",padding:"2px 4px",background:"#111"}}
-                              />
-                            </div>
-                            <select 
-                              value={a.unit} 
-                              onChange={e=>{
-                                const u=e.target.value; 
-                                setAnns(anns.map(x=>x.id===a.id?{...x,unit:u}:x));
-                              }} 
-                              style={{fontSize:"10px",padding:"2px 4px"}}
-                            >
-                              <option value="mm">mm</option>
-                              <option value="cm">cm</option>
-                              <option value="m">m</option>
-                              <option value="in">in</option>
+                            <input type="number" value={a.forcedValue} onChange={e=>setAnns(anns.map(x=>x.id===a.id?{...x,forcedValue:parseFloat(e.target.value)||0}:x))} style={{width:"80px",padding:"2px"}}/>
+                            <select value={a.unit} onChange={e=>setAnns(anns.map(x=>x.id===a.id?{...x,unit:e.target.value}:x))}>
+                              <option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option><option value="in">in</option>
                             </select>
                           </div>
                         </div>
