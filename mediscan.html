@@ -2,22 +2,23 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-    <title>MediScan Pro - Metrología 3D</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>MediScan Pro - Metrología Completa</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
-        *{box-sizing:border-box;margin:0;padding:0;}
-        body{background:#0a0a0a;color:#fff;font-family:sans-serif;}
-        .app{max-width:1000px;margin:0 auto;padding:20px;}
-        .canvas-area{position:relative;background:#000;border:2px solid #333;height:500px;cursor:crosshair;overflow:hidden;}
+        body{background:#111;color:#fff;font-family:sans-serif;margin:0;}
+        .app{display:flex;height:100vh;}
+        .canvas-area{flex:1;background:#000;position:relative;cursor:crosshair;border-right:2px solid #333;}
+        .sidebar{width:300px;background:#1a1a1a;padding:20px;overflow-y:auto;}
         svg{position:absolute;top:0;left:0;width:100%;height:100%;}
-        .tool-bar{display:flex;gap:10px;padding:10px;background:#222;}
-        button{padding:10px;cursor:pointer;}
+        .tool-bar{padding:10px;background:#222;display:flex;gap:5px;}
+        button{padding:8px;cursor:pointer;}
         button.active{background:#ff9d00;}
-        .handle{fill:#fff;stroke:#ff9d00;stroke-width:2;cursor:pointer;}
+        .handle{fill:#fff;stroke:#ff9d00;stroke-width:2;cursor:move;}
+        .element-item{background:#333;margin-bottom:10px;padding:10px;border-radius:5px;}
+        .export-btns{margin-top:20px;display:flex;flex-direction:column;gap:10px;}
     </style>
 </head>
 <body>
@@ -39,7 +40,7 @@
 
         const handleMouseDown = (e) => {
             const pos = getPos(e);
-            setDrawing({ id: Date.now(), type: tool, p1: pos, p2: pos });
+            setDrawing({ id: Date.now(), type: tool, p1: pos, p2: pos, val: 0, unit: 'mm' });
         };
 
         const handleMouseMove = (e) => {
@@ -53,24 +54,40 @@
             setDrawing(null);
         };
 
-        const updateElement = (id, p1, p2) => {
-            setElements(prev => prev.map(el => el.id === id ? { ...el, p1, p2 } : el));
+        const updateElement = (id, updates) => {
+            setElements(prev => prev.map(el => el.id === id ? { ...el, ...updates } : el));
         };
+
+        const exportData = (type) => alert("Exportando vía: " + type);
 
         return (
             <div className="app">
-                <div className="tool-bar">
-                    {["line", "rect", "circ"].map(t => (
-                        <button key={t} className={tool === t ? "active" : ""} onClick={() => setTool(t)}>{t.toUpperCase()}</button>
-                    ))}
-                </div>
                 <div className="canvas-area" onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}>
-                    <svg ref={svgRef}>
-                        {elements.map(el => (
-                            <RenderElement key={el.id} el={el} onDrag={(p1, p2) => updateElement(el.id, p1, p2)} />
+                    <div className="tool-bar">
+                        {["line", "rect", "circ"].map(t => (
+                            <button key={t} className={tool === t ? "active" : ""} onClick={() => setTool(t)}>{t.toUpperCase()}</button>
                         ))}
+                    </div>
+                    <svg ref={svgRef}>
+                        {elements.map(el => <RenderElement key={el.id} el={el} onDrag={(p1, p2) => updateElement(el.id, {p1, p2})} />)}
                         {drawing && <RenderElement el={drawing} />}
                     </svg>
+                </div>
+                <div className="sidebar">
+                    <h2>Mediciones</h2>
+                    {elements.map(el => (
+                        <div key={el.id} className="element-item">
+                            <input type="number" placeholder="Valor" onChange={(e) => updateElement(el.id, {val: e.target.value})} />
+                            <select onChange={(e) => updateElement(el.id, {unit: e.target.value})}>
+                                <option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option>
+                            </select>
+                        </div>
+                    ))}
+                    <div className="export-btns">
+                        <button onClick={() => exportData('Email')}>Enviar Email</button>
+                        <button onClick={() => exportData('WhatsApp')}>Compartir WhatsApp</button>
+                        <button onClick={() => exportData('PDF')}>Exportar PDF</button>
+                    </div>
                 </div>
             </div>
         );
@@ -82,9 +99,8 @@
             e.stopPropagation();
             const move = (ev) => {
                 const rect = ev.target.closest('svg').getBoundingClientRect();
-                const newPos = { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
-                if (idx === 1) onDrag(newPos, el.p2);
-                else onDrag(el.p1, newPos);
+                const pos = { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+                if (idx === 1) onDrag(pos, el.p2); else onDrag(el.p1, pos);
             };
             const up = () => window.removeEventListener("mousemove", move);
             window.addEventListener("mousemove", move);
@@ -95,18 +111,16 @@
             const r = Math.sqrt((el.p2.x - el.p1.x)**2 + (el.p2.y - el.p1.y)**2);
             return (
                 <g>
-                    <circle cx={el.p1.x} cy={el.p1.y} r={r} fill="none" stroke="white" strokeWidth="2" />
+                    <circle cx={el.p1.x} cy={el.p1.y} r={r} fill="none" stroke="#ff9d00" strokeWidth="2" />
                     <circle cx={el.p1.x} cy={el.p1.y} r="5" className="handle" onMouseDown={(e) => handleDrag(1, e)} />
                     <circle cx={el.p2.x} cy={el.p2.y} r="5" className="handle" onMouseDown={(e) => handleDrag(2, e)} />
                 </g>
             );
         }
         if (el.type === "rect") {
-            const w = Math.abs(el.p2.x - el.p1.x);
-            const h = Math.abs(el.p2.y - el.p1.y);
             return (
                 <g>
-                    <rect x={Math.min(el.p1.x, el.p2.x)} y={Math.min(el.p1.y, el.p2.y)} width={w} height={h} fill="none" stroke="white" strokeWidth="2" />
+                    <rect x={Math.min(el.p1.x, el.p2.x)} y={Math.min(el.p1.y, el.p2.y)} width={Math.abs(el.p2.x - el.p1.x)} height={Math.abs(el.p2.y - el.p1.y)} fill="none" stroke="#ff9d00" strokeWidth="2" />
                     <circle cx={el.p1.x} cy={el.p1.y} r="5" className="handle" onMouseDown={(e) => handleDrag(1, e)} />
                     <circle cx={el.p2.x} cy={el.p2.y} r="5" className="handle" onMouseDown={(e) => handleDrag(2, e)} />
                 </g>
@@ -114,7 +128,7 @@
         }
         return (
             <g>
-                <line x1={el.p1.x} y1={el.p1.y} x2={el.p2.x} y2={el.p2.y} stroke="white" strokeWidth="2" />
+                <line x1={el.p1.x} y1={el.p1.y} x2={el.p2.x} y2={el.p2.y} stroke="#ff9d00" strokeWidth="2" />
                 <circle cx={el.p1.x} cy={el.p1.y} r="5" className="handle" onMouseDown={(e) => handleDrag(1, e)} />
                 <circle cx={el.p2.x} cy={el.p2.y} r="5" className="handle" onMouseDown={(e) => handleDrag(2, e)} />
             </g>
