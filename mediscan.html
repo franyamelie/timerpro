@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>MediScan Pro - Metrología 3D Completa</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -9,15 +10,16 @@
     <style>
         body { margin: 0; background: #111; color: #eee; font-family: sans-serif; }
         .app { display: flex; height: 100vh; }
-        .canvas-container { flex: 1; position: relative; background: #000; cursor: crosshair; }
+        .canvas-container { flex: 1; position: relative; background: #000; cursor: crosshair; overflow: hidden; }
         .sidebar { width: 320px; background: #1a1a1a; padding: 20px; border-left: 2px solid #333; display: flex; flex-direction: column; gap: 15px; }
-        .tool-bar { padding: 15px; background: #222; display: flex; gap: 10px; border-bottom: 2px solid #333; }
-        button { padding: 10px 15px; cursor: pointer; border: none; background: #444; color: white; border-radius: 4px; }
-        button.active { background: #ff9d00; font-weight: bold; }
+        .tool-bar { padding: 15px; background: #222; display: flex; gap: 10px; border-bottom: 2px solid #333; align-items: center; }
+        button { padding: 10px 15px; cursor: pointer; border: none; background: #444; color: white; border-radius: 4px; font-weight: bold; }
+        button.active { background: #ff9d00; color: #000; }
         svg { width: 100%; height: 100%; }
-        .handle { fill: #ff9d00; cursor: move; }
-        .element-card { background: #2a2a2a; padding: 10px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid #ff9d00; }
-        .export-box { margin-top: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .handle { fill: #ff9d00; stroke: #fff; stroke-width: 2; cursor: move; }
+        .element-card { background: #2a2a2a; padding: 12px; border-radius: 6px; border-left: 5px solid #ff9d00; }
+        .export-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: auto; }
+        h3 { margin-top: 0; color: #ff9d00; }
     </style>
 </head>
 <body>
@@ -67,7 +69,7 @@
             <div className="app">
                 <div className="canvas-container">
                     <div className="tool-bar">
-                        <button onClick={() => document.getElementById('fileInput').click()}>📁 Cargar Imagen</button>
+                        <button onClick={() => document.getElementById('fileInput').click()}>📁 Cargar Plano</button>
                         <input type="file" id="fileInput" hidden onChange={handleImageUpload} />
                         {["line", "rect", "circ"].map(t => (
                             <button key={t} className={tool === t ? "active" : ""} onClick={() => setTool(t)}>{t.toUpperCase()}</button>
@@ -79,17 +81,22 @@
                         {drawing && <RenderElement el={drawing} />}
                     </svg>
                 </div>
+                
                 <div className="sidebar">
-                    <h3>Mediciones</h3>
+                    <h3>Panel de Cotas</h3>
                     {elements.map(el => (
                         <div key={el.id} className="element-card">
-                            <input type="number" placeholder="Valor" onChange={(e) => updateElement(el.id, {val: e.target.value})} />
-                            <select onChange={(e) => updateElement(el.id, {unit: e.target.value})}>
-                                <option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option>
-                            </select>
+                            <strong>{el.type.toUpperCase()}</strong>
+                            <div style={{display:'flex', gap:'5px', marginTop:'5px'}}>
+                                <input type="number" placeholder="Valor" style={{width:'80px'}} onChange={(e) => updateElement(el.id, {val: e.target.value})} />
+                                <select onChange={(e) => updateElement(el.id, {unit: e.target.value})}>
+                                    <option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option>
+                                </select>
+                            </div>
                         </div>
                     ))}
-                    <div className="export-box">
+                    
+                    <div className="export-grid">
                         <button onClick={() => alert("Email enviado")}>📧 Email</button>
                         <button onClick={() => alert("WhatsApp abierto")}>💬 WhatsApp</button>
                         <button onClick={() => alert("PDF generado")}>📄 PDF</button>
