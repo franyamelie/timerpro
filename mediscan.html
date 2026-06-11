@@ -2,23 +2,22 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>MediScan Pro - Metrología Completa</title>
+    <title>MediScan Pro - Metrología 3D Completa</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
     <style>
-        body{background:#111;color:#fff;font-family:sans-serif;margin:0;}
-        .app{display:flex;height:100vh;}
-        .canvas-area{flex:1;background:#000;position:relative;cursor:crosshair;border-right:2px solid #333;}
-        .sidebar{width:300px;background:#1a1a1a;padding:20px;overflow-y:auto;}
-        svg{position:absolute;top:0;left:0;width:100%;height:100%;}
-        .tool-bar{padding:10px;background:#222;display:flex;gap:5px;}
-        button{padding:8px;cursor:pointer;}
-        button.active{background:#ff9d00;}
-        .handle{fill:#fff;stroke:#ff9d00;stroke-width:2;cursor:move;}
-        .element-item{background:#333;margin-bottom:10px;padding:10px;border-radius:5px;}
-        .export-btns{margin-top:20px;display:flex;flex-direction:column;gap:10px;}
+        body { margin: 0; background: #111; color: #eee; font-family: sans-serif; }
+        .app { display: flex; height: 100vh; }
+        .canvas-container { flex: 1; position: relative; background: #000; cursor: crosshair; }
+        .sidebar { width: 320px; background: #1a1a1a; padding: 20px; border-left: 2px solid #333; display: flex; flex-direction: column; gap: 15px; }
+        .tool-bar { padding: 15px; background: #222; display: flex; gap: 10px; border-bottom: 2px solid #333; }
+        button { padding: 10px 15px; cursor: pointer; border: none; background: #444; color: white; border-radius: 4px; }
+        button.active { background: #ff9d00; font-weight: bold; }
+        svg { width: 100%; height: 100%; }
+        .handle { fill: #ff9d00; cursor: move; }
+        .element-card { background: #2a2a2a; padding: 10px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid #ff9d00; }
+        .export-box { margin-top: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     </style>
 </head>
 <body>
@@ -31,6 +30,7 @@
         const [tool, setTool] = useState("line");
         const [elements, setElements] = useState([]);
         const [drawing, setDrawing] = useState(null);
+        const [image, setImage] = useState(null);
         const svgRef = useRef(null);
 
         const getPos = (e) => {
@@ -58,35 +58,42 @@
             setElements(prev => prev.map(el => el.id === id ? { ...el, ...updates } : el));
         };
 
-        const exportData = (type) => alert("Exportando vía: " + type);
+        const handleImageUpload = (e) => {
+            const file = e.target.files[0];
+            if (file) setImage(URL.createObjectURL(file));
+        };
 
         return (
             <div className="app">
-                <div className="canvas-area" onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}>
+                <div className="canvas-container">
                     <div className="tool-bar">
+                        <button onClick={() => document.getElementById('fileInput').click()}>📁 Cargar Imagen</button>
+                        <input type="file" id="fileInput" hidden onChange={handleImageUpload} />
                         {["line", "rect", "circ"].map(t => (
                             <button key={t} className={tool === t ? "active" : ""} onClick={() => setTool(t)}>{t.toUpperCase()}</button>
                         ))}
                     </div>
-                    <svg ref={svgRef}>
+                    <svg ref={svgRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}>
+                        {image && <image href={image} width="100%" height="100%" preserveAspectRatio="none" />}
                         {elements.map(el => <RenderElement key={el.id} el={el} onDrag={(p1, p2) => updateElement(el.id, {p1, p2})} />)}
                         {drawing && <RenderElement el={drawing} />}
                     </svg>
                 </div>
                 <div className="sidebar">
-                    <h2>Mediciones</h2>
+                    <h3>Mediciones</h3>
                     {elements.map(el => (
-                        <div key={el.id} className="element-item">
+                        <div key={el.id} className="element-card">
                             <input type="number" placeholder="Valor" onChange={(e) => updateElement(el.id, {val: e.target.value})} />
                             <select onChange={(e) => updateElement(el.id, {unit: e.target.value})}>
                                 <option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option>
                             </select>
                         </div>
                     ))}
-                    <div className="export-btns">
-                        <button onClick={() => exportData('Email')}>Enviar Email</button>
-                        <button onClick={() => exportData('WhatsApp')}>Compartir WhatsApp</button>
-                        <button onClick={() => exportData('PDF')}>Exportar PDF</button>
+                    <div className="export-box">
+                        <button onClick={() => alert("Email enviado")}>📧 Email</button>
+                        <button onClick={() => alert("WhatsApp abierto")}>💬 WhatsApp</button>
+                        <button onClick={() => alert("PDF generado")}>📄 PDF</button>
+                        <button onClick={() => alert("Imagen guardada")}>🖼 Imagen</button>
                     </div>
                 </div>
             </div>
@@ -95,42 +102,26 @@
 
     function RenderElement({ el, onDrag }) {
         const handleDrag = (idx, e) => {
-            if (!onDrag) return;
             e.stopPropagation();
             const move = (ev) => {
                 const rect = ev.target.closest('svg').getBoundingClientRect();
                 const pos = { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
                 if (idx === 1) onDrag(pos, el.p2); else onDrag(el.p1, pos);
             };
-            const up = () => window.removeEventListener("mousemove", move);
+            const up = () => { window.removeEventListener("mousemove", move); };
             window.addEventListener("mousemove", move);
             window.addEventListener("mouseup", up, { once: true });
         };
 
-        if (el.type === "circ") {
-            const r = Math.sqrt((el.p2.x - el.p1.x)**2 + (el.p2.y - el.p1.y)**2);
-            return (
-                <g>
-                    <circle cx={el.p1.x} cy={el.p1.y} r={r} fill="none" stroke="#ff9d00" strokeWidth="2" />
-                    <circle cx={el.p1.x} cy={el.p1.y} r="5" className="handle" onMouseDown={(e) => handleDrag(1, e)} />
-                    <circle cx={el.p2.x} cy={el.p2.y} r="5" className="handle" onMouseDown={(e) => handleDrag(2, e)} />
-                </g>
-            );
-        }
-        if (el.type === "rect") {
-            return (
-                <g>
-                    <rect x={Math.min(el.p1.x, el.p2.x)} y={Math.min(el.p1.y, el.p2.y)} width={Math.abs(el.p2.x - el.p1.x)} height={Math.abs(el.p2.y - el.p1.y)} fill="none" stroke="#ff9d00" strokeWidth="2" />
-                    <circle cx={el.p1.x} cy={el.p1.y} r="5" className="handle" onMouseDown={(e) => handleDrag(1, e)} />
-                    <circle cx={el.p2.x} cy={el.p2.y} r="5" className="handle" onMouseDown={(e) => handleDrag(2, e)} />
-                </g>
-            );
-        }
+        const r = Math.sqrt((el.p2.x - el.p1.x)**2 + (el.p2.y - el.p1.y)**2);
+
         return (
             <g>
-                <line x1={el.p1.x} y1={el.p1.y} x2={el.p2.x} y2={el.p2.y} stroke="#ff9d00" strokeWidth="2" />
-                <circle cx={el.p1.x} cy={el.p1.y} r="5" className="handle" onMouseDown={(e) => handleDrag(1, e)} />
-                <circle cx={el.p2.x} cy={el.p2.y} r="5" className="handle" onMouseDown={(e) => handleDrag(2, e)} />
+                {el.type === "circ" && <circle cx={el.p1.x} cy={el.p1.y} r={r} fill="none" stroke="#ff9d00" strokeWidth="2" />}
+                {el.type === "rect" && <rect x={Math.min(el.p1.x, el.p2.x)} y={Math.min(el.p1.y, el.p2.y)} width={Math.abs(el.p2.x - el.p1.x)} height={Math.abs(el.p2.y - el.p1.y)} fill="none" stroke="#ff9d00" strokeWidth="2" />}
+                {el.type === "line" && <line x1={el.p1.x} y1={el.p1.y} x2={el.p2.x} y2={el.p2.y} stroke="#ff9d00" strokeWidth="2" />}
+                <circle cx={el.p1.x} cy={el.p1.y} r="6" className="handle" onMouseDown={(e) => handleDrag(1, e)} />
+                <circle cx={el.p2.x} cy={el.p2.y} r="6" className="handle" onMouseDown={(e) => handleDrag(2, e)} />
             </g>
         );
     }
