@@ -13,27 +13,29 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
-        html,body{background:#1a1a1a;min-height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#d1d1d1;}
-        @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-        .fade{animation:fadeUp .25s ease both;}
+        html,body{background:#161616;min-height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#d1d1d1;}
+        .fade{animation:fadeUp .22s ease both;}
         @keyframes fadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
-        .spin{animation:spin .9s linear infinite;}
         button{transition:all .1s;border:none;cursor:pointer;}
         button:active{transform:scale(.97);opacity:.8;}
-        input,select,textarea{background:#2b2b2b;border:1px solid #3d3d3d;color:#fff;border-radius:4px;padding:6px 10px;font-family:'Space Mono',monospace;font-size:12px;}
+        input,select,textarea{background:#252525;border:1px solid #3a3a3a;color:#fff;border-radius:4px;padding:6px 10px;font-family:'Space Mono',monospace;font-size:12px;}
         input:focus,select:focus{outline:1px solid #ff9d00;}
-        ::-webkit-scrollbar{width:6px;height:6px;} ::-webkit-scrollbar-track{background:#141414;} ::-webkit-scrollbar-thumb{background:#3a3a3a;border-radius:3px;}
         
-        .app-container{max-width:1300px;margin:0 auto;padding:15px;display:flex;flex-direction:column;gap:12px;min-height:100vh;}
+        .app-container{max-width:1400px;margin:0 auto;padding:15px;display:flex;flex-direction:column;gap:12px;min-height:100vh;}
         .grid-layout{display:grid;grid-template-columns:1fr;gap:15px;}
-        @media(min-width:992px){.grid-layout{grid-template-columns:1.3fr 1fr;}}
-        .interactive-canvas{position:relative;width:100%;background:#111;border-radius:6px;border:1px solid #333;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+        @media(min-width:992px){.grid-layout{grid-template-columns:1.4fr 1fr;}}
+        
+        .interactive-canvas{position:relative;width:100%;background:#0d0d0d;border-radius:6px;border:1px solid #2e2e2e;overflow:hidden;display:flex;align-items:center;justify-content:center;}
         .canvas-svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;}
         .node-handle{pointer-events:auto;cursor:move;fill:#fff;stroke-width:2;stroke:#000;}
-        .studio-panel{background:#242424;border:1px solid #333;border-radius:6px;padding:12px;}
-        .studio-btn{background:#333;color:#e0e0e0;padding:6px 12px;border-radius:4px;font-size:11px;font-family:'Space Mono',monospace;}
-        .studio-btn.active{background:#ff9d00;color:#000;font-weight:bold;}
-        .action-bar{display:flex;gap:6px;background:#222;padding:6px;border-radius:4px;flex-wrap:wrap;}
+        
+        .studio-panel{background:#202020;border:1px solid #2e2e2e;border-radius:6px;padding:12px;}
+        .studio-btn{background:#2c2c2c;color:#e0e0e0;padding:6px 12px;border-radius:4px;font-size:11px;font-family:'Space Mono',monospace;border:1px solid #3a3a3a;}
+        .studio-btn.active{background:#ff9d00;color:#000;font-weight:bold;border-color:#ff9d00;}
+        .action-bar{display:flex;gap:6px;background:#1a1a1a;padding:6px;border-radius:4px;flex-wrap:wrap;align-items:center;}
+        .ai-badge{background:#111;border:1px dashed #ff9d00;padding:10px;border-radius:4px;margin-bottom:8px;font-family:'Space Mono',monospace;font-size:11px;}
+        
+        .cad-viewport{width:100%;height:450px;background:#000;border:2px solid #222;position:relative;border-radius:4px;}
     </style>
 </head>
 <body>
@@ -50,52 +52,75 @@
     const COLS=["#ff9d00","#00ffcc","#ff4466","#44aaff","#aa66ff","#55ff55"];
     
     const TOOLS=[
-      {id:"sel",icon:"↖",tip:"Mover/Editar",npts:0},
-      {id:"pt", icon:"⬤",tip:"Punto AI",npts:1},
-      {id:"line",icon:"━━",tip:"Línea",npts:2},
-      {id:"dist",icon:"📏",tip:"Distancia Desde/Hasta",npts:2},
-      {id:"rect",icon:"▭",tip:"Rectángulo",npts:2},
-      {id:"circ",icon:"◯",tip:"Círculo",npts:2},
-      {id:"calib",icon:"⚖",tip:"Calibrar Base",npts:2},
+      {id:"sel",icon:"↖",tip:"Mover / Ajustar",npts:0},
+      {id:"pt", icon:"⬤",tip:"Punto Cota",npts:1},
+      {id:"line",icon:"━━",tip:"Línea / Tramo",npts:2},
+      {id:"arrow",icon:"→",tip:"Flecha Indicadora",npts:2},
+      {id:"dist",icon:"📏",tip:"Desde / Hasta",npts:2},
+      {id:"rect",icon:"▭",tip:"Rectángulo Zona",npts:2},
+      {id:"circ",icon:"◯",tip:"Círculo / Brida",npts:2},
+      {id:"calib",icon:"⚖",tip:"Calibrar Escala",npts:2},
     ];
 
     const UNIT_FACTORS = { mm: 1, cm: 10, m: 1000, in: 25.4 };
 
-    /* ── MOTOR 3D REFORZADO ── */
-    function Studio3DView({components, manualDim, shapeType}){
+    /* ── MOTOR 3D COMPLETO TIPO 3D STUDIO ── */
+    function Studio3DView({components, annotations, manualDim, shapeType}){
       const el=useRef(null);
       useEffect(()=>{
         if(!el.current)return;
-        const E=el.current, W=E.clientWidth, H=E.clientHeight||320;
-        const scene=new THREE.Scene(); scene.background=new THREE.Color(0x282828);
-        const cam=new THREE.PerspectiveCamera(45, W/H, 0.1, 100); cam.position.set(3, 2.5, 3); cam.lookAt(0,0,0);
+        const E=el.current, W=E.clientWidth, H=E.clientHeight||450;
+        const scene=new THREE.Scene(); scene.background=new THREE.Color(0x1c1c1c);
+        const cam=new THREE.PerspectiveCamera(45, W/H, 0.1, 100); cam.position.set(4, 4, 4); cam.lookAt(0,0,0);
         const rdr=new THREE.WebGLRenderer({antialias:true}); rdr.setSize(W,H); E.appendChild(rdr.domElement);
 
-        const grid=new THREE.GridHelper(20, 20, 0xff9d00, 0x444444); grid.position.y=-0.5; scene.add(grid);
-        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-        const dl=new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(5,8,5); scene.add(dl);
+        const grid=new THREE.GridHelper(20, 20, 0xff9d00, 0x3a3a3a); grid.position.y=-0.5; scene.add(grid);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+        const dl=new THREE.DirectionalLight(0xffffff, 0.9); dl.position.set(6,10,6); scene.add(dl);
 
         const group=new THREE.Group(); scene.add(group);
-        const faceMat=new THREE.MeshStandardMaterial({color:0x3a4f5c, roughness:0.4, flatShading:true, transparent:true, opacity:0.8});
-        const wireMat=new THREE.LineBasicMaterial({color:0x00ffcc});
+        const faceMat=new THREE.MeshStandardMaterial({color:0x2e3f4a, roughness:0.3, metalness:0.3, flatShading:true, transparent:true, opacity:0.85});
+        const wireMat=new THREE.LineBasicMaterial({color:0x00ffcc, linewidth:1.5});
 
+        // 1. Renderizar geometría base inferida por IA
         if(components && components.length > 0){
           let currPos=new THREE.Vector3(0,0,0);
           components.forEach(c => {
-            const length=(c.length||1000)*0.001; const radius=((c.dn||150)*0.5)*0.001;
+            const length=(c.length||1000)*0.0005; const radius=((c.dn||150)*0.5)*0.0005;
             let lx=0, ly=0, lz=0;
-            if(c.orientation==="X") lx=length; else if(c.orientation==="Y") ly=length; else lz=length;
+            if(c.orientation === "X" || c.orientation === "H") lx=length; 
+            else if(c.orientation === "Y" || c.orientation === "V") ly=length; 
+            else lz=length;
             const geo=new THREE.CylinderGeometry(radius, radius, length, 12);
             geo.rotateZ(lx ? -Math.PI/2 : 0); geo.rotateX(lz ? Math.PI/2 : 0);
             const m=new THREE.Mesh(geo, faceMat); m.position.set(currPos.x + lx/2, currPos.y + ly/2, currPos.z + lz/2);
             const w=new THREE.LineSegments(new THREE.EdgesGeometry(geo), wireMat); w.position.copy(m.position);
             group.add(m); group.add(w); currPos.add(new THREE.Vector3(lx, ly, lz));
           });
-        } else {
-          const mw=(manualDim?.w||100)*0.005, mh=(manualDim?.h||100)*0.005, md=(manualDim?.d||100)*0.005;
-          let geo=shapeType==="cylinder"?new THREE.CylinderGeometry(mw,mw,mh,16):shapeType==="sphere"?new THREE.SphereGeometry(mw,16,16):new THREE.BoxGeometry(mw,mh,md);
-          const m=new THREE.Mesh(geo, faceMat); const w=new THREE.LineSegments(new THREE.EdgesGeometry(geo), wireMat);
-          group.add(m); group.add(w);
+        }
+
+        // 2. Proyectar volumétricamente las cotas manuales del usuario
+        annotations.forEach((a, i) => {
+          if(!a.forcedValue || a.points.length < 1) return;
+          const valSize = parseFloat(a.forcedValue) * 0.0005;
+          let geo;
+          if(a.type === "circ") geo = new THREE.CylinderGeometry(valSize, valSize, 0.05, 24);
+          else if(a.type === "rect") geo = new THREE.BoxGeometry(valSize, valSize, valSize);
+          else geo = new THREE.CylinderGeometry(0.02, 0.02, valSize || 0.5, 8); // Líneas como caños finos
+
+          const mMat = new THREE.MeshStandardMaterial({color: new THREE.Color(a.color), flatShading:true, transparent:true, opacity:0.7});
+          const mesh = new THREE.Mesh(geo, mMat);
+          mesh.position.set((i * 0.4) - 0.5, 0, (i * -0.2));
+          const wire = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({color: 0xffffff}));
+          wire.position.copy(mesh.position);
+          group.add(mesh); group.add(wire);
+        });
+
+        // Fallback volumen manual si no hay datos
+        if(group.children.length === 0){
+          const mw=(manualDim?.w||100)*0.005, mh=(manualDim?.h||100)*0.005;
+          let geo = shapeType==="cylinder" ? new THREE.CylinderGeometry(mw,mw,mh,16) : new THREE.BoxGeometry(mw,mh,mw);
+          group.add(new THREE.Mesh(geo, faceMat)); group.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), wireMat));
         }
 
         const box=new THREE.Box3().setFromObject(group); const center=box.getCenter(new THREE.Vector3());
@@ -110,14 +135,14 @@
         window.addEventListener("mousemove",mv); window.addEventListener("touchmove",mv,{passive:true});
         window.addEventListener("mouseup",up); window.addEventListener("touchend",up);
 
-        let id; const anim=()=>{id=requestAnimationFrame(anim); if(!drag) ry+=0.003; group.rotation.set(rx,ry,0); rdr.render(scene,cam);};
+        let id; const anim=()=>{id=requestAnimationFrame(anim); if(!drag) ry+=0.002; group.rotation.set(rx,ry,0); rdr.render(scene,cam);};
         anim();
         return()=>{ cancelAnimationFrame(id); rdr.dispose(); if(E.contains(rdr.domElement)) E.removeChild(rdr.domElement); };
-      },[components, manualDim, shapeType]);
-      return <div ref={el} style={{width:"100%",height:"320px",cursor:"grab",borderRadius:"4px",border:"1px solid #444"}}/>;
+      },[components, annotations, manualDim, shapeType]);
+      return <div ref={el} style={{width:"100%",height:"450px",cursor:"grab",borderRadius:"4px"}}/>;
     }
 
-    /* ── APLICACIÓN PRINCIPAL CON MEMORIA Y PASOS (UNDO) ── */
+    /* ── APLICACIÓN CENTRAL ── */
     function App(){
       const containerRef=useRef(null); const captureRef=useRef(null);
       const videoRef=useRef(null); const uploadRef=useRef(null);
@@ -130,38 +155,39 @@
       const [image,setImage]=useState(null);
       const [rotation,setRotation]=useState(0);
       const [camMode,setCamMode]=useState("off");
+      
+      const [aiDetectionLog, setAiDetectionLog] = useState("Sin escanear.");
       const [piping,setPiping]=useState(null);
       
       const [anns,setAnns]=useState([]);
-      const [history,setHistory]=useState([]); // Almacén de pasos previos (Atrás)
+      const [history,setHistory]=useState([]); 
       const [tool,setTool]=useState("sel");
       const [pending,setPending]=useState([]);
       const [scale,setScale]=useState(null);
       
-      const [calibDlg,setCalibDlg]=useState(null);
-      const [forcedDistDlg,setForcedDistDlg]=useState(null);
-      const [inputVal,setInputVal] = useState("");
+      // DIÁLOGO UNIVERSAL EN TIEMPO REAL TRAS SELECCIÓN
+      const [activePromptDlg, setActivePromptDlg] = useState(null);
+      const [inputVal, setInputVal] = useState("");
+      const [unitSelect, setUnitSelect] = useState("mm");
       const [globalUnit, setGlobalUnit] = useState("mm");
 
       const [manualDim,setManualDim]=useState({w:100,h:100,d:100});
       const [shapeType,setShapeType]=useState("box");
-      const [viewTab,setViewTab]=useState("anno");
+      const [viewTab,setViewTab]=useState("edit2d"); // edit2d, cad2d, studio3d
 
       useEffect(()=>{ localStorage.setItem("ms3_projs", JSON.stringify(projects)); },[projects]);
 
       const handleKeySave=()=>{ localStorage.setItem("ms3_k",keyIn.trim()); setScr("home"); };
       
-      // FUNCIÓN CRUCIAL: GUARDAR PASO ANTES DE MODIFICAR (HACER ATRÁS)
       const pushHistory = (currentAnns) => {
         setHistory(prev => [...prev, JSON.stringify(currentAnns)]);
       };
 
       const handleUndo = () => {
-        if (history.length === 0) { alert("No hay más acciones para revertir."); return; }
+        if (history.length === 0) { alert("Historial vacío."); return; }
         const prevSteps = [...history];
         const lastStep = JSON.parse(prevSteps.pop());
-        setHistory(prevSteps);
-        setAnns(lastStep);
+        setHistory(prevSteps); setAnns(lastStep);
       };
 
       const startLive=async()=>{
@@ -169,7 +195,7 @@
         try{
           const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280}}});
           if(videoRef.current) videoRef.current.srcObject=s; setCamMode("live");
-        }catch(e){ setCamMode("off"); alert("Cámara no compatible."); }
+        }catch(e){ setCamMode("off"); alert("Cámara no disponible."); }
       };
 
       const captureLive=()=>{
@@ -181,16 +207,22 @@
 
       const startProject=img=>{
         setImage(img); setAnns([]); setScale(null); setPending([]); setTool("sel"); setRotation(0); setPiping(null); setHistory([]);
-        setScr("loading"); identify(img);
+        setAiDetectionLog("Analizando matriz espacial con IA...");
+        setScr("annotate"); identify(img);
       };
 
-      // DETECCIÓN POR IA REFORZADA (PROPORCIONA CORDENADAS EDITABLES)
+      // DETECTOR LOGÍSTICO IA
       const identify=async(img)=>{
         const b64=img.split(",")[1];
-        const prompt=`Analiza esta imagen industrial de caldereria/piping. 
-Detecta los puntos calientes o elementos críticos de medición. Devuelve EXCLUSIVAMENTE un objeto JSON con este formato:
-{"type":"piping","name":"Plano Detectado","components":[{"id":"1","type":"pipe","orientation":"X","length":1200}],"ai_markers":[{"label":"DIAMETRO_C_1","type":"circ","p1":{"x":0.3,"y":0.4},"p2":{"x":0.35,"y":0.45}},{"label":"TRAMO_A","type":"line","p1":{"x":0.1,"y":0.2},"p2":{"x":0.6,"y":0.2}}]}
-No formatees con markdown. Proporciona solo la cadena limpia JSON.`;
+        const prompt=`Analiza esta imagen industrial de calderería o metrología.
+Devuelve EXCLUSIVAMENTE un objeto JSON estructurado:
+{
+  "detected_object": "Plano Isométrico de Red de Vapor / Pieza Cilíndrica Especial",
+  "analysis_summary": "Estructura de tuberías con codos a 90 grados y válvulas de paso.",
+  "type": "piping",
+  "components": [{"id":"1","type":"pipe","orientation":"X","length":1600},{"id":"2","type":"pipe","orientation":"Y","length":900}]
+}
+No formatees con markdown ni uses bloques. Devuelve solo la cadena de texto limpia.`;
 
         try{
           const res=await fetch(GAPI,{
@@ -200,26 +232,14 @@ No formatees con markdown. Proporciona solo la cadena limpia JSON.`;
           });
           const data=await res.json();
           const info=JSON.parse(data.choices[0].message.content.replace(/```json|```/g,"").trim());
-          
-          if(info.ai_markers){
-            const generated = info.ai_markers.map((m, idx) => ({
-              id: uid(),
-              type: m.type || "line",
-              label: m.label,
-              color: COLS[idx % COLS.length],
-              points: m.p2 ? [m.p1, m.p2] : [m.p1],
-              unit: "mm",
-              forcedValue: null
-            }));
-            setAnns(generated);
-          }
-          if(info.type==="piping") { setPiping(info); setViewTab("pipe3d"); }
+          setAiDetectionLog(`🟢 OBJETO: ${info.detected_object}\n📝 ANÁLISIS: ${info.analysis_summary}`);
+          if(info.type==="piping") setPiping(info);
         }catch(e){
-          console.error("AI parse fail, fallback active", e);
-        }finally{ setScr("annotate"); }
+          setAiDetectionLog("⚠️ Modo Manual Activo. Calibración y herramientas locales listas.");
+        }
       };
 
-      // MANIPULACIÓN DEL LIENZO DE ANOTACIONES INTERACTIVO
+      // MANIPULADOR DE TRAZADOS LIBRES: SALTA EL DIÁLOGO EN EL ACTO AL TERMINAR LA SELECCIÓN
       const handleCvClick=useCallback(e=>{
         if(tool==="sel")return;
         const rect=containerRef.current?.getBoundingClientRect(); if(!rect)return;
@@ -230,23 +250,51 @@ No formatees con markdown. Proporciona solo la cadena limpia JSON.`;
         const pts=[...pending,{x:nx,y:ny}];
 
         if(pts.length >= td.npts){
-          pushHistory(anns);
-          const color=COLS[anns.length % COLS.length]; const id=uid();
-          
-          if(tool==="calib"){
-            setCalibDlg({p1:pts[0],p2:pts[1]});
-          } else if(tool==="dist") {
-            setForcedDistDlg({id, points:pts, color});
-          } else {
-            setAnns(p=>[...p,{id,type:tool,label:`${tool.toUpperCase()}_${anns.length+1}`,color,points:pts,unit:globalUnit,forcedValue:null}]);
-          }
+          const id=uid(); const color=COLS[anns.length % COLS.length];
+          // Congelar escena y desplegar modal de dimensiones inmediatamente para CUALQUIER herramienta
+          setActivePromptDlg({id, type: tool, points: pts, color});
+          setInputVal(""); setUnitSelect(globalUnit);
           setPending([]); setTool("sel");
         } else setPending(pts);
       },[tool,pending,anns,globalUnit]);
 
-      const startDrag=useCallback((e,annId,pi)=>{
-        e.preventDefault(); e.stopPropagation();
+      // PROCESAR LA ENTRADA MANUAL E INTEGRAR AL RESUMEN DERECHO
+      const commitActiveAnnotation = () => {
+        const v = parseFloat(inputVal);
+        if(!v || v <= 0 || !activePromptDlg) return;
         pushHistory(anns);
+
+        let labelName = `${activePromptDlg.type.toUpperCase()}_${anns.length + 1}`;
+        if(activePromptDlg.type === "calib") labelName = `⚖ ESCALA_BASE`;
+        if(activePromptDlg.type === "dist") labelName = `📏 DESDE_HASTA`;
+
+        const newElement = {
+          id: activePromptDlg.id,
+          type: activePromptDlg.type,
+          label: labelName,
+          color: activePromptDlg.color,
+          points: activePromptDlg.points,
+          unit: unitSelect,
+          forcedValue: v
+        };
+
+        if(activePromptDlg.type === "calib"){
+          const rect=containerRef.current?.getBoundingClientRect();
+          if(rect){
+            const dx=(activePromptDlg.points[1].x - activePromptDlg.points[0].x)*rect.width;
+            const dy=(activePromptDlg.points[1].y - activePromptDlg.points[0].y)*rect.height;
+            const px=Math.sqrt(dx*dx+dy*dy);
+            const valInMM = v * (UNIT_FACTORS[unitSelect] || 1);
+            setScale({ppu: px/valInMM, unit:"mm"});
+          }
+        }
+
+        setAnns(p=>[...p, newElement]);
+        setActivePromptDlg(null); setInputVal("");
+      };
+
+      const startDrag=useCallback((e,annId,pi)=>{
+        e.preventDefault(); e.stopPropagation(); pushHistory(anns);
         const rect=containerRef.current?.getBoundingClientRect(); if(!rect)return;
         const mv=ev=>{
           const cx=ev.clientX??ev.touches?.[0]?.clientX??0, cy=ev.clientY??ev.touches?.[0]?.clientY??0;
@@ -260,202 +308,184 @@ No formatees con markdown. Proporciona solo la cadena limpia JSON.`;
         window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
       },[anns]);
 
-      // CALCULO MÉTRICO INDEPENDIENTE SEGÚN LA UNIDAD DE CADA ELEMENTO
       const getMeasure=ann=>{
         if(ann.forcedValue != null) return `${ann.forcedValue} ${ann.unit}`;
-        if(!scale || ann.points.length < 2) return "Sin escala";
-        
+        if(!scale || ann.points.length < 2) return "Ajustado manual";
         const rect=containerRef.current?.getBoundingClientRect(); if(!rect)return "";
         const dx=(ann.points[1].x-ann.points[0].x)*rect.width, dy=(ann.points[1].y-ann.points[0].y)*rect.height;
-        const pixelsDist=Math.sqrt(dx*dx+dy*dy);
-        
-        // Medida en mm base primero
-        const baseMM = pixelsDist / scale.ppu;
-        // Transformación a la unidad específica de esta etiqueta
-        const finalValue = baseMM / (UNIT_FACTORS[ann.unit] || 1);
-        return `${finalValue.toFixed(1)} ${ann.unit}`;
+        const baseMM = Math.sqrt(dx*dx+dy*dy) / scale.ppu;
+        return `${(baseMM / (UNIT_FACTORS[ann.unit] || 1)).toFixed(1)} ${ann.unit}`;
       };
-
-      const saveCalib=()=>{
-        const v=parseFloat(inputVal); if(!v||v<=0||!calibDlg)return;
-        const rect=containerRef.current?.getBoundingClientRect(); if(!rect)return;
-        const dx=(calibDlg.p2.x-calibDlg.p1.x)*rect.width, dy=(calibDlg.p2.y-calibDlg.p1.y)*rect.height;
-        const px=Math.sqrt(dx*dx+dy*dy);
-        
-        const valueInMM = v * (UNIT_FACTORS[globalUnit] || 1);
-        setScale({ppu: px/valueInMM, unit:"mm"});
-        setCalibDlg(null); setInputVal("");
-      };
-
-      const saveForcedDistance=()=>{
-        const v=parseFloat(inputVal); if(!v||v<=0||!forcedDistDlg)return;
-        pushHistory(anns);
-        setAnns(p=>[...p,{
-          id: forcedDistDlg.id,
-          type: "line",
-          label: `DIST_ASIGNADA`,
-          color: forcedDistDlg.color,
-          points: forcedDistDlg.points,
-          unit: globalUnit,
-          forcedValue: v
-        }]);
-        setForcedDistDlg(null); setInputVal("");
-      };
-
-      const changeItemUnit=(id, targetUnit)=>{
-        pushHistory(anns);
-        setAnns(p=>p.map(a=>a.id===id?{...a,unit:targetUnit}:a));
-      };
-
-      const removeAnn=(id)=>{
-        pushHistory(anns);
-        setAnns(p=>p.filter(a=>a.id!==id));
-      };
-
-      const saveProject=()=>{
-        if(!projName.trim()){ alert("Nombre requerido"); return; }
-        setProjects(p=>[{id:uid(),name:projName,date:new Date().toLocaleDateString(),image,anns,scale,piping},...p]);
-        alert("Guardado.");
-      };
-
-      const shareMedia=(t)=>{ alert(`Enviando por ${t}...`); };
 
       return (
         <div className="app-container">
-          <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #333",paddingBottom:"10px"}}>
-            <h1 style={{fontFamily:"'Syne',sans-serif",color:"#ff9d00",fontSize:"18px"}}>MEDISCAN 3D <span style={{color:"#fff",fontSize:"11px"}}>Control Absoluto</span></h1>
+          <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #2e2e2e",paddingBottom:"10px"}}>
+            <h1 style={{fontFamily:"'Syne',sans-serif",color:"#ff9d00",fontSize:"18px"}}>MEDISCAN 3D <span style={{color:"#fff",fontSize:"11px"}}>AutoCAD & Studio Engine</span></h1>
             <div style={{display:"flex",gap:"6px"}}>
-              <button className="studio-btn" style={{background:"#dd4b39", fontWeight:"bold"}} onClick={handleUndo}>↩ ATRÁS (DESHACER)</button>
+              <button className="studio-btn" style={{background:"#dd4b39", fontWeight:"bold", color:"#fff"}} onClick={handleUndo}>↩ ATRÁS (DESHACER)</button>
               <button className="studio-btn" onClick={()=>setScr("home")}>INICIO</button>
             </div>
           </header>
 
           {scr==="setup" && <div className="studio-panel" style={{maxWidth:"400px",margin:"40px auto"}}>
-            <input type="password" style={{width:"100%",marginBottom:"10px"} } value={keyIn} onChange={e=>setKeyIn(e.target.value)} placeholder="Groq API Key..."/>
-            <button className="studio-btn active" style={{width:"100%"}} onClick={handleKeySave}>INGRESAR</button>
+            <input type="password" style={{width:"100%",marginBottom:"10px"}} value={keyIn} onChange={e=>setKeyIn(e.target.value)} placeholder="Groq Token..."/>
+            <button className="studio-btn active" style={{width:"100%"}} onClick={handleKeySave}>CONECTAR MÓDULO</button>
           </div>}
 
           {scr==="home" && <div className="fade grid-layout">
-            <div className="studio-panel" style={{textAlign:"center",padding:"30px"}}>
-              <button className="studio-btn active" style={{padding:"12px",marginBottom:"10px"}} onClick={startLive}>ABRIR CÁMERA DE INSPECCIÓN</button>
+            <div className="studio-panel" style={{textAlign:"center",padding:"40px"}}>
+              <button className="studio-btn active" style={{padding:"14px",width:"100%",marginBottom:"10px"}} onClick={startLive}>INICIAR CÁMARA DE CAMPO</button>
               {camMode==="live" && (
-                <div>
+                <div style={{marginBottom:"10px"}}>
                   <video ref={videoRef} autoPlay playsInline style={{width:"100%",background:"#000",borderRadius:"4px"}}/>
-                  <button className="studio-btn active" onClick={captureLive} style={{marginTop:"5px"}}>CAPTURAR FOTO</button>
+                  <button className="studio-btn active" onClick={captureLive} style={{width:"100%",marginTop:"5px"}}>TOMAR CAPTURA</button>
                 </div>
               )}
-              <div style={{margin:"10px 0",fontSize:"11px"}}>O SELECCIONAR LOCAL</div>
-              <button className="studio-btn" onClick={()=>uploadRef.current?.click()}>BUSCAR IMAGEN</button>
-              <input ref={uploadRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>{const f=e.target.files[0]; if(f){const r=new FileReader(); r.onload=ev=>startProject(ev.target.result); r.readAsDataURL(f);}}}/>
+              <button className="studio-btn" style={{width:"100%"}} onClick={()=>uploadRef.current?.click()}>CARGAR PLANO/FOTO (PNG/JPG)</button>
+              <input ref={uploadRef} type="file" accept="image/*" style={{display:"none"} } onChange={e=>{const f=e.target.files[0]; if(f){const r=new FileReader(); r.onload=ev=>startProject(ev.target.result); r.readAsDataURL(f);}}}/>
             </div>
             <div className="studio-panel">
-              <h3 style={{color:"#ff9d00",marginBottom:"8px"}}>Historial</h3>
-              {projects.map(p=><div key={p.id} onClick={()=>{setImage(p.image);setAnns(p.anns);setScale(p.scale);setProjName(p.name);setScr("annotate");}} style={{background:"#111",padding:"8px",marginBottom:"4px",cursor:"pointer"}}>{p.name} ({p.date})</div>)}
+              <h3 style={{color:"#ff9d00",marginBottom:"8px"}}>📦 Historial Reciente</h3>
+              {projects.map(p=><div key={p.id} onClick={()=>{setImage(p.image);setAnns(p.anns);setScale(p.scale);setProjName(p.name);setScr("annotate");}} style={{background:"#111",padding:"8px",marginBottom:"4px",cursor:"pointer",border:"1px solid #333"}}>{p.name} ({p.date})</div>)}
             </div>
           </div>}
 
-          {scr==="loading" && <div style={{textAlign:"center",padding:"6px"}}>Procesando matriz espacial del plano...</div>}
+          {scr==="annotate" && <div className="fade" style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+            <div className="ai-badge">🤖 <strong>SISTEMA METROLÓGICO IA:</strong> <span style={{color:"#fff",whiteSpace:"pre-line"}}>{aiDetectionLog}</span></div>
 
-          {scr==="annotate" && <div className="fade grid-layout" ref={captureRef}>
-            <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-              <div className="action-bar">
-                {TOOLS.map(t=>(
-                  <button key={t.id} className={`studio-btn ${tool===t.id?'active':''}`} onClick={()=>setTool(t.id)}>
-                    {t.icon} {t.tip}
-                  </button>
-                ))}
-                <button className="studio-btn" onClick={()=>setRotation(r=>(r+90)%360)}>↻ ROTAR</button>
-                <select value={globalUnit} onChange={e=>setGlobalUnit(e.target.value)} style={{marginLeft:"auto"}}>
-                  <option value="mm">mm</option> <option value="cm">cm</option> <option value="m">m</option> <option value="in">pulgadas (in)</option>
-                </select>
-              </div>
-
-              <div className="interactive-canvas" ref={containerRef} onClick={handleCvClick}>
-                <img src={image} style={{width:"100%",maxHeight:"60vh",objectFit:"contain",transform:`rotate(${rotation}deg)`}} alt="Plano"/>
-                <svg className="canvas-svg">
-                  {anns.map(a=>{
-                    if(!a.points || a.points.length<1)return null;
-                    const rect=containerRef.current?.getBoundingClientRect(); if(!rect)return null;
-                    const p1x=a.points[0].x*rect.width, p1y=a.points[0].y*rect.height;
-                    const p2x=a.points[1]?(a.points[1].x*rect.width):p1x;
-                    const p2y=a.points[1]?(a.points[1].y*rect.height):p1y;
-
-                    return (
-                      <g key={a.id}>
-                        {a.type==="pt" && (
-                          <>
-                            <circle cx={p1x} cy={p1y} r="8" fill={a.color} className="node-handle" onMouseDown={e=>startDrag(e,a.id,0)}/>
-                            <text x={p1x+12} y={p1y+4} fill="#fff" style={{fontSize:"11px",fontFamily:"'Space Mono'",background:"#000"}}>{a.label}</text>
-                          </>
-                        )}
-                        {(a.type==="line" || a.type==="calib") && a.points[1] && (
-                          <>
-                            <line x1={p1x} y1={p1y} x2={p2x} y2={p2y} stroke={a.color} strokeWidth="2.5"/>
-                            <circle cx={p1x} cy={p1y} r="6" fill="#fff" className="node-handle" onMouseDown={e=>startDrag(e,a.id,0)}/>
-                            <circle cx={p2x} cy={p2y} r="6" fill="#fff" className="node-handle" onMouseDown={e=>startDrag(e,a.id,1)}/>
-                            <text x={(p1x+p2x)/2} y={(p1y+p2y)/2-8} fill="#fff" style={{fontFamily:"'Space Mono'",fontSize:"11px",fontWeight:"bold",textAnchor:"middle"}}>{getMeasure(a)}</text>
-                          </>
-                        )}
-                        {a.type==="rect" && a.points[1] && (
-                          <rect x={Math.min(p1x,p2x)} y={Math.min(p1y,p2y)} width={Math.abs(p1x-p2x)} height={Math.abs(p1y-p2y)} fill="none" stroke={a.color} strokeWidth="2"/>
-                        )}
-                        {a.type==="circ" && a.points[1] && (
-                          <circle cx={p1x} cy={p1y} r={Math.sqrt((p2x-p1x)**2+(p2y-p1y)**2)} fill="none" stroke={a.color} strokeWidth="2"/>
-                        )}
-                      </g>
-                    );
-                  })}
-                </svg>
-              </div>
-            </div>
-
-            {/* CONTROLES LATERALES EDITABLES */}
-            <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
-              <div style={{display:"flex",gap:"4px"}}>
-                <button className={`studio-btn ${viewTab==='anno'?'active':''}`} style={{flex:1}} onClick={()=>setViewTab("anno")}>COTAS E INTERPRETACIÓN</button>
-                <button className={`studio-btn ${viewTab==='pipe3d'?'active':''}`} style={{flex:1}} onClick={()=>setViewTab("pipe3d")}>VENTANA DE RENDER 3D</button>
-              </div>
-
-              {calibDlg && <div className="studio-panel" style={{border:"1px solid #ff9d00"}}>
-                <p style={{fontSize:"11px",marginBottom:"4px"}}>Valor de Calibración real:</p>
-                <input type="number" value={inputVal} onChange={e=>setInputVal(e.target.value)} placeholder="Ej. 150"/>
-                <button className="studio-btn active" onClick={saveCalib} style={{marginTop:"4px"}}>Asignar Base</button>
-              </div>}
-
-              {forcedDistDlg && <div className="studio-panel" style={{border:"1px solid #00ffcc"}}>
-                <p style={{fontSize:"11px",marginBottom:"4px"}}>Asignar Medida Desde/Hasta:</p>
-                <input type="number" value={inputVal} onChange={e=>setInputVal(e.target.value)} placeholder="Magnitud exacta..."/>
-                <button className="studio-btn active" onClick={saveForcedDistance} style={{marginTop:"4px"}}>Fijar Distancia</button>
-              </div>}
-
-              {viewTab==="anno" && <div className="studio-panel" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-                <input type="text" value={projName} onChange={e=>setProjName(e.target.value)} placeholder="Nombre del Plano Industrial..."/>
-                <button className="studio-btn active" onClick={saveProject}>COMPROMETER CAMBIOS</button>
-                
-                <div style={{maxHeight:"260px",overflowY:"auto",display:"flex",flexDirection:"column",gap:"6px",marginTop:"10px"}}>
-                  {anns.map(a=>(
-                    <div key={a.id} style={{background:"#1c1c1c",padding:"6px",borderRadius:"4px",display:"flex",flexDirection:"column",gap:"4px"}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                        <input type="text" value={a.label} onChange={e=>{const val=e.target.value; setAnns(p=>p.map(x=>x.id===a.id?{...x,label:val}:x))}} style={{background:"transparent",border:"none",color:"#fff",fontSize:"11px",fontWeight:"bold"}}/>
-                        <button style={{color:"#ff4466",background:"transparent",fontSize:"10px"}} onClick={()=>removeAnn(a.id)}>❌ Borrar</button>
-                      </div>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                        <span style={{color:"#00ffcc",fontFamily:"'Space Mono'",fontSize:"12px"}}>{getMeasure(a)}</span>
-                        <select value={a.unit} onChange={e=>changeItemUnit(a.id, e.target.value)} style={{fontSize:"10px",padding:"2px"}}>
-                          <option value="mm">mm</option>
-                          <option value="cm">cm</option>
-                          <option value="m">m</option>
-                          <option value="in">in</option>
-                        </select>
-                      </div>
-                    </div>
+            <div className="grid-layout">
+              {/* ÁREA IZQUIERDA COMPUESTA SELECCIONABLE */}
+              <div style={{display:"flex",flexDirection:"column",gap:"8px"}} ref={captureRef}>
+                <div className="action-bar">
+                  {TOOLS.map(t=>(
+                    <button key={t.id} className={`studio-btn ${tool===t.id?'active':''}`} onClick={()=>setTool(t.id)}>
+                      {t.icon} {t.tip}
+                    </button>
                   ))}
+                  <button className="studio-btn" onClick={()=>setRotation(r=>(r+90)%360)}>↻ ROTAR</button>
+                  <select value={globalUnit} onChange={e=>setGlobalUnit(e.target.value)} style={{marginLeft:"auto"}}>
+                    <option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option><option value="in">in</option>
+                  </select>
                 </div>
-              </div>}
 
-              {viewTab==="pipe3d" && <div className="studio-panel">
-                <Studio3DView components={piping?.components} manualDim={manualDim} shapeType={shapeType}/>
-              </div>}
+                {/* MODAL UNIVERSAL INSTANTÁNEO TRAS TERMINAR CUALQUIER TRAZADO */}
+                {activePromptDlg && <div className="studio-panel" style={{border:"2px solid #ff9d00",background:"#2a1f10",padding:"12px",marginBottom:"4px"}}>
+                  <strong style={{color:"#ff9d00",fontSize:"12px",display:"block",marginBottom:"6px"}}>📐 CONFIGURACIÓN DE MEDIDA REAL PARA: {activePromptDlg.type.toUpperCase()}</strong>
+                  <div style={{display:"flex",gap:"6px"}}>
+                    <input type="number" value={inputVal} onChange={e=>setInputVal(e.target.value)} style={{flex:1}} placeholder="Introduce longitud/diámetro..." autoFocus/>
+                    <select value={unitSelect} onChange={e=>setUnitSelect(e.target.value)}>
+                      <option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option><option value="in">in</option>
+                    </select>
+                    <button className="studio-btn active" onClick={commitActiveAnnotation}>VINCULAR COTA</button>
+                  </div>
+                </div>}
+
+                {/* VISUALIZADORES CONMUTABLES */}
+                {viewTab === "edit2d" && (
+                  <div className="interactive-canvas" ref={containerRef} onClick={handleCvClick}>
+                    <img src={image} style={{width:"100%",maxHeight:"65vh",objectFit:"contain",transform:`rotate(${rotation}deg)`}} alt="Lienzo"/>
+                    <svg className="canvas-svg">
+                      {anns.map(a=>{
+                        if(!a.points || a.points.length<1)return null;
+                        const rect=containerRef.current?.getBoundingClientRect(); if(!rect)return null;
+                        const p1x=a.points[0].x*rect.width, p1y=a.points[0].y*rect.height;
+                        const p2x=a.points[1]?(a.points[1].x*rect.width):p1x;
+                        const p2y=a.points[1]?(a.points[1].y*rect.height):p1y;
+
+                        return (
+                          <g key={a.id}>
+                            {a.type==="pt" && <circle cx={p1x} cy={p1y} r="8" fill={a.color} className="node-handle" onMouseDown={e=>startDrag(e,a.id,0)}/>}
+                            {(a.type==="line" || a.type==="calib" || a.type==="dist" || a.type==="arrow") && a.points[1] && (
+                              <>
+                                <line x1={p1x} y1={p1y} x2={p2x} y2={p2y} stroke={a.color} strokeWidth="2.5"/>
+                                <circle cx={p1x} cy={p1y} r="6" fill="#fff" className="node-handle" onMouseDown={e=>startDrag(e,a.id,0)}/>
+                                <circle cx={p2x} cy={p2y} r="6" fill="#fff" className="node-handle" onMouseDown={e=>startDrag(e,a.id,1)}/>
+                              </>
+                            )}
+                            {a.type==="rect" && a.points[1] && <rect x={Math.min(p1x,p2x)} y={Math.min(p1y,p2y)} width={Math.abs(p1x-p2x)} height={Math.abs(p1y-p2y)} fill="none" stroke={a.color} strokeWidth="2.5"/>}
+                            {a.type==="circ" && a.points[1] && <circle cx={p1x} cy={p1y} r={Math.sqrt((p2x-p1x)**2+(p2y-p1y)**2)} fill="none" stroke={a.color} strokeWidth="2.5"/>}
+                            <text x={p1x} y={p1y-10} fill="#fff" style={{fontSize:"11px",fontFamily:"'Space Mono'",fontWeight:"bold",background:"#000"}}>{a.label}: {getMeasure(a)}</text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
+                )}
+
+                {/* PLANO INTERPRETADO 2D TIPO AUTOCAD */}
+                {viewTab === "cad2d" && (
+                  <div className="cad-viewport">
+                    <div style={{position:"absolute",top:"10px",left:"10px",fontFamily:"'Space Mono'",fontSize:"10px",color:"#00ffcc"}}>AUTOCAD VECTOR MODE // GRID 1:1</div>
+                    <svg style={{width:"100%",height:"100%"}}>
+                      {anns.map(a=>{
+                        if(!a.points || a.points.length<1)return null;
+                        const p1x=a.points[0].x*600, p1y=a.points[0].y*400;
+                        const p2x=a.points[1]?(a.points[1].x*600):p1x;
+                        const p2y=a.points[1]?(a.points[1].y*400):p1y;
+                        return (
+                          <g key={a.id} stroke="#00ffcc" fill="none">
+                            {a.type==="pt" && <circle cx={p1x} cy={p1y} r="5" fill="#ff9d00"/>}
+                            {(a.type==="line" || a.type==="dist" || a.type==="arrow") && <line x1={p1x} y1={p1y} x2={p2x} y2={p2y} strokeWidth="1.5"/>}
+                            {a.type==="rect" && <rect x={Math.min(p1x,p2x)} y={Math.min(p1y,p2y)} width={Math.abs(p1x-p2x)} height={Math.abs(p1y-p2y)}/>}
+                            {a.type==="circ" && <circle cx={p1x} cy={p1y} r={Math.sqrt((p2x-p1x)**2+(p2y-p1y)**2)}/>}
+                            <text x={p1x} y={p1y-6} fill="#fff" stroke="none" style={{fontSize:"10px",fontFamily:"'Space Mono'"}}>{a.label} [{getMeasure(a)}]</text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
+                )}
+
+                {/* VIEWPORT MODELO 3D TOTAL TIPO 3D STUDIO */}
+                {viewTab === "studio3d" && (
+                  <div style={{position:"relative"}}>
+                    <div style={{position:"absolute",top:"10px",left:"10px",fontFamily:"'Space Mono'",fontSize:"10px",color:"#ff9d00",zIndex:20}}>3D STUDIO MAX RENDER // WIREFRAME & SHADING FLAT</div>
+                    <Studio3DView components={piping?.components} annotations={anns} manualDim={manualDim} shapeType={shapeType}/>
+                  </div>
+                )}
+              </div>
+
+              {/* COLUMNA DERECHA: SELECCIÓN DE VIEWPORT Y RESUMEN DE COTAS ASIGNADAS */}
+              <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+                <div style={{display:"flex",gap:"4px",background:"#111",padding:"4px",borderRadius:"4px"}}>
+                  <button className={`studio-btn ${viewTab==='edit2d'?'active':''}`} style={{flex:1}} onClick={()=>setViewTab("edit2d")}>IMAGEN BASE</button>
+                  <button className={`studio-btn ${viewTab==='cad2d'?'active':''}`} style={{flex:1}} onClick={()=>setViewTab("cad2d")}>🖥️ MODO 2D (CAD)</button>
+                  <button className={`studio-btn ${viewTab==='studio3d'?'active':''}`} style={{flex:1}} onClick={()=>setViewTab("studio3d")}>🎮 VIEWPORT 3D</button>
+                </div>
+
+                <div className="studio-panel" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+                  <input type="text" value={projName} onChange={e=>setProjName(e.target.value)} placeholder="Nombre del Plano Mecánico/Calderería..."/>
+                  <button className="studio-btn active" onClick={()=>{if(!projName.trim()){alert("Asigna un nombre");return;}setProjects(p=>[{id:uid(),name:projName,date:new Date().toLocaleDateString(),image,anns,scale},...p]);alert("Proyecto salvado.");}}>💾 CONFIRMAR Y GUARDAR EN LISTA</button>
+                  
+                  <hr style={{borderColor:"#2e2e2e",margin:"6px 0"}}/>
+                  <span style={{fontSize:"11px",fontFamily:"'Space Mono'",color:"#ff9d00",fontWeight:"bold"}}>📋 RESUMEN DE COTAS DEL PLANO</span>
+
+                  <div style={{maxHeight:"320px",overflowY:"auto",display:"flex",flexDirection:"column",gap:"6px"}}>
+                    {anns.length === 0 ? <p style={{fontSize:"11px",color:"#555",textAlign:"center",padding:"10px"}}>Ninguna sección acotada aún.</p> : 
+                      anns.map(a=>(
+                        <div key={a.id} style={{background:"#181818",padding:"8px",borderRadius:"4px",borderLeft:`4px solid ${a.color}`,display:"flex",flexDirection:"column",gap:"4px"}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <input type="text" value={a.label} onChange={e=>{const val=e.target.value; setAnns(p=>p.map(x=>x.id===a.id?{...x,label:val}:x))}} style={{background:"transparent",border:"none",color:"#fff",fontSize:"11px",fontWeight:"bold",fontFamily:"'Space Mono'"}}/>
+                            <button style={{color:"#ff4466",background:"transparent",fontSize:"10px"}} onClick={()=>{pushHistory(anns);setAnns(p=>p.filter(x=>x.id!==a.id));}}>❌</button>
+                          </div>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <span style={{color:"#00ffcc",fontFamily:"'Space Mono'",fontSize:"12px",fontWeight:"bold"}}>{getMeasure(a)}</span>
+                            <select value={a.unit} onChange={e=>{const u=e.target.value; pushHistory(anns); setAnns(p=>p.map(x=>x.id===a.id?{...x,unit:u}:x));}} style={{fontSize:"10px",padding:"2px 4px"}}>
+                              <option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option><option value="in">in</option>
+                            </select>
+                          </div>
+                        </div>
+                      ))
+                    }
+                  </div>
+                </div>
+
+                {/* PANEL EXPORTADOR INDUSTRIAL */}
+                <div className="studio-panel" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px"}}>
+                  <button className="studio-btn" onClick={async()=>{const cv=await html2canvas(captureRef.current);const a=document.createElement("a");a.href=cv.toDataURL("image/png");a.download=`METROLOGIA_${Date.now()}.png`;a.click();}}>EXPORTAR PNG</button>
+                  <button className="studio-btn" onClick={async()=>{const cv=await html2canvas(captureRef.current,{scale:2});const pdf=new window.jspdf.jsPDF("p","mm","a4");pdf.addImage(cv.toDataURL("image/png"),"PNG",0,0,pdf.internal.pageSize.getWidth(),(cv.height*pdf.internal.pageSize.getWidth())/cv.width);pdf.save(`REPORTE_${Date.now()}.pdf`);}}>GENERAR PDF</button>
+                </div>
+              </div>
             </div>
           </div>}
         </div>
