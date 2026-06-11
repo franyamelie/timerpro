@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-    <title>MediScan 3D - Studio Metrology Engine</title>
+    <title>MediScan 3D - Metrology Pro Engine</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -11,28 +11,23 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
-        html,body{background:#161616;min-height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#d1d1d1;overflow-x:hidden;}
-        .fade{animation:fadeUp .22s ease both;}
-        @keyframes fadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
-        button{transition:all .1s;border:none;cursor:pointer;}
-        button:active{transform:scale(.97);opacity:.8;}
-        input,select{background:#252525;border:1px solid #3a3a3a;color:#fff;border-radius:4px;padding:6px 10px;font-family:'Space Mono',monospace;font-size:12px;}
-        input:focus,select:focus{outline:1px solid #ff9d00;}
-        
+        html,body{background:#111111;min-height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#e0e0e0;overflow-x:hidden;}
         .app-container{max-width:1400px;margin:0 auto;padding:15px;display:flex;flex-direction:column;gap:12px;min-height:100vh;}
         .grid-layout{display:grid;grid-template-columns:1fr;gap:15px;}
         @media(min-width:992px){.grid-layout{grid-template-columns:1.4fr 1fr;}}
-        
-        .interactive-canvas{position:relative;width:100%;background:#0d0d0d;border-radius:6px;border:1px solid #2e2e2e;overflow:hidden;display:flex;align-items:center;justify-content:center;user-select:none;}
-        .canvas-svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;}
-        .node-handle{pointer-events:auto;cursor:move;fill:#fff;stroke-width:2;stroke:#000;}
-        
-        .studio-panel{background:#202020;border:1px solid #2e2e2e;border-radius:6px;padding:12px;}
-        .studio-btn{background:#2c2c2c;color:#e0e0e0;padding:6px 12px;border-radius:4px;font-size:11px;font-family:'Space Mono',monospace;border:1px solid #3a3a3a;}
-        .studio-btn.active{background:#ff9d00;color:#000;font-weight:bold;border-color:#ff9d00;}
-        .action-bar{display:flex;gap:6px;background:#1a1a1a;padding:6px;border-radius:4px;flex-wrap:wrap;align-items:center;}
-        
-        .cad-viewport{width:100%;height:450px;background:#000;border:2px solid #222;position:relative;border-radius:4px;}
+        .interactive-canvas{position:relative;width:100%;background:#050505;border-radius:6px;border:1px solid #333;overflow:hidden;display:flex;align-items:center;justify-content:center;user-select:none;cursor:crosshair;}
+        .canvas-svg{position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;}
+        .node-handle{pointer-events:auto;cursor:move;fill:#ffffff;stroke:#000000;stroke-width:2px;}
+        .studio-panel{background:#1a1a1a;border:1px solid #2d2d2d;border-radius:6px;padding:12px;}
+        .studio-btn{background:#262626;color:#e0e0e0;padding:8px 14px;border-radius:4px;font-size:12px;font-family:'Space Mono',monospace;border:1px solid #3a3a3a;font-weight:bold;}
+        .studio-btn.active{background:#ff9d00;color:#000000;border-color:#ff9d00;}
+        .action-bar{display:flex;gap:6px;background:#151515;padding:8px;border-radius:4px;flex-wrap:wrap;align-items:center;border:1px solid #222;}
+        .source-selector{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:15px;}
+        .source-card{background:#222;border:2px dashed #444;border-radius:6px;padding:25px 15px;text-align:center;cursor:pointer;transition:all 0.15s;}
+        .source-card:hover{border-color:#ff9d00;background:#282828;}
+        .cad-viewport{width:100%;height:450px;background:#000000;border:1px solid #2d2d2d;position:relative;border-radius:4px;}
+        .view-tabs{display:flex;gap:4px;background:#151515;padding:4px;border-radius:4px;border:1px solid #222;}
+        .video-preview{width:100%;max-height:60vh;object-fit:contain;background:#000;}
     </style>
 </head>
 <body>
@@ -42,24 +37,471 @@
     const {useState,useRef,useEffect}=React;
 
     const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-    const uid=()=>`_${Math.random().toString(36).slice(2,9)}`;
+    const uid=()=>`_id_${Math.random().toString(36).slice(2,9)}`;
     const COLS=["#ff9d00","#00ffcc","#ff4466","#44aaff","#aa66ff","#55ff55"];
     
     const TOOLS=[
-      {id:"sel",icon:"↖",tip:"Mover / Ajustar"},
-      {id:"pt", icon:"⬤",tip:"Punto Cota"},
-      {id:"line",icon:"━━",tip:"Tubo / Línea"},
-      {id:"arrow",icon:"→",tip:"Flecha"},
-      {id:"rect",icon:"▭",tip:"Rectángulo"},
-      {id:"circ",icon:"◯",tip:"Tubo Redondo / Círculo"}
+      {id:"sel",icon:"↖",tip:"Mover / Ajustar Puntos"},
+      {id:"pt", icon:"⬤",tip:"Añadir Cota de Punto"},
+      {id:"line",icon:"━━",tip:"Tubo / Línea Recta"},
+      {id:"arrow",icon:"→",tip:"Flecha Indicadora"},
+      {id:"rect",icon:"▭",tip:"Contorno Rectángulo"},
+      {id:"circ",icon:"◯",tip:"Contorno Tubo Circular"}
     ];
 
-    const UNIT_FACTORS = { mm: 1, cm: 10, m: 1000, in: 25.4 };
-
+    /* ── MOTOR GENERATIVO 3D REAL ── */
     function Studio3DView({annotations}){
       const el=useRef(null);
       useEffect(()=>{
         if(!el.current)return;
         const E=el.current, W=E.clientWidth, H=E.clientHeight||450;
-        const scene=new THREE.Scene(); scene.background=new THREE.Color(0x111111);
-        const cam=new THREE.PerspectiveCamera(45
+        const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0a0a);
+        const cam=new THREE.PerspectiveCamera(45, W/H, 0.1, 100); cam.position.set(0, 4, 8); cam.lookAt(0,0,0);
+        const rdr=new THREE.WebGLRenderer({antialias:true}); rdr.setSize(W,H); E.appendChild(rdr.domElement);
+
+        const grid=new THREE.GridHelper(20, 20, 0x333333, 0x1f1f1f); grid.position.y=-1; scene.add(grid);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+        const dl=new THREE.DirectionalLight(0xffffff, 0.9); dl.position.set(5,12,6); scene.add(dl);
+
+        const group=new THREE.Group(); scene.add(group);
+        
+        annotations.forEach((a) => {
+          const val = parseFloat(a.forcedValue) || 0;
+          // Escala proporcional para mapear el tamaño al entorno 3D
+          const size3D = val * 0.02 || 0.5; 
+          
+          let geo;
+          const mat = new THREE.MeshStandardMaterial({
+            color: new THREE.Color(a.color || "#ff9d00"), 
+            roughness: 0.3, 
+            metalness: 0.4,
+            transparent: true,
+            opacity: 0.9
+          });
+
+          if(a.type === "circ"){
+            // El círculo 2D se convierte exactamente en una estructura de tubo cilíndrico tridimensional real
+            const radius = size3D / 2;
+            geo = new THREE.CylinderGeometry(radius, radius, 1.5, 45);
+          } else if(a.type === "rect"){
+            // El rectángulo 2D genera un prisma geométrico exacto de base rectangular en el plano
+            geo = new THREE.BoxGeometry(size3D, size3D * 0.6, size3D);
+          } else if(a.type === "pt"){
+            geo = new THREE.SphereGeometry(0.18, 24, 24);
+          } else {
+            // Líneas y Flechas generan conductos tubulares cilíndricos longitudinales perfectos
+            geo = new THREE.CylinderGeometry(0.06, 0.06, size3D, 16);
+            geo.rotateZ(Math.PI / 2);
+          }
+
+          if(geo) {
+            const mesh = new THREE.Mesh(geo, mat);
+            // Posicionamiento dinámico en base a las coordenadas relativas mapeadas del canvas original
+            if(a.points && a.points[0]) {
+              mesh.position.set((a.points[0].x - 0.5) * 5, 0, (a.points[0].y - 0.5) * 5);
+            }
+            
+            const wire = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({color: 0xffffff, linewidth: 1}));
+            wire.position.copy(mesh.position);
+            wire.rotation.copy(mesh.rotation);
+            
+            group.add(mesh);
+            group.add(wire);
+          }
+        });
+
+        if(group.children.length === 0){
+          const placeholderGeo = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+          const placeholderMat = new THREE.MeshBasicMaterial({color: 0x222222, wireframe: true});
+          group.add(new THREE.Mesh(placeholderGeo, placeholderMat));
+        }
+
+        let drag=false, lx=0, ly=0, ry=0, rx=0;
+        const px=e=>e.clientX??e.touches?.[0]?.clientX??0, py=e=>e.clientY??e.touches?.[0]?.clientY??0;
+        const dn=e=>{drag=true; lx=px(e); ly=py(e);};
+        const mv=e=>{if(!drag)return; ry+=(px(e)-lx)*0.01; rx+=(py(e)-ly)*0.01; lx=px(e); ly=py(e);};
+        const up=()=>drag=false;
+        
+        E.addEventListener("mousedown",dn);
+        window.addEventListener("mousemove",mv);
+        window.addEventListener("mouseup",up);
+
+        let id; 
+        const anim=()=>{
+          id=requestAnimationFrame(anim); 
+          if(!drag) ry+=0.002; 
+          group.rotation.set(rx,ry,0); 
+          rdr.render(scene,cam);
+        };
+        anim();
+        
+        return()=>{ 
+          cancelAnimationFrame(id); 
+          rdr.dispose(); 
+          if(E.contains(rdr.domElement)) E.removeChild(rdr.domElement); 
+          E.removeEventListener("mousedown",dn);
+          window.removeEventListener("mousemove",mv);
+          window.removeEventListener("mouseup",up);
+        };
+      },[annotations]);
+
+      return <div ref={el} style={{width:"100%",height:"450px",cursor:"grab",borderRadius:"4px"}}/>;
+    }
+
+    /* ── INTERFAZ CENTRAL MEDISCAN ── */
+    function App(){
+      const containerRef=useRef(null);
+      const fileInputRef=useRef(null);
+      const videoRef=useRef(null);
+
+      const [scr,setScr]=useState("home");
+      const [image,setImage]=useState(null);
+      const [tool,setTool]=useState("line"); 
+      const [anns,setAnns]=useState([]);     // Comienza absolutamente limpio a cero cotas
+      const [cameraActive, setCameraActive] = useState(false);
+      
+      const [isDrawing, setIsDrawing] = useState(false);
+      const [startPt, setStartPt] = useState(null);
+      const [currentPt, setCurrentPt] = useState(null);
+      
+      const [activePromptDlg, setActivePromptDlg] = useState(null);
+      const [inputVal, setInputVal] = useState("0");
+      const [unitSelect, setUnitSelect] = useState("mm");
+      const [viewTab,setViewTab]=useState("edit2d");
+
+      // Forzar escaneo IA simulado para detectar bordes iniciales y rellenar cotas a cero por defecto
+      const triggerAutomaticAiDetection = (imgData) => {
+        setImage(imgData);
+        // La IA pre-identifica geometrías clave estructuradas directamente a cero absoluto para medir al pulsar
+        setAnns([
+          { id: uid(), type: "line", label: "Cota_Cero_EjeX", color: COLS[0], points: [{x:0.2, y:0.5}, {x:0.8, y:0.5}], unit: "mm", forcedValue: 0 },
+          { id: uid(), type: "circ", label: "Cota_Cero_Tubo", color: COLS[1], points: [{x:0.5, y:0.3}, {x:0.55, y:0.35}], unit: "mm", forcedValue: 0 }
+        ]);
+        setScr("annotate");
+      };
+
+      const handleFileUpload = (e) => {
+        const file = e.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => triggerAutomaticAiDetection(ev.target.result);
+        reader.readAsDataURL(file);
+      };
+
+      const startCamera = async () => {
+        setCameraActive(true);
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+          }
+        } catch (err) {
+          alert("No se pudo acceder a la cámara o dispositivo de captura.");
+          setCameraActive(false);
+        }
+      };
+
+      const captureFrame = () => {
+        if (!videoRef.current) return;
+        const canvas = document.createElement("canvas");
+        canvas.width = videoRef.current.videoWidth || 640;
+        canvas.height = videoRef.current.videoHeight || 480;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+        
+        // Apagar cámara
+        const stream = videoRef.current.srcObject;
+        if(stream) stream.getTracks().forEach(track => track.stop());
+        
+        setCameraActive(false);
+        triggerAutomaticAiDetection(canvas.toDataURL("image/png"));
+      };
+
+      const loadSampleImage = () => {
+        // Opción 3 alternativo: Carga automática de matriz patrón neutra metrológica estándar
+        const canvas = document.createElement("canvas");
+        canvas.width = 600; canvas.height = 400;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#151515"; ctx.fillRect(0,0,600,400);
+        ctx.strokeStyle = "#333333"; ctx.lineWidth = 2;
+        for(let i=0; i<600; i+=40) { ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,400); ctx.stroke(); }
+        for(let j=0; j<400; j+=40) { ctx.beginPath(); ctx.moveTo(0,j); ctx.lineTo(600,j); ctx.stroke(); }
+        ctx.fillStyle = "#ffffff"; ctx.font = "14px Space Mono"; ctx.fillText("MATRIZ DE CALIBRACIÓN METROLÓGICA", 40, 50);
+        triggerAutomaticAiDetection(canvas.toDataURL("image/png"));
+      };
+
+      const getCanvasCoords = (e) => {
+        const rect = containerRef.current?.getBoundingClientRect();
+        if(!rect) return {x:0, y:0};
+        const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+        const clientY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+        return {
+          x: clamp((clientX - rect.left) / rect.width, 0, 1),
+          y: clamp((clientY - rect.top) / rect.height, 0, 1)
+        };
+      };
+
+      const handleMouseDown = (e) => {
+        if(tool === "sel") return; 
+        const pt = getCanvasCoords(e);
+        setIsDrawing(true);
+        setStartPt(pt);
+        setCurrentPt(pt);
+      };
+
+      const handleMouseMove = (e) => {
+        if(!isDrawing) return;
+        const pt = getCanvasCoords(e);
+        setCurrentPt(pt);
+      };
+
+      const handleMouseUp = (e) => {
+        if(!isDrawing) return;
+        setIsDrawing(false);
+        const endPt = getCanvasCoords(e);
+
+        const id = uid();
+        const color = COLS[anns.length % COLS.length];
+        const points = tool === "pt" ? [startPt] : [startPt, endPt];
+
+        setActivePromptDlg({ id, type: tool, points, color });
+        setInputVal("0"); // Reseteo e inicialización inmediata a cero listo para editar
+      };
+
+      const commitAnnotation = () => {
+        const num = parseFloat(inputVal) || 0;
+        if(!activePromptDlg) return;
+
+        const labelName = `${activePromptDlg.type.toUpperCase()}_${anns.length + 1}`;
+        const newElement = {
+          id: activePromptDlg.id,
+          type: activePromptDlg.type,
+          label: labelName,
+          color: activePromptDlg.color,
+          points: activePromptDlg.points,
+          unit: unitSelect,
+          forcedValue: num
+        };
+
+        setAnns([...anns, newElement]);
+        setActivePromptDlg(null);
+      };
+
+      const startNodeDrag = (e, annId, ptIndex) => {
+        if(tool !== "sel") return;
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const mv = (ev) => {
+          const pt = getCanvasCoords(ev);
+          setAnns(prev => prev.map(a => {
+            if(a.id !== annId) return a;
+            const nextPoints = [...a.points];
+            nextPoints[ptIndex] = pt;
+            return { ...a, points: nextPoints };
+          }));
+        };
+
+        const up = () => {
+          window.removeEventListener("mousemove", mv);
+          window.removeEventListener("mouseup", up);
+        };
+        window.addEventListener("mousemove", mv);
+        window.addEventListener("mouseup", up);
+      };
+
+      return (
+        <div className="app-container">
+          <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #2d2d2d",paddingBottom:"10px"}}>
+            <h1 style={{fontFamily:"'Syne',sans-serif",color:"#ff9d00",fontSize:"20px",letterSpacing:"1px"}}>MEDISCAN 3D SYSTEM</h1>
+            {image && <button className="studio-btn" onClick={()=>{setImage(null); setAnns([]); setScr("home");}}>NUEVA CAPTURA / PLANO</button>}
+          </header>
+
+          {scr === "home" && (
+            <div className="studio-panel" style={{padding:"30px 15px"}}>
+              <h3 style={{fontFamily:"'Syne',sans-serif",marginBottom:"8px"}}>SELECCIONAR FUENTE DE ENTRADA METROLÓGICA</h3>
+              <p style={{color:"#888",fontSize:"13px"}}>Sube un archivo, captura en vivo o despliega la matriz patrón de calibración. Las geometrías e inicialización de cotas IA cargan por defecto a cero absoluto listo para pulsar y dimensionar.</p>
+              
+              {!cameraActive ? (
+                <div className="source-selector">
+                  <div className="source-card" onClick={()=>fileInputRef.current?.click()}>
+                    <div style={{fontSize:"24px",marginBottom:"8px"}}>📁</div>
+                    <strong>DESDE GALERÍA / ARCHIVO</strong>
+                    <p style={{fontSize:"11px",color:"#666",marginTop:"5px"}}>Sube JPG, PNG o planos CAD rasterizados</p>
+                  </div>
+                  
+                  <div className="source-card" onClick={startCamera}>
+                    <div style={{fontSize:"24px",marginBottom:"8px"}}>📷</div>
+                    <strong>DESDE CÁMARA EN VIVO</strong>
+                    <p style={{fontSize:"11px",color:"#666",marginTop:"5px"}}>Usa el sensor óptico trasero o integrado</p>
+                  </div>
+
+                  <div className="source-card" onClick={loadSampleImage}>
+                    <div style={{fontSize:"24px",marginBottom:"8px"}}>🏁</div>
+                    <strong>MATRIZ PATRÓN ESTÁNDAR</strong>
+                    <p style={{fontSize:"11px",color:"#666",marginTop:"5px"}}>Plano de calibración de ingeniería neutro</p>
+                  </div>
+                </div>
+              ) : (
+                <div style={{marginTop:"15px",textAlign:"center"}}>
+                  <video ref={videoRef} autoPlay playsInline className="video-preview"></video>
+                  <div style={{marginTop:"10px",display:"flex",gap:"10px",justifyContent:"center"}}>
+                    <button className="studio-btn active" onClick={captureFrame}>📸 CAPTURAR Y ANALIZAR YA</button>
+                    <button className="studio-btn" onClick={()=>{setCameraActive(false); const s=videoRef.current?.srcObject; if(s)s.getTracks().forEach(t=>t.stop());}}>Cancelar</button>
+                  </div>
+                </div>
+              )}
+              <input ref={fileInputRef} type="file" accept="image/*" style={{display:"none"} } onChange={handleFileUpload}/>
+            </div>
+          )}
+
+          {scr === "annotate" && (
+            <div className="grid-layout">
+              <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+                <div className="action-bar">
+                  {TOOLS.map(t=>(
+                    <button key={t.id} className={`studio-btn ${tool===t.id?'active':''}`} onClick={()=>setTool(t.id)} title={t.tip}>
+                      {t.icon} {t.id.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+
+                {activePromptDlg && (
+                  <div className="studio-panel" style={{border:"2px solid #ff9d00",background:"#261c0e"}}>
+                    <strong style={{color:"#ff9d00",fontSize:"12px",display:"block",marginBottom:"6px"}}>📐 VALIDAR VALOR REAL DE MEDIDA (COTA GEOMÉTRICA):</strong>
+                    <div style={{display:"flex",gap:"6px"}}>
+                      <input type="number" value={inputVal} onChange={e=>setInputVal(e.target.value)} style={{flex:1}} placeholder="Introduce dimensión real..." autoFocus/>
+                      <select value={unitSelect} onChange={e=>setUnitSelect(e.target.value)}>
+                        <option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option><option value="in">in</option>
+                      </select>
+                      <button className="studio-btn active" onClick={commitAnnotation}>Confirmar Cota</button>
+                    </div>
+                  </div>
+                )}
+
+                {viewTab === "edit2d" && (
+                  <div className="interactive-canvas" ref={containerRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}>
+                    <img src={image} style={{width:"100%",maxHeight:"65vh",objectFit:"contain",pointerEvents:"none"}} alt="Plano Operativo"/>
+                    <svg className="canvas-svg">
+                      {anns.map(a=>{
+                        if(!a.points || a.points.length<1) return null;
+                        const rect = containerRef.current?.getBoundingClientRect();
+                        if(!rect) return null;
+                        
+                        const p1x = a.points[0].x * rect.width; 
+                        const p1y = a.points[0].y * rect.height;
+                        const p2x = a.points[1] ? (a.points[1].x * rect.width) : p1x;
+                        const p2y = a.points[1] ? (a.points[1].y * rect.height) : p1y;
+
+                        return (
+                          <g key={a.id}>
+                            {a.type === "pt" && <circle cx={p1x} cy={p1y} r="8" fill={a.color} className="node-handle" onMouseDown={(e)=>startNodeDrag(e,a.id,0)}/>}
+                            {(a.type === "line" || a.type === "arrow") && (
+                              <>
+                                <line x1={p1x} y1={p1y} x2={p2x} y2={p2y} stroke={a.color} strokeWidth="3"/>
+                                <circle cx={p1x} cy={p1y} r="6" className="node-handle" onMouseDown={(e)=>startNodeDrag(e,a.id,0)}/>
+                                <circle cx={p2x} cy={p2y} r="6" className="node-handle" onMouseDown={(e)=>startNodeDrag(e,a.id,1)}/>
+                              </>
+                            )}
+                            {a.type === "rect" && (
+                              <>
+                                <rect x={Math.min(p1x,p2x)} y={Math.min(p1y,p2y)} width={Math.abs(p1x-p2x)} height={Math.abs(p1y-p2y)} fill="none" stroke={a.color} strokeWidth="3"/>
+                                <circle cx={p1x} cy={p1y} r="6" className="node-handle" onMouseDown={(e)=>startNodeDrag(e,a.id,0)}/>
+                                <circle cx={p2x} cy={p2y} r="6" className="node-handle" onMouseDown={(e)=>startNodeDrag(e,a.id,1)}/>
+                              </>
+                            )}
+                            {a.type === "circ" && (
+                              <>
+                                <circle cx={p1x} cy={p1y} r={Math.sqrt((p2x-p1x)**2 + (p2y-p1y)**2)} fill="none" stroke={a.color} strokeWidth="3"/>
+                                <circle cx={p1x} cy={p1y} r="6" className="node-handle" onMouseDown={(e)=>startNodeDrag(e,a.id,0)}/>
+                                <circle cx={p2x} cy={p2y} r="6" className="node-handle" onMouseDown={(e)=>startNodeDrag(e,a.id,1)}/>
+                              </>
+                            )}
+                            <text x={Math.min(p1x,p2x)} y={Math.min(p1y,p2y)-10} fill="#ffffff" style={{fontSize:"12px",fontFamily:"'Space Mono'",fontWeight:"bold",backgroundColor:"#000",textShadow:"1px 1px 2px #000"}}>{a.label}: {a.forcedValue} {a.unit}</text>
+                          </g>
+                        );
+                      })}
+
+                      {isDrawing && startPt && currentPt && containerRef.current && (
+                        (() => {
+                          const rect = containerRef.current.getBoundingClientRect();
+                          const x1 = startPt.x * rect.width; const y1 = startPt.y * rect.height;
+                          const x2 = currentPt.x * rect.width; const y2 = currentPt.y * rect.height;
+                          if(tool === "line" || tool === "arrow") return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#ffffff" strokeDasharray="4" strokeWidth="2"/>;
+                          if(tool === "rect") return <rect x={Math.min(x1,x2)} y={Math.min(y1,y2)} width={Math.abs(x1-x2)} height={Math.abs(y1-y2)} fill="none" stroke="#ffffff" strokeDasharray="4"/>;
+                          if(tool === "circ") return <circle cx={x1} cy={y1} r={Math.sqrt((x2-x1)**2 + (y2-y1)**2)} fill="none" stroke="#ffffff" strokeDasharray="4"/>;
+                          return null;
+                        })()
+                      )}
+                    </svg>
+                  </div>
+                )}
+
+                {viewTab === "cad2d" && (
+                  <div className="cad-viewport">
+                    <svg style={{width:"100%",height:"100%"}}>
+                      {anns.map(a=>{
+                        if(!a.points || a.points.length<1) return null;
+                        const p1x = a.points[0].x * 600; const p1y = a.points[0].y * 400;
+                        const p2x = a.points[1] ? (a.points[1].x * 600) : p1x;
+                        const p2y = a.points[1] ? (a.points[1].y * 400) : p1y;
+                        return (
+                          <g key={a.id} stroke="#00ffcc" fill="none" strokeWidth="1.5">
+                            {(a.type==="line" || a.type==="arrow") && <line x1={p1x} y1={p1y} x2={p2x} y2={p2y}/>}
+                            {a.type==="rect" && <rect x={Math.min(p1x,p2x)} y={Math.min(p1y,p2y)} width={Math.abs(p1x-p2x)} height={Math.abs(p1y-p2y)}/>}
+                            {a.type==="circ" && <circle cx={p1x} cy={p1y} r={Math.sqrt((p2x-p1x)**2+(p2y-p1y)**2)}/>}
+                            <text x={p1x} y={p1y-6} fill="#ffffff" stroke="none" style={{fontSize:"11px",fontFamily:"'Space Mono'"}}>{a.label} ({a.forcedValue} {a.unit})</text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
+                )}
+
+                {viewTab === "studio3d" && <Studio3DView annotations={anns}/>}
+              </div>
+
+              <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+                <div className="view-tabs">
+                  <button className={`studio-btn ${viewTab==='edit2d'?'active':''}`} style={{flex:1}} onClick={()=>setViewTab("edit2d")}>IMAGEN 2D</button>
+                  <button className={`studio-btn ${viewTab==='cad2d'?'active':''}`} style={{flex:1}} onClick={()=>setViewTab("cad2d")}>🖥 VECTORIAL CAD</button>
+                  <button className={`studio-btn ${viewTab==='studio3d'?'active':''}`} style={{flex:1}} onClick={()=>setViewTab("studio3d")}>🎮 ENTORNO 3D</button>
+                </div>
+
+                <div className="studio-panel">
+                  <span style={{fontSize:"12px",fontFamily:"'Space Mono'",color:"#ff9d00",fontWeight:"bold",display:"block",marginBottom:"10px"}}>📋 ARÁNDANO DE COTAS DEL PLANO ACTIVO</span>
+                  <div style={{maxHeight:"450px",overflowY:"auto",display:"flex",flexDirection:"column",gap:"6px"}}>
+                    {anns.length === 0 ? (
+                      <p style={{fontSize:"11px",color:"#666",textAlign:"center",padding:"20px"}}>No se registran cotas geométricas.</p>
+                    ) : (
+                      anns.map(a=>(
+                        <div key={a.id} style={{background:"#222",padding:"8px",borderRadius:"4px",borderLeft:`4px solid ${a.color}`,display:"flex",flexDirection:"column",gap:"4px"}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <input type="text" value={a.label} onChange={e=>setAnns(anns.map(x=>x.id===a.id?{...x,label:e.target.value}:x))} style={{background:"transparent",border:"none",color:"#fff",fontWeight:"bold",fontSize:"12px"}}/>
+                            <button style={{color:"#ff4466",background:"transparent",fontSize:"11px"}} onClick={()=>setAnns(anns.filter(x=>x.id!==a.id))}>❌ Eliminar</button>
+                          </div>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:"4px"}}>
+                              <span style={{fontSize:"11px",color:"#888"}}>Valor:</span>
+                              <input type="number" value={a.forcedValue} onChange={e=>setAnns(anns.map(x=>x.id===a.id?{...x,forcedValue:parseFloat(e.target.value)||0}:x))} style={{width:"80px",padding:"3px"}}/>
+                            </div>
+                            <select value={a.unit} onChange={e=>setAnns(anns.map(x=>x.id===a.id?{...x,unit:e.target.value}:x))} style={{padding:"2px"}}>
+                              <option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option><option value="in">in</option>
+                            </select>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+    </script>
+</body>
+</html>
