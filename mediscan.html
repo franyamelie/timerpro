@@ -8,12 +8,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
-        html,body{background:#161616;min-height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#d1d1d1;}
+        html,body{background:#161616;min-height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#d1d1d1;overflow-x:hidden;}
         .fade{animation:fadeUp .22s ease both;}
         @keyframes fadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
         button{transition:all .1s;border:none;cursor:pointer;}
@@ -25,7 +23,7 @@
         .grid-layout{display:grid;grid-template-columns:1fr;gap:15px;}
         @media(min-width:992px){.grid-layout{grid-template-columns:1.4fr 1fr;}}
         
-        .interactive-canvas{position:relative;width:100%;background:#0d0d0d;border-radius:6px;border:1px solid #2e2e2e;overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:crosshair;}
+        .interactive-canvas{position:relative;width:100%;background:#0d0d0d;border-radius:6px;border:1px solid #2e2e2e;overflow:hidden;display:flex;align-items:center;justify-content:center;user-select:none;}
         .canvas-svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;}
         .node-handle{pointer-events:auto;cursor:move;fill:#fff;stroke-width:2;stroke:#000;}
         
@@ -33,7 +31,6 @@
         .studio-btn{background:#2c2c2c;color:#e0e0e0;padding:6px 12px;border-radius:4px;font-size:11px;font-family:'Space Mono',monospace;border:1px solid #3a3a3a;}
         .studio-btn.active{background:#ff9d00;color:#000;font-weight:bold;border-color:#ff9d00;}
         .action-bar{display:flex;gap:6px;background:#1a1a1a;padding:6px;border-radius:4px;flex-wrap:wrap;align-items:center;}
-        .ai-badge{background:#111;border:1px dashed #ff9d00;padding:10px;border-radius:4px;margin-bottom:8px;font-family:'Space Mono',monospace;font-size:11px;}
         
         .cad-viewport{width:100%;height:450px;background:#000;border:2px solid #222;position:relative;border-radius:4px;}
     </style>
@@ -44,84 +41,85 @@
     <script type="text/babel">
     const {useState,useRef,useEffect,useCallback}=React;
 
-    const GAPI="https://api.groq.com/openai/v1/chat/completions";
-    const GMOD="meta-llama/llama-4-scout-17b-16e-instruct";
-    const getKey=()=>localStorage.getItem("ms3_k")||"";
     const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
     const uid=()=>`_${Math.random().toString(36).slice(2,9)}`;
     const COLS=["#ff9d00","#00ffcc","#ff4466","#44aaff","#aa66ff","#55ff55"];
     
     const TOOLS=[
-      {id:"sel",icon:"↖",tip:"Mover / Ajustar",npts:0},
-      {id:"pt", icon:"⬤",tip:"Punto Cota",npts:1},
-      {id:"line",icon:"━━",tip:"Línea / Tramo",npts:2},
-      {id:"arrow",icon:"→",tip:"Flecha Indicadora",npts:2},
-      {id:"dist",icon:"📏",tip:"Desde / Hasta",npts:2},
-      {id:"rect",icon:"▭",tip:"Rectángulo Zona",npts:2},
-      {id:"circ",icon:"◯",tip:"Círculo / Brida",npts:2},
-      {id:"calib",icon:"⚖",tip:"Calibrar Escala",npts:2},
+      {id:"sel",icon:"↖",tip:"Mover / Ajustar"},
+      {id:"pt", icon:"⬤",tip:"Punto Cota"},
+      {id:"line",icon:"━━",tip:"Línea / Tubo"},
+      {id:"arrow",icon:"→",tip:"Flecha"},
+      {id:"rect",icon:"▭",tip:"Rectángulo"},
+      {id:"circ",icon:"◯",tip:"Círculo / Brida"}
     ];
 
     const UNIT_FACTORS = { mm: 1, cm: 10, m: 1000, in: 25.4 };
 
-    /* ── MOTOR 3D ESTILO 3D STUDIO ── */
-    function Studio3DView({components, annotations, manualDim, shapeType}){
+    /* ── MOTOR 3D VINCULADO A COTAS REALES ── */
+    function Studio3DView({annotations}){
       const el=useRef(null);
       useEffect(()=>{
         if(!el.current)return;
         const E=el.current, W=E.clientWidth, H=E.clientHeight||450;
-        const scene=new THREE.Scene(); scene.background=new THREE.Color(0x1c1c1c);
-        const cam=new THREE.PerspectiveCamera(45, W/H, 0.1, 100); cam.position.set(4, 4, 4); cam.lookAt(0,0,0);
+        const scene=new THREE.Scene(); scene.background=new THREE.Color(0x111111);
+        const cam=new THREE.PerspectiveCamera(45, W/H, 0.1, 100); cam.position.set(5, 5, 5); cam.lookAt(0,0,0);
         const rdr=new THREE.WebGLRenderer({antialias:true}); rdr.setSize(W,H); E.appendChild(rdr.domElement);
 
-        const grid=new THREE.GridHelper(20, 20, 0xff9d00, 0x3a3a3a); grid.position.y=-0.5; scene.add(grid);
-        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-        const dl=new THREE.DirectionalLight(0xffffff, 0.9); dl.position.set(6,10,6); scene.add(dl);
+        const grid=new THREE.GridHelper(20, 20, 0x444444, 0x222222); grid.position.y=-1; scene.add(grid);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const dl=new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(5,10,5); scene.add(dl);
 
         const group=new THREE.Group(); scene.add(group);
-        const faceMat=new THREE.MeshStandardMaterial({color:0x2e3f4a, roughness:0.3, metalness:0.3, flatShading:true, transparent:true, opacity:0.85});
-        const wireMat=new THREE.LineBasicMaterial({color:0x00ffcc});
-
-        if(components && components.length > 0){
-          let currPos=new THREE.Vector3(0,0,0);
-          components.forEach(c => {
-            const length=(c.length||1000)*0.0005; const radius=((c.dn||150)*0.5)*0.0005;
-            let lx=0, ly=0, lz=0;
-            if(c.orientation === "X" || c.orientation === "H") lx=length; 
-            else if(c.orientation === "Y" || c.orientation === "V") ly=length; 
-            else lz=length;
-            const geo=new THREE.CylinderGeometry(radius, radius, length, 12);
-            geo.rotateZ(lx ? -Math.PI/2 : 0); geo.rotateX(lz ? Math.PI/2 : 0);
-            const m=new THREE.Mesh(geo, faceMat); m.position.set(currPos.x + lx/2, currPos.y + ly/2, currPos.z + lz/2);
-            const w=new THREE.LineSegments(new THREE.EdgesGeometry(geo), wireMat); w.position.copy(m.position);
-            group.add(m); group.add(w); currPos.add(new THREE.Vector3(lx, ly, lz));
-          });
-        }
-
-        annotations.forEach((a, i) => {
-          if(!a.forcedValue || !a.points || a.points.length < 1) return;
-          const valSize = parseFloat(a.forcedValue) * 0.0005;
+        
+        // Renderizar un objeto 3D real por cada cota ingresada por el usuario
+        annotations.forEach((a, idx) => {
+          if(!a.forcedValue) return;
+          const valInMM = parseFloat(a.forcedValue) * (UNIT_FACTORS[a.unit] || 1);
+          const size3D = valInMM * 0.002; // Factor de escala visual para el Viewport
+          
           let geo;
-          if(a.type === "circ") geo = new THREE.CylinderGeometry(valSize, valSize, 0.05, 24);
-          else if(a.type === "rect") geo = new THREE.BoxGeometry(valSize, valSize, valSize);
-          else geo = new THREE.CylinderGeometry(0.02, 0.02, valSize || 0.5, 8);
+          const mat = new THREE.MeshStandardMaterial({
+            color: new THREE.Color(a.color || "#ff9d00"), 
+            roughness: 0.4, 
+            metalness: 0.2,
+            transparent: true,
+            opacity: 0.85
+          });
 
-          const mMat = new THREE.MeshStandardMaterial({color: new THREE.Color(a.color || "#ff9d00"), flatShading:true, transparent:true, opacity:0.7});
-          const mesh = new THREE.Mesh(geo, mMat);
-          mesh.position.set((i * 0.4) - 0.5, 0, (i * -0.2));
+          if(a.type === "circ"){
+            // Cilindro/Perforación/Brida cilíndrica
+            geo = new THREE.CylinderGeometry(size3D/2, size3D/2, 0.3, 32);
+          } else if(a.type === "rect"){
+            // Caja/Bloque prismático
+            geo = new THREE.BoxGeometry(size3D, size3D, size3D);
+          } else if(a.type === "pt"){
+            // Pequeña esfera de localización
+            geo = new THREE.SphereGeometry(0.15, 16, 16);
+          } else {
+            // Línea / Tubo físico
+            geo = new THREE.CylinderGeometry(0.08, 0.08, size3D || 1, 16);
+            geo.rotateZ(Math.PI / 2); // Orientación horizontal por defecto
+          }
+
+          const mesh = new THREE.Mesh(geo, mat);
+          // Dispersar los elementos en el espacio para que no se pisen
+          mesh.position.set((idx * 0.8) - (annotations.length * 0.4), 0, 0);
+          
           const wire = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({color: 0xffffff}));
           wire.position.copy(mesh.position);
-          group.add(mesh); group.add(wire);
+          wire.rotation.copy(mesh.rotation);
+          
+          group.add(mesh);
+          group.add(wire);
         });
 
+        // Si no hay cotas hechas, mostrar un bloque de referencia vacío
         if(group.children.length === 0){
-          const mw=(manualDim?.w||100)*0.005, mh=(manualDim?.h||100)*0.005;
-          let geo = shapeType==="cylinder" ? new THREE.CylinderGeometry(mw,mw,mh,16) : new THREE.BoxGeometry(mw,mh,mw);
-          group.add(new THREE.Mesh(geo, faceMat)); group.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), wireMat));
+          const placeholderGeo = new THREE.BoxGeometry(1, 1, 1);
+          const placeholderMat = new THREE.MeshBasicMaterial({color: 0x333333, wireframe: true});
+          group.add(new THREE.Mesh(placeholderGeo, placeholderMat));
         }
-
-        const box=new THREE.Box3().setFromObject(group); const center=box.getCenter(new THREE.Vector3());
-        group.children.forEach(c => c.position.sub(center));
 
         let drag=false, lx=0, ly=0, ry=0, rx=0;
         const px=e=>e.clientX??e.touches?.[0]?.clientX??0, py=e=>e.clientY??e.touches?.[0]?.clientY??0;
@@ -129,95 +127,385 @@
         const mv=e=>{if(!drag)return; ry+=(px(e)-lx)*0.01; rx+=(py(e)-ly)*0.01; lx=px(e); ly=py(e);};
         const up=()=>drag=false;
         
-        E.addEventListener("mousedown",dn); E.addEventListener("touchstart",dn,{passive:true});
-        window.addEventListener("mousemove",mv); window.addEventListener("touchmove",mv,{passive:true});
-        window.addEventListener("mouseup",up); window.addEventListener("touchend",up);
+        E.addEventListener("mousedown",dn);
+        window.addEventListener("mousemove",mv);
+        window.addEventListener("mouseup",up);
 
-        let id; const anim=()=>{id=requestAnimationFrame(anim); if(!drag) ry+=0.002; group.rotation.set(rx,ry,0); rdr.render(scene,cam);};
+        let id; 
+        const anim=()=>{
+          id=requestAnimationFrame(anim); 
+          if(!drag) ry+=0.003; 
+          group.rotation.set(rx,ry,0); 
+          rdr.render(scene,cam);
+        };
         anim();
         
         return()=>{ 
           cancelAnimationFrame(id); 
           rdr.dispose(); 
           if(E.contains(rdr.domElement)) E.removeChild(rdr.domElement); 
-          // Limpieza crucial de listeners globales:
-          E.removeEventListener("mousedown",dn); E.removeEventListener("touchstart",dn);
-          window.removeEventListener("mousemove",mv); window.removeEventListener("touchmove",mv);
-          window.removeEventListener("mouseup",up); window.removeEventListener("touchend",up);
+          E.removeEventListener("mousedown",dn);
+          window.removeEventListener("mousemove",mv);
+          window.removeEventListener("mouseup",up);
         };
-      },[components, annotations, manualDim, shapeType]);
+      },[annotations]);
+
       return <div ref={el} style={{width:"100%",height:"450px",cursor:"grab",borderRadius:"4px"}}/>;
     }
 
     /* ── APLICACIÓN CENTRAL ── */
     function App(){
-      const containerRef=useRef(null); const captureRef=useRef(null);
-      const videoRef=useRef(null); const uploadRef=useRef(null);
+      const containerRef=useRef(null);
+      const uploadRef=useRef(null);
 
-      const [scr,setScr]=useState(()=>getKey()?"home":"setup");
-      const [keyIn,setKeyIn]=useState(getKey());
+      const [scr,setScr]=useState("home");
       const [projects,setProjects]=useState(()=>JSON.parse(localStorage.getItem("ms3_projs")||"[]"));
       const [projName,setProjName]=useState("");
-      
       const [image,setImage]=useState(null);
-      const [rotation,setRotation]=useState(0);
-      const [camMode,setCamMode]=useState("off");
+      const [tool,setTool]=useState("line"); // Herramienta inicial por defecto
+      const [anns,setAnns]=useState([]);     // Empieza totalmente vacío a petición del usuario
       
-      const [aiDetectionLog, setAiDetectionLog] = useState("Sin escanear.");
-      const [piping,setPiping]=useState(null);
-      
-      const [anns,setAnns]=useState([]);
-      const [history,setHistory]=useState([]); 
-      const [tool,setTool]=useState("sel");
-      const [pending,setPending]=useState([]);
-      const [scale,setScale]=useState(null);
+      const [isDrawing, setIsDrawing] = useState(false);
+      const [startPt, setStartPt] = useState(null);
+      const [currentPt, setCurrentPt] = useState(null);
       
       const [activePromptDlg, setActivePromptDlg] = useState(null);
       const [inputVal, setInputVal] = useState("");
       const [unitSelect, setUnitSelect] = useState("mm");
-      const [globalUnit, setGlobalUnit] = useState("mm");
-
-      const [manualDim,setManualDim]=useState({w:100,h:100,d:100});
-      const [shapeType,setShapeType]=useState("box");
       const [viewTab,setViewTab]=useState("edit2d");
 
       useEffect(()=>{ localStorage.setItem("ms3_projs", JSON.stringify(projects)); },[projects]);
 
-      const handleKeySave=()=>{ localStorage.setItem("ms3_k",keyIn.trim()); setScr("home"); };
-      
-      const pushHistory = (currentAnns) => {
-        setHistory(prev => [...prev, JSON.stringify(currentAnns)]);
-      };
-
-      const handleUndo = () => {
-        if (history.length === 0) { alert("Historial vacío."); return; }
-        const prevSteps = [...history];
-        const lastStep = JSON.parse(prevSteps.pop());
-        setHistory(prevSteps); setAnns(lastStep);
-      };
-
-      const startLive=async()=>{
-        setCamMode("starting");
-        try{
-          const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280}}});
-          if(videoRef.current) videoRef.current.srcObject=s; setCamMode("live");
-        }catch(e){ setCamMode("off"); alert("Cámara no disponible."); }
-      };
-
-      const captureLive=()=>{
-        const v=videoRef.current; if(!v)return;
-        const c=document.createElement("canvas"); c.width=v.videoWidth; c.height=v.videoHeight;
-        c.getContext("2d").drawImage(v,0,0); startProject(c.toDataURL("image/jpeg",0.9));
-        v.srcObject?.getTracks().forEach(t=>t.stop()); setCamMode("off");
-      };
-
       const startProject=img=>{
-        setImage(img); setAnns([]); setScale(null); setPending([]); setTool("sel"); setRotation(0); setPiping(null); setHistory([]);
-        setAiDetectionLog("Analizando matriz espacial con IA...");
-        setScr("annotate"); identify(img);
+        setImage(img); 
+        setAnns([]); // Forzar vacío absoluto al cargar
+        setTool("line"); 
+        setProjName("Nuevo Plano " + new Date().toLocaleTimeString());
+        setScr("annotate");
       };
 
-      const identify=async(img)=>{
-        const b64=img.split(",")[1];
-        const prompt=`Analiza esta imagen industrial de calderería o metrología.
-Devuelve EXCLUSIVAMENTE un objeto JSON estructurado con detecciones de cotas estimadas por defecto para que salgan directamente a la derecha:
+      // OBTENER COORDENADAS RELATIVAS AL LIENZO (0 A 1)
+      const getCanvasCoords = (e) => {
+        const rect = containerRef.current?.getBoundingClientRect();
+        if(!rect) return {x:0, y:0};
+        const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+        const clientY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+        return {
+          x: clamp((clientX - rect.left) / rect.width, 0, 1),
+          y: clamp((clientY - rect.top) / rect.height, 0, 1)
+        };
+      };
+
+      // INTERACCIÓN DINÁMICA: EMPEZAR A DIBUJAR (CLICK ABAJO)
+      const handleMouseDown = (e) => {
+        if(tool === "sel") return; // Si es mover, no dibuja
+        e.preventDefault();
+        const pt = getCanvasCoords(e);
+        setIsDrawing(true);
+        setStartPt(pt);
+        setCurrentPt(pt);
+      };
+
+      // MOVER EL RATÓN MIENTRAS SE ARRASTRA
+      const handleMouseMove = (e) => {
+        if(!isDrawing) return;
+        const pt = getCanvasCoords(e);
+        setCurrentPt(pt);
+      };
+
+      // SOLTAR EL RATÓN: FINALIZAR TRAZO Y PREGUNTAR MEDIDA REAL
+      const handleMouseUp = (e) => {
+        if(!isDrawing) return;
+        setIsDrawing(false);
+        const endPt = getCanvasCoords(e);
+
+        // Evitar micro-clics accidentales en herramientas de tramo largo
+        if(tool !== "pt" && Math.abs(endPt.x - startPt.x) < 0.005 && Math.abs(endPt.y - startPt.y) < 0.005) return;
+
+        const id = uid();
+        const color = COLS[anns.length % COLS.length];
+        const points = tool === "pt" ? [startPt] : [startPt, endPt];
+
+        // Abrir ventana emergente para forzar la medida real
+        setActivePromptDlg({ id, type: tool, points, color });
+        setInputVal("");
+      };
+
+      // GUARDAR LA COTA REGISTRADA EN LA TABLA
+      const commitAnnotation = () => {
+        const num = parseFloat(inputVal);
+        if(!num || num <= 0 || !activePromptDlg) return;
+
+        const labelName = `${activePromptDlg.type.toUpperCase()}_${anns.length + 1}`;
+        const newElement = {
+          id: activePromptDlg.id,
+          type: activePromptDlg.type,
+          label: labelName,
+          color: activePromptDlg.color,
+          points: activePromptDlg.points,
+          unit: unitSelect,
+          forcedValue: num
+        };
+
+        setAnns([...anns, newElement]);
+        setActivePromptDlg(null);
+      };
+
+      // MANIPULAR ARRASTRE DE NODOS EN MODO SELECCIÓN / MOVER
+      const startNodeDrag = (e, annId, ptIndex) => {
+        if(tool !== "sel") return;
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const mv = (ev) => {
+          const pt = getCanvasCoords(ev);
+          setAnns(prev => prev.map(a => {
+            if(a.id !== annId) return a;
+            const nextPoints = [...a.points];
+            nextPoints[ptIndex] = pt;
+            return { ...a, points: nextPoints };
+          }));
+        };
+
+        const up = () => {
+          window.removeEventListener("mousemove", mv);
+          window.removeEventListener("mouseup", up);
+        };
+        window.addEventListener("mousemove", mv);
+        window.addEventListener("mouseup", up);
+      };
+
+      return (
+        <div className="app-container">
+          <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #2e2e2e",paddingBottom:"10px"}}>
+            <h1 style={{fontFamily:"'Syne',sans-serif",color:"#ff9d00",fontSize:"18px"}}>MEDISCAN 3D <span style={{color:"#fff",fontSize:"11px"}}>AutoCAD Engine</span></h1>
+            <button className="studio-btn" onClick={()=>setScr("home")}>VOLVER AL INICIO</button>
+          </header>
+
+          {scr==="home" && (
+            <div className="fade grid-layout">
+              <div className="studio-panel" style={{textAlign:"center",padding:"60px 20px"}}>
+                <p style={{marginBottom:"15px",color:"#aaa"}}>Carga un plano industrial para iniciar el proceso de metrología digital desde cero.</p>
+                <button className="studio-btn active" style={{padding:"14px 28px",fontSize:"13px"}} onClick={()=>uploadRef.current?.click()}>📥 SELECCIONAR IMAGEN / PLANO</button>
+                <input ref={uploadRef} type="file" accept="image/*" style={{display:"none"} } onChange={e=>{const f=e.target.files[0]; if(f){const r=new FileReader(); r.onload=ev=>startProject(ev.target.result); r.readAsDataURL(f);}}}/>
+              </div>
+              <div className="studio-panel">
+                <h3 style={{color:"#ff9d00",marginBottom:"8px"}}>📋 Historial Local</h3>
+                {projects.length === 0 ? <p style={{color:"#555",fontSize:"12px"}}>No hay planos guardados.</p> : 
+                  projects.map(p=><div key={p.id} onClick={()=>{setImage(p.image);setAnns(p.anns);setProjName(p.name);setScr("annotate");}} style={{background:#111,padding:"8px",marginBottom:"4px",cursor:"pointer",border:"1px solid #333"}}>{p.name} ({p.date})</div>)
+                }
+              </div>
+            </div>
+          )}
+
+          {scr==="annotate" && (
+            <div className="fade grid-layout">
+              {/* ZONA DE TRABAJO IZQUIERDA (DIBUJO E INTERACCIÓN) */}
+              <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+                <div className="action-bar">
+                  {TOOLS.map(t=>(
+                    <button key={t.id} className={`studio-btn ${tool===t.id?'active':''}`} onClick={()=>setTool(t.id)}>
+                      {t.icon} {t.tip}
+                    </button>
+                  ))}
+                  <span style={{marginLeft:"auto",fontSize:"11px",color:"#888",fontFamily:"monospace"}}>Modo activo: <strong>{tool.toUpperCase()}</strong></span>
+                </div>
+
+                {/* MODAL EMERGENTE POST-SOLTAR EL TRAZO */}
+                {activePromptDlg && (
+                  <div className="studio-panel" style={{border:"2px solid #ff9d00",background:"#2a1f10"}}>
+                    <strong style={{color:"#ff9d00",fontSize:"12px",display:"block",marginBottom:"6px"}}>📏 ASIGNAR VALOR REAL A LA SECCIÓN ({activePromptDlg.type.toUpperCase()}):</strong>
+                    <div style={{display:"flex",gap:"6px"}}>
+                      <input type="number" value={inputVal} onChange={e=>setInputVal(e.target.value)} style={{flex:1}} placeholder="Ej: 150, 1200..." autoFocus/>
+                      <select value={unitSelect} onChange={e=>setUnitSelect(e.target.value)}>
+                        <option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option><option value="in">in</option>
+                      </select>
+                      <button className="studio-btn active" onClick={commitAnnotation}>Confirmar Cota</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* VISUALIZADOR PRINCIPAL EDITABLE 2D */}
+                {viewTab === "edit2d" && (
+                  <div 
+                    className="interactive-canvas" 
+                    ref={containerRef}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                  >
+                    <img src={image} style={{width:"100%",maxHeight:"65vh",objectFit:"contain",pointerEvents:"none"}} alt="Plano"/>
+                    
+                    <svg className="canvas-svg">
+                      {/* Renderizar cotas confirmadas */}
+                      {anns.map(a=>{
+                        if(!a.points || a.points.length<1) return null;
+                        const rect = containerRef.current?.getBoundingClientRect();
+                        if(!rect) return null;
+                        
+                        const p1x = a.points[0].x * rect.width;
+                        const p1y = a.points[0].y * rect.height;
+                        const p2x = a.points[1] ? (a.points[1].x * rect.width) : p1x;
+                        const p2y = a.points[1] ? (a.points[1].y * rect.height) : p1y;
+
+                        return (
+                          <g key={a.id}>
+                            {a.type === "pt" && (
+                              <circle cx={p1x} cy={p1y} r="7" fill={a.color} className="node-handle" onMouseDown={(e)=>startNodeDrag(e,a.id,0)}/>
+                            )}
+                            {(a.type === "line" || a.type === "arrow") && (
+                              <>
+                                <line x1={p1x} y1={p1y} x2={p2x} y2={p2y} stroke={a.color} strokeWidth="3"/>
+                                <circle cx={p1x} cy={p1y} r="6" fill="#fff" className="node-handle" onMouseDown={(e)=>startNodeDrag(e,a.id,0)}/>
+                                <circle cx={p2x} cy={p2y} r="6" fill="#fff" className="node-handle" onMouseDown={(e)=>startNodeDrag(e,a.id,1)}/>
+                              </>
+                            )}
+                            {a.type === "rect" && (
+                              <>
+                                <rect x={Math.min(p1x,p2x)} y={Math.min(p1y,p2y)} width={Math.abs(p1x-p2x)} height={Math.abs(p1y-p2y)} fill="none" stroke={a.color} strokeWidth="3"/>
+                                <circle cx={p1x} cy={p1y} r="5" fill="#fff" className="node-handle" onMouseDown={(e)=>startNodeDrag(e,a.id,0)}/>
+                                <circle cx={p2x} cy={p2y} r="5" fill="#fff" className="node-handle" onMouseDown={(e)=>startNodeDrag(e,a.id,1)}/>
+                              </>
+                            )}
+                            {a.type === "circ" && (
+                              <>
+                                <circle cx={p1x} cy={p1y} r={Math.sqrt((p2x-p1x)**2 + (p2y-p1y)**2)} fill="none" stroke={a.color} strokeWidth="3"/>
+                                <circle cx={p1x} cy={p1y} r="5" fill="#fff" className="node-handle" onMouseDown={(e)=>startNodeDrag(e,a.id,0)}/>
+                                <circle cx={p2x} cy={p2y} r="5" fill="#fff" className="node-handle" onMouseDown={(e)=>startNodeDrag(e,a.id,1)}/>
+                              </>
+                            )}
+                            <text x={Math.min(p1x,p2x)} y={Math.min(p1y,p2y)-8} fill="#fff" style={{fontSize:"11px",fontFamily:"'Space Mono'",fontWeight:"bold",background:"#000",padding:"2px"}}>{a.label}: {a.forcedValue} {a.unit}</text>
+                          </g>
+                        );
+                      })}
+
+                      {/* Renderizar trazo temporal mientras se arrastra */}
+                      {isDrawing && startPt && currentPt && containerRef.current && (
+                        (() => {
+                          const rect = containerRef.current.getBoundingClientRect();
+                          const x1 = startPt.x * rect.width;
+                          const y1 = startPt.y * rect.height;
+                          const x2 = currentPt.x * rect.width;
+                          const y2 = currentPt.y * rect.height;
+                          
+                          if(tool === "line" || tool === "arrow") return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#fff" strokeDasharray="4" strokeWidth="2"/>;
+                          if(tool === "rect") return <rect x={Math.min(x1,x2)} y={Math.min(y1,y2)} width={Math.abs(x1-x2)} height={Math.abs(y1-y2)} fill="none" stroke="#fff" strokeDasharray="4"/>;
+                          if(tool === "circ") return <circle cx={x1} cy={y1} r={Math.sqrt((x2-x1)**2 + (y2-y1)**2)} fill="none" stroke="#fff" strokeDasharray="4"/>;
+                          if(tool === "pt") return <circle cx={x1} cy={y1} r="6" fill="#fff"/>;
+                          return null;
+                        })()
+                      )}
+                    </svg>
+                  </div>
+                )}
+
+                {/* MODO VECTORS 2D (CAD REAL) */}
+                {viewTab === "cad2d" && (
+                  <div className="cad-viewport">
+                    <div style={{position:"absolute",top:"10px",left:"10px",fontFamily:"'Space Mono'",fontSize:"10px",color:"#00ffcc"}}>AUTOCAD VECTORIAL // ESPACIO DE TRABAJO PURIFICADO</div>
+                    <svg style={{width:"100%",height:"100%"}}>
+                      {anns.map(a=>{
+                        if(!a.points || a.points.length<1) return null;
+                        const p1x = a.points[0].x * 700; const p1y = a.points[0].y * 400;
+                        const p2x = a.points[1] ? (a.points[1].x * 700) : p1x;
+                        const p2y = a.points[1] ? (a.points[1].y * 400) : p1y;
+                        return (
+                          <g key={a.id} stroke="#00ffcc" fill="none" strokeWidth="1.5">
+                            {a.type==="pt" && <circle cx={p1x} cy={p1y} r="5" fill="#00ffcc"/>}
+                            {(a.type==="line" || a.type==="arrow") && <line x1={p1x} y1={p1y} x2={p2x} y2={p2y}/>}
+                            {a.type==="rect" && <rect x={Math.min(p1x,p2x)} y={Math.min(p1y,p2y)} width={Math.abs(p1x-p2x)} height={Math.abs(p1y-p2y)}/>}
+                            {a.type==="circ" && <circle cx={p1x} cy={p1y} r={Math.sqrt((p2x-p1x)**2+(p2y-p1y)**2)}/>}
+                            <text x={p1x} y={p1y-6} fill="#fff" stroke="none" style={{fontSize:"10px",fontFamily:"'Space Mono'"}}>{a.label} ({a.forcedValue} {a.unit})</text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
+                )}
+
+                {/* MOSTRAR VIEWPORT INTERACTIVO 3D */}
+                {viewTab === "studio3d" && (
+                  <div style={{position:"relative"}}>
+                    <div style={{position:"absolute",top:"10px",left:"10px",fontFamily:"'Space Mono'",fontSize:"10px",color:"#ff9d00",zIndex:20}}>3D STUDIO VIEWPORT // ESTRUCTURA ASOCIADA A MEDICIONES</div>
+                    <Studio3DView annotations={anns}/>
+                  </div>
+                )}
+              </div>
+
+              {/* BARRA LATERAL DERECHA (TABS Y RESUMEN DE COTAS VINCULADO) */}
+              <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+                <div style={{display:"flex",gap:"4px",background:"#111",padding:"4px",borderRadius:"4px"}}>
+                  <button className={`studio-btn ${viewTab==='edit2d'?'active':''}`} style={{flex:1}} onClick={()=>setViewTab("edit2d")}>IMAGEN BASE</button>
+                  <button className={`studio-btn ${viewTab==='cad2d'?'active':''}`} style={{flex:1}} onClick={()=>setViewTab("cad2d")}>🖥️ MODO CAD</button>
+                  <button className={`studio-btn ${viewTab==='studio3d'?'active':''}`} style={{flex:1}} onClick={()=>setViewTab("studio3d")}>🎮 ESPACIO 3D</button>
+                </div>
+
+                <div className="studio-panel" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+                  <input type="text" value={projName} onChange={e=>setProjName(e.target.value)} placeholder="Nombre del Plano..."/>
+                  <button className="studio-btn active" onClick={()=>{setProjects([{id:uid(),name:projName,date:new Date().toLocaleDateString(),image,anns},...projects]);alert("Guardado correctamente.");}}>💾 GUARDAR PROYECTO</button>
+                  
+                  <hr style={{borderColor:"#2e2e2e",margin:"6px 0"}}/>
+                  <span style={{fontSize:"11px",fontFamily:"'Space Mono'",color:"#ff9d00",fontWeight:"bold"}}>📋 RESUMEN DE COTAS REALES</span>
+
+                  <div style={{maxHeight:"350px",overflowY:"auto",display:"flex",flexDirection:"column",gap:"6px"}}>
+                    {anns.length === 0 ? (
+                      <p style={{fontSize:"11px",color:"#666",textAlign:"center",padding:"20px"}}>Ninguna cota realizada. Usa las herramientas de arriba y arrastra sobre la imagen para empezar.</p>
+                    ) : (
+                      anns.map(a=>(
+                        <div key={a.id} style={{background:"#181818",padding:"8px",borderRadius:"4px",borderLeft:`4px solid ${a.color}`,display:"flex",flexDirection:"column",gap:"4px"}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <input 
+                              type="text" 
+                              value={a.label} 
+                              onChange={e=>{
+                                const val=e.target.value; 
+                                setAnns(anns.map(x=>x.id===a.id?{...x,label:val}:x));
+                              }} 
+                              style={{background:"transparent",border:"none",color:"#fff",fontSize:"11px",fontWeight:"bold",fontFamily:"'Space Mono'"}}
+                            />
+                            <button style={{color:"#ff4466",background:"transparent",fontSize:"10px"}} onClick={()=>setAnns(anns.filter(x=>x.id!==a.id))}>❌ Eliminar</button>
+                          </div>
+                          
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:"4px"}}>
+                              <span style={{fontSize:"10px",color:"#888"}}>Valor:</span>
+                              <input 
+                                type="number" 
+                                value={a.forcedValue} 
+                                onChange={e=>{
+                                  const val=parseFloat(e.target.value)||0;
+                                  setAnns(anns.map(x=>x.id===a.id?{...x,forcedValue:val}:x));
+                                }} 
+                                style={{width:"70px",padding:"2px 4px",background:"#111"}}
+                              />
+                            </div>
+                            <select 
+                              value={a.unit} 
+                              onChange={e=>{
+                                const u=e.target.value; 
+                                setAnns(anns.map(x=>x.id===a.id?{...x,unit:u}:x));
+                              }} 
+                              style={{fontSize:"10px",padding:"2px 4px"}}
+                            >
+                              <option value="mm">mm</option>
+                              <option value="cm">cm</option>
+                              <option value="m">m</option>
+                              <option value="in">in</option>
+                            </select>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+    </script>
+</body>
+</html>
