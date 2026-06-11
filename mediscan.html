@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-    <title>MediScan 3D - Piping & Metrology Engine</title>
+    <title>MediScan 3D - Studio Metrology Engine</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -13,355 +13,221 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
-        html,body{background:#05101a;min-height:100%;-webkit-tap-highlight-color:transparent;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#e1e7ed;}
-        @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 12px #00e5c4}50%{opacity:.3;box-shadow:none}}
-        @keyframes scan{0%{top:0}100%{top:100%}}
+        html,body{background:#1a1a1a;min-height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#d1d1d1;}
         @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-        @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-        .fade{animation:fadeUp .3s ease both;} 
-        .spin{animation:spin .9s linear infinite;} 
-        .blink{animation:pulse 1.8s ease infinite;}
-        button{transition:transform .1s,opacity .1s;-webkit-appearance:none;border:none;} 
-        button:active{transform:scale(.95);opacity:.8;}
-        input,select{background:#0b2535;border:1px solid #1a3a4e;color:#fff;border-radius:6px;padding:6px 10px;font-family:'Space Mono',monospace;font-size:12px;}
-        input:focus,select:focus{outline:1px solid #00e5c4;}
-        input[type=number]{-moz-appearance:textfield;}
-        input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;}
-        ::-webkit-scrollbar{width:4px;} ::-webkit-scrollbar-track{background:#05101a;} ::-webkit-scrollbar-thumb{background:#0b2535;border-radius:4px;}
+        .fade{animation:fadeUp .25s ease both;}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+        .spin{animation:spin .9s linear infinite;}
+        button{transition:all .1s;border:none;cursor:pointer;}
+        button:active{transform:scale(.97);opacity:.8;}
+        input,select,textarea{background:#2b2b2b;border:1px solid #3d3d3d;color:#fff;border-radius:4px;padding:6px 10px;font-family:'Space Mono',monospace;font-size:12px;}
+        input:focus,select:focus{outline:1px solid #ff9d00;}
+        ::-webkit-scrollbar{width:6px;height:6px;} ::-webkit-scrollbar-track{background:#141414;} ::-webkit-scrollbar-thumb{background:#3a3a3a;border-radius:3px;}
         
-        /* Utilidades de Diseño */
-        .app-container{max-width:1100px;margin:0 auto;padding:15px;display:flex;flex-direction:column;gap:15px;min-height:100vh;}
+        /* Layout Layout 3D Studio Style */
+        .app-container{max-width:1300px;margin:0 auto;padding:15px;display:flex;flex-direction:column;gap:12px;min-height:100vh;}
         .grid-layout{display:grid;grid-template-columns:1fr;gap:15px;}
-        @media(min-width:768px){.grid-layout{grid-template-columns:1.2fr 1fr;}}
-        .interactive-canvas{position:relative;width:100%;background:#02080f;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+        @media(min-width:992px){.grid-layout{grid-template-columns:1.3fr 1fr;}}
+        .interactive-canvas{position:relative;width:100%;background:#111;border-radius:6px;border:1px solid #333;overflow:hidden;display:flex;align-items:center;justify-content:center;}
         .canvas-svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;}
-        .node-handle{pointer-events:auto;cursor:move;fill:#fff;stroke-width:2;}
+        .node-handle{pointer-events:auto;cursor:move;fill:#fff;stroke-width:1.5;}
+        .studio-panel{background:#242424;border:1px solid #333;border-radius:6px;padding:12px;}
+        .studio-btn{background:#333;color:#e0e0e0;padding:6px 12px;border-radius:4px;font-size:11px;font-family:'Space Mono',monospace;}
+        .studio-btn.active{background:#ff9d00;color:#000;font-weight:bold;}
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-    const {useState,useRef,useEffect,useCallback,useMemo}=React;
+    const {useState,useRef,useEffect,useCallback}=React;
 
-    /* ── Constantes ── */
     const GAPI="https://api.groq.com/openai/v1/chat/completions";
     const GMOD="meta-llama/llama-4-scout-17b-16e-instruct";
     const getKey=()=>localStorage.getItem("ms3_k")||"";
     const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
     const uid=()=>`_${Math.random().toString(36).slice(2,9)}`;
-    const COLS=["#00e5c4","#ff4466","#44aaff","#ffaa22","#aa66ff","#44ff88","#ff6622","#22ccff","#ff22aa","#aaee22","#ff9944","#44ddff"];
+    const COLS=["#ff9d00","#00ffcc","#ff4466","#44aaff","#aa66ff","#55ff55"];
+    
     const TOOLS=[
-      {id:"sel",icon:"↖",tip:"Mover / Seleccionar"},
-      {id:"pt", icon:"⬤",tip:"Punto/Marcador",npts:1},
-      {id:"line",icon:"━━",tip:"Línea + medida",npts:2},
+      {id:"sel",icon:"↖",tip:"Mover",npts:0},
+      {id:"pt", icon:"⬤",tip:"Punto",npts:1},
+      {id:"line",icon:"━━",tip:"Línea",npts:2},
       {id:"arrow",icon:"→",tip:"Flecha",npts:2},
       {id:"rect",icon:"▭",tip:"Rectángulo",npts:2},
       {id:"circ",icon:"◯",tip:"Círculo",npts:2},
-      {id:"calib",icon:"⚖",tip:"Calibrar escala",npts:2},
+      {id:"calib",icon:"⚖",tip:"Calibrar",npts:2},
     ];
 
-    const S3=0.001; // mm → unidades de escena
-    const dirMap={H:[1,0,0],V:[0,1,0],Z:[0,0,1],"-H":[-1,0,0],"-V":[0,-1,0],"-Z":[0,0,-1],X:[1,0,0],Y:[0,1,0],"-X":[-1,0,0],"-Y Colon":[-1,0,0],"-Y":[0,-1,0]};
-
-    function getPipeWaypoints(comps){
-      const pts=[];
-      const meta=[];
-      let pos=new THREE.Vector3(0,0,0);
-      let dir=new THREE.Vector3(1,0,0);
-      pts.push(pos.clone());
-      for(const c of comps){
-        if(c.orientation&&dirMap[c.orientation])dir=new THREE.Vector3(...dirMap[c.orientation]);
-        const dn=c.dn||100, r=dn*S3*0.5;
-        if(["pipe","tube","spool"].includes(c.type)){
-          const len=(c.length||1000)*S3;
-          const end=pos.clone().addScaledVector(dir,len);
-          meta.push({...c,_r:r,_start:pos.clone(),_end:end.clone()});
-          pts.push(end.clone()); pos=end;
-        } else if(["elbow","bend","return"].includes(c.type)){
-          let newDir;
-          if(c.to_orientation&&dirMap[c.to_orientation])newDir=new THREE.Vector3(...dirMap[c.to_orientation]);
-          else{const up=new THREE.Vector3(0,1,0);newDir=Math.abs(dir.dot(up))>0.8?new THREE.Vector3(1,0,0):up;}
-          const bendR=Math.max(r*3,.05);
-          pos=pos.clone().addScaledVector(dir,bendR);
-          pts.push(pos.clone());
-          const mid=pos.clone().addScaledVector(dir.clone().add(newDir).normalize(),bendR);
-          pts.push(mid.clone());
-          pos=pos.clone().addScaledVector(newDir,bendR);
-          pts.push(pos.clone()); dir=newDir.clone();
-          meta.push({...c,_r:r,_pos:pos.clone()});
-        } else if(["valve","gate_valve","ball_valve","check_valve","butterfly_valve","globe_valve"].includes(c.type)){
-          const vl=Math.max(r*8,.12);
-          meta.push({...c,_r:r,_pos:pos.clone(),_dir:dir.clone(),_len:vl});
-          pos=pos.clone().addScaledVector(dir,vl); pts.push(pos.clone());
-        } else if(c.type==="flange"){
-          meta.push({...c,_r:r,_pos:pos.clone(),_dir:dir.clone()});
-          pos=pos.clone().addScaledVector(dir,r*.4); pts.push(pos.clone());
-        } else if(["tee","wye"].includes(c.type)){
-          const bDir=new THREE.Vector3(0,1,0);if(Math.abs(dir.dot(bDir))>.8)bDir.set(0,0,1);
-          bDir.cross(dir).normalize();
-          meta.push({...c,_r:r,_pos:pos.clone(),_dir:dir.clone(),_bDir:bDir.clone(),_bR:Math.max((c.branch_dn||dn)*S3*.5,r*.6),_bLen:r*5});
-        } else if(["pump","compressor","vessel","equipment","exchanger"].includes(c.type)){
-          const el=(c.length||2000)*S3;
-          meta.push({...c,_r:r,_pos:pos.clone(),_dir:dir.clone(),_len:el});
-          pos=pos.clone().addScaledVector(dir,el); pts.push(pos.clone());
-        }
-      }
-      return{pts,meta};
-    }
-
-    /* ── VISOR 3D TUBERÍAS ── */
-    function V3DPipe({components,pipeDN,pipeLabel}){
+    /* ── MOTOR DE CÁLCULO TRIDIMENSIONAL (3D STUDIO WIREFRAME EDITION) ── */
+    function Studio3DView({components, manualDim, shapeType}){
       const el=useRef(null);
       useEffect(()=>{
         if(!el.current)return;
-        const E=el.current,W=E.clientWidth,H=E.clientHeight||280;
-        const rdr=new THREE.WebGLRenderer({antialias:true,alpha:false});
-        rdr.setSize(W,H);rdr.setPixelRatio(Math.min(devicePixelRatio,2));
-        rdr.shadowMap.enabled=true;rdr.shadowMap.type=THREE.PCFSoftShadowMap;
-        rdr.outputEncoding=THREE.sRGBEncoding;
-        rdr.toneMapping=THREE.ACESFilmicToneMapping;rdr.toneMappingExposure=1.15;
-        E.appendChild(rdr.domElement);
-
+        const E=el.current, W=E.clientWidth, H=E.clientHeight||320;
         const scene=new THREE.Scene();
-        scene.background=new THREE.Color(0x061322);
-        scene.fog=new THREE.Fog(0x061322,12,28);
+        scene.background=new THREE.Color(0x282828); // Gris clásico de viewports 3D Studio
 
-        const mPipe=new THREE.MeshStandardMaterial({color:0x557799,metalness:.8,roughness:.2});
-        const mInner=new THREE.MeshStandardMaterial({color:0x0b1826,side:THREE.BackSide});
-        const mFlange=new THREE.MeshStandardMaterial({color:0x7799bb,metalness:.9,roughness:.1});
-        const mValve=new THREE.MeshStandardMaterial({color:0x3c4d5e,metalness:.7,roughness:.3});
-        const mHandle=new THREE.MeshStandardMaterial({color:0xdd3322,metalness:.3,roughness:.5});
-        const mEquip=new THREE.MeshStandardMaterial({color:0x2a3a4a,metalness:.6,roughness:.4});
-        const mWeld=new THREE.MeshStandardMaterial({color:0x4f6070,metalness:.7,roughness:.5});
+        const cam=new THREE.PerspectiveCamera(45, W/H, 0.1, 100);
+        cam.position.set(3, 2.5, 3); cam.lookAt(0,0,0);
 
-        const cam=new THREE.PerspectiveCamera(40,W/H,.05,50);
-        cam.position.set(3.5,3,4.5);
+        const rdr=new THREE.WebGLRenderer({antialias:true});
+        rdr.setSize(W,H); E.appendChild(rdr.domElement);
 
-        scene.add(new THREE.AmbientLight(0x505065,.7));
-        const key=new THREE.DirectionalLight(0xfff5ee,2.0);key.position.set(8,14,6);key.castShadow=true;
-        scene.add(key);
+        // Grid e Iluminación de ingeniería
+        const grid=new THREE.GridHelper(20, 20, 0xff9d00, 0x444444);
+        grid.position.y=-0.5; scene.add(grid);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const dl=new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(5,8,5); scene.add(dl);
 
-        const floor=new THREE.Mesh(new THREE.PlaneGeometry(30,30),new THREE.MeshStandardMaterial({color:0x030a12,roughness:.9}));
-        floor.rotation.x=-Math.PI/2;floor.position.y=-.05;floor.receiveShadow=true;scene.add(floor);
-        const grid=new THREE.GridHelper(30,30,0x102e44,0x0b1f30);grid.position.y=-.04;scene.add(grid);
+        const group=new THREE.Group();
+        scene.add(group);
 
-        const orient=(mesh,from,to)=>{
-          const d=new THREE.Vector3().subVectors(to,from).normalize();
-          const up=new THREE.Vector3(0,1,0);
-          if(Math.abs(d.dot(up))>.999){mesh.rotation.z=d.y>0?0:Math.PI;}
-          else{const ax=new THREE.Vector3().crossVectors(up,d).normalize();mesh.setRotationFromAxisAngle(ax,Math.acos(clamp(up.dot(d),-1,1)));}
-        };
-        const orientDir=(mesh,d,center)=>{
-          const fake=center.clone().sub(d.clone().multiplyScalar(.5));orient(mesh,fake,center.clone().add(d.clone().multiplyScalar(.5)));
+        // Estilos de alambre / caras tipo modelador antiguo
+        const faceMat=new THREE.MeshStandardMaterial({color:0x3a4f5c, roughness:0.4, metalness:0.2, flatShading:true, transparent:true, opacity:0.75});
+        const wireMat=new THREE.LineBasicMaterial({color:0x00ffcc, linewidth:1});
+
+        const buildMesh=(geo)=>{
+          const mesh=new THREE.Mesh(geo, faceMat);
+          const wire=new THREE.LineSegments(new THREE.EdgesGeometry(geo), wireMat);
+          group.add(mesh); group.add(wire);
         };
 
-        const addFlange=(pos,dir,r)=>{
-          const gf=new THREE.CylinderGeometry(r*1.6,r*1.6,r*.25,16);
-          const mf=new THREE.Mesh(gf,mFlange);mf.position.copy(pos);orientDir(mf,dir,pos);mf.castShadow=true;scene.add(mf);
-        };
+        // Renderizado según flujo (Plano detectado por IA vs Objeto Manual)
+        if(components && components.length > 0){
+          // Tubería Isométrica Automatizada
+          let currPos=new THREE.Vector3(0,0,0);
+          components.forEach(c => {
+            const length=(c.length||1000)*0.001;
+            const radius=((c.dn||150)*0.5)*0.001;
+            let lenX=0, lenY=0, lenZ=0;
+            
+            if(c.orientation==="H" || c.orientation==="X") lenX=length;
+            else if(c.orientation==="V" || c.orientation==="Y") lenY=length;
+            else lenZ=length;
 
-        const addValve=(pos,dir,r,vtype)=>{
-          const vl=r*5;
-          const gv=new THREE.CylinderGeometry(r*1.2,r*1.2,vl,14);
-          const mv=new THREE.Mesh(gv,mValve);mv.position.copy(pos.clone().addScaledVector(dir,vl/2));orientDir(mv,dir,pos.clone().addScaledVector(dir,vl/2));mv.castShadow=true;scene.add(mv);
-          addFlange(pos.clone(),dir,r);
-          addFlange(pos.clone().addScaledVector(dir,vl),dir,r);
-        };
-
-        const defComps=components&&components.length>0?components:[
-          {type:"flange",dn:pipeDN||100},{type:"pipe",dn:pipeDN||100,length:2000,orientation:"H"},
-          {type:"elbow",dn:pipeDN||100,to_orientation:"V"},{type:"pipe",dn:pipeDN||100,length:1500,orientation:"V"}
-        ];
-
-        const{pts,meta}=getPipeWaypoints(defComps);
-
-        if(pts.length>1){
-          const deduped=pts.filter((p,i)=>i===0||p.distanceTo(pts[i-1])>.001);
-          if(deduped.length>1){
-            const baseDN=defComps.find(c=>c.dn)?.dn||100;
-            const baseR=baseDN*S3*.5;
-            const curve=new THREE.CatmullRomCurve3(deduped,false,"catmullrom",.4);
-            const tubes=new THREE.TubeGeometry(curve,Math.max(deduped.length*6,30),baseR,18,false);
-            const mt=new THREE.Mesh(tubes,mPipe);mt.castShadow=true;scene.add(mt);
-          }
+            const geo=new THREE.CylinderGeometry(radius, radius, length, 12);
+            geo.rotateZ(lenX ? -Math.PI/2 : 0);
+            geo.rotateX(lenZ ? Math.PI/2 : 0);
+            
+            const mesh=new THREE.Mesh(geo, faceMat);
+            mesh.position.set(currPos.x + lenX/2, currPos.y + lenY/2, currPos.z + lenZ/2);
+            const wire=new THREE.LineSegments(new THREE.EdgesGeometry(geo), wireMat);
+            wire.position.copy(mesh.position);
+            
+            group.add(mesh); group.add(wire);
+            currPos.add(new THREE.Vector3(lenX, lenY, lenZ));
+          });
+        } else {
+          // Dimensiones Manuales introducidas por el operador
+          const mw=(manualDim?.w||100)*0.005, mh=(manualDim?.h||100)*0.005, md=(manualDim?.d||100)*0.005;
+          let geo;
+          if(shapeType==="cylinder") geo=new THREE.CylinderGeometry(mw, mw, mh, 16);
+          else if(shapeType==="sphere") geo=new THREE.SphereGeometry(mw, 16, 16);
+          else geo=new THREE.BoxGeometry(mw, mh, md);
+          buildMesh(geo);
         }
 
-        for(const s of meta){
-          const r=s._r||.05;
-          if(s.type==="flange")addFlange(s._pos,s._dir||new THREE.Vector3(1,0,0),r);
-          else if(["valve","gate_valve","ball_valve"].includes(s.type))addValve(s._pos,s._dir||new THREE.Vector3(1,0,0),r,s.type);
-        }
-
-        const box=new THREE.Box3().setFromObject(scene);
+        // Centrado de cámara automático
+        const box=new THREE.Box3().setFromObject(group);
         const center=box.getCenter(new THREE.Vector3());
-        const size=box.getSize(new THREE.Vector3()).length()||4;
-        cam.position.set(center.x+size*.8,center.y+size*.6,center.z+size*.9);
-        cam.lookAt(center);
+        group.children.forEach(c => c.position.sub(center));
 
-        let drag=false,lx=0,ly=0,ry=0,rx=.15;
-        const px=e=>e.clientX??e.touches?.[0]?.clientX??0,py=e=>e.clientY??e.touches?.[0]?.clientY??0;
-        const dn=e=>{drag=true;lx=px(e);ly=py(e);};
-        const mv=e=>{if(!drag)return;ry+=(px(e)-lx)*.008;rx+=(py(e)-ly)*.008;lx=px(e);ly=py(e);};
+        // Controles de Rotación orbital táctil/mouse
+        let drag=false, lx=0, ly=0, ry=0, rx=0;
+        const px=e=>e.clientX??e.touches?.[0]?.clientX??0, py=e=>e.clientY??e.touches?.[0]?.clientY??0;
+        const dn=e=>{drag=true; lx=px(e); ly=py(e);};
+        const mv=e=>{if(!drag)return; ry+=(px(e)-lx)*0.01; rx+=(py(e)-ly)*0.01; lx=px(e); ly=py(e);};
         const up=()=>drag=false;
 
-        rdr.domElement.addEventListener("mousedown",dn);rdr.domElement.addEventListener("touchstart",dn,{passive:true});
-        window.addEventListener("mousemove",mv);window.addEventListener("touchmove",mv,{passive:true});
-        window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
-
-        const pivot=new THREE.Group();pivot.position.copy(center);
-        const content=scene.children.filter(c=>c!==floor&&c!==grid&&!c.isLight);
-        content.forEach(c=>{scene.remove(c);c.position.sub(center);pivot.add(c);});
-        scene.add(pivot);
+        E.addEventListener("mousedown",dn); E.addEventListener("touchstart",dn,{passive:true});
+        window.addEventListener("mousemove",mv); window.addEventListener("touchmove",mv,{passive:true});
+        window.addEventListener("mouseup",up); window.addEventListener("touchend",up);
 
         let id;
-        const anim=()=>{id=requestAnimationFrame(anim);if(!drag){ry+=.004;}pivot.rotation.set(rx,ry,0);rdr.render(scene,cam);};
+        const anim=()=>{id=requestAnimationFrame(anim); if(!drag) ry+=0.003; group.rotation.set(rx,ry,0); rdr.render(scene,cam);};
         anim();
 
         return()=>{
-          cancelAnimationFrame(id);
-          window.removeEventListener("mousemove",mv);window.removeEventListener("touchmove",mv);
-          window.removeEventListener("mouseup",up);window.removeEventListener("touchend",up);
-          rdr.dispose();if(E.contains(rdr.domElement))E.removeChild(rdr.domElement);
+          cancelAnimationFrame(id); rdr.dispose();
+          if(E.contains(rdr.domElement)) E.removeChild(rdr.domElement);
         };
-      },[components,pipeDN]);
+      },[components, manualDim, shapeType]);
 
-      return(
-        <div style={{width:"100%",position:"relative",background:"#061322",borderRadius:"8px",border:"1px solid #0b2535"}}>
-          <div ref={el} style={{width:"100%",height:"280px",cursor:"grab"}}/>
-          {pipeLabel&&<div style={{padding:"6px 12px",fontSize:"10px",color:"#00e5c4",fontFamily:"'Space Mono',monospace",borderTop:"1px solid #0b2535",background:"rgba(0,0,0,.3)"}}>{pipeLabel}</div>}
-        </div>
-      );
+      return <div ref={el} style={{width:"100%",height:"320px",cursor:"grab",borderRadius:"4px",border:"1px solid #444"}}/>;
     }
 
-    /* ── VISOR 3D GENÉRICO ── */
-    function V3D({w,h,d,shape}){
-      const el=useRef(null);
-      useEffect(()=>{
-        if(!el.current)return;
-        const E=el.current,W=E.clientWidth,H=E.clientHeight||230;
-        const scene=new THREE.Scene();scene.background=new THREE.Color(0x061322);
-        const cam=new THREE.PerspectiveCamera(40,W/H,.1,50);cam.position.set(2.5,2,2.5);cam.lookAt(0,0,0);
-        const rdr=new THREE.WebGLRenderer({antialias:true});rdr.setSize(W,H);
-        E.appendChild(rdr.domElement);
-
-        const mat=new THREE.MeshStandardMaterial({color:0x00e5c4,metalness:.3,roughness:.4,transparent:true,opacity:0.6,side:THREE.DoubleSide});
-        const wireMat=new THREE.LineBasicMaterial({color:0xffffff});
-        const grp=new THREE.Group();scene.add(grp);
-
-        let geo;
-        if(shape==="cylinder") geo=new THREE.CylinderGeometry(0.6,0.6,1.2,24);
-        else if(shape==="sphere") geo=new THREE.SphereGeometry(0.7,24,24);
-        else geo=new THREE.BoxGeometry(1,1,1);
-
-        const mesh=new THREE.Mesh(geo,mat);grp.add(mesh);
-        const wire=new THREE.LineSegments(new THREE.EdgesGeometry(geo),wireMat);grp.add(wire);
-
-        scene.add(new THREE.AmbientLight(0xffffff,.6));
-        const dl=new THREE.DirectionalLight(0xffffff,1);dl.position.set(3,5,3);scene.add(dl);
-
-        let drag=false,lx=0,ly=0,ry=0,rx=0;
-        const px=e=>e.clientX??e.touches?.[0]?.clientX??0,py=e=>e.clientY??e.touches?.[0]?.clientY??0;
-        
-        const dn=e=>{drag=true;lx=px(e);ly=py(e);};
-        const mv=e=>{if(!drag)return;ry+=(px(e)-lx)*.01;rx+=(py(e)-ly)*.01;lx=px(e);ly=py(e);};
-        const up=()=>drag=false;
-
-        rdr.domElement.addEventListener("mousedown",dn);rdr.domElement.addEventListener("touchstart",dn);
-        window.addEventListener("mousemove",mv);window.addEventListener("mouseup",up);
-
-        let id;const anim=()=>{id=requestAnimationFrame(anim);if(!drag)ry+=.005;grp.rotation.set(rx,ry,0);rdr.render(scene,cam);};
-        anim();
-
-        return()=>{cancelAnimationFrame(id);rdr.dispose();if(E.contains(rdr.domElement))E.removeChild(rdr.domElement);};
-      },[w,h,d,shape]);
-      return <div ref={el} style={{width:"100%",height:"230px",cursor:"grab"}}/>;
-    }
-
-    /* ── NÚCLEO APP PRINCIPAL ── */
+    /* ── ENTORNO DE TRABAJO GENERAL ── */
     function App(){
       const containerRef=useRef(null);
       const captureRef=useRef(null);
       const videoRef=useRef(null);
-      const canvasRef=useRef(null);
-      const streamRef=useRef(null);
       const uploadRef=useRef(null);
 
       const [scr,setScr]=useState(()=>getKey()?"home":"setup");
       const [keyIn,setKeyIn]=useState(getKey());
-      const [camMode,setCamMode]=useState("off");
+      const [projects,setProjects]=useState(()=>JSON.parse(localStorage.getItem("ms3_projs")||"[]"));
+      const [projName,setProjName]=useState("");
+      
       const [image,setImage]=useState(null);
       const [rotation,setRotation]=useState(0);
+      const [camMode,setCamMode]=useState("off");
       const [objInfo,setObjInfo]=useState(null);
       const [piping,setPiping]=useState(null);
-      const [err,setErr]=useState(null);
+      
       const [anns,setAnns]=useState([]);
       const [tool,setTool]=useState("sel");
       const [pending,setPending]=useState([]);
       const [selId,setSelId]=useState(null);
       const [colorIdx,setColorIdx]=useState(0);
       const [scale,setScale]=useState(null);
+      
       const [calibDlg,setCalibDlg]=useState(null);
       const [calibVal,setCalibVal]=useState("");
       const [calibUnit,setCalibUnit]=useState("mm");
-      const [d3,setD3]=useState({w:100,h:100,d:100});
+      
+      const [manualDim,setManualDim]=useState({w:100,h:100,d:100});
+      const [shapeType,setShapeType]=useState("box");
       const [viewTab,setViewTab]=useState("anno");
 
-      const ACC="#00e5c4", BDR="#0b2535";
+      useEffect(()=>{
+        localStorage.setItem("ms3_projs", JSON.stringify(projects));
+      },[projects]);
 
-      const handleKeySave=()=>{
-        localStorage.setItem("ms3_k",keyIn.trim());
-        setScr("home");
-      };
+      const handleKeySave=()=>{ localStorage.setItem("ms3_k",keyIn.trim()); setScr("home"); };
 
       const startLive=async()=>{
         setCamMode("starting");
         try{
           const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280}}});
-          streamRef.current=s;
           if(videoRef.current) videoRef.current.srcObject=s;
           setCamMode("live");
-        }catch(e){
-          setCamMode("off");
-          alert("No se pudo acceder a la cámara en tiempo real.");
-        }
-      };
-
-      const stopCam=()=>{
-        streamRef.current?.getTracks().forEach(t=>t.stop());
-        setCamMode("off");
+        }catch(e){ setCamMode("off"); alert("Cámara no disponible."); }
       };
 
       const captureLive=()=>{
-        const v=videoRef.current, c=canvasRef.current;
-        if(!v||!c)return;
-        c.width=v.videoWidth||640;
-        c.height=v.videoHeight||480;
+        const v=videoRef.current; if(!v)return;
+        const c=document.createElement("canvas"); c.width=v.videoWidth; c.height=v.videoHeight;
         c.getContext("2d").drawImage(v,0,0);
         startProject(c.toDataURL("image/jpeg",0.9));
-      };
-
-      const handleFile=e=>{
-        const f=e.target.files?.[0];if(!f)return;
-        const r=new FileReader();
-        r.onload=ev=>startProject(ev.target.result);
-        r.readAsDataURL(f);
+        v.srcObject?.getTracks().forEach(t=>t.stop()); setCamMode("off");
       };
 
       const startProject=img=>{
-        setImage(img);setAnns([]);setScale(null);setSelId(null);setPending([]);setTool("sel");setRotation(0);setErr(null);setPiping(null);
-        setScr("loading");stopCam();identify(img);
+        setImage(img); setAnns([]); setScale(null); setSelId(null); setPending([]); setTool("sel"); setRotation(0); setPiping(null);
+        setScr("loading"); identify(img);
       };
 
+      // IDENTIFICADOR DE PLANOS DE CALDERERÍA / TUBERÍAS ASISTIDO POR IA VISUAL
       const identify=async(img)=>{
         const b64=img.split(",")[1];
-        const prompt=`Analiza esta imagen de metrologia industrial/medica.
-Si es un plano/isometria de tuberias, piping o caldereria, devuelve SOLO este JSON:
-{"type":"piping","name":"Linea Vapor","dn":150,"material":"carbon_steel","components":[{"id":"1","type":"pipe","dn":150,"length":1200,"orientation":"H"}],"drawing_notes":""}
+        const prompt=`Analiza este plano/foto de caldereria o metrologia.
+Si es un plano isometrico, diagrama de tuberias o piping, devuelve estricta y únicamente este formato JSON:
+{"type":"piping","name":"Isométrico Industrial","dn":150,"components":[{"id":"1","type":"pipe","orientation":"X","length":2500},{"id":"2","type":"elbow","to_orientation":"Y"},{"id":"3","type":"pipe","orientation":"Y","length":1800}],"notes":"Plano de tuberias detectado"}
 
-Si es un objeto fisico regular o pieza volumetrica, devuelve SOLO este JSON:
-{"type":"object","name":"Valvula Mariposa","category":"Mecanizado","shape":"cylinder","desc":"Cuerpo mecanizado con bridas"}
-Devuelve UNICAMENTE el JSON plano estructurado sin Markdown ni bloques de codigo.`;
+Si es un objeto fisico, pieza o solido mecanico:
+{"type":"object","name":"Pieza Volumetrica","shape":"cylinder","notes":"Reconociendo cuerpo solido plano"}
+No agregues formato markdown ni bloques de texto. Devuelve el string limpio JSON.`;
 
         try{
           const res=await fetch(GAPI,{
@@ -370,179 +236,211 @@ Devuelve UNICAMENTE el JSON plano estructurado sin Markdown ni bloques de codigo
             body:JSON.stringify({model:GMOD,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:prompt}]}]})
           });
           const data=await res.json();
-          const txt=data.choices?.[0]?.message?.content||"{}";
-          const info=JSON.parse(txt.replace(/```json|```/g,"").trim());
-          if(info.type === "piping"){
-            setPiping({components:info.components||[],dn:info.dn||100,label:`${info.name||"Sistema"} · DN${info.dn||100}`});
-            setObjInfo({name:info.name,category:"Piping",shape:"cylinder",desc:info.drawing_notes});
-            setViewTab("pipe3d");
-          } else {
-            setObjInfo(info);setViewTab("anno");
+          const info=JSON.parse(data.choices[0].message.content.replace(/```json|```/g,"").trim());
+          if(info.type==="piping"){
+            setPiping(info); setViewTab("pipe3d");
           }
+          setObjInfo(info);
         }catch(e){
-          setErr("Fallo de red o clave API incorrecta. Se habilita modo manual.");
-          setObjInfo({name:"Componente Capturado",category:"General",shape:"box",desc:"Modo manual activo"});
-        }finally{setScr("annotate");}
+          setObjInfo({name:"Captura Manual",notes:"Operación fuera de línea activa."});
+        }finally{ setScr("annotate"); }
       };
 
+      // CONTROL DE LIENZO DE ANOTACIONES 2D A ESCALA REAL
       const handleCvClick=useCallback(e=>{
         if(tool==="sel")return;
-        const rect=containerRef.current?.getBoundingClientRect();if(!rect)return;
+        const rect=containerRef.current?.getBoundingClientRect(); if(!rect)return;
         let nx=(e.clientX-rect.left)/rect.width, ny=(e.clientY-rect.top)/rect.height;
-        nx=clamp(nx,0.01,0.99);ny=clamp(ny,0.01,0.99);
+        nx=clamp(nx,0.01,0.99); ny=clamp(ny,0.01,0.99);
 
-        const td=TOOLS.find(t=>t.id===tool);if(!td)return;
+        const td=TOOLS.find(t=>t.id===tool); if(!td)return;
         const pts=[...pending,{x:nx,y:ny}];
 
         if(pts.length >= td.npts){
-          const color=COLS[colorIdx%COLS.length];const id=uid();
+          const color=COLS[colorIdx%COLS.length]; const id=uid();
           if(tool==="calib"){
             setCalibDlg({p1:pts[0],p2:pts[1]});
-            setAnns(p=>[...p,{id,type:"calib",label:"⚖ Calibracion",color,points:pts,value:null,unit:calibUnit}]);
-            setSelId(id);setPending([]);return;
+            setAnns(p=>[...p,{id,type:"calib",label:"⚖ Calibración Base",color,points:pts,value:null,unit:calibUnit}]);
+          } else {
+            let txtLabel=tool.toUpperCase();
+            setAnns(p=>[...p,{id,type:tool,label:`${txtLabel} ${anns.length+1}`,color,points:pts,value:null,unit:calibUnit}]);
           }
-          setAnns(p=>[...p,{id,type:tool,label:tool==="pt"?`Pto ${anns.length+1}`:`Medida ${anns.length+1}`,color,points:pts,value:null,unit:calibUnit}]);
-          setSelId(id);setPending([]);setColorIdx(c=>c+1);setTool("sel");
-        }else setPending(pts);
+          setPending([]); setTool("sel"); setColorIdx(c=>c+1);
+        } else setPending(pts);
       },[tool,pending,colorIdx,anns,calibUnit]);
 
       const startDrag=useCallback((e,annId,pi)=>{
-        e.preventDefault();e.stopPropagation();setSelId(annId);
-        const rect=containerRef.current?.getBoundingClientRect();if(!rect)return;
+        e.preventDefault(); e.stopPropagation(); setSelId(annId);
+        const rect=containerRef.current?.getBoundingClientRect(); if(!rect)return;
         const mv=ev=>{
-          ev.preventDefault();
           const cx=ev.clientX??ev.touches?.[0]?.clientX??0, cy=ev.clientY??ev.touches?.[0]?.clientY??0;
           let nx=(cx-rect.left)/rect.width, ny=(cy-rect.top)/rect.height;
           setAnns(p=>p.map(a=>{
             if(a.id!==annId)return a;
-            const pp=[...a.points];
-            pp[pi]={x:clamp(nx,0.01,0.99),y:clamp(ny,0.01,0.99)};
-            return{...a,points:pp};
+            const pp=[...a.points]; pp[pi]={x:clamp(nx,0.01,0.99),y:clamp(ny,0.01,0.99)};
+            return {...a,points:pp};
           }));
         };
-        const up=()=>{window.removeEventListener("mousemove",mv);window.removeEventListener("mouseup",up);};
-        window.addEventListener("mousemove",mv);window.addEventListener("mouseup",up);
+        const up=()=>{window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up);};
+        window.addEventListener("mousemove",mv); window.addEventListener("mouseup",up);
       },[]);
 
       const getMeasure=ann=>{
-        if(ann.value!=null)return`${ann.value} ${ann.unit||"mm"}`;
-        if(!scale||ann.points.length<2)return"Sin escala";
-        const rect=containerRef.current?.getBoundingClientRect();if(!rect)return"?";
+        if(ann.value!=null)return `${ann.value} ${ann.unit}`;
+        if(!scale || ann.points.length<2)return "Sin calibrar";
+        const rect=containerRef.current?.getBoundingClientRect(); if(!rect)return "";
         const dx=(ann.points[1].x-ann.points[0].x)*rect.width, dy=(ann.points[1].y-ann.points[0].y)*rect.height;
-        return`${(Math.sqrt(dx*dx+dy*dy)/scale.ppu).toFixed(1)} ${scale.unit}`;
+        const dist=Math.sqrt(dx*dx+dy*dy)/scale.ppu;
+        return `${dist.toFixed(1)} ${scale.unit}`;
       };
 
       const confirmCalib=()=>{
-        const v=parseFloat(calibVal);if(!v||v<=0)return;
-        const rect=containerRef.current?.getBoundingClientRect();if(!rect)return;
-        const{p1,p2}=calibDlg;
-        const px=Math.sqrt(((p2.x-p1.x)*rect.width)**2+((p2.y-p1.y)*rect.height)**2);
+        const v=parseFloat(calibVal); if(!v||v<=0||!calibDlg)return;
+        const rect=containerRef.current?.getBoundingClientRect(); if(!rect)return;
+        const dx=(calibDlg.p2.x-calibDlg.p1.x)*rect.width, dy=(calibDlg.p2.y-calibDlg.p1.y)*rect.height;
+        const px=Math.sqrt(dx*dx+dy*dy);
         setScale({ppu:px/v,unit:calibUnit});
-        setAnns(p=>p.map(a=>a.type==="calib"&&!a.value?{...a,value:v,unit:calibUnit,label:`⚖ ${v} ${calibUnit}`}:a));
-        setCalibDlg(null);setCalibVal("");
+        setAnns(p=>p.map(a=>a.type==="calib"?{...a,value:v,unit:calibUnit,label:`⚖ Base: ${v}${calibUnit}`}:a));
+        setCalibDlg(null); setCalibVal("");
       };
 
-      const exportPDF=async()=>{
-        const el=captureRef.current;if(!el)return;
-        const cv=await html2canvas(el,{useCORS:true,scale:2});
-        const imgData=cv.toDataURL("image/png");
-        const {jsPDF}=window.jspdf;
-        const pdf=new jsPDF("p","mm","a4");
-        const w=pdf.internal.pageSize.getWidth();
-        const h=(cv.height*w)/cv.width;
-        pdf.addImage(imgData,"PNG",0,0,w,h);
-        pdf.save(`MediScan3D_Report_${Date.now()}.pdf`);
+      // GUARDADO INTERNO DE PROYECTOS Y RECARGA
+      const saveProject=()=>{
+        if(!projName.trim()){ alert("Asigna un nombre al proyecto"); return; }
+        const newProj={id:uid(),name:projName,date:new Date().toLocaleDateString(),image,anns,scale,piping,objInfo};
+        setProjects(p=>[newProj,...p.filter(x=>x.name!==projName)]);
+        alert("Proyecto almacenado con éxito.");
       };
 
-      return(
+      const loadProject=(p)=>{
+        setImage(p.image); setAnns(p.anns); setScale(p.scale); setPiping(p.piping); setObjInfo(p.objInfo);
+        setProjName(p.name); setScr("annotate");
+      };
+
+      // CANALES DE EXPORTACIÓN DIRECTA
+      const shareMedia=(type)=>{
+        alert(`Preparando archivo metrológico para enviar vía ${type.toUpperCase()}...`);
+        if(type==='whatsapp') window.open(`https://api.whatsapp.com/send?text=Envio%20Reporte%20Metrologico%20MediScan3D`, '_blank');
+        else window.location.href=`mailto:?subject=Reporte MediScan 3D&body=Adjunto datos del plano analizado.`;
+      };
+
+      const downloadPNG=async()=>{
+        const cv=await html2canvas(captureRef.current);
+        const a=document.createElement("a"); a.href=cv.toDataURL("image/png"); a.download=`M3D_${Date.now()}.png`; a.click();
+      };
+
+      const downloadPDF=async()=>{
+        const cv=await html2canvas(captureRef.current,{scale:2});
+        const pdf=new window.jspdf.jsPDF("p","mm","a4");
+        pdf.addImage(cv.toDataURL("image/png"),"PNG",0,0,pdf.internal.pageSize.getWidth(),(cv.height*pdf.internal.pageSize.getWidth())/cv.width);
+        pdf.save(`Reporte_Caldereria_${Date.now()}.pdf`);
+      };
+
+      return (
         <div className="app-container">
-          {/* Cabecera Estática */}
-          <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid ${BDR}`,paddingBottom:"12px"}}>
-            <h1 style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:"20px",color:"#fff",letterSpacing:"-0.5px"}}>MEDISCAN <span style={{color:ACC}}>3D</span></h1>
-            <div style={{display:"flex",gap:"8px"}}>
-              <button onClick={()=>setScr("setup")} style={{background:"#0b2535",color:ACC,padding:"6px 12px",borderRadius:"6px",fontSize:"12px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>⚙ CONFIG</button>
-              {scr==="annotate"&&<button onClick={()=>setScr("home")} style={{background:"#112a3a",color:"#fff",padding:"6px 12px",borderRadius:"6px",fontSize:"12px",cursor:"pointer"}}>VOLVER</button>}
+          <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #333",paddingBottom:"10px"}}>
+            <h1 style={{fontFamily:"'Syne',sans-serif",color:"#ff9d00",fontSize:"18px"}}>MEDISCAN 3D <span style={{color:"#fff",fontSize:"11px",fontFamily:"'Space Mono'"}}>v2.0 Studio Engine</span></h1>
+            <div style={{display:"flex",gap:"6px"}}>
+              <button className="studio-btn" onClick={()=>setScr("setup")}>⚙ CONFIG</button>
+              {scr==="annotate" && <button className="studio-btn" style={{background:"#444"}} onClick={()=>setScr("home")}>INICIO</button>}
             </div>
           </header>
 
-          {/* PANTALLA: CONFIGURACIÓN API KEY */}
-          {scr==="setup"&&<div className="fade" style={{background:"rgba(0,16,28,.8)",padding:"25px",borderRadius:"12px",border:`1px solid ${BDR}`,maxWidth:"450px",margin:"40px auto",width:"100%"}}>
-            <h3 style={{fontFamily:"'Syne',sans-serif",marginBottom:"15px"}}>Clave de Acceso Motor de IA</h3>
-            <p style={{fontSize:"12px",color:"#6b8fa4",marginBottom:"20px",lineHeight:"1.5"}}>Introduce tu API Key de Groq para habilitar el reconocimiento volumétrico y la ingeniería inversa automática de planos de calderería o sólidos.</p>
-            <input type="password" style={{width:"100%",marginBottom:"15px"}} value={keyIn} onChange={e=>setKeyIn(e.target.value)} placeholder="gsk_yX9..."/>
-            <button onClick={handleKeySave} style={{width:"100%",background:ACC,color:"#05101a",padding:"10px",borderRadius:"6px",fontWeight:700,cursor:"pointer"}}>GUARDAR CONFIGURACIÓN</button>
+          {/* SETUP: CLAVE DE ACCESO */}
+          {scr==="setup" && <div className="fade studio-panel" style={{maxWidth:"400px",margin:"40px auto",width:"100%"}}>
+            <h3 style={{marginBottom:"10px",color:"#ff9d00"}}>Motor Token Acceso</h3>
+            <input type="password" style={{width:"100%",marginBottom:"10px"}} value={keyIn} onChange={e=>setKeyIn(e.target.value)} placeholder="Groq API Key..."/>
+            <button className="studio-btn active" style={{width:"100%"}} onClick={handleKeySave}>CONECTAR ENTORNO</button>
           </div>}
 
-          {/* PANTALLA: HOME / CAPTURA */}
-          {scr"home"===scr&&<div className="fade" style={{textAlign:"center",padding:"50px 20px"}}>
-            <h2 style={{fontFamily:"'Syne',sans-serif",fontSize:"24px",marginBottom:"8px"}}>Nueva Captura de Metrología</h2>
-            <p style={{color:"#6b8fa4",fontSize:"13px",marginBottom:"30px"}}>Sube un isométrico, fotografía quirúrgica o pieza de mecanizado para análisis dimensional 3D.</p>
-            
-            <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"15px",maxWidth:"340px",margin:"0 auto"}}>
-              {camMode==="off"?(
-                <button onClick={startLive} style={{width:"100%",background:"#0c2d42",border:`1px solid ${ACC}`,color:"#fff",padding:"14px",borderRadius:"8px",fontWeight:700,cursor:"pointer",fontSize:"13px"}}>ACTIVAR CÁMARA</button>
-              ):(
-                <div style={{width:"100%",position:"relative",background:"#000",borderRadius:"8px",overflow:"hidden"}}>
-                  <video ref={videoRef} autoPlay playsInline style={{width:"100%",display:"block",transform:`rotate(${rotation}deg)`}}/>
-                  <div style={{position:"absolute",bottom:"10px",left:"0",right:"0",display:"flex",justifyContent:"center",gap:"10px"}}>
-                    <button onClick={captureLive} style={{background:ACC,color:"#05101a",padding:"8px 16px",borderRadius:"6px",fontWeight:700}}>CAPTURAR</button>
-                    <button onClick={stopCam} style={{background:"#f46",color:"#fff",padding:"8px 12px",borderRadius:"6px"}}>APAGAR</button>
+          {/* SCREEN: HOME Y HISTORIAL DE PROYECTOS */}
+          {scr==="home" && <div className="fade grid-layout">
+            <div className="studio-panel" style={{textAlign:"center",padding:"40px 10px"}}>
+              <h2 style={{color:"#fff",marginBottom:"20px"}}>Entrada de Inspección Metrológica</h2>
+              <div style={{maxWidth:"280px",margin:"0 auto",display:"flex",flexDirection:"column",gap:"12px"}}>
+                {camMode==="off"?(
+                  <button className="studio-btn active" style={{padding:"14px"}} onClick={startLive}>ACTIVAR MÓDULO CÁMARA</button>
+                ):(
+                  <div>
+                    <video ref={videoRef} autoPlay playsInline style={{width:"100%",background:"#000",borderRadius:"4px"}}/>
+                    <div style={{display:"flex",gap:"4px",marginTop:"6px"}}>
+                      <button className="studio-btn active" style={{flex:1}} onClick={captureLive}>CAPTURAR</button>
+                      <button className="studio-btn" style={{background:"#f44"}} onClick={()=>{videoRef.current.srcObject?.getTracks().forEach(t=>t.stop());setCamMode("off")}}>APAGAR</button>
+                    </div>
                   </div>
-                </div>
-              )}
-              
-              <div style={{color:"#3a6878",fontSize:"12px",margin:"10px 0"}}>— O BIEN —</div>
-              
-              <button onClick={()=>uploadRef.current?.click()} style={{width:"100%",background:"#0b2535",border:`1px solid ${BDR}`,color:ACC,padding:"12px",borderRadius:"8px",cursor:"pointer",fontSize:"13px"}}>SELECCIONAR ARCHIVO</button>
-              <input ref={uploadRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleFile}/>
+                )}
+                <div style={{fontSize:"11px",color:"#666"}}>— EXAMINAR DISPOSITIVO —</div>
+                <button className="studio-btn" onClick={()=>uploadRef.current?.click()}>CARGAR DESDE ARCHIVO</button>
+                <input ref={uploadRef} type="file" accept="image/*" style={{display:"none"} } onChange={e=>{const f=e.target.files[0]; if(f){const r=new FileReader(); r.onload=ev=>startProject(ev.target.result); r.readAsDataURL(f);}}}/>
+              </div>
             </div>
-            <canvas ref={canvasRef} style={{display:"none"}}/>
+
+            <div className="studio-panel">
+              <h3 style={{color:"#ff9d00",marginBottom:"10px"}}>💾 Registro de Proyectos Guardados</h3>
+              <div style={{display:"flex",flexDirection:"column",gap:"8px",maxHeight:"300px",overflowY:"auto"}}>
+                {projects.length===0 ? <p style={{fontSize:"11px",color:"#666"}}>No hay planos registrados.</p> : 
+                  projects.map(p=>(
+                    <div key={p.id} onClick={()=>loadProject(p)} style={{background:"#2e2e2e",padding:"10px",borderRadius:"4px",cursor:"pointer",display:"flex",justifyContent:"space-between",border:"1px solid #3d3d3d"}}>
+                      <span style={{fontWeight:"bold",color:"#fff"}}>{p.name}</span>
+                      <span style={{fontSize:"11px",color:"#ff9d00"}}>{p.date}</span>
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
           </div>}
 
-          {/* PANTALLA: PROCESAMIENTO */}
-          {scr"loading"===scr&&<div style={{textAlign:"center",padding:"80px 20px"}}>
-            <div className="spin" style={{width:"32px",height:"32px",border:`3px solid ${BDR}`,borderTopColor:ACC,borderRadius:"50%",margin:"0 auto 20px"}}/>
-            <h4 style={{fontFamily:"'Space Mono',monospace",fontSize:"14px",color:ACC}}>EJECUTANDO RECONOCIMIENTO FOTOGRAMÉTRICO...</h4>
-            <p style={{fontSize:"11px",color:"#3a6878",marginTop:"6px"}}>Computando nubes de puntos y matrices topológicas.</p>
+          {/* SCREEN: PROCESAMIENTO INTELIGENTE */}
+          {scr==="loading" && <div style={{textAlign:"center",padding:"100px 20px"}}>
+            <div className="spin" style={{width:"24px",height:"24px",border:"2px solid #333",borderTopColor:"#ff9d00",borderRadius:"50%",margin:"0 auto 12px"}}/>
+            <p style={{fontFamily:"'Space Mono'",fontSize:"12px",color:"#ff9d00"}}>INTERPRETANDO PLANO DE CALDERERÍA ESCALA INTERNA...</p>
           </div>}
 
-          {/* PANTALLA: ENTORNOS DE ANOTACIÓN E INGENIERÍA 3D */}
-          {scr"annotate"===scr&&<div className="fade grid-layout" ref={captureRef} style={{background:"#05101a"}}>
-            {/* LADO IZQUIERDO: VISOR INTERACTIVO 2D */}
-            <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
-              <div style={{display:"flex",gap:"4px",background:"#030d17",padding:"4px",borderRadius:"8px",border:`1px solid ${BDR}`,overflowX:"auto"}}>
+          {/* ENTORNO AVANZADO DE DISEÑO Y ANOTACIONES */}
+          {scr==="annotate" && <div className="fade grid-layout" ref={captureRef}>
+            {/* PANEL IZQUIERDO: AREA DE DIBUJO 2D */}
+            <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+              <div style={{display:"flex",gap:"4px",background:"#222",padding:"4px",borderRadius:"4px",overflowX:"auto"}}>
                 {TOOLS.map(t=>(
-                  <button key={t.id} onClick={()=>{setTool(t.id);setPending([]);}} style={{background:tool===t.id?ACC:"transparent",color:tool===t.id?"#05101a":"#6b8fa4",padding:"8px 12px",borderRadius:"6px",fontSize:"11px",cursor:"pointer",fontFamily:"'Space Mono',monospace",display:"flex",alignItems:"center",gap:"4px",whiteSpace:"nowrap"}}>
-                    <span>{t.icon}</span><span style={{fontSize:"10px"}}>{t.tip}</span>
+                  <button key={t.id} className={`studio-btn ${tool===t.id?'active':''}`} onClick={()=>{setTool(t.id);setPending([]);}}>
+                    {t.icon} {t.tip}
                   </button>
                 ))}
+                {/* ROTACIÓN 90 GRADOS */}
+                <button className="studio-btn" style={{marginLeft:"auto",background:"#444"}} onClick={()=>setRotation(r=>(r+90)%360)}>↻ ROTAR (90°)</button>
               </div>
 
               <div className="interactive-canvas" ref={containerRef} onClick={handleCvClick}>
-                <img src={image} style={{width:"100%",maxHeight:"65vh",objectFit:"contain",display:"block"}} alt="source"/>
+                <img src={image} style={{width:"100%",maxHeight:"60vh",objectFit:"contain",transform:`rotate(${rotation}deg)`}} alt="Plano"/>
                 <svg className="canvas-svg">
                   {anns.map(a=>{
-                    if(a.points.length<1)return null;
-                    const rect=containerRef.current?.getBoundingClientRect();if(!rect)return null;
+                    if(!a.points || a.points.length<1)return null;
+                    const rect=containerRef.current?.getBoundingClientRect(); if(!rect)return null;
                     const p1x=a.points[0].x*rect.width, p1y=a.points[0].y*rect.height;
-                    
+                    const p2x=a.points[1]?(a.points[1].x*rect.width):p1x;
+                    const p2y=a.points[1]?(a.points[1].y*rect.height):p1y;
+
                     return (
                       <g key={a.id}>
-                        {a.type==="pt"&&(
-                          <circle cx={p1x} cy={p1y} r="6" fill={a.color} className="node-handle" onMouseDown={e=>startDrag(e,a.id,0)}/>
-                        )}
-                        {(a.type==="line"||a.type==="calib"||a.type==="arrow")&&a.points[1]&&(
+                        {a.type==="pt" && (
                           <>
-                            <line x1={p1x} y1={p1y} x2={a.points[1].x*rect.width} y2={a.points[1].y*rect.height} stroke={a.color} strokeWidth="2.5"/>
-                            <circle cx={p1x} cy={p1y} r="5" fill="#fff" stroke={a.color} className="node-handle" onMouseDown={e=>startDrag(e,a.id,0)}/>
-                            <circle cx={a.points[1].x*rect.width} cy={a.points[1].y*rect.height} r="5" fill="#fff" stroke={a.color} className="node-handle" onMouseDown={e=>startDrag(e,a.id,1)}/>
-                            <text x={(p1x+a.points[1].x*rect.width)/2} y={(p1y+a.points[1].y*rect.height)/2-8} fill={a.color} style={{fontFamily:"'Space Mono',monospace",fontSize:"10px",fontWeight:"bold",background:"#000"}} textAnchor="middle">
-                              {getMeasure(a)}
-                            </text>
+                            <circle cx={p1x} cy={p1y} r="7" fill={a.color} className="node-handle" onMouseDown={e=>startDrag(e,a.id,0)}/>
+                            <text x={p1x+10} y={p1y-4} fill="#fff" style={{fontSize:"11px",fontWeight:"bold",fontFamily:"'Space Mono'"}}>{a.label}</text>
                           </>
                         )}
-                        {a.type==="rect"&&a.points[1]&&(
-                          <rect x={Math.min(p1x,a.points[1].x*rect.width)} y={Math.min(p1y,a.points[1].y*rect.height)} width={Math.abs(p1x-a.points[1].x*rect.width)} height={Math.abs(p1y-a.points[1].y*rect.height)} fill="none" stroke={a.color} strokeWidth="2"/>
+                        {(a.type==="line" || a.type==="calib" || a.type==="arrow") && a.points[1] && (
+                          <>
+                            <line x1={p1x} y1={p1y} x2={p2x} y2={p2y} stroke={a.color} strokeWidth="2"/>
+                            <circle cx={p1x} cy={p1y} r="5" fill="#fff" className="node-handle" onMouseDown={e=>startDrag(e,a.id,0)}/>
+                            <circle cx={p2x} cy={p2y} r="5" fill="#fff" className="node-handle" onMouseDown={e=>startDrag(e,a.id,1)}/>
+                            <text x={(p1x+p2x)/2} y={(p1y+p2y)/2-6} fill={a.color} style={{fontFamily:"'Space Mono'",fontSize:"11px",fontWeight:"bold"}} textAnchor="middle">{getMeasure(a)}</text>
+                          </>
+                        )}
+                        {a.type==="rect" && a.points[1] && (
+                          <rect x={Math.min(p1x,p2x)} y={Math.min(p1y,p2y)} width={Math.abs(p1x-p2x)} height={Math.abs(p1y-p2y)} fill="none" stroke={a.color} strokeWidth="2"/>
+                        )}
+                        {a.type==="circ" && a.points[1] && (
+                          <circle cx={p1x} cy={p1y} r={Math.sqrt((p2x-p1x)**2+(p2y-p1y)**2)} fill="none" stroke={a.color} strokeWidth="2"/>
                         )}
                       </g>
                     );
@@ -551,82 +449,76 @@ Devuelve UNICAMENTE el JSON plano estructurado sin Markdown ni bloques de codigo
               </div>
             </div>
 
-            {/* LADO DERECHO: PANELES DE CONTROL E INGENIERÍA 3D */}
-            <div style={{display:"flex",flexDirection:"column",gap:"15px"}}>
-              <div style={{display:"flex",gap:"5px"}}>
-                <button onClick={()=>setViewTab("anno")} style={{flex:1,padding:"8px",background:viewTab==="anno"?"#0b2535":"transparent",color:viewTab==="anno"?ACC:"#52798f",border:`1px solid ${BDR}`,borderRadius:"6px",fontSize:"11px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>DATOS METROLÓGICOS</button>
-                <button onClick={()=>setViewTab("pipe3d")} style={{flex:1,padding:"8px",background:viewTab==="pipe3d"?"#0b2535":"transparent",color:viewTab==="pipe3d"?ACC:"#52798f",border:`1px solid ${BDR}`,borderRadius:"6px",fontSize:"11px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>RECONSTRUCCIÓN 3D</button>
+            {/* PANEL DERECHO: INTERFAZ DE CONTROL 3D STUDIO */}
+            <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+              <div style={{display:"flex",gap:"4px"}}>
+                <button className={`studio-btn ${viewTab==='anno'?'active':''}`} style={{flex:1}} onClick={()=>setViewTab("anno")}>PROPIEDADES 2D</button>
+                <button className={`studio-btn ${viewTab==='pipe3d'?'active':''}`} style={{flex:1}} onClick={()=>setViewTab("pipe3d")}>VIEWPORT 3D</button>
               </div>
 
-              {/* DIÁLOGO DE CALIBRACIÓN DE ESCALA */}
-              {calibDlg&&<div style={{background:"#0a1f2d",padding:"12px",borderRadius:"8px",border:`1px solid ${ACC}`,marginBottom:"10px"}}>
-                <div style={{fontSize:"11px",color:"#fff",marginBottom:"8px",fontFamily:"'Space Mono',monospace"}}>DEFINIR MEDIDA REAL CONOCIDA:</div>
-                <div style={{display:"flex",gap:"6px"}}>
-                  <input type="number" style={{flex:1}} value={calibVal} onChange={e=>setCalibVal(e.target.value)} placeholder="Ej: 50"/>
-                  <select value={calibUnit} onChange={e=>setCalibUnit(e.target.value)}>
-                    <option value="mm">mm</option>
-                    <option value="cm">cm</option>
-                    <option value="m">m</option>
-                  </select>
-                  <button onClick={confirmCalib} style={{background:ACC,color:"#05101a",padding:"6px 12px",borderRadius:"4px",fontWeight:700,fontSize:"11px"}}>ESTABLECER</button>
+              {viewTab==="anno" && <div className="studio-panel" style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+                <input type="text" style={{width:"100%"}} value={projName} onChange={e=>setProjName(e.target.value)} placeholder="Nombre del Plano Industrial..."/>
+                <button className="studio-btn active" onClick={saveProject}>💾 COMPROMETER Y GUARDAR PROYECTO</button>
+                <hr style={{borderColor:"#333"}}/>
+                
+                {calibDlg && <div style={{background:"#33250b",padding:"10px",borderRadius:"4px",border:"1px solid #ff9d00"}}>
+                  <label style={{fontSize:"11px",color:"#ff9d00",display:"block",marginBottom:"4px"}}>Dimensión real conocida:</label>
+                  <div style={{display:"flex",gap:"4px"}}>
+                    <input type="number" value={calibVal} onChange={e=>setCalibVal(e.target.value)} style={{flex:1}} placeholder="Ej: 300"/>
+                    <select value={calibUnit} onChange={e=>setCalibUnit(e.target.value)}>
+                      <option value="mm">mm</option>
+                      <option value="cm">cm</option>
+                      <option value="in">in</option>
+                    </select>
+                    <button className="studio-btn active" onClick={confirmCalib}>CALIBRAR</button>
+                  </div>
+                </div>}
+
+                <div style={{maxHeight:"180px",overflowY:"auto",display:"flex",flexDirection:"column",gap:"4px"}}>
+                  {anns.map(a=>(
+                    <div key={a.id} style={{display:"flex",justifyContent:"space-between",background:"#1e1e1e",padding:"6px",fontSize:"11px",borderRadius:"4px"}}>
+                      <input type="text" value={a.label} onChange={e=>{const val=e.target.value; setAnns(p=>p.map(x=>x.id===a.id?{...x,label:val}:x))}} style={{background:"transparent",border:"none",padding:0,color:"#fff",width:"110px"}}/>
+                      <span style={{color:"#ff9d00",fontWeight:"bold"}}>{getMeasure(a)}</span>
+                    </div>
+                  ))}
                 </div>
               </div>}
 
-              {/* TAB: DATOS METROLÓGICOS */}
-              {viewTab==="anno"&&(
-                <div className="fade" style={{background:"rgba(0,16,28,.6)",border:`1px solid ${BDR}`,borderRadius:"8px",padding:"15px"}}>
-                  <div style={{marginBottom:"12px"}}>
-                    <h3 style={{fontSize:"15px",fontFamily:"'Syne',sans-serif",color:"#fff"}}>{objInfo?.name||"Componente Detectado"}</h3>
-                    <span style={{fontSize:"9px",fontFamily:"'Space Mono',monospace",color:ACC,background:"rgba(0,229,196,.1)",padding:"2px 6px",borderRadius:"4px"}}>{objInfo?.category||"Análisis General"}</span>
-                    <p style={{fontSize:"11px",color:"#6b8fa4",marginTop:"8px"}}>{objInfo?.desc||"Procediendo en modo local estructurado."}</p>
-                  </div>
-                  
-                  <div style={{borderTop:`1px solid ${BDR}`,paddingTop:"10px"}}>
-                    <h4 style={{fontSize:"11px",fontFamily:"'Space Mono',monospace",color:"#fff",marginBottom:"8px"}}>GEOMETRÍAS Y COTAS CAPTURADAS:</h4>
-                    {anns.length===0?<div style={{fontSize:"11px",color:"#3a6878"}}>Ninguna geometría guardada. Use las herramientas superiores.</div>:null}
-                    <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
-                      {anns.map(a=>(
-                        <div key={a.id} onClick={()=>setSelId(a.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:selId===a.id?"#0b2535":"rgba(11,37,53,.3)",padding:"8px",borderRadius:"6px",border:`1px solid ${selId===a.id?ACC:BDR}`,cursor:"pointer"}}>
-                          <span style={{fontSize:"11px",color:a.color,fontFamily:"'Space Mono',monospace"}}>● {a.label||a.type.toUpperCase()}</span>
-                          <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-                            <span style={{fontSize:"11px",fontFamily:"'Space Mono',monospace",fontWeight:"bold"}}>{getMeasure(a)}</span>
-                            <button onClick={(e)=>{e.stopPropagation();delAnn(a.id);}} style={{background:"transparent",color:"#ff4466",fontSize:"12px",cursor:"pointer"}}>✕</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <button onClick={exportPDF} style={{width:"100%",marginTop:"20px",background:"#00e5c4",color:"#05101a",padding:"10px",borderRadius:"6px",fontWeight:"bold",cursor:"pointer",fontSize:"12px"}}>EXPORTAR DOSIER DE INGENIERÍA (PDF)</button>
+              {viewTab==="pipe3d" && <div className="studio-panel" style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+                {/* Entradas Manuales Modificables del Operador */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"4px"}}>
+                  <div><label style={{fontSize:"9px"}}>Ancho/R (mm)</label><input type="number" style={{width:"100%"}} value={manualDim.w} onChange={e=>setManualDim({...manualDim,w:parseFloat(e.target.value)||0})}/></div>
+                  <div><label style={{fontSize:"9px"}}>Alto (mm)</label><input type="number" style={{width:"100%"}} value={manualDim.h} onChange={e=>setManualDim({...manualDim,h:parseFloat(e.target.value)||0})}/></div>
+                  <div><label style={{fontSize:"9px"}}>Prof (mm)</label><input type="number" style={{width:"100%"}} value={manualDim.d} onChange={e=>setManualDim({...manualDim,d:parseFloat(e.target.value)||0})}/></div>
                 </div>
-              )}
+                <select style={{width:"100%"}} value={shapeType} onChange={e=>setShapeType(e.target.value)}>
+                  <option value="box">Cubo Estructural</option>
+                  <option value="cylinder">Cilindro / Caño</option>
+                  <option value="sphere">Esfera / Depósito</option>
+                </select>
 
-              {/* TAB: RECONSTRUCCIÓN VECTORIAL 3D */}
-              {viewTab==="pipe3d"&&(
-                <div className="fade" style={{display:"flex",flexDirection:"column",gap:"15px"}}>
-                  {piping ? (
-                    <V3DPipe components={piping.components} pipeDN={piping.dn} pipeLabel={piping.label}/>
-                  ) : (
-                    <div style={{background:"rgba(0,16,28,.6)",border:`1px solid ${BDR}`,borderRadius:"8px",padding:"15px"}}>
-                      <div style={{fontSize:"11px",color:"#6b8fa4",marginBottom:"10px"}}>Generación Primitiva de Sólido en base a bounding-box estimado:</div>
-                      <V3D w={d3.w} h={d3.h} d={d3.d} shape={objInfo?.shape}/>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px",marginTop:"12px"}}>
-                        <div><label style={{fontSize:"9px",color:"#3a6878"}}>Ancho (X)</label><input type="number" style={{width:"100%"}} value={d3.w} onChange={e=>setD3({...d3,w:parseInt(e.target.value)||10})}/></div>
-                        <div><label style={{fontSize:"9px",color:"#3a6878"}}>Alto (Y)</label><input type="number" style={{width:"100%"}} value={d3.h} onChange={e=>setD3({...d3,h:parseInt(e.target.value)||10})}/></div>
-                        <div><label style={{fontSize:"9px",color:"#3a6878"}}>Fondo (Z)</label><input type="number" style={{width:"100%"}} value={d3.d} onChange={e=>setD3({...d3,d:parseInt(e.target.value)||10})}/></div>
-                      </div>
-                    </div>
-                  )}
+                <Studio3DView components={piping?.components} manualDim={manualDim} shapeType={shapeType}/>
+              </div>}
+
+              {/* BARRA DE EXPORTACIONES REQUERIDAS */}
+              <div className="studio-panel" style={{background:"#1e1e1e"}}>
+                <div style={{fontSize:"10px",color:"#777",marginBottom:"6px",fontFamily:"'Space Mono'"}}>MÓDULO DE EXPORTACIÓN EXTERNA</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px",marginBottom:"4px"}}>
+                  <button className="studio-btn" onClick={downloadPNG}>💥 PNG</button>
+                  <button className="studio-btn" onClick={downloadPDF}>📄 PDF</button>
                 </div>
-              )}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px"}}>
+                  <button className="studio-btn" style={{background:"#25D366",color:"#000",fontWeight:"bold"}} onClick={()=>shareMedia('whatsapp')}>💬 WhatsApp</button>
+                  <button className="studio-btn" style={{background:"#444"}} onClick={()=>shareMedia('email')}>✉ Correo</button>
+                </div>
+              </div>
             </div>
           </div>}
         </div>
       );
     }
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
     </script>
 </body>
 </html>
