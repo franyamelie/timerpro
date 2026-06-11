@@ -1,625 +1,632 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-  <title>MediScan 3D</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap');
-    *{box-sizing:border-box;margin:0;padding:0;}
-    html,body{background:#05101a;min-height:100%;-webkit-tap-highlight-color:transparent;}
-    @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 8px #00e5c4}50%{opacity:.3;box-shadow:none}}
-    @keyframes scan{0%{top:0}100%{top:100%}}
-    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-    @keyframes fadeUp{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}
-    .fade{animation:fadeUp .35s ease both;}
-    .spin{animation:spin 1s linear infinite;}
-    .blink{animation:pulse 1.8s ease infinite;}
-    input[type=number]{-moz-appearance:textfield;}
-    input[type=number]::-webkit-inner-spin-button,
-    input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
-    button{transition:transform .12s,opacity .12s;-webkit-appearance:none;appearance:none;}
-    button:active{transform:scale(.94);opacity:.8;}
-    .marker-dot{touch-action:none;user-select:none;-webkit-user-select:none;}
-  </style>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+    <title>MediScan 3D - Piping & Metrology Engine</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0;}
+        html,body{background:#05101a;min-height:100%;-webkit-tap-highlight-color:transparent;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#e1e7ed;}
+        @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 12px #00e5c4}50%{opacity:.3;box-shadow:none}}
+        @keyframes scan{0%{top:0}100%{top:100%}}
+        @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+        .fade{animation:fadeUp .3s ease both;} 
+        .spin{animation:spin .9s linear infinite;} 
+        .blink{animation:pulse 1.8s ease infinite;}
+        button{transition:transform .1s,opacity .1s;-webkit-appearance:none;border:none;} 
+        button:active{transform:scale(.95);opacity:.8;}
+        input,select{background:#0b2535;border:1px solid #1a3a4e;color:#fff;border-radius:6px;padding:6px 10px;font-family:'Space Mono',monospace;font-size:12px;}
+        input:focus,select:focus{outline:1px solid #00e5c4;}
+        input[type=number]{-moz-appearance:textfield;}
+        input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;}
+        ::-webkit-scrollbar{width:4px;} ::-webkit-scrollbar-track{background:#05101a;} ::-webkit-scrollbar-thumb{background:#0b2535;border-radius:4px;}
+        
+        /* Utilidades de Diseño */
+        .app-container{max-width:1100px;margin:0 auto;padding:15px;display:flex;flex-direction:column;gap:15px;min-height:100vh;}
+        .grid-layout{display:grid;grid-template-columns:1fr;gap:15px;}
+        @media(min-width:768px){.grid-layout{grid-template-columns:1.2fr 1fr;}}
+        .interactive-canvas{position:relative;width:100%;background:#02080f;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+        .canvas-svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;}
+        .node-handle{pointer-events:auto;cursor:move;fill:#fff;stroke-width:2;}
+    </style>
 </head>
 <body>
-<div id="root"></div>
-<script type="text/babel">
-const { useState, useRef, useEffect, useCallback } = React;
+    <div id="root"></div>
 
-const GROQ_API   = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
-const getKey     = () => localStorage.getItem("ms3d_key") || "";
-const clamp      = (v,a,b) => Math.max(a, Math.min(b, v));
-const COLORS     = ["#00e5c4","#ff4466","#44aaff","#ffaa22","#aa66ff","#44ff88","#ff6622","#22ccff"];
-const UFACTORS   = {mm:1,cm:10,m:1000,in:25.4};
-const toMM       = (v,u) => (parseFloat(v)||0)*(UFACTORS[u]||1);
+    <script type="text/babel">
+    const {useState,useRef,useEffect,useCallback,useMemo}=React;
 
-/* ══════════════════════════════════
-   VISOR 3D
-══════════════════════════════════ */
-function Viewer3D({parts,meas,unit,shape}){
-  const ref=useRef(null);
-  useEffect(()=>{
-    if(!ref.current)return;
-    const el=ref.current;
-    const W=el.clientWidth,H=el.clientHeight;
-    const getDim=a=>{for(const p of parts){if(p.axis===a){const mm=toMM(meas[p.id]?.value,unit);if(mm>0)return mm;}}return 100;};
-    const rw=getDim("width"),rh=getDim("height"),rd=getDim("depth");
-    const sc=2/Math.max(rw,rh,rd,1);
-    const sw=rw*sc,sh=rh*sc,sd=rd*sc;
-    const scene=new THREE.Scene();
-    const cam=new THREE.PerspectiveCamera(42,W/H,0.1,500);
-    cam.position.set(sw*2+0.6,sh*1.4,sd*2+0.6);cam.lookAt(0,0,0);
-    const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
-    renderer.setSize(W,H);renderer.setPixelRatio(Math.min(devicePixelRatio,2));
-    el.appendChild(renderer.domElement);
-    const wM=()=>new THREE.LineBasicMaterial({color:0x00e5c4});
-    const fM=()=>new THREE.MeshPhongMaterial({color:0x002233,transparent:true,opacity:.45,side:THREE.DoubleSide});
-    const grp=new THREE.Group();scene.add(grp);
-    const addB=(bw,bh,bd,x=0,y=0,z=0)=>{
-      const g=new THREE.BoxGeometry(bw,bh,bd);
-      const m=new THREE.Mesh(g,fM());m.position.set(x,y,z);grp.add(m);
-      const l=new THREE.LineSegments(new THREE.EdgesGeometry(g),wM());l.position.set(x,y,z);grp.add(l);
-    };
-    const addC=(r,h,x=0,y=0,z=0)=>{
-      const g=new THREE.CylinderGeometry(r,r,h,32);
-      const m=new THREE.Mesh(g,fM());m.position.set(x,y,z);grp.add(m);
-      const l=new THREE.LineSegments(new THREE.EdgesGeometry(g),wM());l.position.set(x,y,z);grp.add(l);
-    };
-    const s=shape||"box";
-    if(s==="table"){
-      const th=Math.max(sh*.08,.06),lw=Math.max(Math.min(sw,sd)*.06,.04),lh=sh-th;
-      addB(sw,th,sd,0,sh/2-th/2,0);
-      const lx=(sw/2-lw/2)*.85,lz=(sd/2-lw/2)*.85;
-      [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx,sz])=>addB(lw,lh,lw,sx*lx,-sh/2+lh/2,sz*lz));
-    }else if(s==="chair"){
-      const th=Math.max(sh*.06,.05),lw=Math.max(Math.min(sw,sd)*.07,.04),sy2=sh*.45,bh=sh-sy2;
-      addB(sw,th,sd,0,-sh/2+sy2,0);addB(sw,bh,th,0,-sh/2+sy2+bh/2+th/2,-sd/2+th/2);
-      const lx=(sw/2-lw/2)*.8,lz=(sd/2-lw/2)*.8;
-      [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx2,sz])=>addB(lw,sy2,lw,sx2*lx,-sh/2+sy2/2,sz*lz));
-    }else if(["cylinder","bottle","vase","glass","cup"].includes(s)){
-      addC(Math.min(sw,sd)/2,sh);
-    }else if(["sphere","ball"].includes(s)){
-      const r=Math.min(sw,sh,sd)/2;
-      grp.add(new THREE.Mesh(new THREE.SphereGeometry(r,20,20),fM()));
-      grp.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.OctahedronGeometry(r,3)),wM()));
-    }else if(s==="cone"){
-      const g=new THREE.ConeGeometry(Math.min(sw,sd)/2,sh,20);
-      grp.add(new THREE.Mesh(g,fM()));grp.add(new THREE.LineSegments(new THREE.EdgesGeometry(g),wM()));
-    }else{addB(sw,sh,sd);}
-    const dg=new THREE.SphereGeometry(.042,8,8),dm=new THREE.MeshBasicMaterial({color:0x00e5c4});
-    [[-1,-1,-1],[1,-1,-1],[-1,1,-1],[1,1,-1],[-1,-1,1],[1,-1,1],[-1,1,1],[1,1,1]].forEach(([sx,sy,sz])=>{
-      const dot=new THREE.Mesh(dg,dm);dot.position.set(sx*sw/2,sy*sh/2,sz*sd/2);grp.add(dot);
-    });
-    const grid=new THREE.GridHelper(6,10,0x0d2233,0x091520);grid.position.y=-sh/2;scene.add(grid);
-    scene.add(new THREE.AmbientLight(0xffffff,.5));
-    const dl=new THREE.DirectionalLight(0x00e5c4,1.8);dl.position.set(5,8,5);scene.add(dl);
-    const dl2=new THREE.DirectionalLight(0xff6633,.5);dl2.position.set(-5,-3,-5);scene.add(dl2);
-    let drag=false,lx=0,ly=0,ry=.5,rx=.2;
-    const px=e=>e.clientX??e.touches?.[0]?.clientX??0;
-    const py=e=>e.clientY??e.touches?.[0]?.clientY??0;
-    const onDn=e=>{drag=true;lx=px(e);ly=py(e);renderer.domElement.style.cursor="grabbing";};
-    const onMv=e=>{if(!drag)return;ry+=(px(e)-lx)*.012;rx+=(py(e)-ly)*.012;lx=px(e);ly=py(e);};
-    const onUp=()=>{drag=false;renderer.domElement.style.cursor="grab";};
-    renderer.domElement.addEventListener("mousedown",onDn);
-    renderer.domElement.addEventListener("touchstart",onDn,{passive:true});
-    window.addEventListener("mousemove",onMv);window.addEventListener("touchmove",onMv,{passive:true});
-    window.addEventListener("mouseup",onUp);window.addEventListener("touchend",onUp);
-    let id;const anim=()=>{id=requestAnimationFrame(anim);if(!drag)ry+=.006;grp.rotation.set(rx,ry,0);renderer.render(scene,cam);};anim();
-    return()=>{
-      cancelAnimationFrame(id);
-      renderer.domElement.removeEventListener("mousedown",onDn);renderer.domElement.removeEventListener("touchstart",onDn);
-      window.removeEventListener("mousemove",onMv);window.removeEventListener("touchmove",onMv);
-      window.removeEventListener("mouseup",onUp);window.removeEventListener("touchend",onUp);
-      renderer.dispose();if(el.contains(renderer.domElement))el.removeChild(renderer.domElement);
-    };
-  },[parts,meas,unit,shape]);
-  return <div ref={ref} style={{width:"100%",height:"240px",cursor:"grab",background:"radial-gradient(ellipse at 50% 30%,#011828,#030d18)"}}/>;
-}
+    /* ── Constantes ── */
+    const GAPI="https://api.groq.com/openai/v1/chat/completions";
+    const GMOD="meta-llama/llama-4-scout-17b-16e-instruct";
+    const getKey=()=>localStorage.getItem("ms3_k")||"";
+    const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+    const uid=()=>`_${Math.random().toString(36).slice(2,9)}`;
+    const COLS=["#00e5c4","#ff4466","#44aaff","#ffaa22","#aa66ff","#44ff88","#ff6622","#22ccff","#ff22aa","#aaee22","#ff9944","#44ddff"];
+    const TOOLS=[
+      {id:"sel",icon:"↖",tip:"Mover / Seleccionar"},
+      {id:"pt", icon:"⬤",tip:"Punto/Marcador",npts:1},
+      {id:"line",icon:"━━",tip:"Línea + medida",npts:2},
+      {id:"arrow",icon:"→",tip:"Flecha",npts:2},
+      {id:"rect",icon:"▭",tip:"Rectángulo",npts:2},
+      {id:"circ",icon:"◯",tip:"Círculo",npts:2},
+      {id:"calib",icon:"⚖",tip:"Calibrar escala",npts:2},
+    ];
 
-/* ══════════════════════════════════
-   PLANO 2D
-══════════════════════════════════ */
-function View2D({parts,meas,unit,shape,objName,viewType}){
-  const ref=useRef(null);
-  useEffect(()=>{
-    const cv=ref.current;if(!cv)return;
-    const ctx=cv.getContext("2d"),CW=cv.width,CH=cv.height;
-    ctx.clearRect(0,0,CW,CH);ctx.fillStyle="#030d18";ctx.fillRect(0,0,CW,CH);
-    ctx.strokeStyle="#080f18";ctx.lineWidth=1;
-    for(let x=0;x<CW;x+=18){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,CH);ctx.stroke();}
-    for(let y=0;y<CH;y+=18){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(CW,y);ctx.stroke();}
-    const gd=a=>{for(const p of parts){if(p.axis===a){const v=parseFloat(meas[p.id]?.value)||0;if(v>0)return v;}}return null;};
-    const w=gd("width"),h=gd("height"),d=gd("depth");
-    if(!w&&!h&&!d){ctx.fillStyle="#3a6878";ctx.font="10px 'Space Mono'";ctx.textAlign="center";ctx.fillText("Ingresa medidas para ver el plano",CW/2,CH/2);return;}
-    const vw=viewType==="side"?(d||100):(w||100),vh=viewType==="top"?(d||100):(h||100);
-    const mg=54,sc=Math.min((CW-mg*2)/vw,(CH-mg*2)/vh)*.72;
-    const rW=vw*sc,rH=vh*sc,rX=(CW-rW)/2,rY=mg;
-    ctx.fillStyle="rgba(0,229,196,.035)";ctx.fillRect(rX,rY,rW,rH);
-    const S=shape||"box";ctx.fillStyle="rgba(0,229,196,.06)";
-    if(viewType==="front"&&S==="table"){
-      const th=Math.max(rH*.08,4),lw=Math.max(rW*.07,4),lh=rH-th;
-      ctx.fillRect(rX,rY,rW,th);ctx.fillRect(rX,rY+th,lw,lh);ctx.fillRect(rX+rW-lw,rY+th,lw,lh);
-      ctx.strokeStyle="rgba(0,229,196,.2)";ctx.lineWidth=.75;ctx.setLineDash([]);
-      ctx.strokeRect(rX,rY,rW,th);ctx.strokeRect(rX,rY+th,lw,lh);ctx.strokeRect(rX+rW-lw,rY+th,lw,lh);
+    const S3=0.001; // mm → unidades de escena
+    const dirMap={H:[1,0,0],V:[0,1,0],Z:[0,0,1],"-H":[-1,0,0],"-V":[0,-1,0],"-Z":[0,0,-1],X:[1,0,0],Y:[0,1,0],"-X":[-1,0,0],"-Y Colon":[-1,0,0],"-Y":[0,-1,0]};
+
+    function getPipeWaypoints(comps){
+      const pts=[];
+      const meta=[];
+      let pos=new THREE.Vector3(0,0,0);
+      let dir=new THREE.Vector3(1,0,0);
+      pts.push(pos.clone());
+      for(const c of comps){
+        if(c.orientation&&dirMap[c.orientation])dir=new THREE.Vector3(...dirMap[c.orientation]);
+        const dn=c.dn||100, r=dn*S3*0.5;
+        if(["pipe","tube","spool"].includes(c.type)){
+          const len=(c.length||1000)*S3;
+          const end=pos.clone().addScaledVector(dir,len);
+          meta.push({...c,_r:r,_start:pos.clone(),_end:end.clone()});
+          pts.push(end.clone()); pos=end;
+        } else if(["elbow","bend","return"].includes(c.type)){
+          let newDir;
+          if(c.to_orientation&&dirMap[c.to_orientation])newDir=new THREE.Vector3(...dirMap[c.to_orientation]);
+          else{const up=new THREE.Vector3(0,1,0);newDir=Math.abs(dir.dot(up))>0.8?new THREE.Vector3(1,0,0):up;}
+          const bendR=Math.max(r*3,.05);
+          pos=pos.clone().addScaledVector(dir,bendR);
+          pts.push(pos.clone());
+          const mid=pos.clone().addScaledVector(dir.clone().add(newDir).normalize(),bendR);
+          pts.push(mid.clone());
+          pos=pos.clone().addScaledVector(newDir,bendR);
+          pts.push(pos.clone()); dir=newDir.clone();
+          meta.push({...c,_r:r,_pos:pos.clone()});
+        } else if(["valve","gate_valve","ball_valve","check_valve","butterfly_valve","globe_valve"].includes(c.type)){
+          const vl=Math.max(r*8,.12);
+          meta.push({...c,_r:r,_pos:pos.clone(),_dir:dir.clone(),_len:vl});
+          pos=pos.clone().addScaledVector(dir,vl); pts.push(pos.clone());
+        } else if(c.type==="flange"){
+          meta.push({...c,_r:r,_pos:pos.clone(),_dir:dir.clone()});
+          pos=pos.clone().addScaledVector(dir,r*.4); pts.push(pos.clone());
+        } else if(["tee","wye"].includes(c.type)){
+          const bDir=new THREE.Vector3(0,1,0);if(Math.abs(dir.dot(bDir))>.8)bDir.set(0,0,1);
+          bDir.cross(dir).normalize();
+          meta.push({...c,_r:r,_pos:pos.clone(),_dir:dir.clone(),_bDir:bDir.clone(),_bR:Math.max((c.branch_dn||dn)*S3*.5,r*.6),_bLen:r*5});
+        } else if(["pump","compressor","vessel","equipment","exchanger"].includes(c.type)){
+          const el=(c.length||2000)*S3;
+          meta.push({...c,_r:r,_pos:pos.clone(),_dir:dir.clone(),_len:el});
+          pos=pos.clone().addScaledVector(dir,el); pts.push(pos.clone());
+        }
+      }
+      return{pts,meta};
     }
-    if(viewType==="top"&&["table","chair"].includes(S)){
-      const lw=Math.max(rW*.07,4),lh=Math.max(rH*.07,4);
-      ctx.fillRect(rX,rY,lw,lh);ctx.fillRect(rX+rW-lw,rY,lw,lh);
-      ctx.fillRect(rX,rY+rH-lh,lw,lh);ctx.fillRect(rX+rW-lw,rY+rH-lh,lw,lh);
-    }
-    ctx.strokeStyle="#00e5c4";ctx.lineWidth=1.5;ctx.setLineDash([]);
-    if(viewType==="top"&&["cylinder","bottle","vase","glass","cup","sphere","ball"].includes(S)){
-      ctx.beginPath();ctx.ellipse(rX+rW/2,rY+rH/2,rW/2,rH/2,0,0,Math.PI*2);ctx.stroke();
-    }else{ctx.strokeRect(rX,rY,rW,rH);}
-    const dimH=(x1,x2,y,lbl)=>{
-      ctx.save();ctx.strokeStyle="#2a6888";ctx.lineWidth=1;ctx.setLineDash([4,3]);
-      ctx.beginPath();ctx.moveTo(x1,y);ctx.lineTo(x2,y);ctx.stroke();ctx.setLineDash([]);
-      ctx.fillStyle="#2a6888";
-      [[x1,1],[x2,-1]].forEach(([ax,d2])=>{ctx.beginPath();ctx.moveTo(ax,y);ctx.lineTo(ax+d2*6,y-3);ctx.lineTo(ax+d2*6,y+3);ctx.closePath();ctx.fill();});
-      ctx.strokeStyle="#1a4455";ctx.lineWidth=.7;ctx.setLineDash([2,4]);
-      ctx.beginPath();ctx.moveTo(x1,rY+rH);ctx.lineTo(x1,y+4);ctx.stroke();
-      ctx.beginPath();ctx.moveTo(x2,rY+rH);ctx.lineTo(x2,y+4);ctx.stroke();ctx.setLineDash([]);
-      ctx.fillStyle="#a0c8d8";ctx.font="10px 'Space Mono'";ctx.textAlign="center";ctx.fillText(lbl,(x1+x2)/2,y-8);ctx.restore();
-    };
-    const dimV=(x,y1,y2,lbl)=>{
-      ctx.save();ctx.strokeStyle="#2a6888";ctx.lineWidth=1;ctx.setLineDash([4,3]);
-      ctx.beginPath();ctx.moveTo(x,y1);ctx.lineTo(x,y2);ctx.stroke();ctx.setLineDash([]);
-      ctx.fillStyle="#2a6888";
-      [[y1,1],[y2,-1]].forEach(([ay,d2])=>{ctx.beginPath();ctx.moveTo(x,ay);ctx.lineTo(x-3,ay+d2*6);ctx.lineTo(x+3,ay+d2*6);ctx.closePath();ctx.fill();});
-      ctx.strokeStyle="#1a4455";ctx.lineWidth=.7;ctx.setLineDash([2,4]);
-      ctx.beginPath();ctx.moveTo(rX,y1);ctx.lineTo(x-4,y1);ctx.stroke();
-      ctx.beginPath();ctx.moveTo(rX,y2);ctx.lineTo(x-4,y2);ctx.stroke();ctx.setLineDash([]);
-      ctx.save();ctx.translate(x+16,(y1+y2)/2);ctx.rotate(Math.PI/2);
-      ctx.fillStyle="#a0c8d8";ctx.font="10px 'Space Mono'";ctx.textAlign="center";ctx.fillText(lbl,0,0);ctx.restore();ctx.restore();
-    };
-    if(vw)dimH(rX,rX+rW,rY+rH+32,`${vw} ${unit}`);
-    if(vh)dimV(rX-32,rY,rY+rH,`${vh} ${unit}`);
-    const extra=parts.filter(p=>!["width","height","depth"].includes(p.axis)&&meas[p.id]?.value);
-    let ey=rY+rH+56;
-    extra.forEach(p=>{ctx.fillStyle="#2a6888";ctx.font="8px 'Space Mono'";ctx.textAlign="left";ctx.fillText(`${p.name}: ${meas[p.id].value} ${unit}`,rX,ey);ey+=14;});
-    const vL={front:"VISTA FRONTAL",side:"VISTA LATERAL",top:"PLANTA SUPERIOR"};
-    ctx.fillStyle="#2a5060";ctx.font="9px 'Space Mono'";ctx.textAlign="left";ctx.fillText(vL[viewType]||"VISTA",rX,rY-12);
-    ctx.fillStyle="#00e5c4";ctx.font="bold 10px 'Space Mono'";ctx.fillText(objName.toUpperCase().substring(0,28),10,CH-8);
-    ctx.fillStyle="#1a3a48";ctx.font="8px 'Space Mono'";ctx.textAlign="right";ctx.fillText(`1:1 (${unit})`,CW-8,12);
-  },[parts,meas,unit,shape,objName,viewType]);
-  return <canvas ref={ref} width={380} height={320} style={{width:"100%",display:"block"}}/>;
-}
 
-/* ══════════════════════════════════
-   APP PRINCIPAL
-══════════════════════════════════ */
-function App(){
-  const videoRef   = useRef(null);
-  const canvasRef  = useRef(null);
-  const streamRef  = useRef(null);
-  const uploadRef  = useRef(null);
-  const camInputRef= useRef(null);
-  const imgRef     = useRef(null);
+    /* ── VISOR 3D TUBERÍAS ── */
+    function V3DPipe({components,pipeDN,pipeLabel}){
+      const el=useRef(null);
+      useEffect(()=>{
+        if(!el.current)return;
+        const E=el.current,W=E.clientWidth,H=E.clientHeight||280;
+        const rdr=new THREE.WebGLRenderer({antialias:true,alpha:false});
+        rdr.setSize(W,H);rdr.setPixelRatio(Math.min(devicePixelRatio,2));
+        rdr.shadowMap.enabled=true;rdr.shadowMap.type=THREE.PCFSoftShadowMap;
+        rdr.outputEncoding=THREE.sRGBEncoding;
+        rdr.toneMapping=THREE.ACESFilmicToneMapping;rdr.toneMappingExposure=1.15;
+        E.appendChild(rdr.domElement);
 
-  const [screen,  setScreen]  = useState(()=>getKey()?"camera":"setup");
-  const [keyInput,setKeyInput]= useState("");
-  const [camMode, setCamMode] = useState("off"); // off | starting | live
-  const [image,   setImage]   = useState(null);
-  const [objInfo, setObjInfo] = useState(null);
-  const [meas,    setMeas]    = useState({});
-  const [unit,    setUnit]    = useState("cm");
-  const [selPart, setSelPart] = useState(null);
-  const [viewTab, setViewTab] = useState("3d");
-  const [view2D,  setView2D]  = useState("front");
-  const [error,   setError]   = useState(null);
+        const scene=new THREE.Scene();
+        scene.background=new THREE.Color(0x061322);
+        scene.fog=new THREE.Fog(0x061322,12,28);
 
-  const stopCam=()=>{streamRef.current?.getTracks().forEach(t=>t.stop());setCamMode("off");};
+        const mPipe=new THREE.MeshStandardMaterial({color:0x557799,metalness:.8,roughness:.2});
+        const mInner=new THREE.MeshStandardMaterial({color:0x0b1826,side:THREE.BackSide});
+        const mFlange=new THREE.MeshStandardMaterial({color:0x7799bb,metalness:.9,roughness:.1});
+        const mValve=new THREE.MeshStandardMaterial({color:0x3c4d5e,metalness:.7,roughness:.3});
+        const mHandle=new THREE.MeshStandardMaterial({color:0xdd3322,metalness:.3,roughness:.5});
+        const mEquip=new THREE.MeshStandardMaterial({color:0x2a3a4a,metalness:.6,roughness:.4});
+        const mWeld=new THREE.MeshStandardMaterial({color:0x4f6070,metalness:.7,roughness:.5});
 
-  // Activar cámara en vivo (botón explícito)
-  const startLiveCam=async()=>{
-    setCamMode("starting");
-    try{
-      const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280}}});
-      streamRef.current=s;
-      setTimeout(()=>{if(videoRef.current)videoRef.current.srcObject=s;},50);
-      setCamMode("live");
-    }catch(e){
-      setCamMode("off");
-      alert("No se pudo acceder a la cámara. Usa 'Tomar foto' o 'Galería' en su lugar.");
-    }
-  };
+        const cam=new THREE.PerspectiveCamera(40,W/H,.05,50);
+        cam.position.set(3.5,3,4.5);
 
-  // Captura desde visor en vivo
-  const captureFromLive=()=>{
-    const v=videoRef.current,c=canvasRef.current;
-    if(!v||!c)return;
-    c.width=v.videoWidth||640;c.height=v.videoHeight||480;
-    c.getContext("2d").drawImage(v,0,0);
-    const img=c.toDataURL("image/jpeg",.85);
-    setImage(img);setScreen("loading");stopCam();identify(img);
-  };
+        scene.add(new THREE.AmbientLight(0x505065,.7));
+        const key=new THREE.DirectionalLight(0xfff5ee,2.0);key.position.set(8,14,6);key.castShadow=true;
+        scene.add(key);
 
-  // Cargar desde archivo
-  const handleFile=e=>{
-    const file=e.target.files?.[0];if(!file)return;
-    const reader=new FileReader();
-    reader.onload=ev=>{const img=ev.target.result;setImage(img);setScreen("loading");stopCam();identify(img);};
-    reader.readAsDataURL(file);
-    e.target.value="";
-  };
+        const floor=new THREE.Mesh(new THREE.PlaneGeometry(30,30),new THREE.MeshStandardMaterial({color:0x030a12,roughness:.9}));
+        floor.rotation.x=-Math.PI/2;floor.position.y=-.05;floor.receiveShadow=true;scene.add(floor);
+        const grid=new THREE.GridHelper(30,30,0x102e44,0x0b1f30);grid.position.y=-.04;scene.add(grid);
 
-  // ── IDENTIFICAR con Groq ──
-  const identify=async(img)=>{
-    setError(null);
-    const b64=img.split(",")[1];
-    try{
-      const res=await fetch(GROQ_API,{
-        method:"POST",
-        headers:{"Content-Type":"application/json","Authorization":`Bearer ${getKey()}`},
-        body:JSON.stringify({
-          model:GROQ_MODEL,max_tokens:1200,
-          messages:[{role:"user",content:[
-            {type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},
-            {type:"text",text:`Identifica el objeto principal. Devuelve SOLO JSON válido sin texto extra:
-{"name":"nombre en español","category":"categoría en español","description":"descripción corta (máx 15 palabras)","shape":"box|table|chair|cylinder|sphere|bottle|cone|door|default","parts":[{"id":"id_unico","name":"Nombre dimensión en español","axis":"width|height|depth|other","markerX":0.5,"markerY":0.3}]}
-Incluye 3-6 dimensiones medibles. markerX/markerY=posición en imagen (0-1). NO estimes medidas.`}
-          ]}]
-        })
-      });
-      const data=await res.json();
-      if(data.error){throw new Error(data.error.message);}
-      const txt=data.choices?.[0]?.message?.content||"";
-      const parsed=JSON.parse(txt.replace(/```json|```/g,"").trim());
-      parsed.parts=parsed.parts.map((p,i)=>({...p,color:COLORS[i%COLORS.length],markerX:clamp(p.markerX??0.5,0.05,0.95),markerY:clamp(p.markerY??0.5,0.05,0.95)}));
-      setObjInfo(parsed);setMeas({});setScreen("measure");
-    }catch(e){
-      const msg=e.message||"";
-      setError(msg.includes("401")||msg.includes("auth")?"Clave API inválida — pulsa ⚙️ para actualizarla":"No se pudo analizar. Intenta de nuevo.");
-      setScreen("measure");
-    }
-  };
+        const orient=(mesh,from,to)=>{
+          const d=new THREE.Vector3().subVectors(to,from).normalize();
+          const up=new THREE.Vector3(0,1,0);
+          if(Math.abs(d.dot(up))>.999){mesh.rotation.z=d.y>0?0:Math.PI;}
+          else{const ax=new THREE.Vector3().crossVectors(up,d).normalize();mesh.setRotationFromAxisAngle(ax,Math.acos(clamp(up.dot(d),-1,1)));}
+        };
+        const orientDir=(mesh,d,center)=>{
+          const fake=center.clone().sub(d.clone().multiplyScalar(.5));orient(mesh,fake,center.clone().add(d.clone().multiplyScalar(.5)));
+        };
 
-  // ── ARRASTRAR MARCADORES ──
-  const startDrag=useCallback((e,partId)=>{
-    e.stopPropagation();e.preventDefault();
-    const img=imgRef.current;if(!img)return;
-    const move=ev=>{
-      ev.preventDefault();
-      const rect=img.getBoundingClientRect();
-      const cx=ev.clientX??ev.touches?.[0]?.clientX??0;
-      const cy=ev.clientY??ev.touches?.[0]?.clientY??0;
-      const nx=clamp((cx-rect.left)/rect.width,0.04,0.96);
-      const ny=clamp((cy-rect.top)/rect.height,0.04,0.96);
-      setObjInfo(prev=>({...prev,parts:prev.parts.map(p=>p.id===partId?{...p,markerX:nx,markerY:ny}:p)}));
-    };
-    const end=()=>{
-      window.removeEventListener("mousemove",move);window.removeEventListener("touchmove",move);
-      window.removeEventListener("mouseup",end);window.removeEventListener("touchend",end);
-    };
-    window.addEventListener("mousemove",move,{passive:false});
-    window.addEventListener("touchmove",move,{passive:false});
-    window.addEventListener("mouseup",end);window.addEventListener("touchend",end);
-  },[]);
+        const addFlange=(pos,dir,r)=>{
+          const gf=new THREE.CylinderGeometry(r*1.6,r*1.6,r*.25,16);
+          const mf=new THREE.Mesh(gf,mFlange);mf.position.copy(pos);orientDir(mf,dir,pos);mf.castShadow=true;scene.add(mf);
+        };
 
-  const setMVal=(id,v)=>setMeas(prev=>({...prev,[id]:{value:v}}));
-  const hasDims=()=>objInfo?.parts.some(p=>["width","height","depth"].includes(p.axis)&&parseFloat(meas[p.id]?.value)>0);
-  const addCustom=()=>{
-    const id=`c_${Date.now()}`;
-    setObjInfo(prev=>({...prev,parts:[...prev.parts,{id,name:"Medida",axis:"other",markerX:.5,markerY:.5,color:COLORS[prev.parts.length%COLORS.length],custom:true}]}));
-    setSelPart(id);
-  };
-  const delPart=id=>{
-    setObjInfo(prev=>({...prev,parts:prev.parts.filter(p=>p.id!==id)}));
-    setMeas(prev=>{const n={...prev};delete n[id];return n;});
-    if(selPart===id)setSelPart(null);
-  };
-  const reset=()=>{
-    setImage(null);setObjInfo(null);setMeas({});setError(null);setSelPart(null);setCamMode("off");setScreen("camera");
-  };
+        const addValve=(pos,dir,r,vtype)=>{
+          const vl=r*5;
+          const gv=new THREE.CylinderGeometry(r*1.2,r*1.2,vl,14);
+          const mv=new THREE.Mesh(gv,mValve);mv.position.copy(pos.clone().addScaledVector(dir,vl/2));orientDir(mv,dir,pos.clone().addScaledVector(dir,vl/2));mv.castShadow=true;scene.add(mv);
+          addFlange(pos.clone(),dir,r);
+          addFlange(pos.clone().addScaledVector(dir,vl),dir,r);
+        };
 
-  /* ── ESTILOS ── */
-  const ACC="#00e5c4",BDR="#0b2535";
-  const card={background:"rgba(0,16,28,.75)",border:`1px solid ${BDR}`,borderRadius:"11px",overflow:"hidden"};
-  const lbl=txt=><div style={{padding:"7px 12px",fontSize:"9px",letterSpacing:".18em",color:ACC,textTransform:"uppercase",borderBottom:`1px solid ${BDR}`,background:"rgba(0,229,196,.03)"}}>{txt}</div>;
-  const tabS=a=>({flex:1,padding:"8px 4px",borderRadius:"6px",background:a?ACC:"transparent",color:a?"#05101a":"#3a6878",border:`1px solid ${a?ACC:BDR}`,fontSize:"10px",fontFamily:"'Space Mono',monospace",cursor:"pointer",fontWeight:a?700:400});
-  const subT=a=>({flex:1,padding:"6px 3px",borderRadius:"5px",background:a?"rgba(0,229,196,.12)":"transparent",color:a?ACC:"#3a6878",border:`1px solid ${a?ACC:BDR}`,fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer",fontWeight:a?700:400});
-  const unitB=a=>({flex:1,padding:"5px 3px",background:a?"rgba(0,229,196,.12)":"transparent",color:a?ACC:"#3a6878",border:`1px solid ${a?ACC:BDR}`,borderRadius:"5px",fontSize:"10px",fontFamily:"'Space Mono',monospace",cursor:"pointer",fontWeight:a?700:400});
-  const numIn=a=>({width:"68px",padding:"5px 6px",background:a?"rgba(0,229,196,.07)":"rgba(0,12,22,.6)",border:`1px solid ${a?ACC:BDR}`,borderRadius:"5px",color:"#c0dce8",fontSize:"12px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"});
-  const axL={width:"Ancho",height:"Alto",depth:"Profundidad",other:"Otro"};
+        const defComps=components&&components.length>0?components:[
+          {type:"flange",dn:pipeDN||100},{type:"pipe",dn:pipeDN||100,length:2000,orientation:"H"},
+          {type:"elbow",dn:pipeDN||100,to_orientation:"V"},{type:"pipe",dn:pipeDN||100,length:1500,orientation:"V"}
+        ];
 
-  const bigBtn=(emoji,title,sub,onClick,accent)=>(
-    <button onClick={onClick} style={{display:"flex",alignItems:"center",gap:"12px",padding:"14px 16px",background:accent?"rgba(0,229,196,.08)":"transparent",border:`1px solid ${accent?ACC:BDR}`,borderRadius:"9px",cursor:"pointer",width:"100%",textAlign:"left"}}>
-      <div style={{width:"44px",height:"44px",borderRadius:"50%",background:accent?`linear-gradient(135deg,${ACC},#00b89a)`:"rgba(0,229,196,.06)",border:accent?"none":`1px solid ${BDR}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"22px",flexShrink:0}}>{emoji}</div>
-      <div>
-        <div style={{fontSize:"11px",fontWeight:700,color:accent?ACC:"#c0dce8",fontFamily:"'Space Mono',monospace",marginBottom:"2px"}}>{title}</div>
-        <div style={{fontSize:"9px",color:"#7aaabb"}}>{sub}</div>
-      </div>
-    </button>
-  );
+        const{pts,meta}=getPipeWaypoints(defComps);
 
-  return(
-    <div style={{minHeight:"100vh",background:"#05101a",color:"#c0dce8",fontFamily:"'Space Mono',monospace",display:"flex",flexDirection:"column",maxWidth:"480px",margin:"0 auto"}}>
+        if(pts.length>1){
+          const deduped=pts.filter((p,i)=>i===0||p.distanceTo(pts[i-1])>.001);
+          if(deduped.length>1){
+            const baseDN=defComps.find(c=>c.dn)?.dn||100;
+            const baseR=baseDN*S3*.5;
+            const curve=new THREE.CatmullRomCurve3(deduped,false,"catmullrom",.4);
+            const tubes=new THREE.TubeGeometry(curve,Math.max(deduped.length*6,30),baseR,18,false);
+            const mt=new THREE.Mesh(tubes,mPipe);mt.castShadow=true;scene.add(mt);
+          }
+        }
 
-      {/* HEADER */}
-      <div style={{padding:"12px 15px",display:"flex",alignItems:"center",gap:"9px",background:"rgba(0,12,22,.9)",backdropFilter:"blur(14px)",borderBottom:`1px solid ${BDR}`,position:"sticky",top:0,zIndex:100}}>
-        <div style={{width:"7px",height:"7px",borderRadius:"50%",background:ACC}} className="blink"/>
-        <div>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:"14px",fontWeight:800,color:ACC}}>MediScan 3D</div>
-          <div style={{fontSize:"9px",color:"#3a6878",letterSpacing:".1em"}}>Identifica · Mide · Modela</div>
+        for(const s of meta){
+          const r=s._r||.05;
+          if(s.type==="flange")addFlange(s._pos,s._dir||new THREE.Vector3(1,0,0),r);
+          else if(["valve","gate_valve","ball_valve"].includes(s.type))addValve(s._pos,s._dir||new THREE.Vector3(1,0,0),r,s.type);
+        }
+
+        const box=new THREE.Box3().setFromObject(scene);
+        const center=box.getCenter(new THREE.Vector3());
+        const size=box.getSize(new THREE.Vector3()).length()||4;
+        cam.position.set(center.x+size*.8,center.y+size*.6,center.z+size*.9);
+        cam.lookAt(center);
+
+        let drag=false,lx=0,ly=0,ry=0,rx=.15;
+        const px=e=>e.clientX??e.touches?.[0]?.clientX??0,py=e=>e.clientY??e.touches?.[0]?.clientY??0;
+        const dn=e=>{drag=true;lx=px(e);ly=py(e);};
+        const mv=e=>{if(!drag)return;ry+=(px(e)-lx)*.008;rx+=(py(e)-ly)*.008;lx=px(e);ly=py(e);};
+        const up=()=>drag=false;
+
+        rdr.domElement.addEventListener("mousedown",dn);rdr.domElement.addEventListener("touchstart",dn,{passive:true});
+        window.addEventListener("mousemove",mv);window.addEventListener("touchmove",mv,{passive:true});
+        window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
+
+        const pivot=new THREE.Group();pivot.position.copy(center);
+        const content=scene.children.filter(c=>c!==floor&&c!==grid&&!c.isLight);
+        content.forEach(c=>{scene.remove(c);c.position.sub(center);pivot.add(c);});
+        scene.add(pivot);
+
+        let id;
+        const anim=()=>{id=requestAnimationFrame(anim);if(!drag){ry+=.004;}pivot.rotation.set(rx,ry,0);rdr.render(scene,cam);};
+        anim();
+
+        return()=>{
+          cancelAnimationFrame(id);
+          window.removeEventListener("mousemove",mv);window.removeEventListener("touchmove",mv);
+          window.removeEventListener("mouseup",up);window.removeEventListener("touchend",up);
+          rdr.dispose();if(E.contains(rdr.domElement))E.removeChild(rdr.domElement);
+        };
+      },[components,pipeDN]);
+
+      return(
+        <div style={{width:"100%",position:"relative",background:"#061322",borderRadius:"8px",border:"1px solid #0b2535"}}>
+          <div ref={el} style={{width:"100%",height:"280px",cursor:"grab"}}/>
+          {pipeLabel&&<div style={{padding:"6px 12px",fontSize:"10px",color:"#00e5c4",fontFamily:"'Space Mono',monospace",borderTop:"1px solid #0b2535",background:"rgba(0,0,0,.3)"}}>{pipeLabel}</div>}
         </div>
-        <div style={{marginLeft:"auto",display:"flex",gap:"6px"}}>
-          <button onClick={()=>{setKeyInput(getKey());setScreen("setup");}} title="Clave API" style={{background:"transparent",border:`1px solid ${BDR}`,color:"#3a6878",borderRadius:"6px",padding:"5px 8px",fontSize:"13px",cursor:"pointer"}}>⚙️</button>
-          {!["camera","setup"].includes(screen)&&(
-            <button onClick={reset} style={{background:"transparent",border:`1px solid ${BDR}`,color:"#3a6878",borderRadius:"6px",padding:"5px 9px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>↩ Nueva</button>
-          )}
-        </div>
-      </div>
+      );
+    }
 
-      <div style={{flex:1,padding:"11px",display:"flex",flexDirection:"column",gap:"9px"}}>
+    /* ── VISOR 3D GENÉRICO ── */
+    function V3D({w,h,d,shape}){
+      const el=useRef(null);
+      useEffect(()=>{
+        if(!el.current)return;
+        const E=el.current,W=E.clientWidth,H=E.clientHeight||230;
+        const scene=new THREE.Scene();scene.background=new THREE.Color(0x061322);
+        const cam=new THREE.PerspectiveCamera(40,W/H,.1,50);cam.position.set(2.5,2,2.5);cam.lookAt(0,0,0);
+        const rdr=new THREE.WebGLRenderer({antialias:true});rdr.setSize(W,H);
+        E.appendChild(rdr.domElement);
 
-        {/* ══ SETUP CLAVE ══ */}
-        {screen==="setup"&&(
-          <div className="fade" style={{display:"flex",flexDirection:"column",gap:"12px",paddingTop:"8px"}}>
-            <div style={{textAlign:"center",padding:"16px 0 8px"}}>
-              <div style={{fontSize:"34px",marginBottom:"8px"}}>🔑</div>
-              <div style={{fontFamily:"'Syne',sans-serif",fontSize:"16px",fontWeight:800,color:"#fff",marginBottom:"6px"}}>Clave API de Groq</div>
-              <div style={{fontSize:"10px",color:"#7aaabb",lineHeight:1.7}}>Necesitas una clave gratuita de Groq.<br/>Se guarda solo en este navegador.</div>
+        const mat=new THREE.MeshStandardMaterial({color:0x00e5c4,metalness:.3,roughness:.4,transparent:true,opacity:0.6,side:THREE.DoubleSide});
+        const wireMat=new THREE.LineBasicMaterial({color:0xffffff});
+        const grp=new THREE.Group();scene.add(grp);
+
+        let geo;
+        if(shape==="cylinder") geo=new THREE.CylinderGeometry(0.6,0.6,1.2,24);
+        else if(shape==="sphere") geo=new THREE.SphereGeometry(0.7,24,24);
+        else geo=new THREE.BoxGeometry(1,1,1);
+
+        const mesh=new THREE.Mesh(geo,mat);grp.add(mesh);
+        const wire=new THREE.LineSegments(new THREE.EdgesGeometry(geo),wireMat);grp.add(wire);
+
+        scene.add(new THREE.AmbientLight(0xffffff,.6));
+        const dl=new THREE.DirectionalLight(0xffffff,1);dl.position.set(3,5,3);scene.add(dl);
+
+        let drag=false,lx=0,ly=0,ry=0,rx=0;
+        const px=e=>e.clientX??e.touches?.[0]?.clientX??0,py=e=>e.clientY??e.touches?.[0]?.clientY??0;
+        
+        const dn=e=>{drag=true;lx=px(e);ly=py(e);};
+        const mv=e=>{if(!drag)return;ry+=(px(e)-lx)*.01;rx+=(py(e)-ly)*.01;lx=px(e);ly=py(e);};
+        const up=()=>drag=false;
+
+        rdr.domElement.addEventListener("mousedown",dn);rdr.domElement.addEventListener("touchstart",dn);
+        window.addEventListener("mousemove",mv);window.addEventListener("mouseup",up);
+
+        let id;const anim=()=>{id=requestAnimationFrame(anim);if(!drag)ry+=.005;grp.rotation.set(rx,ry,0);rdr.render(scene,cam);};
+        anim();
+
+        return()=>{cancelAnimationFrame(id);rdr.dispose();if(E.contains(rdr.domElement))E.removeChild(rdr.domElement);};
+      },[w,h,d,shape]);
+      return <div ref={el} style={{width:"100%",height:"230px",cursor:"grab"}}/>;
+    }
+
+    /* ── NÚCLEO APP PRINCIPAL ── */
+    function App(){
+      const containerRef=useRef(null);
+      const captureRef=useRef(null);
+      const videoRef=useRef(null);
+      const canvasRef=useRef(null);
+      const streamRef=useRef(null);
+      const uploadRef=useRef(null);
+
+      const [scr,setScr]=useState(()=>getKey()?"home":"setup");
+      const [keyIn,setKeyIn]=useState(getKey());
+      const [camMode,setCamMode]=useState("off");
+      const [image,setImage]=useState(null);
+      const [rotation,setRotation]=useState(0);
+      const [objInfo,setObjInfo]=useState(null);
+      const [piping,setPiping]=useState(null);
+      const [err,setErr]=useState(null);
+      const [anns,setAnns]=useState([]);
+      const [tool,setTool]=useState("sel");
+      const [pending,setPending]=useState([]);
+      const [selId,setSelId]=useState(null);
+      const [colorIdx,setColorIdx]=useState(0);
+      const [scale,setScale]=useState(null);
+      const [calibDlg,setCalibDlg]=useState(null);
+      const [calibVal,setCalibVal]=useState("");
+      const [calibUnit,setCalibUnit]=useState("mm");
+      const [d3,setD3]=useState({w:100,h:100,d:100});
+      const [viewTab,setViewTab]=useState("anno");
+
+      const ACC="#00e5c4", BDR="#0b2535";
+
+      const handleKeySave=()=>{
+        localStorage.setItem("ms3_k",keyIn.trim());
+        setScr("home");
+      };
+
+      const startLive=async()=>{
+        setCamMode("starting");
+        try{
+          const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280}}});
+          streamRef.current=s;
+          if(videoRef.current) videoRef.current.srcObject=s;
+          setCamMode("live");
+        }catch(e){
+          setCamMode("off");
+          alert("No se pudo acceder a la cámara en tiempo real.");
+        }
+      };
+
+      const stopCam=()=>{
+        streamRef.current?.getTracks().forEach(t=>t.stop());
+        setCamMode("off");
+      };
+
+      const captureLive=()=>{
+        const v=videoRef.current, c=canvasRef.current;
+        if(!v||!c)return;
+        c.width=v.videoWidth||640;
+        c.height=v.videoHeight||480;
+        c.getContext("2d").drawImage(v,0,0);
+        startProject(c.toDataURL("image/jpeg",0.9));
+      };
+
+      const handleFile=e=>{
+        const f=e.target.files?.[0];if(!f)return;
+        const r=new FileReader();
+        r.onload=ev=>startProject(ev.target.result);
+        r.readAsDataURL(f);
+      };
+
+      const startProject=img=>{
+        setImage(img);setAnns([]);setScale(null);setSelId(null);setPending([]);setTool("sel");setRotation(0);setErr(null);setPiping(null);
+        setScr("loading");stopCam();identify(img);
+      };
+
+      const identify=async(img)=>{
+        const b64=img.split(",")[1];
+        const prompt=`Analiza esta imagen de metrologia industrial/medica.
+Si es un plano/isometria de tuberias, piping o caldereria, devuelve SOLO este JSON:
+{"type":"piping","name":"Linea Vapor","dn":150,"material":"carbon_steel","components":[{"id":"1","type":"pipe","dn":150,"length":1200,"orientation":"H"}],"drawing_notes":""}
+
+Si es un objeto fisico regular o pieza volumetrica, devuelve SOLO este JSON:
+{"type":"object","name":"Valvula Mariposa","category":"Mecanizado","shape":"cylinder","desc":"Cuerpo mecanizado con bridas"}
+Devuelve UNICAMENTE el JSON plano estructurado sin Markdown ni bloques de codigo.`;
+
+        try{
+          const res=await fetch(GAPI,{
+            method:"POST",
+            headers:{"Content-Type":"application/json","Authorization":`Bearer ${getKey()}`},
+            body:JSON.stringify({model:GMOD,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:prompt}]}]})
+          });
+          const data=await res.json();
+          const txt=data.choices?.[0]?.message?.content||"{}";
+          const info=JSON.parse(txt.replace(/```json|```/g,"").trim());
+          if(info.type === "piping"){
+            setPiping({components:info.components||[],dn:info.dn||100,label:`${info.name||"Sistema"} · DN${info.dn||100}`});
+            setObjInfo({name:info.name,category:"Piping",shape:"cylinder",desc:info.drawing_notes});
+            setViewTab("pipe3d");
+          } else {
+            setObjInfo(info);setViewTab("anno");
+          }
+        }catch(e){
+          setErr("Fallo de red o clave API incorrecta. Se habilita modo manual.");
+          setObjInfo({name:"Componente Capturado",category:"General",shape:"box",desc:"Modo manual activo"});
+        }finally{setScr("annotate");}
+      };
+
+      const handleCvClick=useCallback(e=>{
+        if(tool==="sel")return;
+        const rect=containerRef.current?.getBoundingClientRect();if(!rect)return;
+        let nx=(e.clientX-rect.left)/rect.width, ny=(e.clientY-rect.top)/rect.height;
+        nx=clamp(nx,0.01,0.99);ny=clamp(ny,0.01,0.99);
+
+        const td=TOOLS.find(t=>t.id===tool);if(!td)return;
+        const pts=[...pending,{x:nx,y:ny}];
+
+        if(pts.length >= td.npts){
+          const color=COLS[colorIdx%COLS.length];const id=uid();
+          if(tool==="calib"){
+            setCalibDlg({p1:pts[0],p2:pts[1]});
+            setAnns(p=>[...p,{id,type:"calib",label:"⚖ Calibracion",color,points:pts,value:null,unit:calibUnit}]);
+            setSelId(id);setPending([]);return;
+          }
+          setAnns(p=>[...p,{id,type:tool,label:tool==="pt"?`Pto ${anns.length+1}`:`Medida ${anns.length+1}`,color,points:pts,value:null,unit:calibUnit}]);
+          setSelId(id);setPending([]);setColorIdx(c=>c+1);setTool("sel");
+        }else setPending(pts);
+      },[tool,pending,colorIdx,anns,calibUnit]);
+
+      const startDrag=useCallback((e,annId,pi)=>{
+        e.preventDefault();e.stopPropagation();setSelId(annId);
+        const rect=containerRef.current?.getBoundingClientRect();if(!rect)return;
+        const mv=ev=>{
+          ev.preventDefault();
+          const cx=ev.clientX??ev.touches?.[0]?.clientX??0, cy=ev.clientY??ev.touches?.[0]?.clientY??0;
+          let nx=(cx-rect.left)/rect.width, ny=(cy-rect.top)/rect.height;
+          setAnns(p=>p.map(a=>{
+            if(a.id!==annId)return a;
+            const pp=[...a.points];
+            pp[pi]={x:clamp(nx,0.01,0.99),y:clamp(ny,0.01,0.99)};
+            return{...a,points:pp};
+          }));
+        };
+        const up=()=>{window.removeEventListener("mousemove",mv);window.removeEventListener("mouseup",up);};
+        window.addEventListener("mousemove",mv);window.addEventListener("mouseup",up);
+      },[]);
+
+      const getMeasure=ann=>{
+        if(ann.value!=null)return`${ann.value} ${ann.unit||"mm"}`;
+        if(!scale||ann.points.length<2)return"Sin escala";
+        const rect=containerRef.current?.getBoundingClientRect();if(!rect)return"?";
+        const dx=(ann.points[1].x-ann.points[0].x)*rect.width, dy=(ann.points[1].y-ann.points[0].y)*rect.height;
+        return`${(Math.sqrt(dx*dx+dy*dy)/scale.ppu).toFixed(1)} ${scale.unit}`;
+      };
+
+      const confirmCalib=()=>{
+        const v=parseFloat(calibVal);if(!v||v<=0)return;
+        const rect=containerRef.current?.getBoundingClientRect();if(!rect)return;
+        const{p1,p2}=calibDlg;
+        const px=Math.sqrt(((p2.x-p1.x)*rect.width)**2+((p2.y-p1.y)*rect.height)**2);
+        setScale({ppu:px/v,unit:calibUnit});
+        setAnns(p=>p.map(a=>a.type==="calib"&&!a.value?{...a,value:v,unit:calibUnit,label:`⚖ ${v} ${calibUnit}`}:a));
+        setCalibDlg(null);setCalibVal("");
+      };
+
+      const exportPDF=async()=>{
+        const el=captureRef.current;if(!el)return;
+        const cv=await html2canvas(el,{useCORS:true,scale:2});
+        const imgData=cv.toDataURL("image/png");
+        const {jsPDF}=window.jspdf;
+        const pdf=new jsPDF("p","mm","a4");
+        const w=pdf.internal.pageSize.getWidth();
+        const h=(cv.height*w)/cv.width;
+        pdf.addImage(imgData,"PNG",0,0,w,h);
+        pdf.save(`MediScan3D_Report_${Date.now()}.pdf`);
+      };
+
+      return(
+        <div className="app-container">
+          {/* Cabecera Estática */}
+          <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid ${BDR}`,paddingBottom:"12px"}}>
+            <h1 style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:"20px",color:"#fff",letterSpacing:"-0.5px"}}>MEDISCAN <span style={{color:ACC}}>3D</span></h1>
+            <div style={{display:"flex",gap:"8px"}}>
+              <button onClick={()=>setScr("setup")} style={{background:"#0b2535",color:ACC,padding:"6px 12px",borderRadius:"6px",fontSize:"12px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>⚙ CONFIG</button>
+              {scr==="annotate"&&<button onClick={()=>setScr("home")} style={{background:"#112a3a",color:"#fff",padding:"6px 12px",borderRadius:"6px",fontSize:"12px",cursor:"pointer"}}>VOLVER</button>}
             </div>
-            <div style={{...card,padding:"16px",display:"flex",flexDirection:"column",gap:"10px"}}>
-              <div style={{fontSize:"9px",color:ACC,letterSpacing:".15em",textTransform:"uppercase"}}>Tu clave Groq</div>
-              <input type="text" placeholder="gsk_xxxxxxxxxxxxxxxxxxxxxxxx" value={keyInput} onChange={e=>setKeyInput(e.target.value.trim())}
-                style={{width:"100%",padding:"10px 12px",background:"rgba(0,12,22,.8)",border:`1px solid ${BDR}`,borderRadius:"7px",color:"#c0dce8",fontSize:"11px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
-              <div style={{fontSize:"9px",color:"#3a6878",lineHeight:1.7}}>
-                Gratis en <span style={{color:ACC}}>console.groq.com</span> → API Keys → Create API Key
-              </div>
-              <button onClick={()=>{if(!keyInput.startsWith("gsk_")){alert("La clave debe empezar por gsk_");return;}localStorage.setItem("ms3d_key",keyInput);setScreen("camera");}}
-                style={{padding:"12px",background:keyInput.startsWith("gsk_")?`linear-gradient(135deg,${ACC},#00b89a)`:"#0b2535",color:keyInput.startsWith("gsk_")?"#05101a":"#3a6878",border:"none",borderRadius:"8px",fontSize:"11px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer"}}>
-                GUARDAR Y CONTINUAR
-              </button>
+          </header>
+
+          {/* PANTALLA: CONFIGURACIÓN API KEY */}
+          {scr==="setup"&&<div className="fade" style={{background:"rgba(0,16,28,.8)",padding:"25px",borderRadius:"12px",border:`1px solid ${BDR}`,maxWidth:"450px",margin:"40px auto",width:"100%"}}>
+            <h3 style={{fontFamily:"'Syne',sans-serif",marginBottom:"15px"}}>Clave de Acceso Motor de IA</h3>
+            <p style={{fontSize:"12px",color:"#6b8fa4",marginBottom:"20px",lineHeight:"1.5"}}>Introduce tu API Key de Groq para habilitar el reconocimiento volumétrico y la ingeniería inversa automática de planos de calderería o sólidos.</p>
+            <input type="password" style={{width:"100%",marginBottom:"15px"}} value={keyIn} onChange={e=>setKeyIn(e.target.value)} placeholder="gsk_yX9..."/>
+            <button onClick={handleKeySave} style={{width:"100%",background:ACC,color:"#05101a",padding:"10px",borderRadius:"6px",fontWeight:700,cursor:"pointer"}}>GUARDAR CONFIGURACIÓN</button>
+          </div>}
+
+          {/* PANTALLA: HOME / CAPTURA */}
+          {scr"home"===scr&&<div className="fade" style={{textAlign:"center",padding:"50px 20px"}}>
+            <h2 style={{fontFamily:"'Syne',sans-serif",fontSize:"24px",marginBottom:"8px"}}>Nueva Captura de Metrología</h2>
+            <p style={{color:"#6b8fa4",fontSize:"13px",marginBottom:"30px"}}>Sube un isométrico, fotografía quirúrgica o pieza de mecanizado para análisis dimensional 3D.</p>
+            
+            <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"15px",maxWidth:"340px",margin:"0 auto"}}>
+              {camMode==="off"?(
+                <button onClick={startLive} style={{width:"100%",background:"#0c2d42",border:`1px solid ${ACC}`,color:"#fff",padding:"14px",borderRadius:"8px",fontWeight:700,cursor:"pointer",fontSize:"13px"}}>ACTIVAR CÁMARA</button>
+              ):(
+                <div style={{width:"100%",position:"relative",background:"#000",borderRadius:"8px",overflow:"hidden"}}>
+                  <video ref={videoRef} autoPlay playsInline style={{width:"100%",display:"block",transform:`rotate(${rotation}deg)`}}/>
+                  <div style={{position:"absolute",bottom:"10px",left:"0",right:"0",display:"flex",justifyContent:"center",gap:"10px"}}>
+                    <button onClick={captureLive} style={{background:ACC,color:"#05101a",padding:"8px 16px",borderRadius:"6px",fontWeight:700}}>CAPTURAR</button>
+                    <button onClick={stopCam} style={{background:"#f46",color:"#fff",padding:"8px 12px",borderRadius:"6px"}}>APAGAR</button>
+                  </div>
+                </div>
+              )}
+              
+              <div style={{color:"#3a6878",fontSize:"12px",margin:"10px 0"}}>— O BIEN —</div>
+              
+              <button onClick={()=>uploadRef.current?.click()} style={{width:"100%",background:"#0b2535",border:`1px solid ${BDR}`,color:ACC,padding:"12px",borderRadius:"8px",cursor:"pointer",fontSize:"13px"}}>SELECCIONAR ARCHIVO</button>
+              <input ref={uploadRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleFile}/>
             </div>
-          </div>
-        )}
+            <canvas ref={canvasRef} style={{display:"none"}}/>
+          </div>}
 
-        {/* ══ CÁMARA ══ */}
-        {screen==="camera"&&(
-          <div className="fade" style={{display:"flex",flexDirection:"column",gap:"9px"}}>
+          {/* PANTALLA: PROCESAMIENTO */}
+          {scr"loading"===scr&&<div style={{textAlign:"center",padding:"80px 20px"}}>
+            <div className="spin" style={{width:"32px",height:"32px",border:`3px solid ${BDR}`,borderTopColor:ACC,borderRadius:"50%",margin:"0 auto 20px"}}/>
+            <h4 style={{fontFamily:"'Space Mono',monospace",fontSize:"14px",color:ACC}}>EJECUTANDO RECONOCIMIENTO FOTOGRAMÉTRICO...</h4>
+            <p style={{fontSize:"11px",color:"#3a6878",marginTop:"6px"}}>Computando nubes de puntos y matrices topológicas.</p>
+          </div>}
 
-            {/* Visor en vivo */}
-            <div style={card}>
-              {lbl(<><span className="blink">●</span>&nbsp;Cámara en vivo</>)}
-              {camMode==="off"&&(
-                <div style={{padding:"24px 16px",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:"12px"}}>
-                  <div style={{fontSize:"9px",color:"#3a6878",lineHeight:1.7}}>Activa el visor para ver y capturar en tiempo real</div>
-                  <button onClick={startLiveCam} style={{padding:"11px 28px",background:`linear-gradient(135deg,${ACC},#00b89a)`,color:"#05101a",border:"none",borderRadius:"8px",fontSize:"11px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer",letterSpacing:".08em"}}>
-                    📹 ACTIVAR VISOR
+          {/* PANTALLA: ENTORNOS DE ANOTACIÓN E INGENIERÍA 3D */}
+          {scr"annotate"===scr&&<div className="fade grid-layout" ref={captureRef} style={{background:"#05101a"}}>
+            {/* LADO IZQUIERDO: VISOR INTERACTIVO 2D */}
+            <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+              <div style={{display:"flex",gap:"4px",background:"#030d17",padding:"4px",borderRadius:"8px",border:`1px solid ${BDR}`,overflowX:"auto"}}>
+                {TOOLS.map(t=>(
+                  <button key={t.id} onClick={()=>{setTool(t.id);setPending([]);}} style={{background:tool===t.id?ACC:"transparent",color:tool===t.id?"#05101a":"#6b8fa4",padding:"8px 12px",borderRadius:"6px",fontSize:"11px",cursor:"pointer",fontFamily:"'Space Mono',monospace",display:"flex",alignItems:"center",gap:"4px",whiteSpace:"nowrap"}}>
+                    <span>{t.icon}</span><span style={{fontSize:"10px"}}>{t.tip}</span>
                   </button>
-                </div>
-              )}
-              {camMode==="starting"&&(
-                <div style={{padding:"24px",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:"10px"}}>
-                  <div style={{width:"36px",height:"36px",borderRadius:"50%",border:`3px solid ${BDR}`,borderTop:`3px solid ${ACC}`}} className="spin"/>
-                  <div style={{fontSize:"9px",color:"#3a6878"}}>Activando cámara...</div>
-                </div>
-              )}
-              {camMode==="live"&&(
-                <>
-                  <div style={{position:"relative",background:"#000",aspectRatio:"4/3"}}>
-                    <video ref={videoRef} autoPlay playsInline muted style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
-                    <div style={{position:"absolute",left:0,right:0,height:"1.5px",background:`linear-gradient(90deg,transparent,${ACC},transparent)`,animation:"scan 2.5s linear infinite",opacity:.55,pointerEvents:"none"}}/>
-                    {[{top:8,left:8,borderRight:"none",borderBottom:"none"},{top:8,right:8,borderLeft:"none",borderBottom:"none"},{bottom:8,left:8,borderRight:"none",borderTop:"none"},{bottom:8,right:8,borderLeft:"none",borderTop:"none"}].map((pos,i)=>(
-                      <div key={i} style={{position:"absolute",width:"15px",height:"15px",border:`2px solid ${ACC}`,...pos}}/>
-                    ))}
-                  </div>
-                  <div style={{display:"flex",gap:"8px",padding:"12px",justifyContent:"center",alignItems:"center"}}>
-                    <button onClick={stopCam} style={{padding:"8px 14px",background:"transparent",border:`1px solid ${BDR}`,color:"#3a6878",borderRadius:"7px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>✕ Cerrar</button>
-                    <button onClick={captureFromLive} style={{width:"56px",height:"56px",borderRadius:"50%",border:`2.5px solid ${ACC}`,background:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 18px rgba(0,229,196,.3)`}}>
-                      <div style={{width:"38px",height:"38px",borderRadius:"50%",background:ACC}}/>
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Tomar foto o galería */}
-            <div style={card}>
-              {lbl("📷 Foto directa o galería")}
-              <div style={{padding:"14px",display:"flex",flexDirection:"column",gap:"8px"}}>
-                {bigBtn("📷","TOMAR FOTO","Abre la cámara del móvil directamente",()=>camInputRef.current?.click(),true)}
-                <input ref={camInputRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleFile}/>
-                <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
-                  <div style={{flex:1,height:"1px",background:BDR}}/><span style={{fontSize:"9px",color:"#2a5060"}}>O</span><div style={{flex:1,height:"1px",background:BDR}}/>
-                </div>
-                {bigBtn("🖼","ELEGIR DE GALERÍA","Selecciona una foto guardada",()=>uploadRef.current?.click(),false)}
-                <input ref={uploadRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleFile}/>
-              </div>
-            </div>
-
-            <p style={{fontSize:"9px",color:"#2a4858",textAlign:"center"}}>La IA identifica el objeto · Tú ingresas las medidas reales</p>
-          </div>
-        )}
-
-        {/* ══ CARGANDO ══ */}
-        {screen==="loading"&&(
-          <div style={card} className="fade">
-            {lbl("⚡ Identificando objeto...")}
-            {image&&<img src={image} alt="" style={{width:"100%",aspectRatio:"4/3",objectFit:"cover",opacity:.75}}/>}
-            <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"11px",padding:"28px 16px"}}>
-              <div style={{width:"42px",height:"42px",borderRadius:"50%",border:`3px solid ${BDR}`,borderTop:`3px solid ${ACC}`}} className="spin"/>
-              <div style={{fontSize:"10px",color:"#3a6878",letterSpacing:".15em",textTransform:"uppercase"}}>Analizando con IA...</div>
-            </div>
-          </div>
-        )}
-
-        {/* ══ MEDIR ══ */}
-        {screen==="measure"&&(
-          <div className="fade" style={{display:"flex",flexDirection:"column",gap:"9px"}}>
-
-            {error&&<div style={{...card,padding:"14px",textAlign:"center",fontSize:"10px",color:"#ff5566"}}>⚠ {error}</div>}
-
-            {objInfo&&(
-              <div style={{...card,padding:"11px 12px"}}>
-                <div style={{fontSize:"9px",color:ACC,letterSpacing:".18em",textTransform:"uppercase"}}>{objInfo.category}</div>
-                <div style={{fontFamily:"'Syne',sans-serif",fontSize:"19px",fontWeight:800,color:"#fff"}}>{objInfo.name}</div>
-                <div style={{fontSize:"9px",color:"#7aaabb",lineHeight:1.65,marginTop:"5px"}}>{objInfo.description}</div>
-              </div>
-            )}
-
-            {/* FOTO CON MARCADORES ARRASTRABLES */}
-            {image&&objInfo&&(
-              <div style={card}>
-                {lbl("📍 Arrastra los puntos para recolocarlos")}
-                <div style={{position:"relative",lineHeight:0}} ref={imgRef}>
-                  <img src={image} alt="" style={{width:"100%",display:"block",opacity:.8}} draggable="false"/>
-                  {objInfo.parts.map((p,i)=>(
-                    <div
-                      key={p.id}
-                      className="marker-dot"
-                      onMouseDown={e=>startDrag(e,p.id)}
-                      onTouchStart={e=>startDrag(e,p.id)}
-                      onClick={()=>setSelPart(p.id)}
-                      style={{
-                        position:"absolute",
-                        left:`${p.markerX*100}%`,top:`${p.markerY*100}%`,
-                        width:"26px",height:"26px",borderRadius:"50%",
-                        background:selPart===p.id?p.color:"rgba(3,13,24,.85)",
-                        border:`2.5px solid ${p.color}`,
-                        color:selPart===p.id?"#000":p.color,
-                        display:"flex",alignItems:"center",justifyContent:"center",
-                        fontSize:"9px",fontWeight:"700",
-                        cursor:"grab",zIndex:10,
-                        transform:"translate(-50%,-50%)",
-                        boxShadow:selPart===p.id?`0 0 12px ${p.color}`:`0 0 6px rgba(0,0,0,.5)`,
-                      }}
-                    >{i+1}</div>
-                  ))}
-                </div>
-                <div style={{padding:"6px 12px",fontSize:"8px",color:"#2a5060",display:"flex",alignItems:"center",gap:"6px"}}>
-                  <span>☝ Arrastra · 👆 Toca para seleccionar</span>
-                </div>
-              </div>
-            )}
-
-            {/* ENTRADAS DE MEDIDAS */}
-            {objInfo&&(
-              <div style={card}>
-                <div style={{display:"flex",alignItems:"center"}}>
-                  {lbl("📐 Ingresa las medidas")}
-                  <div style={{display:"flex",gap:"4px",padding:"6px 10px",marginLeft:"auto"}}>
-                    {["mm","cm","m","in"].map(u=><button key={u} style={unitB(unit===u)} onClick={()=>setUnit(u)}>{u}</button>)}
-                  </div>
-                </div>
-
-                {objInfo.parts.map((p,i)=>(
-                  <div key={p.id} style={{display:"flex",alignItems:"center",gap:"7px",padding:"8px 12px",background:selPart===p.id?"rgba(0,229,196,.04)":"transparent",borderBottom:"1px solid #05121c",cursor:"pointer"}} onClick={()=>setSelPart(p.id)}>
-                    <div style={{width:"20px",height:"20px",borderRadius:"50%",flexShrink:0,background:selPart===p.id?p.color:"transparent",border:`1.5px solid ${p.color}`,color:selPart===p.id?"#000":p.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"8px",fontWeight:"700"}}>{i+1}</div>
-                    <div style={{flex:1}}>
-                      {p.custom
-                        ?<input style={{...numIn(false),width:"100%",textAlign:"left",fontSize:"9px"}} placeholder="Nombre" value={p.name} onChange={e=>setObjInfo(prev=>({...prev,parts:prev.parts.map(pp=>pp.id===p.id?{...pp,name:e.target.value}:pp)}))} onClick={e=>e.stopPropagation()}/>
-                        :<div style={{fontSize:"9px",color:"#c0dce8"}}>{p.name}</div>
-                      }
-                      <div style={{fontSize:"8px",color:"#3a6878"}}>{axL[p.axis]||p.axis}{meas[p.id]?.value?` · ${meas[p.id].value} ${unit}`:""}</div>
-                    </div>
-                    <input type="number" min="0" step="0.1" placeholder="0" value={meas[p.id]?.value||""} onChange={e=>setMVal(p.id,e.target.value)} onClick={e=>e.stopPropagation()} style={numIn(selPart===p.id)}/>
-                    <span style={{fontSize:"10px",color:"#3a6878",minWidth:"18px"}}>{unit}</span>
-                    {p.custom&&<button style={{background:"transparent",border:"none",color:"#3a6878",cursor:"pointer",fontSize:"12px",padding:"2px 5px"}} onClick={e=>{e.stopPropagation();delPart(p.id);}}>✕</button>}
-                  </div>
                 ))}
-                <div style={{padding:"8px 12px"}}>
-                  <button onClick={addCustom} style={{width:"100%",padding:"7px",background:"transparent",border:`1px dashed ${BDR}`,color:"#3a6878",borderRadius:"6px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>＋ Agregar medida</button>
-                </div>
               </div>
-            )}
 
-            {objInfo&&(
-              <>
-                <button style={{width:"100%",padding:"13px",background:hasDims()?`linear-gradient(135deg,${ACC},#00b89a)`:"#0b2535",color:hasDims()?"#05101a":"#3a6878",border:"none",borderRadius:"8px",fontSize:"11px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:hasDims()?"pointer":"not-allowed",letterSpacing:".12em"}}
-                  disabled={!hasDims()} onClick={()=>{setViewTab("3d");setScreen("view");}}>
-                  ▶ GENERAR MODELO 2D / 3D
-                </button>
-                {!hasDims()&&<p style={{fontSize:"9px",color:"#2a4858",textAlign:"center"}}>Ingresa al menos: ancho, alto o profundidad</p>}
-              </>
-            )}
-          </div>
-        )}
-
-        {/* ══ VISTA MODELO ══ */}
-        {screen==="view"&&objInfo&&(
-          <div className="fade" style={{display:"flex",flexDirection:"column",gap:"9px"}}>
-            <div style={{...card,padding:"11px 12px"}}>
-              <div style={{fontSize:"9px",color:ACC,letterSpacing:".18em",textTransform:"uppercase"}}>{objInfo.category}</div>
-              <div style={{fontFamily:"'Syne',sans-serif",fontSize:"19px",fontWeight:800,color:"#fff"}}>{objInfo.name}</div>
-            </div>
-
-            <div style={{display:"flex",gap:"7px"}}>
-              {[["width","Ancho","255,68,102"],["height","Alto","68,255,136"],["depth","Prof.","68,136,255"]].map(([axis,lb,rgb])=>{
-                const p=objInfo.parts.find(p=>p.axis===axis),v=p?meas[p.id]?.value:null;
-                return(
-                  <div key={axis} style={{background:`rgba(${rgb},.08)`,border:`1px solid rgba(${rgb},.2)`,borderRadius:"7px",padding:"9px 7px",flex:1,textAlign:"center"}}>
-                    <div style={{fontSize:"8px",color:`rgb(${rgb})`,letterSpacing:".12em",marginBottom:"3px"}}>{lb}</div>
-                    <div style={{fontSize:"13px",fontWeight:"700",color:v?`rgb(${rgb})`:"#2a5060"}}>{v?`${v} ${unit}`:"—"}</div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div style={card}>
-              <div style={{display:"flex",gap:"6px",padding:"9px 12px",borderBottom:`1px solid ${BDR}`}}>
-                <button style={tabS(viewTab==="3d")} onClick={()=>setViewTab("3d")}>🎮 Vista 3D</button>
-                <button style={tabS(viewTab==="2d")} onClick={()=>setViewTab("2d")}>📐 Planos 2D</button>
+              <div className="interactive-canvas" ref={containerRef} onClick={handleCvClick}>
+                <img src={image} style={{width:"100%",maxHeight:"65vh",objectFit:"contain",display:"block"}} alt="source"/>
+                <svg className="canvas-svg">
+                  {anns.map(a=>{
+                    if(a.points.length<1)return null;
+                    const rect=containerRef.current?.getBoundingClientRect();if(!rect)return null;
+                    const p1x=a.points[0].x*rect.width, p1y=a.points[0].y*rect.height;
+                    
+                    return (
+                      <g key={a.id}>
+                        {a.type==="pt"&&(
+                          <circle cx={p1x} cy={p1y} r="6" fill={a.color} className="node-handle" onMouseDown={e=>startDrag(e,a.id,0)}/>
+                        )}
+                        {(a.type==="line"||a.type==="calib"||a.type==="arrow")&&a.points[1]&&(
+                          <>
+                            <line x1={p1x} y1={p1y} x2={a.points[1].x*rect.width} y2={a.points[1].y*rect.height} stroke={a.color} strokeWidth="2.5"/>
+                            <circle cx={p1x} cy={p1y} r="5" fill="#fff" stroke={a.color} className="node-handle" onMouseDown={e=>startDrag(e,a.id,0)}/>
+                            <circle cx={a.points[1].x*rect.width} cy={a.points[1].y*rect.height} r="5" fill="#fff" stroke={a.color} className="node-handle" onMouseDown={e=>startDrag(e,a.id,1)}/>
+                            <text x={(p1x+a.points[1].x*rect.width)/2} y={(p1y+a.points[1].y*rect.height)/2-8} fill={a.color} style={{fontFamily:"'Space Mono',monospace",fontSize:"10px",fontWeight:"bold",background:"#000"}} textAnchor="middle">
+                              {getMeasure(a)}
+                            </text>
+                          </>
+                        )}
+                        {a.type==="rect"&&a.points[1]&&(
+                          <rect x={Math.min(p1x,a.points[1].x*rect.width)} y={Math.min(p1y,a.points[1].y*rect.height)} width={Math.abs(p1x-a.points[1].x*rect.width)} height={Math.abs(p1y-a.points[1].y*rect.height)} fill="none" stroke={a.color} strokeWidth="2"/>
+                        )}
+                      </g>
+                    );
+                  })}
+                </svg>
               </div>
-              {viewTab==="3d"&&(
-                <>
-                  <Viewer3D parts={objInfo.parts} meas={meas} unit={unit} shape={objInfo.shape}/>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:"8px",padding:"8px 12px",borderTop:`1px solid ${BDR}`,fontSize:"9px"}}>
-                    {objInfo.parts.filter(p=>meas[p.id]?.value).map(p=>(
-                      <span key={p.id} style={{color:p.color||ACC}}>{p.name}: {meas[p.id].value} {unit}</span>
-                    ))}
-                  </div>
-                  <div style={{padding:"4px 12px 10px",fontSize:"8px",color:"#2a5060"}}>Arrastra para rotar · Rotación automática</div>
-                </>
-              )}
-              {viewTab==="2d"&&(
-                <>
-                  <div style={{display:"flex",gap:"5px",padding:"7px 12px",borderBottom:`1px solid ${BDR}`}}>
-                    {[["front","Frontal"],["side","Lateral"],["top","Planta"]].map(([vt,lb])=>(
-                      <button key={vt} style={subT(view2D===vt)} onClick={()=>setView2D(vt)}>{lb}</button>
-                    ))}
-                  </div>
-                  <View2D parts={objInfo.parts} meas={meas} unit={unit} shape={objInfo.shape} objName={objInfo.name} viewType={view2D}/>
-                </>
-              )}
             </div>
 
-            <div style={card}>
-              {lbl("📋 Tabla de medidas")}
-              {objInfo.parts.map(p=>{const v=meas[p.id]?.value;return(
-                <div key={p.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 12px",borderBottom:"1px solid #05121c",fontSize:"10px"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:"7px"}}><div style={{width:"8px",height:"8px",borderRadius:"50%",background:p.color||ACC,flexShrink:0}}/><span style={{color:"#7aaabb"}}>{p.name}</span></div>
-                  <span style={{color:v?ACC:"#2a5060",fontWeight:v?700:400}}>{v?`${v} ${unit}`:"—"}</span>
-                </div>
-              );})}
-            </div>
-
-            <div style={{...card,padding:"9px 12px"}}>
-              <div style={{fontSize:"8px",color:"#3a6878",marginBottom:"7px",letterSpacing:".1em"}}>UNIDAD</div>
+            {/* LADO DERECHO: PANELES DE CONTROL E INGENIERÍA 3D */}
+            <div style={{display:"flex",flexDirection:"column",gap:"15px"}}>
               <div style={{display:"flex",gap:"5px"}}>
-                {["mm","cm","m","in"].map(u=><button key={u} style={unitB(unit===u)} onClick={()=>setUnit(u)}>{u}</button>)}
+                <button onClick={()=>setViewTab("anno")} style={{flex:1,padding:"8px",background:viewTab==="anno"?"#0b2535":"transparent",color:viewTab==="anno"?ACC:"#52798f",border:`1px solid ${BDR}`,borderRadius:"6px",fontSize:"11px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>DATOS METROLÓGICOS</button>
+                <button onClick={()=>setViewTab("pipe3d")} style={{flex:1,padding:"8px",background:viewTab==="pipe3d"?"#0b2535":"transparent",color:viewTab==="pipe3d"?ACC:"#52798f",border:`1px solid ${BDR}`,borderRadius:"6px",fontSize:"11px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>RECONSTRUCCIÓN 3D</button>
               </div>
+
+              {/* DIÁLOGO DE CALIBRACIÓN DE ESCALA */}
+              {calibDlg&&<div style={{background:"#0a1f2d",padding:"12px",borderRadius:"8px",border:`1px solid ${ACC}`,marginBottom:"10px"}}>
+                <div style={{fontSize:"11px",color:"#fff",marginBottom:"8px",fontFamily:"'Space Mono',monospace"}}>DEFINIR MEDIDA REAL CONOCIDA:</div>
+                <div style={{display:"flex",gap:"6px"}}>
+                  <input type="number" style={{flex:1}} value={calibVal} onChange={e=>setCalibVal(e.target.value)} placeholder="Ej: 50"/>
+                  <select value={calibUnit} onChange={e=>setCalibUnit(e.target.value)}>
+                    <option value="mm">mm</option>
+                    <option value="cm">cm</option>
+                    <option value="m">m</option>
+                  </select>
+                  <button onClick={confirmCalib} style={{background:ACC,color:"#05101a",padding:"6px 12px",borderRadius:"4px",fontWeight:700,fontSize:"11px"}}>ESTABLECER</button>
+                </div>
+              </div>}
+
+              {/* TAB: DATOS METROLÓGICOS */}
+              {viewTab==="anno"&&(
+                <div className="fade" style={{background:"rgba(0,16,28,.6)",border:`1px solid ${BDR}`,borderRadius:"8px",padding:"15px"}}>
+                  <div style={{marginBottom:"12px"}}>
+                    <h3 style={{fontSize:"15px",fontFamily:"'Syne',sans-serif",color:"#fff"}}>{objInfo?.name||"Componente Detectado"}</h3>
+                    <span style={{fontSize:"9px",fontFamily:"'Space Mono',monospace",color:ACC,background:"rgba(0,229,196,.1)",padding:"2px 6px",borderRadius:"4px"}}>{objInfo?.category||"Análisis General"}</span>
+                    <p style={{fontSize:"11px",color:"#6b8fa4",marginTop:"8px"}}>{objInfo?.desc||"Procediendo en modo local estructurado."}</p>
+                  </div>
+                  
+                  <div style={{borderTop:`1px solid ${BDR}`,paddingTop:"10px"}}>
+                    <h4 style={{fontSize:"11px",fontFamily:"'Space Mono',monospace",color:"#fff",marginBottom:"8px"}}>GEOMETRÍAS Y COTAS CAPTURADAS:</h4>
+                    {anns.length===0?<div style={{fontSize:"11px",color:"#3a6878"}}>Ninguna geometría guardada. Use las herramientas superiores.</div>:null}
+                    <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+                      {anns.map(a=>(
+                        <div key={a.id} onClick={()=>setSelId(a.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:selId===a.id?"#0b2535":"rgba(11,37,53,.3)",padding:"8px",borderRadius:"6px",border:`1px solid ${selId===a.id?ACC:BDR}`,cursor:"pointer"}}>
+                          <span style={{fontSize:"11px",color:a.color,fontFamily:"'Space Mono',monospace"}}>● {a.label||a.type.toUpperCase()}</span>
+                          <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                            <span style={{fontSize:"11px",fontFamily:"'Space Mono',monospace",fontWeight:"bold"}}>{getMeasure(a)}</span>
+                            <button onClick={(e)=>{e.stopPropagation();delAnn(a.id);}} style={{background:"transparent",color:"#ff4466",fontSize:"12px",cursor:"pointer"}}>✕</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button onClick={exportPDF} style={{width:"100%",marginTop:"20px",background:"#00e5c4",color:"#05101a",padding:"10px",borderRadius:"6px",fontWeight:"bold",cursor:"pointer",fontSize:"12px"}}>EXPORTAR DOSIER DE INGENIERÍA (PDF)</button>
+                </div>
+              )}
+
+              {/* TAB: RECONSTRUCCIÓN VECTORIAL 3D */}
+              {viewTab==="pipe3d"&&(
+                <div className="fade" style={{display:"flex",flexDirection:"column",gap:"15px"}}>
+                  {piping ? (
+                    <V3DPipe components={piping.components} pipeDN={piping.dn} pipeLabel={piping.label}/>
+                  ) : (
+                    <div style={{background:"rgba(0,16,28,.6)",border:`1px solid ${BDR}`,borderRadius:"8px",padding:"15px"}}>
+                      <div style={{fontSize:"11px",color:"#6b8fa4",marginBottom:"10px"}}>Generación Primitiva de Sólido en base a bounding-box estimado:</div>
+                      <V3D w={d3.w} h={d3.h} d={d3.d} shape={objInfo?.shape}/>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px",marginTop:"12px"}}>
+                        <div><label style={{fontSize:"9px",color:"#3a6878"}}>Ancho (X)</label><input type="number" style={{width:"100%"}} value={d3.w} onChange={e=>setD3({...d3,w:parseInt(e.target.value)||10})}/></div>
+                        <div><label style={{fontSize:"9px",color:"#3a6878"}}>Alto (Y)</label><input type="number" style={{width:"100%"}} value={d3.h} onChange={e=>setD3({...d3,h:parseInt(e.target.value)||10})}/></div>
+                        <div><label style={{fontSize:"9px",color:"#3a6878"}}>Fondo (Z)</label><input type="number" style={{width:"100%"}} value={d3.d} onChange={e=>setD3({...d3,d:parseInt(e.target.value)||10})}/></div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+          </div>}
+        </div>
+      );
+    }
 
-            <button onClick={()=>setScreen("measure")} style={{width:"100%",padding:"11px",background:"transparent",border:`1px solid ${BDR}`,color:"#3a6878",borderRadius:"8px",fontSize:"10px",fontFamily:"'Space Mono',monospace",cursor:"pointer",letterSpacing:".1em"}}>✏ Editar medidas</button>
-          </div>
-        )}
-
-      </div>
-      <canvas ref={canvasRef} style={{display:"none"}}/>
-    </div>
-  );
-}
-
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
-</script>
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+    </script>
 </body>
 </html>
