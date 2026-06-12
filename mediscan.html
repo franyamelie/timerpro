@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-<title>MediScan 3D</title>
+<title>MediScan 3D Pro</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -13,678 +13,803 @@
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap');
 *{box-sizing:border-box;margin:0;padding:0;}
-html,body{background:#05101a;min-height:100%;-webkit-tap-highlight-color:transparent;}
-@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 8px #00e5c4}50%{opacity:.3;box-shadow:none}}
+html,body{background:#07101e;min-height:100%;-webkit-tap-highlight-color:transparent;}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 10px #00e5c4}50%{opacity:.3;box-shadow:none}}
 @keyframes scan{0%{top:0}100%{top:100%}}
 @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-.fade{animation:fadeUp .3s ease both;}.spin{animation:spin .9s linear infinite;}.blink{animation:pulse 1.8s ease infinite;}
-button{transition:transform .1s,opacity .1s;-webkit-appearance:none;}button:active{transform:scale(.93);opacity:.8;}
-input{-webkit-appearance:none;}input[type=number]{-moz-appearance:textfield;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes glow{0%,100%{box-shadow:0 0 8px rgba(0,229,196,.4)}50%{box-shadow:0 0 20px rgba(0,229,196,.8)}}
+.fade{animation:fadeUp .3s ease both;}
+.spin{animation:spin .9s linear infinite;}
+.blink{animation:pulse 2s ease infinite;}
+.glow{animation:glow 2s ease infinite;}
+button{transition:all .12s;-webkit-appearance:none;}
+button:active{transform:scale(.93);opacity:.8;}
+input,textarea,select{-webkit-appearance:none;}
+input[type=number]{-moz-appearance:textfield;}
 input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;}
-::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-thumb{background:#0b2535;border-radius:4px;}
+::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-thumb{background:#1a3a5a;border-radius:4px;}
+.notch{touch-action:none;user-select:none;-webkit-user-select:none;}
 </style>
 </head>
 <body><div id="root"></div>
 <script type="text/babel">
 const {useState,useRef,useEffect,useCallback,useMemo}=React;
+
+/* ── Constants ── */
 const GAPI="https://api.groq.com/openai/v1/chat/completions";
 const GMOD="meta-llama/llama-4-scout-17b-16e-instruct";
 const getKey=()=>localStorage.getItem("ms3_k")||"";
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const uid=()=>`_${Math.random().toString(36).slice(2,8)}`;
-const COLS=["#00e5c4","#ff4466","#44aaff","#ffaa22","#aa66ff","#44ff88","#ff6622","#22ccff","#ffcc00","#cc44ff"];
-const UFAC={mm:1,cm:10,m:1000,in:25.4};
+const COLS=["#00e5c4","#ff4477","#4499ff","#ffbb00","#aa44ff","#44dd88","#ff6622","#22ccff","#ffcc44","#dd44ff","#ff8844","#44ffbb"];
+const UFAC={mm:1,cm:10,m:1000,"in":25.4,ft:304.8};
 const toMM=(v,u)=>(parseFloat(v)||0)*(UFAC[u]||10);
-const fmtV=(v,u)=>{if(!v&&v!==0)return"—";const r={mm:[1,0],cm:[0.1,1],m:[0.001,3],in:[0.0393701,2]}[u];return`${(v*r[0]).toFixed(r[1])} ${u}`;};
+const fv=(mm,u)=>{if(!mm&&mm!==0)return"—";const r={mm:[1,0],cm:[0.1,1],m:[0.001,3],"in":[0.0393701,2],ft:[0.00328,3]}[u]||[0.1,1];return`${(mm*r[0]).toFixed(r[1])} ${u}`;};
 
-/* ════════════════════════
-   VISOR 2D TIPO AUTOCAD
-════════════════════════ */
-function View2D({parts,meas,unit,shape,objName}){
+const TOOLS=[
+  {id:"sel",  cat:"nav", icon:"↖",  label:"Mover/Selec.", npts:0},
+  {id:"pin",  cat:"mrk", icon:"📍", label:"Pin marcador", npts:1},
+  {id:"dot",  cat:"mrk", icon:"⬤",  label:"Punto",        npts:1},
+  {id:"star", cat:"mrk", icon:"★",  label:"Estrella",     npts:1},
+  {id:"diam", cat:"mrk", icon:"◆",  label:"Diamante",     npts:1},
+  {id:"tgt",  cat:"mrk", icon:"⊕",  label:"Diana",        npts:1},
+  {id:"line", cat:"lin", icon:"━━", label:"Línea medida",  npts:2},
+  {id:"dline",cat:"lin", icon:"┄┄", label:"Línea guía",   npts:2},
+  {id:"dim",  cat:"lin", icon:"⟺",  label:"Cota AutoCAD", npts:2},
+  {id:"arr1", cat:"arr", icon:"→",  label:"Flecha simple", npts:2},
+  {id:"arr2", cat:"arr", icon:"⇒",  label:"Flecha bold",  npts:2},
+  {id:"arr3", cat:"arr", icon:"↔",  label:"Doble flecha", npts:2},
+  {id:"arr4", cat:"arr", icon:"↗",  label:"Flecha diag.", npts:2},
+  {id:"rect", cat:"shp", icon:"▭",  label:"Rectángulo",   npts:2},
+  {id:"circ", cat:"shp", icon:"◯",  label:"Círculo",      npts:2},
+  {id:"tri",  cat:"shp", icon:"△",  label:"Triángulo",    npts:3},
+  {id:"calib",cat:"spc", icon:"⚖",  label:"Calibrar",     npts:2},
+  {id:"crop", cat:"spc", icon:"✂",  label:"Recortar zona",npts:2},
+  {id:"txt",  cat:"spc", icon:"T",  label:"Texto",        npts:1},
+];
+const CATS={nav:"Nav",mrk:"Marcadores",lin:"Líneas",arr:"Flechas",shp:"Formas",spc:"Especial"};
+
+/* ════════ VIEW 2D AUTOCAD ════════ */
+function View2D({anns,objName,scale2D}){
   const ref=useRef(null);
   useEffect(()=>{
     const cv=ref.current;if(!cv)return;
     const ctx=cv.getContext("2d"),CW=cv.width,CH=cv.height;
     ctx.clearRect(0,0,CW,CH);
-    // Fondo estilo AutoCAD (gris claro)
-    ctx.fillStyle="#f0f2f6";ctx.fillRect(0,0,CW,CH);
-    // Grid
-    ctx.strokeStyle="#dde1ea";ctx.lineWidth=.5;
+    // Fondo estilo AutoCAD claro
+    ctx.fillStyle="#f2f4f8";ctx.fillRect(0,0,CW,CH);
+    ctx.strokeStyle="#d8dce8";ctx.lineWidth=.5;
     for(let x=0;x<CW;x+=20){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,CH);ctx.stroke();}
     for(let y=0;y<CH;y+=20){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(CW,y);ctx.stroke();}
-
-    const gd=ax=>{for(const p of parts){if(p.axis===ax){const v=parseFloat(meas[p.id]?.value)||0;if(v>0)return v;}}return null;};
+    // Get dims from anns
+    const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?toMM(a.value,a.unit):null;};
+    const wu=anns.find(a=>a.axis==="width"&&a.value!=null);
+    const hu=anns.find(a=>a.axis==="height"&&a.value!=null);
+    const du=anns.find(a=>a.axis==="depth"&&a.value!=null);
     const w=gd("width"),h=gd("height"),d=gd("depth");
-
     if(!w&&!h&&!d){
-      ctx.fillStyle="#666";ctx.font="11px 'Space Mono'";ctx.textAlign="center";
-      ctx.fillText("Ingresa al menos una medida",CW/2,CH/2-10);
-      ctx.fillStyle="#999";ctx.font="9px 'Space Mono'";ctx.fillText("para ver el plano 2D",CW/2,CH/2+8);return;
-    }
-
-    // Colores estilo AutoCAD técnico
-    const OBJ_C="#1a3a8a",DIM_C="#cc0000",TXT_C="#111122",AUX_C="#888899";
-
-    // Layout: 3 vistas + título
-    const titleH=50,margin=42,gap=14;
-    const aW=CW-margin*2-gap,aH=CH-margin*2-titleH-gap;
-    const vW=aW*.58,vW2=aW-vW-gap;
-    const vH=aH*.62,vH2=aH-vH-gap;
-
-    // Escalas por vista
-    const scFront=Math.min(vW/(w||100),vH/(h||100))*.72;
-    const scSide=Math.min(vW2/(d||100),vH/(h||100))*.72;
-    const scTop=Math.min(vW/(w||100),vH2/(d||100))*.72;
-
-    // Posiciones de vistas
-    const fX=margin,fY=margin;
-    const sX=margin+vW+gap,sY=margin;
-    const tX=margin,tY=margin+vH+gap;
-
-    // Helper: dibuja rectángulo de objeto
-    const drawView=(x,y,vw,vh,sc,lbl,wx,hy,dx,s)=>{
+      ctx.fillStyle="#6677aa";ctx.font="11px 'Space Mono'";ctx.textAlign="center";
+      ctx.fillText("Asigna eje (Ancho/Alto/Prof.) a tus medidas",CW/2,CH/2-10);
+      ctx.fillStyle="#8899bb";ctx.font="8px 'Space Mono'";
+      ctx.fillText("Edita una anotación y selecciona su eje",CW/2,CH/2+8);return;}
+    const OBJ="#1a3a8a",DIM="#cc0000",TXT="#111133";
+    const mg=46,gap=12,tH=52;
+    const aW=CW-mg*2-gap,aH=CH-mg*2-tH-gap;
+    const vW=aW*.58,vW2=aW-vW-gap,vH=aH*.62,vH2=aH-vH-gap;
+    const drawV=(x,y,vw,vh,lbl,wx,hy,wu2,hu2)=>{
+      const sc=Math.min(vw/(wx||100),vh/(hy||100))*.72;
       const rW=(wx||100)*sc,rH=(hy||100)*sc;
       const rx=x+(vw-rW)/2,ry=y+(vh-rH)/2;
-      // Marco de vista
-      ctx.strokeStyle="#ccd0da";ctx.lineWidth=.5;ctx.setLineDash([]);
-      ctx.strokeRect(x,y,vw,vh);
-      // Relleno objeto
-      ctx.fillStyle="rgba(26,58,138,.06)";ctx.fillRect(rx,ry,rW,rH);
-      // Detalles por shape y vista
-      const sh=s||"box";
-      ctx.fillStyle="rgba(26,58,138,.08)";
-      if(lbl==="FRONTAL"&&sh==="table"){
-        const th=Math.max(rH*.1,4),lw=Math.max(rW*.08,3),leg=rH-th;
-        ctx.fillRect(rx,ry,rW,th);ctx.fillRect(rx,ry+th,lw,leg);ctx.fillRect(rx+rW-lw,ry+th,lw,leg);
-      }
-      if(lbl==="TOP"&&["table","chair"].includes(sh)){
-        const lw=Math.max(rW*.08,3),lh=Math.max(rH*.08,3);
-        ctx.fillRect(rx,ry,lw,lh);ctx.fillRect(rx+rW-lw,ry,lw,lh);
-        ctx.fillRect(rx,ry+rH-lh,lw,lh);ctx.fillRect(rx+rW-lw,ry+rH-lh,lw,lh);
-      }
-      if(lbl==="FRONTAL"&&["cylinder","bottle","vase","cup"].includes(sh)){
-        ctx.beginPath();ctx.ellipse(rx+rW/2,ry,rW/2,rH*.07,0,0,Math.PI*2);ctx.fill();
-        ctx.beginPath();ctx.ellipse(rx+rW/2,ry+rH,rW/2,rH*.07,0,0,Math.PI*2);ctx.fill();
-      }
-      if(lbl==="TOP"&&["cylinder","sphere","ball","bottle"].includes(sh)){
-        ctx.beginPath();ctx.ellipse(rx+rW/2,ry+rH/2,rW/2,rH/2,0,0,Math.PI*2);ctx.fill();
-      }
-      // Borde objeto
-      ctx.strokeStyle=OBJ_C;ctx.lineWidth=1.8;ctx.setLineDash([]);
-      if(lbl==="TOP"&&["cylinder","sphere","ball","bottle"].includes(sh)){
-        ctx.beginPath();ctx.ellipse(rx+rW/2,ry+rH/2,rW/2,rH/2,0,0,Math.PI*2);ctx.stroke();
-      }else ctx.strokeRect(rx,ry,rW,rH);
-      // Líneas internas (ocultas en guión)
-      ctx.strokeStyle=AUX_C;ctx.lineWidth=.6;ctx.setLineDash([4,3]);
-      if(lbl==="FRONTAL"&&sh==="table"){ctx.beginPath();ctx.moveTo(rx,ry+rH*.1);ctx.lineTo(rx+rW,ry+rH*.1);ctx.stroke();}
+      ctx.strokeStyle="#ccd0dc";ctx.lineWidth=.5;ctx.strokeRect(x,y,vw,vh);
+      ctx.fillStyle="rgba(26,58,138,.07)";ctx.fillRect(rx,ry,rW,rH);
+      // centerlines
+      ctx.strokeStyle="rgba(200,0,0,.2)";ctx.lineWidth=.5;ctx.setLineDash([5,3]);
+      ctx.beginPath();ctx.moveTo(rx+rW/2,ry-5);ctx.lineTo(rx+rW/2,ry+rH+5);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(rx-5,ry+rH/2);ctx.lineTo(rx+rW+5,ry+rH/2);ctx.stroke();
       ctx.setLineDash([]);
-      // Etiqueta de vista
-      ctx.fillStyle="#445";ctx.font="bold 7px 'Space Mono'";ctx.textAlign="left";
-      ctx.fillText("VISTA "+lbl,x+3,y+10);
-      // Cota horizontal
-      if(wx){
-        const dY=ry+rH+22;
-        ctx.strokeStyle=DIM_C;ctx.lineWidth=.8;ctx.setLineDash([]);
-        // Líneas de extensión
+      ctx.strokeStyle=OBJ;ctx.lineWidth=2;ctx.strokeRect(rx,ry,rW,rH);
+      ctx.fillStyle="#445566";ctx.font="bold 7px 'Space Mono'";ctx.textAlign="left";ctx.fillText("VISTA "+lbl,x+3,y+10);
+      // Dim H
+      if(wx){const dY=ry+rH+24;
+        ctx.strokeStyle=DIM;ctx.lineWidth=.8;
         ctx.beginPath();ctx.moveTo(rx,ry+rH+2);ctx.lineTo(rx,dY+2);ctx.stroke();
         ctx.beginPath();ctx.moveTo(rx+rW,ry+rH+2);ctx.lineTo(rx+rW,dY+2);ctx.stroke();
-        // Línea de cota
         ctx.beginPath();ctx.moveTo(rx,dY);ctx.lineTo(rx+rW,dY);ctx.stroke();
-        // Flechas
-        ctx.fillStyle=DIM_C;
+        ctx.fillStyle=DIM;
         ctx.beginPath();ctx.moveTo(rx,dY);ctx.lineTo(rx+7,dY-3);ctx.lineTo(rx+7,dY+3);ctx.closePath();ctx.fill();
         ctx.beginPath();ctx.moveTo(rx+rW,dY);ctx.lineTo(rx+rW-7,dY-3);ctx.lineTo(rx+rW-7,dY+3);ctx.closePath();ctx.fill();
-        ctx.fillStyle=TXT_C;ctx.font="8px 'Space Mono'";ctx.textAlign="center";
-        ctx.fillText(fmtV(toMM(wx,unit),"mm")==="—"?`${wx} ${unit}`:`${wx} ${unit}`,rx+rW/2,dY-4);
-      }
-      // Cota vertical
-      if(hy){
-        const dX=rx-22;
-        ctx.strokeStyle=DIM_C;ctx.lineWidth=.8;
+        ctx.fillStyle=TXT;ctx.font="8px 'Space Mono'";ctx.textAlign="center";
+        ctx.fillText(wu2?`${wu2.value} ${wu2.unit}`:`${wx} mm`,rx+rW/2,dY-5);}
+      // Dim V
+      if(hy){const dX=rx-26;
+        ctx.strokeStyle=DIM;ctx.lineWidth=.8;
         ctx.beginPath();ctx.moveTo(rx-2,ry);ctx.lineTo(dX-2,ry);ctx.stroke();
         ctx.beginPath();ctx.moveTo(rx-2,ry+rH);ctx.lineTo(dX-2,ry+rH);ctx.stroke();
         ctx.beginPath();ctx.moveTo(dX,ry);ctx.lineTo(dX,ry+rH);ctx.stroke();
-        ctx.fillStyle=DIM_C;
+        ctx.fillStyle=DIM;
         ctx.beginPath();ctx.moveTo(dX,ry);ctx.lineTo(dX-3,ry+7);ctx.lineTo(dX+3,ry+7);ctx.closePath();ctx.fill();
         ctx.beginPath();ctx.moveTo(dX,ry+rH);ctx.lineTo(dX-3,ry+rH-7);ctx.lineTo(dX+3,ry+rH-7);ctx.closePath();ctx.fill();
-        ctx.save();ctx.translate(dX-6,(ry+ry+rH)/2);ctx.rotate(-Math.PI/2);
-        ctx.fillStyle=TXT_C;ctx.font="8px 'Space Mono'";ctx.textAlign="center";
-        ctx.fillText(`${hy} ${unit}`,0,0);ctx.restore();
-      }
+        ctx.save();ctx.translate(dX-8,(ry*2+rH)/2);ctx.rotate(-Math.PI/2);
+        ctx.fillStyle=TXT;ctx.font="8px 'Space Mono'";ctx.textAlign="center";
+        ctx.fillText(hu2?`${hu2.value} ${hu2.unit}`:`${hy} mm`,0,0);ctx.restore();}
     };
-
-    drawView(fX,fY,vW,vH,scFront,"FRONTAL",w,h,null,shape);
-    drawView(sX,sY,vW2,vH,scSide,"LATERAL",d,h,null,shape);
-    drawView(tX,tY,vW,vH2,scTop,"TOP (PLANTA)",w,d,null,shape);
-
-    // Cuadro de título (esquina inf-derecha)
-    const tblX=sX,tblY=tY,tblW=vW2,tblH=vH2;
-    ctx.fillStyle="#e8ecf4";ctx.fillRect(tblX,tblY,tblW,tblH);
-    ctx.strokeStyle=OBJ_C;ctx.lineWidth=1;ctx.strokeRect(tblX,tblY,tblW,tblH);
-    // Líneas internas del cuadro
-    ctx.beginPath();ctx.moveTo(tblX,tblY+tblH*.4);ctx.lineTo(tblX+tblW,tblY+tblH*.4);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(tblX,tblY+tblH*.7);ctx.lineTo(tblX+tblW,tblY+tblH*.7);ctx.stroke();
-    ctx.fillStyle="#1a3a8a";ctx.font="bold 9px 'Space Mono'";ctx.textAlign="center";
-    ctx.fillText((objName||"OBJETO").toUpperCase().substring(0,16),tblX+tblW/2,tblY+14);
-    ctx.fillStyle="#333";ctx.font="7px 'Space Mono'";ctx.textAlign="left";
-    ctx.fillText(`UNIDAD: ${unit.toUpperCase()}`,tblX+4,tblY+tblH*.4+12);
-    ctx.fillText(`ESCALA: 1:1`,tblX+4,tblY+tblH*.4+24);
-    ctx.fillText(`FECHA: ${new Date().toLocaleDateString("es-ES")}`,tblX+4,tblY+tblH*.7+12);
-    ctx.fillText("MEDISCAN 3D",tblX+4,tblY+tblH*.7+24);
-    // Medidas extra no-principales
-    const extra=parts.filter(p=>!["width","height","depth"].includes(p.axis)&&meas[p.id]?.value);
-    let ey=tblY+tblH*.7+40;
-    extra.forEach(p=>{if(ey<tblY+tblH-4){ctx.fillText(`${p.name}: ${meas[p.id].value} ${unit}`,tblX+4,ey);ey+=12;}});
-  },[parts,meas,unit,shape,objName]);
-  return <canvas ref={ref} width={420} height={370} style={{width:"100%",display:"block"}}/>;
+    drawV(mg,mg,vW,vH,"FRONTAL",w,h,wu,hu);
+    drawV(mg+vW+gap,mg,vW2,vH,"LATERAL",d,h,du,hu);
+    drawV(mg,mg+vH+gap,vW,vH2,"PLANTA",w,d,wu,du);
+    // Title block
+    const tbX=mg+vW+gap,tbY=mg+vH+gap,tbW=vW2,tbH=vH2;
+    ctx.fillStyle="#e4e8f4";ctx.fillRect(tbX,tbY,tbW,tbH);
+    ctx.strokeStyle=OBJ;ctx.lineWidth=1.2;ctx.strokeRect(tbX,tbY,tbW,tbH);
+    ctx.beginPath();ctx.moveTo(tbX,tbY+tbH*.38);ctx.lineTo(tbX+tbW,tbY+tbH*.38);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(tbX,tbY+tbH*.68);ctx.lineTo(tbX+tbW,tbY+tbH*.68);ctx.stroke();
+    ctx.fillStyle=OBJ;ctx.font="bold 9px 'Space Mono'";ctx.textAlign="center";
+    ctx.fillText((objName||"OBJETO").toUpperCase().substring(0,18),tbX+tbW/2,tbY+14);
+    ctx.fillStyle="#334455";ctx.font="7px 'Space Mono'";ctx.textAlign="left";
+    ctx.fillText(`ESCALA 1:1`,tbX+4,tbY+tbH*.38+11);
+    ctx.fillText(`FECHA: ${new Date().toLocaleDateString("es-ES")}`,tbX+4,tbY+tbH*.68+11);
+    ctx.fillText("MEDISCAN 3D PRO",tbX+4,tbY+tbH*.68+22);
+    if(scale2D)ctx.fillText(`Cal: 1${scale2D.unit}=${scale2D.ppu.toFixed(0)}px`,tbX+4,tbY+tbH*.68+33);
+    const extras=anns.filter(a=>a.value!=null&&!["width","height","depth"].includes(a.axis)).slice(0,5);
+    let ey=tbY+tbH*.38+24;
+    extras.forEach(a=>{if(ey<tbY+tbH-4){ctx.fillText(`${a.title||a.type}: ${a.value}${a.unit}`,tbX+4,ey);ey+=11;}});
+  },[anns,objName,scale2D]);
+  return <canvas ref={ref} width={440} height={390} style={{width:"100%",display:"block",borderRadius:"0 0 10px 10px"}}/>;
 }
 
-/* ════════════════════════
-   VISOR 3D GENÉRICO
-════════════════════════ */
-function V3D({parts,meas,unit,shape}){
+/* ════════ VIEW 3D ════════ */
+function V3D({anns,shape}){
   const ref=useRef(null);
   useEffect(()=>{
     if(!ref.current)return;
     const E=ref.current,W=E.clientWidth,H=E.clientHeight;
-    const gd=ax=>{for(const p of parts){if(p.axis===ax){const mm=toMM(meas[p.id]?.value,unit);if(mm>0)return mm;}}return 100;};
+    const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?toMM(a.value,a.unit):100;};
     const rw=gd("width"),rh=gd("height"),rd=gd("depth");
     const mx=Math.max(rw,rh,rd,1),sc=2/mx;
     const sw=rw*sc,sh=rh*sc,sd=rd*sc;
-    const scene=new THREE.Scene();scene.background=new THREE.Color(0x1e2433);
+    const scene=new THREE.Scene();scene.background=new THREE.Color(0x0e1525);
     const cam=new THREE.PerspectiveCamera(40,W/H,.1,500);
-    cam.position.set(sw*2.2,sh*1.6,sd*2.5);cam.lookAt(0,0,0);
+    cam.position.set(sw*2.2,sh*1.7,sd*2.4);cam.lookAt(0,0,0);
     const rdr=new THREE.WebGLRenderer({antialias:true});
     rdr.setSize(W,H);rdr.setPixelRatio(Math.min(devicePixelRatio,2));
     rdr.shadowMap.enabled=true;rdr.shadowMap.type=THREE.PCFSoftShadowMap;
-    rdr.outputEncoding=THREE.sRGBEncoding;
-    rdr.toneMapping=THREE.ACESFilmicToneMapping;rdr.toneMappingExposure=1.1;
+    rdr.outputEncoding=THREE.sRGBEncoding;rdr.toneMapping=THREE.ACESFilmicToneMapping;rdr.toneMappingExposure=1.15;
     E.appendChild(rdr.domElement);
-    const fM=c=>new THREE.MeshStandardMaterial({color:c||0x334466,metalness:.4,roughness:.5,transparent:true,opacity:.82,side:THREE.DoubleSide});
-    const wM=()=>new THREE.LineBasicMaterial({color:0x00e5c4});
+    const fM=c=>new THREE.MeshStandardMaterial({color:c||0x1133aa,metalness:.42,roughness:.48,transparent:true,opacity:.85,side:THREE.DoubleSide});
+    const eM=()=>new THREE.LineBasicMaterial({color:0x00e5c4});
     const grp=new THREE.Group();scene.add(grp);
-    const bx=(bw,bh,bd,x=0,y=0,z=0,col)=>{
-      const g=new THREE.BoxGeometry(bw,bh,bd);
-      const m=new THREE.Mesh(g,fM(col));m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;grp.add(m);
-      const l=new THREE.LineSegments(new THREE.EdgesGeometry(g),wM());l.position.set(x,y,z);grp.add(l);
-    };
-    const cy=(r,ch)=>{const g=new THREE.CylinderGeometry(r,r,ch,32);const m=new THREE.Mesh(g,fM());m.castShadow=true;m.receiveShadow=true;grp.add(m);grp.add(new THREE.LineSegments(new THREE.EdgesGeometry(g),wM()));};
+    const bx=(bw,bh,bd,x=0,y=0,z=0,c)=>{const g=new THREE.BoxGeometry(bw,bh,bd);const m=new THREE.Mesh(g,fM(c));m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;grp.add(m);const l=new THREE.LineSegments(new THREE.EdgesGeometry(g),eM());l.position.set(x,y,z);grp.add(l);};
+    const cy=(r,ch)=>{const g=new THREE.CylinderGeometry(r,r,ch,32);const m=new THREE.Mesh(g,fM());m.castShadow=true;m.receiveShadow=true;grp.add(m);grp.add(new THREE.LineSegments(new THREE.EdgesGeometry(g),eM()));};
     const s=shape||"box";
-    if(s==="table"){const th=Math.max(sh*.08,.05),lw=Math.max(Math.min(sw,sd)*.06,.04),lh=sh-th;bx(sw,th,sd,0,sh/2-th/2,0,0x334466);[[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([a,b])=>bx(lw,lh,lw,a*(sw/2-lw/2)*.85,-sh/2+lh/2,b*(sd/2-lw/2)*.85,0x223355));}
-    else if(s==="chair"){const th=.05,lw=.05,sy2=sh*.45,bkh=sh-sy2;bx(sw,th,sd,0,-sh/2+sy2,0);bx(sw,bkh,th,0,-sh/2+sy2+bkh/2+th/2,-sd/2+th/2);[[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([a,b])=>bx(lw,sy2,lw,a*(sw/2-lw/2)*.8,-sh/2+sy2/2,b*(sd/2-lw/2)*.8));}
+    if(s==="table"){const th=Math.max(sh*.08,.05),lw=Math.max(Math.min(sw,sd)*.07,.04),lh=sh-th;bx(sw,th,sd,0,sh/2-th/2,0,0x1144cc);[[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([a,b])=>bx(lw,lh,lw,a*(sw/2-lw/2)*.85,-sh/2+lh/2,b*(sd/2-lw/2)*.85,0x0a2266));}
+    else if(s==="chair"){const th=.05,lw=.06,sy2=sh*.45,bkh=sh-sy2;bx(sw,th,sd,0,-sh/2+sy2,0);bx(sw,bkh,th,0,-sh/2+sy2+bkh/2+th/2,-sd/2+th/2);[[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([a,b])=>bx(lw,sy2,lw,a*(sw/2-lw/2)*.8,-sh/2+sy2/2,b*(sd/2-lw/2)*.8));}
     else if(["cylinder","bottle","vase","cup","glass"].includes(s))cy(Math.min(sw,sd)/2,sh);
     else if(["sphere","ball"].includes(s)){const r=Math.min(sw,sh,sd)/2;const m=new THREE.Mesh(new THREE.SphereGeometry(r,28,28),fM());m.castShadow=true;grp.add(m);}
-    else if(s==="cone"){const g=new THREE.ConeGeometry(Math.min(sw,sd)/2,sh,24);const m=new THREE.Mesh(g,fM());m.castShadow=true;grp.add(m);grp.add(new THREE.LineSegments(new THREE.EdgesGeometry(g),wM()));}
+    else if(s==="cone"){const g=new THREE.ConeGeometry(Math.min(sw,sd)/2,sh,24);const m=new THREE.Mesh(g,fM());m.castShadow=true;grp.add(m);grp.add(new THREE.LineSegments(new THREE.EdgesGeometry(g),eM()));}
     else bx(sw,sh,sd);
-    // Vértices
-    const dg=new THREE.SphereGeometry(.045,8,8),dm=new THREE.MeshBasicMaterial({color:0x00e5c4});
+    // Vertex dots
+    const dg=new THREE.SphereGeometry(.04,8,8),dm=new THREE.MeshBasicMaterial({color:0x00e5c4});
     [[-1,-1,-1],[1,-1,-1],[-1,1,-1],[1,1,-1],[-1,-1,1],[1,-1,1],[-1,1,1],[1,1,1]].forEach(([a,b,c])=>{const dot=new THREE.Mesh(dg,dm);dot.position.set(a*sw/2,b*sh/2,c*sd/2);grp.add(dot);});
-    // Suelo
-    const fl=new THREE.Mesh(new THREE.PlaneGeometry(10,10),new THREE.MeshStandardMaterial({color:0x151c28,roughness:.9,metalness:.0}));
+    // Axis helpers (RGB arrows)
+    const addAxis=(dir,col,len)=>{const g=new THREE.CylinderGeometry(.015,.015,len,8);const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:col}));
+      m.position.copy(dir.clone().multiplyScalar(len*.5+sw*.5));const up=new THREE.Vector3(0,1,0);const ax=new THREE.Vector3().crossVectors(up,dir).normalize();if(ax.length()>.01)m.setRotationFromAxisAngle(ax,Math.acos(up.dot(dir)));grp.add(m);};
+    addAxis(new THREE.Vector3(1,0,0),0xff4444,sw*.3+.2);
+    addAxis(new THREE.Vector3(0,1,0),0x44ff44,sh*.3+.2);
+    addAxis(new THREE.Vector3(0,0,1),0x4444ff,sd*.3+.2);
+    // Floor
+    const fl=new THREE.Mesh(new THREE.PlaneGeometry(12,12),new THREE.MeshStandardMaterial({color:0x0a1020,roughness:.9}));
     fl.rotation.x=-Math.PI/2;fl.position.y=-sh/2-.02;fl.receiveShadow=true;scene.add(fl);
-    scene.add(new THREE.GridHelper(10,12,0x1e2840,0x181f30));
-    // Luces estudio
-    scene.add(new THREE.AmbientLight(0x405060,.6));
-    const kl=new THREE.DirectionalLight(0xfff5ee,2.2);kl.position.set(6,12,5);kl.castShadow=true;kl.shadow.mapSize.set(1024,1024);kl.shadow.bias=-.001;scene.add(kl);
-    scene.add(Object.assign(new THREE.DirectionalLight(0x8090c0,.6),{position:new THREE.Vector3(-6,3,-8)}));
-    scene.add(Object.assign(new THREE.DirectionalLight(0xffeedd,.3),{position:new THREE.Vector3(2,-4,5)}));
-    // Drag rotation
+    scene.add(new THREE.GridHelper(12,12,0x1a2540,0x121c30));
+    // Lights
+    scene.add(new THREE.AmbientLight(0x3344668,.7));
+    const kl=new THREE.DirectionalLight(0xfff5ee,2.4);kl.position.set(8,14,6);kl.castShadow=true;kl.shadow.mapSize.set(1024,1024);kl.shadow.bias=-.001;scene.add(kl);
+    scene.add(Object.assign(new THREE.DirectionalLight(0x5588cc,.6),{position:new THREE.Vector3(-6,4,-9)}));
+    scene.add(Object.assign(new THREE.DirectionalLight(0xffeedd,.3),{position:new THREE.Vector3(2,-5,5)}));
     let drag=false,lx=0,ly=0,ry=.5,rx=.18;
     const px=e=>e.clientX??e.touches?.[0]?.clientX??0,py=e=>e.clientY??e.touches?.[0]?.clientY??0;
     const dn=e=>{drag=true;lx=px(e);ly=py(e);rdr.domElement.style.cursor="grabbing";};
     const mv=e=>{if(!drag)return;ry+=(px(e)-lx)*.012;rx+=(py(e)-ly)*.012;lx=px(e);ly=py(e);};
     const up=()=>{drag=false;rdr.domElement.style.cursor="grab";};
     rdr.domElement.addEventListener("mousedown",dn);rdr.domElement.addEventListener("touchstart",dn,{passive:true});
-    window.addEventListener("mousemove",mv);window.addEventListener("touchmove",mv,{passive:true});
-    window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
+    window.addEventListener("mousemove",mv);window.addEventListener("touchmove",mv,{passive:true});window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
     let id;const anim=()=>{id=requestAnimationFrame(anim);if(!drag)ry+=.006;grp.rotation.set(rx,ry,0);rdr.render(scene,cam);};anim();
     return()=>{cancelAnimationFrame(id);window.removeEventListener("mousemove",mv);window.removeEventListener("touchmove",mv);window.removeEventListener("mouseup",up);window.removeEventListener("touchend",up);rdr.dispose();if(E.contains(rdr.domElement))E.removeChild(rdr.domElement);};
-  },[parts,meas,unit,shape]);
-  return <div ref={ref} style={{width:"100%",height:"240px",cursor:"grab"}}/>;
+  },[anns,shape]);
+  return <div ref={ref} style={{width:"100%",height:"250px",cursor:"grab",borderRadius:"0 0 10px 10px"}}/>;
 }
 
-/* ════════════════════════
-   VISOR 3D PIPING (3ds Max)
-════════════════════════ */
+/* ════════ PIPING 3D ════════ */
 function V3DPipe({components,dn}){
   const ref=useRef(null);
   useEffect(()=>{
     if(!ref.current)return;
     const E=ref.current,W=E.clientWidth,H=E.clientHeight;
-    const S=0.001;
-    const scene=new THREE.Scene();scene.background=new THREE.Color(0x222230);scene.fog=new THREE.Fog(0x222230,14,28);
+    const S=.001,scene=new THREE.Scene();scene.background=new THREE.Color(0x0c1020);
     const cam=new THREE.PerspectiveCamera(40,W/H,.05,50);cam.position.set(3,2.5,4);cam.lookAt(0,.5,0);
-    const rdr=new THREE.WebGLRenderer({antialias:true});
-    rdr.setSize(W,H);rdr.setPixelRatio(Math.min(devicePixelRatio,2));
-    rdr.shadowMap.enabled=true;rdr.shadowMap.type=THREE.PCFSoftShadowMap;
-    rdr.outputEncoding=THREE.sRGBEncoding;rdr.toneMapping=THREE.ACESFilmicToneMapping;rdr.toneMappingExposure=1.15;
-    E.appendChild(rdr.domElement);
-    const mPipe=new THREE.MeshStandardMaterial({color:0x5577aa,metalness:.92,roughness:.15});
-    const mInner=new THREE.MeshStandardMaterial({color:0x0a0a14,side:THREE.BackSide});
-    const mFlange=new THREE.MeshStandardMaterial({color:0x8899cc,metalness:.96,roughness:.06});
-    const mValve=new THREE.MeshStandardMaterial({color:0x334455,metalness:.82,roughness:.22});
-    const mHandle=new THREE.MeshStandardMaterial({color:0xdd1111,metalness:.35,roughness:.5});
-    const mEquip=new THREE.MeshStandardMaterial({color:0x2d3d50,metalness:.65,roughness:.4});
-    // Luces 3ds Max
-    scene.add(new THREE.AmbientLight(0x303545,.7));
+    const rdr=new THREE.WebGLRenderer({antialias:true});rdr.setSize(W,H);rdr.setPixelRatio(Math.min(devicePixelRatio,2));
+    rdr.shadowMap.enabled=true;rdr.outputEncoding=THREE.sRGBEncoding;rdr.toneMapping=THREE.ACESFilmicToneMapping;rdr.toneMappingExposure=1.15;E.appendChild(rdr.domElement);
+    const mP=new THREE.MeshStandardMaterial({color:0x4477bb,metalness:.92,roughness:.15});
+    const mI=new THREE.MeshStandardMaterial({color:0x050a10,side:THREE.BackSide});
+    const mF=new THREE.MeshStandardMaterial({color:0x7799cc,metalness:.96,roughness:.06});
+    const mV=new THREE.MeshStandardMaterial({color:0x223344,metalness:.82,roughness:.22});
+    const mH=new THREE.MeshStandardMaterial({color:0xff2200,metalness:.35,roughness:.5});
+    scene.add(new THREE.AmbientLight(0x304050,.8));
     const kl=new THREE.DirectionalLight(0xfff8f0,2.4);kl.position.set(8,14,6);kl.castShadow=true;kl.shadow.mapSize.set(2048,2048);kl.shadow.bias=-.001;scene.add(kl);
-    scene.add(Object.assign(new THREE.DirectionalLight(0x7090c0,.7),{position:new THREE.Vector3(-8,4,-10)}));
-    scene.add(Object.assign(new THREE.DirectionalLight(0xffeedd,.35),{position:new THREE.Vector3(3,-5,6)}));
-    scene.add(new THREE.HemisphereLight(0x334466,0x222211,.5));
-    // Suelo
-    const fl=new THREE.Mesh(new THREE.PlaneGeometry(20,20),new THREE.MeshStandardMaterial({color:0x181822,roughness:.95}));
+    scene.add(Object.assign(new THREE.DirectionalLight(0x6088bb,.7),{position:new THREE.Vector3(-8,4,-10)}));
+    scene.add(new THREE.HemisphereLight(0x3355aa,0x221a11,.5));
+    const fl=new THREE.Mesh(new THREE.PlaneGeometry(20,20),new THREE.MeshStandardMaterial({color:0x0a0e18,roughness:.95}));
     fl.rotation.x=-Math.PI/2;fl.position.y=-.05;fl.receiveShadow=true;scene.add(fl);
-    scene.add(new THREE.GridHelper(20,20,0x2a2a40,0x222235));
-    // Helper: tubo
-    const orient=(m,s,e)=>{const d=new THREE.Vector3().subVectors(e,s).normalize(),up=new THREE.Vector3(0,1,0);if(Math.abs(d.dot(up))>.999){m.rotation.z=d.y>0?0:Math.PI;}else{const ax=new THREE.Vector3().crossVectors(up,d).normalize();m.setRotationFromAxisAngle(ax,Math.acos(clamp(up.dot(d),-1,1)));}};
-    const addTube=(s,e,r)=>{const d=new THREE.Vector3().subVectors(e,s),len=d.length();if(len<.001)return;const mid=new THREE.Vector3().addVectors(s,e).multiplyScalar(.5);
-      const gp=new THREE.CylinderGeometry(r,r,len,20,1);const mp=new THREE.Mesh(gp,mPipe);mp.position.copy(mid);orient(mp,s,e);mp.castShadow=true;mp.receiveShadow=true;scene.add(mp);
-      const gi=new THREE.CylinderGeometry(r*.76,r*.76,len+.002,18,1);const mi=new THREE.Mesh(gi,mInner);mi.position.copy(mid);orient(mi,s,e);scene.add(mi);
-    };
-    const addFlange=(pos,dir,r)=>{const gf=new THREE.CylinderGeometry(r*1.7,r*1.7,r*.2,16);const mf=new THREE.Mesh(gf,mFlange);mf.position.copy(pos);const fake=pos.clone().sub(dir.clone().multiplyScalar(.1));orient(mf,fake,pos.clone().add(dir.clone().multiplyScalar(.1)));mf.castShadow=true;scene.add(mf);};
-    const addValve=(pos,dir,r,vt)=>{const vl=r*5;const vb=new THREE.Mesh(new THREE.CylinderGeometry(r*1.3,r*1.3,vl,14),mValve);vb.position.copy(pos.clone().addScaledVector(dir,vl/2));const f=pos.clone().sub(dir.clone().multiplyScalar(.1));orient(vb,f,pos.clone().add(dir.clone().multiplyScalar(vl)));vb.castShadow=true;scene.add(vb);
-      addFlange(pos,dir,r);addFlange(pos.clone().addScaledVector(dir,vl),dir,r);
-      const perp=new THREE.Vector3(0,1,0);if(Math.abs(dir.dot(perp))>.9)perp.set(0,0,1);
-      const sPos=pos.clone().addScaledVector(dir,vl*.5).addScaledVector(perp,r*1.8);
-      if(vt==="ball"||vt==="ball_valve"){const sp=new THREE.Mesh(new THREE.SphereGeometry(r*.9,12,12),mValve);sp.position.copy(pos.clone().addScaledVector(dir,vl*.5));sp.castShadow=true;scene.add(sp);}
-      const gh=new THREE.TorusGeometry(r*1.1,r*.12,8,16);const mh=new THREE.Mesh(gh,mHandle);mh.position.copy(sPos);scene.add(mh);
-      const gs=new THREE.CylinderGeometry(r*.15,r*.15,r*2.8,8);const ms=new THREE.Mesh(gs,mHandle);ms.position.copy(pos.clone().addScaledVector(dir,vl*.5).addScaledVector(perp,r*.9));scene.add(ms);
-    };
-    const addEquip=(pos,dir,r,len)=>{const g=new THREE.BoxGeometry(len,r*3.5,r*3.5);const m=new THREE.Mesh(g,mEquip);m.position.copy(pos.clone().addScaledVector(dir,len/2));const ax=new THREE.Vector3().crossVectors(new THREE.Vector3(1,0,0),dir).normalize();if(ax.length()>.01)m.setRotationFromAxisAngle(ax,Math.acos(clamp(new THREE.Vector3(1,0,0).dot(dir),-1,1)));m.castShadow=true;scene.add(m);};
-    // Build pipe route
-    const dm={H:[1,0,0],V:[0,1,0],Z:[0,0,1],"-H":[-1,0,0],"-V":[0,-1,0],"-Z":[0,0,-1],X:[1,0,0],Y:[0,1,0]};
-    const comps=components&&components.length>0?components:[
-      {type:"flange",dn:dn||100},{type:"pipe",dn:dn||100,length:2000,orientation:"H"},
-      {type:"elbow",dn:dn||100,to_orientation:"V"},{type:"pipe",dn:dn||100,length:1500},
-      {type:"valve",dn:dn||100,valve_type:"gate"},{type:"pipe",dn:dn||100,length:800},
-      {type:"flange",dn:dn||100},{type:"elbow",dn:dn||100,to_orientation:"-H"},
-      {type:"pipe",dn:dn||100,length:1800,orientation:"-H"},{type:"flange",dn:dn||100},
-    ];
-    let pos=new THREE.Vector3(0,0,0),dir=new THREE.Vector3(1,0,0);
-    const waypts=[pos.clone()];const fittings=[];
-    for(const c of comps){
-      if(c.orientation&&dm[c.orientation])dir=new THREE.Vector3(...dm[c.orientation]);
-      const r=Math.max((c.dn||dn||100)*S*.5,.02);
-      if(["pipe","tube","spool"].includes(c.type)){const len=(c.length||1000)*S;const end=pos.clone().addScaledVector(dir,len);waypts.push(end.clone());pos=end;}
-      else if(["elbow","bend"].includes(c.type)){let nd;if(c.to_orientation&&dm[c.to_orientation])nd=new THREE.Vector3(...dm[c.to_orientation]);else{const up=new THREE.Vector3(0,1,0);nd=Math.abs(dir.dot(up))>.8?new THREE.Vector3(1,0,0):up;}const br=r*3;pos=pos.clone().addScaledVector(dir,br);waypts.push(pos.clone());const mid=pos.clone().addScaledVector(dir.clone().add(nd).normalize(),br);waypts.push(mid.clone());pos=pos.clone().addScaledVector(nd,br);waypts.push(pos.clone());dir=nd.clone();}
-      else if(["valve","gate_valve","ball_valve","check_valve","butterfly_valve","globe_valve"].includes(c.type)){fittings.push({type:"valve",pos:pos.clone(),dir:dir.clone(),r,vt:c.valve_type||c.type});const vl=r*5;pos=pos.clone().addScaledVector(dir,vl);waypts.push(pos.clone());}
-      else if(c.type==="flange"){fittings.push({type:"flange",pos:pos.clone(),dir:dir.clone(),r});pos=pos.clone().addScaledVector(dir,r*.4);waypts.push(pos.clone());}
-      else if(["pump","compressor","vessel","exchanger","equipment"].includes(c.type)){const el=(c.length||2000)*S;fittings.push({type:"equip",pos:pos.clone(),dir:dir.clone(),r,len:el});pos=pos.clone().addScaledVector(dir,el);waypts.push(pos.clone());}
+    scene.add(new THREE.GridHelper(20,20,0x1a2035,0x141828));
+    const or=(m,s,e)=>{const d=new THREE.Vector3().subVectors(e,s).normalize(),u=new THREE.Vector3(0,1,0);if(Math.abs(d.dot(u))>.999){m.rotation.z=d.y>0?0:Math.PI;}else{const ax=new THREE.Vector3().crossVectors(u,d).normalize();m.setRotationFromAxisAngle(ax,Math.acos(clamp(u.dot(d),-1,1)));}};
+    const addT=(s,e,r)=>{const d=new THREE.Vector3().subVectors(e,s),len=d.length();if(len<.001)return;const mid=new THREE.Vector3().addVectors(s,e).multiplyScalar(.5);const g=new THREE.CylinderGeometry(r,r,len,20);const m=new THREE.Mesh(g,mP);m.position.copy(mid);or(m,s,e);m.castShadow=true;scene.add(m);const gi=new THREE.CylinderGeometry(r*.76,r*.76,len+.002,18);const mi=new THREE.Mesh(gi,mI);mi.position.copy(mid);or(mi,s,e);scene.add(mi);};
+    const addF=(pos,dir,r)=>{const g=new THREE.CylinderGeometry(r*1.7,r*1.7,r*.22,16);const m=new THREE.Mesh(g,mF);m.position.copy(pos);const f=pos.clone().sub(dir.clone().multiplyScalar(.1));or(m,f,pos.clone().add(dir.clone().multiplyScalar(.1)));m.castShadow=true;scene.add(m);};
+    const addV=(pos,dir,r,vt)=>{const vl=r*5;const vb=new THREE.Mesh(new THREE.CylinderGeometry(r*1.3,r*1.3,vl,14),mV);vb.position.copy(pos.clone().addScaledVector(dir,vl/2));const f=pos.clone().sub(dir.clone().multiplyScalar(.1));or(vb,f,pos.clone().add(dir.clone().multiplyScalar(vl)));vb.castShadow=true;scene.add(vb);addF(pos,dir,r);addF(pos.clone().addScaledVector(dir,vl),dir,r);const perp=new THREE.Vector3(0,1,0);if(Math.abs(dir.dot(perp))>.9)perp.set(0,0,1);const sPos=pos.clone().addScaledVector(dir,vl*.5).addScaledVector(perp,r*1.8);if(vt==="ball"||vt==="ball_valve"){const sp=new THREE.Mesh(new THREE.SphereGeometry(r*.9,12,12),mV);sp.position.copy(pos.clone().addScaledVector(dir,vl*.5));sp.castShadow=true;scene.add(sp);}const mhw=new THREE.Mesh(new THREE.TorusGeometry(r*1.1,r*.12,8,16),mH);mhw.position.copy(sPos);scene.add(mhw);};
+    const dm2={H:[1,0,0],V:[0,1,0],Z:[0,0,1],"-H":[-1,0,0],"-V":[0,-1,0],"-Z":[0,0,-1],X:[1,0,0],Y:[0,1,0]};
+    const comps=components&&components.length>0?components:[{type:"flange",dn:dn||100},{type:"pipe",dn:dn||100,length:2000,orientation:"H"},{type:"elbow",dn:dn||100,to_orientation:"V"},{type:"pipe",dn:dn||100,length:1500},{type:"valve",dn:dn||100,valve_type:"gate"},{type:"pipe",dn:dn||100,length:800},{type:"flange",dn:dn||100},{type:"elbow",dn:dn||100,to_orientation:"-H"},{type:"pipe",dn:dn||100,length:1800,orientation:"-H"},{type:"flange",dn:dn||100}];
+    let pos=new THREE.Vector3(0,0,0),dir=new THREE.Vector3(1,0,0);const wp=[pos.clone()];const fits=[];
+    for(const c of comps){if(c.orientation&&dm2[c.orientation])dir=new THREE.Vector3(...dm2[c.orientation]);const r=Math.max((c.dn||dn||100)*S*.5,.02);
+      if(["pipe","tube","spool"].includes(c.type)){const len=(c.length||1000)*S;const end=pos.clone().addScaledVector(dir,len);wp.push(end.clone());pos=end;}
+      else if(["elbow","bend"].includes(c.type)){let nd;if(c.to_orientation&&dm2[c.to_orientation])nd=new THREE.Vector3(...dm2[c.to_orientation]);else{const u=new THREE.Vector3(0,1,0);nd=Math.abs(dir.dot(u))>.8?new THREE.Vector3(1,0,0):u;}const br=r*3;pos=pos.clone().addScaledVector(dir,br);wp.push(pos.clone());const mid=pos.clone().addScaledVector(dir.clone().add(nd).normalize(),br);wp.push(mid.clone());pos=pos.clone().addScaledVector(nd,br);wp.push(pos.clone());dir=nd.clone();}
+      else if(["valve","gate_valve","ball_valve","check_valve","butterfly_valve","globe_valve"].includes(c.type)){fits.push({t:"v",pos:pos.clone(),dir:dir.clone(),r,vt:c.valve_type||c.type});const vl=r*5;pos=pos.clone().addScaledVector(dir,vl);wp.push(pos.clone());}
+      else if(c.type==="flange"){fits.push({t:"f",pos:pos.clone(),dir:dir.clone(),r});pos=pos.clone().addScaledVector(dir,r*.4);wp.push(pos.clone());}
     }
-    // Pipe via CatmullRom
-    const dedup=waypts.filter((p,i)=>i===0||p.distanceTo(waypts[i-1])>.005);
-    if(dedup.length>1){
-      const baseDN=(comps.find(c=>c.dn)||{dn:dn||100}).dn;const baseR=baseDN*S*.5;
-      const curve=new THREE.CatmullRomCurve3(dedup,false,"catmullrom",.4);
-      const pts=curve.getPoints(Math.max(dedup.length*8,60));
-      for(let i=0;i<pts.length-1;i++)addTube(pts[i],pts[i+1],baseR);
-    }
-    fittings.forEach(f=>{
-      if(f.type==="flange")addFlange(f.pos,f.dir,f.r);
-      else if(f.type==="valve")addValve(f.pos,f.dir,f.r,f.vt);
-      else if(f.type==="equip")addEquip(f.pos,f.dir,f.r,f.len);
-    });
-    // Auto-center
-    const box=new THREE.Box3();scene.traverse(o=>{if(o.isMesh)box.expandByObject(o);});
-    const center=box.getCenter(new THREE.Vector3());const size=box.getSize(new THREE.Vector3()).length();
-    scene.traverse(o=>{if(o.isMesh||o.isLineSegments||o.isGridHelper)o.position.sub(center);});
-    cam.position.set(size*.7,size*.55,size*.85);cam.lookAt(0,0,0);
-    // Drag rotation
-    const grp=new THREE.Group();const objs=[...scene.children.filter(o=>o.isMesh||o.isLineSegments)];
-    objs.forEach(o=>{scene.remove(o);grp.add(o);});scene.add(grp);
-    let drag=false,lx=0,ly=0,ry=0,rx=.15;
-    const px=e=>e.clientX??e.touches?.[0]?.clientX??0,py=e=>e.clientY??e.touches?.[0]?.clientY??0;
+    const dd=wp.filter((p,i)=>i===0||p.distanceTo(wp[i-1])>.005);
+    if(dd.length>1){const baseDN=(comps.find(c=>c.dn)||{dn:dn||100}).dn;const baseR=baseDN*S*.5;const curve=new THREE.CatmullRomCurve3(dd,false,"catmullrom",.4);const pts=curve.getPoints(Math.max(dd.length*8,60));for(let i=0;i<pts.length-1;i++)addT(pts[i],pts[i+1],baseR);}
+    fits.forEach(f=>{if(f.t==="f")addF(f.pos,f.dir,f.r);else if(f.t==="v")addV(f.pos,f.dir,f.r,f.vt);});
+    const box=new THREE.Box3();scene.traverse(o=>{if(o.isMesh)box.expandByObject(o);});const center=box.getCenter(new THREE.Vector3());const size2=box.getSize(new THREE.Vector3()).length();
+    scene.traverse(o=>{if(o.isMesh)o.position.sub(center);});cam.position.set(size2*.7,size2*.55,size2*.85);cam.lookAt(0,0,0);
+    const ggrp=new THREE.Group();const objs=[...scene.children.filter(o=>o.isMesh)];objs.forEach(o=>{scene.remove(o);ggrp.add(o);});scene.add(ggrp);
+    let drag=false,lx=0,ly=0,ry=0,rx=.15;const px=e=>e.clientX??e.touches?.[0]?.clientX??0,py=e=>e.clientY??e.touches?.[0]?.clientY??0;
     const dn2=e=>{drag=true;lx=px(e);ly=py(e);};const mv=e=>{if(!drag)return;ry+=(px(e)-lx)*.009;rx+=(py(e)-ly)*.009;lx=px(e);ly=py(e);};const up=()=>drag=false;
-    rdr.domElement.addEventListener("mousedown",dn2);rdr.domElement.addEventListener("touchstart",dn2,{passive:true});
-    window.addEventListener("mousemove",mv);window.addEventListener("touchmove",mv,{passive:true});window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
-    let id;const anim=()=>{id=requestAnimationFrame(anim);if(!drag)ry+=.005;grp.rotation.set(rx,ry,0);rdr.render(scene,cam);};anim();
+    rdr.domElement.addEventListener("mousedown",dn2);rdr.domElement.addEventListener("touchstart",dn2,{passive:true});window.addEventListener("mousemove",mv);window.addEventListener("touchmove",mv,{passive:true});window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
+    let id;const anim=()=>{id=requestAnimationFrame(anim);if(!drag)ry+=.005;ggrp.rotation.set(rx,ry,0);rdr.render(scene,cam);};anim();
     return()=>{cancelAnimationFrame(id);window.removeEventListener("mousemove",mv);window.removeEventListener("touchmove",mv);window.removeEventListener("mouseup",up);window.removeEventListener("touchend",up);rdr.dispose();if(E.contains(rdr.domElement))E.removeChild(rdr.domElement);};
   },[components,dn]);
-  return <div ref={ref} style={{width:"100%",height:"270px",cursor:"grab"}}/>;
+  return <div ref={ref} style={{width:"100%",height:"270px",cursor:"grab",borderRadius:"0 0 10px 10px"}}/>;
 }
 
-/* ════════════════════════
-   APP PRINCIPAL
-════════════════════════ */
+/* ════════ APP ════════ */
 function App(){
   const containerRef=useRef(null);const captureRef=useRef(null);
   const videoRef=useRef(null);const canvasRef=useRef(null);const streamRef=useRef(null);
   const uploadRef=useRef(null);const camInRef=useRef(null);
+
   const [scr,setScr]=useState(()=>getKey()?"home":"setup");
   const [keyIn,setKeyIn]=useState(getKey());
   const [camMode,setCamMode]=useState("off");
-  const [image,setImage]=useState(null);
+  const [image,setImage]=useState(null);   // working image (may be cropped)
+  const [origImage,setOrigImage]=useState(null); // original full image
   const [rotation,setRotation]=useState(0);
   const [objInfo,setObjInfo]=useState(null);
   const [piping,setPiping]=useState(null);
   const [err,setErr]=useState(null);
-  const [parts,setParts]=useState([]); // [{id,name,axis,markerX,markerY,color,custom}]
-  const [meas,setMeas]=useState({});  // {id:{value,unit}}
-  const [unit,setUnit]=useState("cm");
-  const [selPart,setSelPart]=useState(null);
-  const [viewTab,setViewTab]=useState("2d");
+  const [aiMsg,setAiMsg]=useState("");const [aiLoad,setAiLoad]=useState(false);
   const [projects,setProjects]=useState(()=>JSON.parse(localStorage.getItem("ms3_pj")||"[]"));
   const [projName,setProjName]=useState("Proyecto");
-  const imgRef=useRef(null);
+  const [projTitle,setProjTitle]=useState("");
+  // Annotations
+  const [anns,setAnns]=useState([]);
+  const [hist,setHist]=useState([]);
+  const [tool,setTool]=useState("sel");
+  const [pending,setPending]=useState([]);
+  const [measuring,setMeasuring]=useState(null);
+  const [selId,setSelId]=useState(null);
+  const [colorIdx,setColorIdx]=useState(0);
+  const [scale,setScale]=useState(null);
+  const [calibAnn,setCalibAnn]=useState(null);
+  const [mIn,setMIn]=useState({title:"",value:"",unit:"cm",axis:""});
+  const [viewTab,setViewTab]=useState("ann");
+  const [toolCat,setToolCat]=useState("mrk");
+  const [showSum,setShowSum]=useState(true);
+  // Crop
+  const [cropPend,setCropPend]=useState([]);
+  const [cropDlg,setCropDlg]=useState(null); // {p1,p2}
+  // Sync
+  const [syncMsg,setSyncMsg]=useState("");
 
-  const ACC="#00e5c4",BDR="#0b2535";
-  const card={background:"rgba(0,16,28,.78)",border:`1px solid ${BDR}`,borderRadius:"11px",overflow:"hidden"};
-  const lbl=t=><div style={{padding:"6px 11px",fontSize:"8px",letterSpacing:".18em",color:ACC,textTransform:"uppercase",borderBottom:`1px solid ${BDR}`,background:"rgba(0,229,196,.03)"}}>{t}</div>;
-  const tabS=a=>({flex:1,padding:"7px 4px",borderRadius:"6px",background:a?ACC:"transparent",color:a?"#05101a":"#3a6878",border:`1px solid ${a?ACC:BDR}`,fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",fontWeight:a?700:400});
-  const uBtn=a=>({padding:"5px 8px",background:a?"rgba(0,229,196,.15)":"transparent",color:a?ACC:"#3a6878",border:`1px solid ${a?ACC:BDR}`,borderRadius:"5px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer",fontWeight:a?700:400});
+  // Computed
+  const hasDims=useMemo(()=>anns.some(a=>["width","height","depth"].includes(a.axis)&&a.value!=null),[anns]);
+  const selAnn=useMemo(()=>anns.find(a=>a.id===selId),[anns,selId]);
+  const toolsByCategory=useMemo(()=>{const cats={};TOOLS.forEach(t=>{if(!cats[t.cat])cats[t.cat]=[];cats[t.cat].push(t);});return cats;},[]);
 
-  const hasDims=useMemo(()=>parts.some(p=>["width","height","depth"].includes(p.axis)&&parseFloat(meas[p.id]?.value)>0),[parts,meas]);
+  // Undo
+  const pushH=()=>setHist(h=>[...h.slice(-25),[...anns]]);
+  const undo=()=>{if(!hist.length)return;setAnns(hist[hist.length-1]);setHist(h=>h.slice(0,-1));setSelId(null);};
+  const addAnn=a=>{setHist(h=>[...h.slice(-25),[...anns]]);setAnns(p=>[...p,a]);};
+  const updAnn=(id,ch)=>{setHist(h=>[...h.slice(-25),[...anns]]);setAnns(p=>p.map(a=>a.id===id?{...a,...ch}:a));};
+  const delAnn=id=>{setHist(h=>[...h.slice(-25),[...anns]]);setAnns(p=>p.filter(a=>a.id!==id));if(selId===id)setSelId(null);};
 
   // Camera
   const stopCam=()=>{streamRef.current?.getTracks().forEach(t=>t.stop());setCamMode("off");};
-  const startLive=async()=>{setCamMode("starting");try{const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280}}});streamRef.current=s;setTimeout(()=>{if(videoRef.current)videoRef.current.srcObject=s;},60);setCamMode("live");}catch{setCamMode("off");alert("Usa TOMAR FOTO o galería.");};};
+  const startLive=async()=>{setCamMode("starting");try{const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280}}});streamRef.current=s;setTimeout(()=>{if(videoRef.current)videoRef.current.srcObject=s;},60);setCamMode("live");}catch{setCamMode("off");alert("Usa TOMAR FOTO o galería.");}};
   const capLive=()=>{const v=videoRef.current,c=canvasRef.current;if(!v||!c)return;c.width=v.videoWidth||640;c.height=v.videoHeight||480;c.getContext("2d").drawImage(v,0,0);go(c.toDataURL("image/jpeg",.87));};
   const handleFile=e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>go(ev.target.result);r.readAsDataURL(f);e.target.value="";};
-  const go=img=>{setImage(img);setScr("loading");stopCam();setParts([]);setMeas({});setSelPart(null);setErr(null);setPiping(null);identify(img);};
+
+  const go=img=>{setImage(img);setOrigImage(img);setScr("loading");stopCam();setAnns([]);setHist([]);setSelId(null);setPending([]);setTool("sel");setErr(null);setPiping(null);setAiMsg("");setScale(null);setCropPend([]);identify(img);};
+
+  // Crop image
+  const applyCrop=(img,p1,p2)=>{
+    const im=new Image();im.onload=()=>{
+      const c=document.createElement("canvas");
+      const x1=Math.min(p1.x,p2.x),y1=Math.min(p1.y,p2.y);
+      const x2=Math.max(p1.x,p2.x),y2=Math.max(p1.y,p2.y);
+      c.width=Math.round(im.width*(x2-x1));c.height=Math.round(im.height*(y2-y1));
+      c.getContext("2d").drawImage(im,im.width*x1,im.height*y1,c.width,c.height,0,0,c.width,c.height);
+      setImage(c.toDataURL("image/jpeg",.9));setAnns([]);setHist([]);setSelId(null);setScale(null);setCropDlg(null);setCropPend([]);setTool("sel");
+    };im.src=img;
+  };
 
   // AI
   const identify=async(img)=>{
     const b64=img.split(",")[1];
-    const prompt=`Analyze this image.
-
-IF this is a piping diagram, P&ID, isometric piping or caldery technical drawing:
-Return ONLY: {"type":"piping","name":"System name in Spanish","dn":100,"material":"carbon_steel","components":[{"id":"1","type":"pipe|elbow|valve|flange|tee|pump|reducer|vessel","dn":100,"length":2000,"orientation":"H|V|Z|-H|-V","angle":90,"valve_type":"gate|ball|check|butterfly","to_orientation":"V","material":"carbon_steel"}],"notes":"any notes"}
-
-OTHERWISE for a regular object:
-Return ONLY: {"type":"object","name":"name in Spanish","category":"category in Spanish","shape":"box|table|chair|cylinder|sphere|bottle|cone|door|default","desc":"short description","parts":[{"id":"width","name":"Ancho total","axis":"width","markerX":0.5,"markerY":0.3},{"id":"height","name":"Alto total","axis":"height","markerX":0.85,"markerY":0.5},{"id":"depth","name":"Profundidad","axis":"depth","markerX":0.6,"markerY":0.75}]}
-
-Include 3-6 relevant measurable parts for the object. markerX/markerY = position on image (0-1). Return ONLY valid JSON.`;
+    const pr=`Analyze this image carefully.
+IF it is a piping/caldery/P&ID technical drawing: return {"type":"piping","name":"System name","dn":100,"material":"carbon_steel","components":[{"id":"1","type":"pipe","dn":100,"length":2000,"orientation":"H"},{"type":"elbow","dn":100,"to_orientation":"V"},{"type":"valve","dn":100,"valve_type":"gate"}]}
+OTHERWISE return {"type":"object","name":"name in Spanish","category":"category in Spanish","shape":"box|table|chair|cylinder|sphere|bottle|cone|door|default","desc":"short description in Spanish","suggested_measurements":[{"axis":"width","label":"Ancho total"},{"axis":"height","label":"Alto total"},{"axis":"depth","label":"Profundidad"}]}
+Return ONLY valid JSON.`;
     try{
-      const res=await fetch(GAPI,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${getKey()}`},body:JSON.stringify({model:GMOD,max_tokens:800,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:prompt}]}]})});
+      const res=await fetch(GAPI,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${getKey()}`},body:JSON.stringify({model:GMOD,max_tokens:700,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:pr}]}]})});
       const data=await res.json();if(data.error)throw new Error(data.error.message);
       const txt=data.choices?.[0]?.message?.content||"{}";
       const info=JSON.parse(txt.replace(/```json|```/g,"").trim());
       if(info.type==="piping"){
-        setPiping({components:info.components||[],dn:info.dn||100,label:`${info.name} · DN${info.dn||100} · ${info.material||"carbon steel"}`});
-        setObjInfo({name:info.name||"Sistema piping",category:"Calderería",shape:"cylinder",desc:info.notes||""});
-        setParts([]);setViewTab("pipe3d");
+        setPiping({components:info.components||[],dn:info.dn||100,label:`${info.name} · DN${info.dn||100} · ${info.material||"CS"}`});
+        setObjInfo({name:info.name||"Piping",category:"Calderería",shape:"cylinder",desc:""});
+        setViewTab("pipe3d");
+        setAiMsg(`Plano de piping detectado: ${info.name}. DN${info.dn}. ${info.material||"Carbon steel"}.`);
       }else{
         setObjInfo(info);
-        const ps=(info.parts||[{id:"width",name:"Ancho",axis:"width",markerX:.5,markerY:.4},{id:"height",name:"Alto",axis:"height",markerX:.85,markerY:.5},{id:"depth",name:"Profundidad",axis:"depth",markerX:.65,markerY:.7}]).map((p,i)=>({...p,color:COLS[i%COLS.length],markerX:clamp(p.markerX||.5,.05,.95),markerY:clamp(p.markerY||.5,.05,.95)}));
-        setParts(ps);setViewTab("2d");
+        setAiMsg(`Identificado: ${info.name}. ${info.desc||""} Sugerencias: ${(info.suggested_measurements||[]).map(m=>m.label).join(", ")}.`);
+        setViewTab("ann");
       }
     }catch(e){
-      setErr(e.message?.includes("401")?"Clave API inválida — pulsa ⚙️":"No se identificó. Puedes continuar manualmente.");
+      setErr(e.message?.includes("401")?"Clave API inválida — ⚙️":"No se identificó. Continúa manualmente.");
       setObjInfo({name:"Objeto",category:"",shape:"default",desc:""});
-      setParts([{id:"width",name:"Ancho",axis:"width",markerX:.3,markerY:.5,color:COLS[0]},{id:"height",name:"Alto",axis:"height",markerX:.8,markerY:.3,color:COLS[1]},{id:"depth",name:"Profundidad",axis:"depth",markerX:.6,markerY:.7,color:COLS[2]}]);
-    }finally{setScr("measure");}
+    }finally{setScr("annotate");}
   };
 
-  // Drag markers
-  const startDrag=useCallback((e,partId)=>{
-    e.preventDefault();e.stopPropagation();
-    const img=imgRef.current;if(!img)return;
-    const mv=ev=>{ev.preventDefault();const rect=img.getBoundingClientRect();const cx=ev.clientX??ev.touches?.[0]?.clientX??0;const cy=ev.clientY??ev.touches?.[0]?.clientY??0;const nx=clamp((cx-rect.left)/rect.width,.04,.96);const ny=clamp((cy-rect.top)/rect.height,.04,.96);setParts(p=>p.map(pt=>pt.id===partId?{...pt,markerX:nx,markerY:ny}:pt));};
+  // AI assistant
+  const askAI=async()=>{
+    if(!image||aiLoad)return;setAiLoad(true);setAiMsg("Analizando...");
+    const b64=image.split(",")[1];
+    const sum=anns.filter(a=>a.value).map(a=>`${a.title||a.type}: ${a.value}${a.unit}`).join(", ");
+    const pr=`Image has these measurements: ${sum||"none"}. Object: ${objInfo?.name||"unknown"}. Provide: 1) More measurements to take 2) Technical observations 3) Any relevant specs. In Spanish, 3-4 sentences max.`;
+    try{const res=await fetch(GAPI,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${getKey()}`},body:JSON.stringify({model:GMOD,max_tokens:250,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:pr}]}]})});
+    const data=await res.json();setAiMsg(data.choices?.[0]?.message?.content||"Sin respuesta.");}
+    catch{setAiMsg("Error al contactar IA.");}finally{setAiLoad(false);}
+  };
+
+  // Canvas click
+  const handleCvClick=useCallback(e=>{
+    if(tool==="sel")return;
+    const td=TOOLS.find(t=>t.id===tool);if(!td||td.npts===0)return;
+    const rect=containerRef.current?.getBoundingClientRect();if(!rect)return;
+    const nx=clamp((e.clientX-rect.left)/rect.width,.01,.99);
+    const ny=clamp((e.clientY-rect.top)/rect.height,.01,.99);
+    // Crop tool
+    if(tool==="crop"){
+      const pts=[...cropPend,{x:nx,y:ny}];
+      if(pts.length>=2){setCropDlg({p1:pts[0],p2:pts[1]});setCropPend([]);}
+      else setCropPend(pts);return;
+    }
+    const pts=[...pending,{x:nx,y:ny}];
+    if(pts.length>=td.npts){
+      const color=COLS[colorIdx%COLS.length];const id=uid();
+      const newA={id,type:tool,icon:td.icon,title:"",label:"",value:null,unit:"cm",axis:"",color,points:pts};
+      if(tool==="calib"){setCalibAnn(newA);setMIn({title:"Escala",value:"",unit:"cm",axis:""});addAnn(newA);}
+      else{setMeasuring(newA);setMIn({title:"",value:"",unit:"cm",axis:""});}
+      setPending([]);setColorIdx(c=>c+1);setTool("sel");
+    }else setPending(pts);
+  },[tool,pending,colorIdx,anns,cropPend]);
+
+  const confirmMeasure=()=>{
+    if(!measuring)return;
+    const a={...measuring,title:mIn.title,label:mIn.title,value:parseFloat(mIn.value)||null,unit:mIn.unit,axis:mIn.axis};
+    addAnn(a);setSelId(a.id);setMeasuring(null);
+  };
+  const confirmCalib=()=>{
+    const v=parseFloat(mIn.value);if(!v||v<=0){alert("Valor inválido");return;}
+    const rect=containerRef.current?.getBoundingClientRect();if(!rect||!calibAnn)return;
+    const pts=calibAnn.points;const dx=(pts[1].x-pts[0].x)*rect.width,dy=(pts[1].y-pts[0].y)*rect.height;
+    const px=Math.sqrt(dx*dx+dy*dy);setScale({ppu:px/v,unit:mIn.unit});
+    updAnn(calibAnn.id,{title:`⚖ ${v}${mIn.unit}`,value:v,unit:mIn.unit,label:"calib"});
+    setCalibAnn(null);setMIn({title:"",value:"",unit:"cm",axis:""});
+  };
+
+  const startDrag=useCallback((e,annId,pi)=>{
+    e.preventDefault();e.stopPropagation();setSelId(annId);
+    const rect=containerRef.current?.getBoundingClientRect();if(!rect)return;
+    const mv=ev=>{ev.preventDefault();const cx=ev.clientX??ev.touches?.[0]?.clientX??0,cy=ev.clientY??ev.touches?.[0]?.clientY??0;
+      setAnns(p=>p.map(a=>{if(a.id!==annId)return a;const pp=[...a.points];pp[pi]={x:clamp((cx-rect.left)/rect.width,.01,.99),y:clamp((cy-rect.top)/rect.height,.01,.99)};return{...a,points:pp};}));};
     const up=()=>{window.removeEventListener("mousemove",mv);window.removeEventListener("touchmove",mv);window.removeEventListener("mouseup",up);window.removeEventListener("touchend",up);};
     window.addEventListener("mousemove",mv,{passive:false});window.addEventListener("touchmove",mv,{passive:false});window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
   },[]);
 
-  const setMVal=(id,v)=>setMeas(p=>({...p,[id]:{value:v}}));
-  const addCustom=()=>{const id=`c_${uid()}`;setParts(p=>[...p,{id,name:"Medida",axis:"other",markerX:.5,markerY:.5,color:COLS[p.length%COLS.length],custom:true}]);setSelPart(id);};
-  const delPart=id=>{setParts(p=>p.filter(pt=>pt.id!==id));setMeas(p=>{const n={...p};delete n[id];return n;});if(selPart===id)setSelPart(null);};
+  const getCalMeasure=ann=>{
+    if(ann.value!=null)return`${ann.value} ${ann.unit}`;
+    if(!scale||ann.points.length<2)return"?";
+    const rect=containerRef.current?.getBoundingClientRect();if(!rect)return"?";
+    const dx=(ann.points[1].x-ann.points[0].x)*rect.width,dy=(ann.points[1].y-ann.points[0].y)*rect.height;
+    return`${(Math.sqrt(dx*dx+dy*dy)/scale.ppu).toFixed(1)} ${scale.unit}`;
+  };
 
-  // Save/Load
-  const saveProj=()=>{const p={id:uid(),name:projName,date:new Date().toLocaleDateString("es-ES"),image,rotation,parts,meas,unit,objInfo,piping};const all=[p,...projects.filter(x=>x.name!==projName)].slice(0,20);localStorage.setItem("ms3_pj",JSON.stringify(all));setProjects(all);alert(`"${projName}" guardado ✓`);};
-  const loadProj=p=>{setImage(p.image);setRotation(p.rotation||0);setParts(p.parts||[]);setMeas(p.meas||{});setUnit(p.unit||"cm");setObjInfo(p.objInfo);setPiping(p.piping||null);setProjName(p.name);setSelPart(null);setScr("measure");setViewTab(p.piping?"pipe3d":"2d");};
+  // Save / Load
+  const saveProj=()=>{
+    const p={id:uid(),name:projName,title:projTitle,date:new Date().toLocaleDateString("es-ES"),image,origImage,rotation,anns,scale,objInfo,piping};
+    const all=[p,...projects.filter(x=>x.name!==projName)].slice(0,20);
+    localStorage.setItem("ms3_pj",JSON.stringify(all));setProjects(all);setSyncMsg("✓ Guardado localmente");setTimeout(()=>setSyncMsg(""),2000);
+  };
+  const loadProj=p=>{setImage(p.image||p.origImage);setOrigImage(p.origImage||p.image);setRotation(p.rotation||0);setAnns(p.anns||[]);setHist([]);setScale(p.scale||null);setObjInfo(p.objInfo);setPiping(p.piping||null);setProjName(p.name);setProjTitle(p.title||"");setSelId(null);setPending([]);setTool("sel");setScr("annotate");setViewTab(p.piping?"pipe3d":"ann");};
   const delProj=(id,e)=>{e.stopPropagation();const all=projects.filter(p=>p.id!==id);localStorage.setItem("ms3_pj",JSON.stringify(all));setProjects(all);};
 
-  // Export
-  const doCapture=async()=>{if(!captureRef.current)return null;return html2canvas(captureRef.current,{scale:2,useCORS:true,allowTaint:true,backgroundColor:"#05101a"});};
-  const exportPNG=async()=>{try{const cv=await doCapture();const url=cv.toDataURL("image/png");if(navigator.share){const blob=await(await fetch(url)).blob();await navigator.share({title:projName,files:[new File([blob],"mediscan.png",{type:"image/png"})]});}else{const a=document.createElement("a");a.href=url;a.download=`${projName}.png`;a.click();}}catch(e){console.error(e);}};
-  const exportPDF=async()=>{try{const cv=await doCapture();const{jsPDF}=window.jspdf;const pdf=new jsPDF({orientation:"landscape"});const W=pdf.internal.pageSize.getWidth(),H=cv.height*(W/cv.width);pdf.setFillColor(5,16,26);pdf.rect(0,0,W,H+12,"F");pdf.addImage(cv.toDataURL("image/jpeg",.92),"JPEG",0,0,W,H);pdf.setFontSize(7);pdf.setTextColor(0,229,196);pdf.text(`${projName} · ${new Date().toLocaleDateString("es-ES")}`,3,H+8);pdf.save(`${projName}.pdf`);}catch(e){alert("Error PDF");}};
-  const shareWA=async()=>{try{const cv=await doCapture();const url=cv.toDataURL("image/png");if(navigator.share){const blob=await(await fetch(url)).blob();await navigator.share({title:projName,files:[new File([blob],"mediscan.png",{type:"image/png"})]});}else{const a=document.createElement("a");a.href=url;a.download=`${projName}.png`;a.click();alert("Imagen descargada. Compártela por WhatsApp.");}}catch(e){console.error(e);}};
+  // Sync via shareable link
+  const generateSyncLink=()=>{
+    const data={name:projName,title:projTitle,anns,scale,objName:objInfo?.name,shape:objInfo?.shape,piping};
+    const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+    const url=`${window.location.href.split('?')[0]}?sync=${encoded}`;
+    if(navigator.share){navigator.share({title:projName,text:"MediScan 3D - Proyecto compartido",url});}
+    else{navigator.clipboard?.writeText(url).then(()=>setSyncMsg("✓ Enlace copiado")).catch(()=>prompt("Copia este enlace:",url));setSyncMsg("✓ Enlace copiado");}
+    setTimeout(()=>setSyncMsg(""),3000);
+  };
+  // Check for imported sync on load
+  useEffect(()=>{
+    const params=new URLSearchParams(window.location.search);const syncData=params.get("sync");
+    if(!syncData)return;
+    try{const data=JSON.parse(decodeURIComponent(escape(atob(syncData))));
+    setAnns(data.anns||[]);setScale(data.scale||null);setProjName(data.name||"Proyecto");setProjTitle(data.title||"");
+    setObjInfo({name:data.objName||"Objeto",shape:data.shape||"default",category:""});setPiping(data.piping||null);
+    setAiMsg(`Proyecto "${data.name}" importado desde enlace. Sube la imagen manualmente.`);setScr("camera");
+    window.history.replaceState({},"",window.location.pathname);}
+    catch(e){}
+  },[]);
 
-  const axL={width:"Ancho",height:"Alto",depth:"Profundidad",other:"Otro"};
+  // Export
+  const doCapture=async()=>{if(!captureRef.current)return null;return html2canvas(captureRef.current,{scale:2,useCORS:true,allowTaint:true,backgroundColor:"#07101e"});};
+  const exportPNG=async()=>{try{const cv=await doCapture();const url=cv.toDataURL("image/png");if(navigator.share){const blob=await(await fetch(url)).blob();await navigator.share({title:projName,files:[new File([blob],"mediscan.png",{type:"image/png"})]});}else{const a=document.createElement("a");a.href=url;a.download=`${projName}.png`;a.click();}}catch(e){console.error(e);}};
+  const exportPDF=async()=>{try{const cv=await doCapture();const{jsPDF}=window.jspdf;const pdf=new jsPDF({orientation:"landscape"});const W=pdf.internal.pageSize.getWidth(),H=cv.height*(W/cv.width);pdf.setFillColor(7,16,30);pdf.rect(0,0,W,H+14,"F");pdf.addImage(cv.toDataURL("image/jpeg",.92),"JPEG",0,0,W,H);pdf.setFontSize(8);pdf.setTextColor(0,229,196);pdf.text(`${projTitle||projName} · ${new Date().toLocaleDateString("es-ES")}`,3,H+10);pdf.save(`${projName}.pdf`);}catch(e){alert("Error PDF");}};
+  const shareWA=async()=>{try{const cv=await doCapture();const url=cv.toDataURL("image/png");if(navigator.share){const blob=await(await fetch(url)).blob();await navigator.share({title:projName,files:[new File([blob],"mediscan.png",{type:"image/png"})]});}else{const a=document.createElement("a");a.href=url;a.download=`${projName}.png`;a.click();alert("Descargado. Comparte por WhatsApp.");}}catch(e){console.error(e);}};
+  const shareEmail=async()=>{try{const cv=await doCapture();const a=document.createElement("a");a.href=cv.toDataURL("image/png");a.download=`${projName}.png`;a.click();setTimeout(()=>alert("Imagen descargada. Adjúntala al email."),400);}catch(e){}};
+
+  /* ── SVG Annotation renderer ── */
+  const AnnSVG=({a})=>{
+    if(!a.points||a.points.length<2)return null;
+    const[p1,p2]=a.points;const col=a.color;const sw=selId===a.id?2.8:1.6;
+    const x1=`${p1.x*100}%`,y1=`${p1.y*100}%`,x2=`${p2.x*100}%`,y2=`${p2.y*100}%`;
+    const mx=`${(p1.x+p2.x)*50}%`,my=`${(p1.y+p2.y)*50}%`;
+    const sel=()=>{setSelId(a.id);setTool("sel");};
+    const lm=getCalMeasure(a);const fs="drop-shadow(0 0 3px #000) drop-shadow(0 0 3px #000)";
+    const aid=`m${a.id}`;
+    if(a.type==="tri"&&a.points.length>=3){const[pp1,pp2,pp3]=a.points;
+      return(<g onClick={e=>{e.stopPropagation();sel();}} style={{cursor:"pointer"}}>
+        <polygon points={`${pp1.x*100}%,${pp1.y*100}% ${pp2.x*100}%,${pp2.y*100}% ${pp3.x*100}%,${pp3.y*100}%`} stroke={col} strokeWidth={sw} fill={`${col}18`}/>
+        {(a.title||a.value)&&<text x={mx} y={my} fill={col} fontSize="2.8%" fontFamily="Space Mono,monospace" textAnchor="middle" dominantBaseline="middle" style={{filter:fs}}>{a.title||""}{a.value?` ${a.value}${a.unit}`:""}</text>}
+      </g>);}
+    if(a.type==="rect"){const rx=Math.min(p1.x,p2.x)*100,ry=Math.min(p1.y,p2.y)*100,rw=Math.abs(p2.x-p1.x)*100,rh=Math.abs(p2.y-p1.y)*100;
+      return(<g onClick={e=>{e.stopPropagation();sel();}} style={{cursor:"pointer"}}>
+        <rect x={`${rx}%`} y={`${ry}%`} width={`${rw}%`} height={`${rh}%`} stroke={col} strokeWidth={sw} fill={`${col}16`}/>
+        {(a.title||a.value)&&<text x={mx} y={my} fill={col} fontSize="2.8%" fontFamily="Space Mono,monospace" textAnchor="middle" dominantBaseline="middle" style={{filter:fs}}>{a.title||""}{a.value?` ${a.value}${a.unit}`:""}</text>}
+      </g>);}
+    if(a.type==="circ"){const r=Math.sqrt(Math.pow((p2.x-p1.x)*100,2)+Math.pow((p2.y-p1.y)*100,2));
+      return(<g onClick={e=>{e.stopPropagation();sel();}} style={{cursor:"pointer"}}>
+        <circle cx={x1} cy={y1} r={`${r}%`} stroke={col} strokeWidth={sw} fill={`${col}14`}/>
+        {(a.title||a.value)&&<text x={x1} y={y1} fill={col} fontSize="2.8%" fontFamily="Space Mono,monospace" textAnchor="middle" dominantBaseline="middle" style={{filter:fs}}>{a.title||""}{a.value?` ⌀${a.value}${a.unit}`:""}</text>}
+      </g>);}
+    const isDim=a.type==="dim",dbl=a.type==="arr3";
+    return(<g onClick={e=>{e.stopPropagation();sel();}} style={{cursor:"pointer"}}>
+      <defs>
+        <marker id={aid+"e"} markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3z" fill={col}/></marker>
+        {dbl&&<marker id={aid+"s"} markerWidth="8" markerHeight="8" refX="2" refY="3" orient="auto-start-reverse"><path d="M0,0 L0,6 L8,3z" fill={col}/></marker>}
+      </defs>
+      <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={col} strokeWidth={a.type==="arr2"?sw+1.5:sw}
+        strokeDasharray={a.type==="dline"?"7,4":"none"}
+        markerEnd={!["dline"].includes(a.type)?`url(#${aid+"e"})`:"none"}
+        markerStart={dbl?`url(#${aid+"s"})`:"none"}/>
+      {isDim&&<>
+        <line x1={`${p1.x*100}%`} y1={`${(p1.y-.025)*100}%`} x2={`${p1.x*100}%`} y2={`${(p1.y+.025)*100}%`} stroke={col} strokeWidth={sw+1}/>
+        <line x1={`${p2.x*100}%`} y1={`${(p2.y-.025)*100}%`} x2={`${p2.x*100}%`} y2={`${(p2.y+.025)*100}%`} stroke={col} strokeWidth={sw+1}/>
+      </>}
+      <text x={mx} y={my} dy="-3.5%" fill={col} fontSize="2.8%" fontFamily="Space Mono,monospace" textAnchor="middle" style={{filter:fs}}>{a.title?`${a.title}: `:""}{lm}</text>
+    </g>);
+  };
+
+  const MTYPE=["pin","dot","star","diam","tgt","txt"];
+  const markerAnns=anns.filter(a=>MTYPE.includes(a.type));
+  const shapeAnns=anns.filter(a=>!MTYPE.includes(a.type));
+
+  /* ── Styles ── */
+  const card1={background:"linear-gradient(135deg,rgba(0,20,50,.88),rgba(0,30,60,.85))",border:"1px solid rgba(0,120,180,.4)",borderRadius:"12px",overflow:"hidden"};
+  const card2={background:"linear-gradient(135deg,rgba(30,0,60,.82),rgba(20,0,50,.85))",border:"1px solid rgba(120,60,220,.35)",borderRadius:"12px",overflow:"hidden"};
+  const card3={background:"linear-gradient(135deg,rgba(0,40,35,.85),rgba(0,30,30,.88))",border:"1px solid rgba(0,180,140,.35)",borderRadius:"12px",overflow:"hidden"};
+  const card4={background:"linear-gradient(135deg,rgba(50,25,0,.82),rgba(40,20,0,.85))",border:"1px solid rgba(220,140,0,.35)",borderRadius:"12px",overflow:"hidden"};
+  const cardMain={background:"linear-gradient(135deg,rgba(5,15,35,.9),rgba(8,20,40,.9))",border:"1px solid rgba(0,229,196,.25)",borderRadius:"12px",overflow:"hidden"};
+  const lbl=(t,col="#00e5c4")=><div style={{padding:"7px 12px",fontSize:"8px",letterSpacing:".18em",color:col,textTransform:"uppercase",borderBottom:"1px solid rgba(255,255,255,.06)",background:"rgba(255,255,255,.02)",display:"flex",alignItems:"center",gap:"6px"}}>{t}</div>;
+  const tabS=a=>({flex:1,padding:"7px 3px",borderRadius:"7px",background:a?"linear-gradient(135deg,#00e5c4,#00b89a)":"transparent",color:a?"#07101e":"#5577aa",border:`1px solid ${a?"#00e5c4":"rgba(0,150,180,.25)"}`,fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",fontWeight:a?700:400,transition:"all .15s"});
+  const uBtn=a=>({padding:"5px 8px",background:a?"rgba(0,229,196,.18)":"transparent",color:a?"#00e5c4":"#3a6878",border:`1px solid ${a?"#00e5c4":"rgba(0,150,180,.2)"}`,borderRadius:"5px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer",fontWeight:a?700:400});
+  const ACC="#00e5c4";
 
   return(
-<div style={{minHeight:"100vh",background:"#05101a",color:"#c0dce8",fontFamily:"'Space Mono',monospace",display:"flex",flexDirection:"column",maxWidth:"500px",margin:"0 auto"}}>
+<div style={{minHeight:"100vh",background:"linear-gradient(160deg,#06101e 0%,#0a1628 50%,#07141e 100%)",color:"#d0e8f8",fontFamily:"'Space Mono',monospace",display:"flex",flexDirection:"column",maxWidth:"500px",margin:"0 auto"}}>
 
 {/* HEADER */}
-<div style={{padding:"10px 13px",display:"flex",alignItems:"center",gap:"8px",background:"rgba(0,12,22,.92)",backdropFilter:"blur(14px)",borderBottom:`1px solid ${BDR}`,position:"sticky",top:0,zIndex:300}}>
-  <div style={{width:"7px",height:"7px",borderRadius:"50%",background:ACC}} className="blink"/>
+<div style={{padding:"10px 13px",display:"flex",alignItems:"center",gap:"8px",background:"rgba(4,10,22,.95)",backdropFilter:"blur(16px)",borderBottom:"1px solid rgba(0,229,196,.2)",position:"sticky",top:0,zIndex:300,boxShadow:"0 2px 20px rgba(0,0,0,.5)"}}>
+  <div style={{width:"8px",height:"8px",borderRadius:"50%",background:"#00e5c4",boxShadow:"0 0 10px #00e5c4"}} className="blink"/>
   <div style={{flex:1}}>
-    <div style={{fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:800,color:ACC}}>MediScan 3D</div>
-    <div style={{fontSize:"7px",color:"#3a6878",letterSpacing:".08em"}}>Objetos · Planos · Piping · Calderería</div>
+    <div style={{fontFamily:"'Syne',sans-serif",fontSize:"14px",fontWeight:800,background:"linear-gradient(90deg,#00e5c4,#44aaff)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>MediScan 3D Pro</div>
+    <div style={{fontSize:"7px",color:"#3a6878",letterSpacing:".09em"}}>IA · Mide · Modela · Exporta · Sincroniza</div>
   </div>
-  {scr==="measure"&&<button onClick={()=>setScr("home")} style={{background:"transparent",border:`1px solid ${BDR}`,color:"#3a6878",borderRadius:"6px",padding:"5px 8px",fontSize:"11px",cursor:"pointer"}}>🏠</button>}
-  <button onClick={()=>setScr("setup")} style={{background:"transparent",border:`1px solid ${BDR}`,color:"#3a6878",borderRadius:"6px",padding:"5px 8px",fontSize:"11px",cursor:"pointer"}}>⚙️</button>
+  {scr==="annotate"&&<button onClick={()=>setScr("home")} style={{background:"rgba(0,229,196,.1)",border:"1px solid rgba(0,229,196,.3)",color:ACC,borderRadius:"7px",padding:"5px 9px",fontSize:"11px",cursor:"pointer"}}>🏠</button>}
+  <button onClick={()=>setScr("setup")} style={{background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.12)",color:"#7aaabb",borderRadius:"7px",padding:"5px 9px",fontSize:"11px",cursor:"pointer"}}>⚙️</button>
 </div>
 
 <div style={{flex:1,padding:"9px",display:"flex",flexDirection:"column",gap:"8px",overflowY:"auto"}}>
 
-{/* ═══ HOME ═══ */}
+{/* HOME */}
 {scr==="home"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-  <button onClick={()=>setScr("camera")} style={{width:"100%",padding:"14px",background:`linear-gradient(135deg,${ACC},#00b89a)`,color:"#05101a",border:"none",borderRadius:"10px",fontSize:"12px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer",letterSpacing:".1em"}}>＋ NUEVO PROYECTO</button>
-  {projects.length>0?(<div style={card}>{lbl("📁 Proyectos guardados")}
-    {projects.map(p=>(<div key={p.id} onClick={()=>loadProj(p)} style={{display:"flex",alignItems:"center",gap:"9px",padding:"9px 11px",borderBottom:`1px solid #05121c`,cursor:"pointer"}}>
-      {p.image&&<img src={p.image} style={{width:"40px",height:"30px",objectFit:"cover",borderRadius:"5px",opacity:.8}}/>}
-      <div style={{flex:1}}><div style={{fontSize:"9px",color:"#c0dce8",fontWeight:700}}>{p.name}</div><div style={{fontSize:"7px",color:"#3a6878"}}>{p.date} · {p.objInfo?.name||"?"} · {(p.parts||[]).length} medidas</div></div>
-      <button onClick={e=>delProj(p.id,e)} style={{background:"transparent",border:"none",color:"#3a6878",cursor:"pointer",fontSize:"13px",padding:"3px 6px"}}>✕</button>
+  <button onClick={()=>setScr("camera")} style={{width:"100%",padding:"15px",background:"linear-gradient(135deg,#00e5c4,#0099ff,#7744ff)",color:"#fff",border:"none",borderRadius:"12px",fontSize:"12px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer",letterSpacing:".1em",boxShadow:"0 4px 20px rgba(0,229,196,.4)"}}>
+    ＋ NUEVO PROYECTO
+  </button>
+  {projects.length>0?(<div style={cardMain}>{lbl("📁 Proyectos guardados · Toca para abrir")}
+    {projects.map(p=>(<div key={p.id} onClick={()=>loadProj(p)} style={{display:"flex",alignItems:"center",gap:"9px",padding:"9px 12px",borderBottom:"1px solid rgba(255,255,255,.06)",cursor:"pointer",transition:"background .15s"}}>
+      {p.image&&<img src={p.image} style={{width:"40px",height:"30px",objectFit:"cover",borderRadius:"6px",opacity:.85,border:"1px solid rgba(0,229,196,.3)"}}/>}
+      <div style={{flex:1}}><div style={{fontSize:"9px",color:"#d0e8f8",fontWeight:700}}>{p.name}</div><div style={{fontSize:"7px",color:"#4477aa"}}>{p.date} · {p.objInfo?.name||"?"} · {(p.anns||[]).length} medidas</div></div>
+      <button onClick={e=>delProj(p.id,e)} style={{background:"transparent",border:"none",color:"#ff5566",cursor:"pointer",fontSize:"14px",opacity:.7}}>✕</button>
     </div>))}
-  </div>):(<div style={{textAlign:"center",padding:"24px",fontSize:"9px",color:"#3a6878"}}>No hay proyectos guardados</div>)}
+  </div>):(<div style={{textAlign:"center",padding:"24px",fontSize:"9px",color:"#3a6878"}}>Sin proyectos guardados</div>)}
+  <div style={{...card1,padding:"12px"}}>
+    <div style={{fontSize:"8px",color:"#44aaff",letterSpacing:".12em",marginBottom:"8px"}}>☁ SINCRONIZAR ENTRE DISPOSITIVOS</div>
+    <div style={{fontSize:"8px",color:"#7aaabb",lineHeight:1.8}}>Crea un proyecto → guárdalo → genera un enlace compartible → ábrelo en tu móvil.<br/>El enlace contiene todas las anotaciones y medidas.</div>
+  </div>
 </div>)}
 
-{/* ═══ SETUP ═══ */}
-{scr==="setup"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"9px",paddingTop:"4px"}}>
-  <div style={{textAlign:"center",padding:"12px 0 4px"}}>
-    <div style={{fontSize:"28px",marginBottom:"5px"}}>🔑</div>
-    <div style={{fontFamily:"'Syne',sans-serif",fontSize:"14px",fontWeight:800,color:"#fff",marginBottom:"3px"}}>Clave API de Groq</div>
-    <div style={{fontSize:"8px",color:"#7aaabb",lineHeight:1.7}}>Gratis en <span style={{color:ACC}}>console.groq.com</span> → API Keys</div>
+{/* SETUP */}
+{scr==="setup"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+  <div style={{textAlign:"center",padding:"12px 0 4px"}}><div style={{fontSize:"28px",marginBottom:"5px"}}>🔑</div><div style={{fontFamily:"'Syne',sans-serif",fontSize:"14px",fontWeight:800,color:"#fff",marginBottom:"3px"}}>Clave API de Groq</div><div style={{fontSize:"8px",color:"#7aaabb",lineHeight:1.7}}>Gratis en <span style={{color:ACC}}>console.groq.com</span> → API Keys → Create</div></div>
+  <div style={{...cardMain,padding:"14px",display:"flex",flexDirection:"column",gap:"8px"}}>
+    <input type="text" placeholder="gsk_xxxxxxxxxxxxxxxx" value={keyIn} onChange={e=>setKeyIn(e.target.value.trim())} style={{width:"100%",padding:"9px 12px",background:"rgba(0,15,30,.8)",border:"1px solid rgba(0,229,196,.3)",borderRadius:"8px",color:"#d0e8f8",fontSize:"10px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
+    <button onClick={()=>{if(!keyIn.startsWith("gsk_")){alert("Debe empezar por gsk_");return;}localStorage.setItem("ms3_k",keyIn);setScr("home");}} style={{padding:"10px",background:"linear-gradient(135deg,#00e5c4,#00b89a)",color:"#07101e",border:"none",borderRadius:"8px",fontSize:"10px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer"}}>GUARDAR Y CONTINUAR</button>
   </div>
-  <div style={{...card,padding:"13px",display:"flex",flexDirection:"column",gap:"8px"}}>
-    <input type="text" placeholder="gsk_xxxxxxxxxxxxxxxx" value={keyIn} onChange={e=>setKeyIn(e.target.value.trim())}
-      style={{width:"100%",padding:"9px 11px",background:"rgba(0,12,22,.8)",border:`1px solid ${BDR}`,borderRadius:"7px",color:"#c0dce8",fontSize:"10px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
-    <button onClick={()=>{if(!keyIn.startsWith("gsk_")){alert("La clave debe empezar por gsk_");return;}localStorage.setItem("ms3_k",keyIn);setScr("home");}}
-      style={{padding:"10px",background:keyIn.startsWith("gsk_")?`linear-gradient(135deg,${ACC},#00b89a)`:"#0b2535",color:keyIn.startsWith("gsk_")?"#05101a":"#3a6878",border:"none",borderRadius:"7px",fontSize:"10px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer"}}>
-      GUARDAR Y CONTINUAR
-    </button>
-  </div>
-  {getKey()&&<button onClick={()=>setScr("home")} style={{padding:"8px",background:"transparent",border:`1px solid ${BDR}`,color:"#3a6878",borderRadius:"7px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>← Volver</button>}
+  {getKey()&&<button onClick={()=>setScr("home")} style={{padding:"8px",background:"transparent",border:"1px solid rgba(255,255,255,.12)",color:"#5577aa",borderRadius:"8px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>← Volver</button>}
 </div>)}
 
-{/* ═══ CAMERA ═══ */}
+{/* CAMERA */}
 {scr==="camera"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-  <div style={card}>{lbl(<><span className="blink">●</span>&nbsp;Cámara en vivo</>)}
-    {camMode==="off"&&<div style={{padding:"18px",textAlign:"center"}}><button onClick={startLive} style={{padding:"10px 22px",background:`linear-gradient(135deg,${ACC},#00b89a)`,color:"#05101a",border:"none",borderRadius:"8px",fontSize:"10px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer"}}>📹 ACTIVAR VISOR</button></div>}
-    {camMode==="starting"&&<div style={{padding:"18px",textAlign:"center"}}><div style={{width:"30px",height:"30px",borderRadius:"50%",border:`3px solid ${BDR}`,borderTop:`3px solid ${ACC}`,margin:"0 auto"}} className="spin"/></div>}
+  <div style={cardMain}>{lbl(<><span className="blink" style={{color:"#ff4477"}}>●</span>&nbsp;Cámara en vivo</>)}
+    {camMode==="off"&&<div style={{padding:"18px",textAlign:"center"}}><button onClick={startLive} style={{padding:"10px 24px",background:"linear-gradient(135deg,#00e5c4,#0099ff)",color:"#07101e",border:"none",borderRadius:"9px",fontSize:"10px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer",boxShadow:"0 4px 16px rgba(0,229,196,.4)"}}>📹 ACTIVAR VISOR</button></div>}
+    {camMode==="starting"&&<div style={{padding:"18px",textAlign:"center"}}><div style={{width:"30px",height:"30px",borderRadius:"50%",border:"3px solid #1a3a5a",borderTop:`3px solid ${ACC}`,margin:"0 auto"}} className="spin"/></div>}
     {camMode==="live"&&(<><div style={{position:"relative",background:"#000",aspectRatio:"4/3"}}>
       <video ref={videoRef} autoPlay playsInline muted style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
-      <div style={{position:"absolute",left:0,right:0,height:"1.5px",background:`linear-gradient(90deg,transparent,${ACC},transparent)`,animation:"scan 2.5s linear infinite",opacity:.5,pointerEvents:"none"}}/>
-    </div>
-    <div style={{display:"flex",gap:"8px",padding:"9px",justifyContent:"center"}}>
-      <button onClick={stopCam} style={{padding:"6px 12px",background:"transparent",border:`1px solid ${BDR}`,color:"#3a6878",borderRadius:"6px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>✕</button>
-      <button onClick={capLive} style={{width:"50px",height:"50px",borderRadius:"50%",border:`2.5px solid ${ACC}`,background:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{width:"34px",height:"34px",borderRadius:"50%",background:ACC}}/></button>
+      <div style={{position:"absolute",left:0,right:0,height:"2px",background:`linear-gradient(90deg,transparent,${ACC},transparent)`,animation:"scan 2.5s linear infinite",opacity:.6,pointerEvents:"none"}}/>
+    </div><div style={{display:"flex",gap:"8px",padding:"10px",justifyContent:"center"}}>
+      <button onClick={stopCam} style={{padding:"7px 14px",background:"rgba(255,80,80,.15)",border:"1px solid rgba(255,80,80,.4)",color:"#ff7788",borderRadius:"7px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>✕ Cerrar</button>
+      <button onClick={capLive} style={{width:"52px",height:"52px",borderRadius:"50%",border:`3px solid ${ACC}`,background:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 20px rgba(0,229,196,.5)`}} className="glow"><div style={{width:"36px",height:"36px",borderRadius:"50%",background:"linear-gradient(135deg,#00e5c4,#00b89a)"}}/></button>
     </div></>)}
   </div>
-  <div style={card}>{lbl("📷 Foto directa o galería")}
+  <div style={card1}>{lbl("📷 Foto directa o galería","#44aaff")}
     <div style={{padding:"11px",display:"flex",flexDirection:"column",gap:"7px"}}>
-      <button onClick={()=>camInRef.current?.click()} style={{display:"flex",alignItems:"center",gap:"11px",padding:"12px 13px",background:"rgba(0,229,196,.07)",border:`1px solid ${ACC}`,borderRadius:"8px",cursor:"pointer",width:"100%"}}>
-        <span style={{fontSize:"20px"}}>📷</span><div><div style={{fontSize:"10px",fontWeight:700,color:ACC,fontFamily:"'Space Mono',monospace"}}>TOMAR FOTO</div><div style={{fontSize:"8px",color:"#7aaabb"}}>Cámara del móvil directamente</div></div>
+      <button onClick={()=>camInRef.current?.click()} style={{display:"flex",alignItems:"center",gap:"12px",padding:"13px 14px",background:"rgba(0,229,196,.1)",border:"1px solid rgba(0,229,196,.4)",borderRadius:"10px",cursor:"pointer",width:"100%"}}>
+        <span style={{fontSize:"22px"}}>📷</span><div style={{textAlign:"left"}}><div style={{fontSize:"10px",fontWeight:700,color:ACC,fontFamily:"'Space Mono',monospace"}}>TOMAR FOTO</div><div style={{fontSize:"7px",color:"#5599bb"}}>Abre la cámara del móvil directamente</div></div>
       </button>
       <input ref={camInRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleFile}/>
-      <button onClick={()=>uploadRef.current?.click()} style={{display:"flex",alignItems:"center",gap:"11px",padding:"12px 13px",background:"transparent",border:`1px solid ${BDR}`,borderRadius:"8px",cursor:"pointer",width:"100%"}}>
-        <span style={{fontSize:"20px"}}>🖼</span><div><div style={{fontSize:"10px",fontWeight:700,color:"#c0dce8",fontFamily:"'Space Mono',monospace"}}>ELEGIR DE GALERÍA</div><div style={{fontSize:"8px",color:"#3a6878"}}>JPG · PNG · Planos · P&ID</div></div>
+      <button onClick={()=>uploadRef.current?.click()} style={{display:"flex",alignItems:"center",gap:"12px",padding:"13px 14px",background:"rgba(68,170,255,.08)",border:"1px solid rgba(68,170,255,.3)",borderRadius:"10px",cursor:"pointer",width:"100%"}}>
+        <span style={{fontSize:"22px"}}>🖼</span><div style={{textAlign:"left"}}><div style={{fontSize:"10px",fontWeight:700,color:"#44aaff",fontFamily:"'Space Mono',monospace"}}>ELEGIR DE GALERÍA</div><div style={{fontSize:"7px",color:"#5599bb"}}>JPG · PNG · Planos · P&ID · Isométricos</div></div>
       </button>
       <input ref={uploadRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleFile}/>
     </div>
   </div>
 </div>)}
 
-{/* ═══ LOADING ═══ */}
-{scr==="loading"&&(<div style={card} className="fade">
-  {lbl("⚡ Identificando...")}
-  {image&&<img src={image} alt="" style={{width:"100%",aspectRatio:"4/3",objectFit:"cover",opacity:.7}}/>}
-  <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"10px",padding:"22px 13px"}}>
-    <div style={{width:"36px",height:"36px",borderRadius:"50%",border:`3px solid ${BDR}`,borderTop:`3px solid ${ACC}`}} className="spin"/>
-    <div style={{fontSize:"8px",color:"#3a6878",letterSpacing:".15em",textTransform:"uppercase"}}>Detectando objeto o plano de piping...</div>
+{/* LOADING */}
+{scr==="loading"&&(<div style={cardMain} className="fade">
+  {lbl("⚡ Identificando con IA...")}
+  {image&&<img src={image} alt="" style={{width:"100%",aspectRatio:"4/3",objectFit:"cover",opacity:.75}}/>}
+  <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"10px",padding:"22px"}}>
+    <div style={{width:"36px",height:"36px",borderRadius:"50%",border:"3px solid #1a3a5a",borderTop:`3px solid ${ACC}`}} className="spin"/>
+    <div style={{fontSize:"8px",color:"#4477aa",letterSpacing:".15em",textTransform:"uppercase"}}>Detectando objeto o plano de calderería...</div>
   </div>
 </div>)}
 
-{/* ═══ MEASURE ═══ */}
-{scr==="measure"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+{/* ANNOTATE */}
+{scr==="annotate"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
 
-  {/* Nombre proyecto + guardar */}
-  <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
-    <input value={projName} onChange={e=>setProjName(e.target.value)}
-      style={{flex:1,padding:"7px 10px",background:"rgba(0,12,22,.8)",border:`1px solid ${BDR}`,borderRadius:"7px",color:ACC,fontSize:"11px",fontFamily:"'Syne',sans-serif",fontWeight:700,outline:"none"}}/>
-    <button onClick={saveProj} style={{padding:"7px 10px",background:"transparent",border:`1px solid ${ACC}`,color:ACC,borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>💾 Guardar</button>
-    <button onClick={()=>setScr("camera")} style={{padding:"7px 9px",background:"transparent",border:`1px solid ${BDR}`,color:"#3a6878",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>↩ Foto</button>
+  {/* Project header */}
+  <div style={{display:"flex",gap:"5px",alignItems:"center",flexWrap:"wrap"}}>
+    <input value={projName} onChange={e=>setProjName(e.target.value)} placeholder="Nombre" style={{flex:1,minWidth:"80px",padding:"7px 10px",background:"rgba(0,10,25,.8)",border:"1px solid rgba(0,229,196,.3)",borderRadius:"7px",color:ACC,fontSize:"10px",fontFamily:"'Syne',sans-serif",fontWeight:700,outline:"none"}}/>
+    <input value={projTitle} onChange={e=>setProjTitle(e.target.value)} placeholder="Título del plano..." style={{flex:2,minWidth:"100px",padding:"7px 10px",background:"rgba(0,10,25,.7)",border:"1px solid rgba(68,170,255,.25)",borderRadius:"7px",color:"#d0e8f8",fontSize:"9px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
+    <button onClick={saveProj} style={{padding:"7px 10px",background:"linear-gradient(135deg,rgba(0,229,196,.2),rgba(0,180,154,.2))",border:"1px solid rgba(0,229,196,.4)",color:ACC,borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>💾</button>
+    <button onClick={()=>setScr("camera")} style={{padding:"7px 9px",background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.12)",color:"#5577aa",borderRadius:"7px",fontSize:"8px",cursor:"pointer"}}>↩</button>
   </div>
+  {syncMsg&&<div style={{fontSize:"8px",color:ACC,padding:"4px 10px",background:"rgba(0,229,196,.08)",borderRadius:"6px",border:"1px solid rgba(0,229,196,.2)"}}>{syncMsg}</div>}
+  {err&&<div style={{fontSize:"8px",color:"#ff7788",padding:"5px 10px",background:"rgba(255,80,80,.07)",borderRadius:"7px",border:"1px solid rgba(255,100,100,.25)"}}>{err}</div>}
+  {objInfo?.name&&<div style={{fontSize:"9px",padding:"2px 2px",display:"flex",alignItems:"center",gap:"6px"}}><span style={{background:"linear-gradient(90deg,#00e5c4,#44aaff)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontWeight:700}}>{objInfo.name}</span><span style={{color:"#4477aa"}}>{objInfo.category?`· ${objInfo.category}`:""}</span>{piping&&<span style={{color:"#ffbb00"}}>· DN{piping.dn}</span>}</div>}
 
-  {err&&<div style={{fontSize:"8px",color:"#ff6655",padding:"5px 9px",background:"rgba(255,100,80,.07)",borderRadius:"6px",border:"1px solid rgba(255,100,80,.2)"}}>{err}</div>}
-
-  {/* Info objeto */}
-  {objInfo?.name&&<div style={{fontSize:"9px",color:"#7aaabb",padding:"2px"}}><span style={{color:ACC,fontWeight:700}}>{objInfo.name}</span>{objInfo.category?` · ${objInfo.category}`:""}{piping?` · DN${piping.dn}`:""}</div>}
-
-  {/* ── FOTO CON MARCADORES ── */}
-  {image&&!piping&&(<div style={card}>
-    {lbl("📍 Arrastra los puntos · Toca para seleccionar")}
-    <div style={{position:"relative",lineHeight:0}} ref={imgRef}>
-      <img src={image} alt="" draggable="false" style={{width:"100%",display:"block",opacity:.88,transform:`rotate(${rotation}deg)`}}/>
-      {parts.map((p,i)=>(
-        <div key={p.id} className="marker-dot"
-          onMouseDown={e=>startDrag(e,p.id)} onTouchStart={e=>startDrag(e,p.id)}
-          onClick={()=>setSelPart(p.id)}
-          style={{position:"absolute",left:`${p.markerX*100}%`,top:`${p.markerY*100}%`,transform:"translate(-50%,-50%)",
-            width:"26px",height:"26px",borderRadius:"50%",touchAction:"none",userSelect:"none",
-            background:selPart===p.id?p.color:"rgba(0,0,0,.85)",border:`2.5px solid ${p.color}`,
-            color:selPart===p.id?"#000":p.color,display:"flex",alignItems:"center",justifyContent:"center",
-            fontSize:"9px",fontWeight:"700",cursor:"grab",zIndex:10,
-            boxShadow:`0 0 ${selPart===p.id?12:5}px ${p.color}`}}>
-          {i+1}
-        </div>
-      ))}
-    </div>
-    <div style={{padding:"5px 10px 6px",fontSize:"7px",color:"#2a5060",display:"flex",gap:"8px",alignItems:"center"}}>
-      <span>☝ Arrastra los puntos para recolocarlos</span>
-      <button onClick={()=>setRotation(r=>(r+90)%360)} style={{marginLeft:"auto",padding:"3px 8px",background:"transparent",border:`1px solid ${BDR}`,color:"#7aaabb",borderRadius:"5px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>↻ Rotar</button>
-    </div>
-  </div>)}
-
-  {/* ── MEDIDAS (tabla principal) ── */}
-  {!piping&&(<div style={card}>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-      {lbl("📐 Medidas detectadas")}
-      <div style={{display:"flex",gap:"3px",padding:"5px 9px"}}>
-        {["mm","cm","m","in"].map(u=><button key={u} style={uBtn(unit===u)} onClick={()=>setUnit(u)}>{u}</button>)}
-      </div>
-    </div>
-    {parts.map((p,i)=>(
-      <div key={p.id} onClick={()=>setSelPart(p.id)}
-        style={{display:"flex",alignItems:"center",gap:"7px",padding:"8px 11px",background:selPart===p.id?"rgba(0,229,196,.05)":"transparent",borderBottom:"1px solid #05121c",cursor:"pointer"}}>
-        <div style={{width:"22px",height:"22px",borderRadius:"50%",flexShrink:0,background:selPart===p.id?p.color:"transparent",border:`2px solid ${p.color}`,color:selPart===p.id?"#000":p.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"9px",fontWeight:"700"}}>{i+1}</div>
-        <div style={{flex:1}}>
-          {p.custom
-            ?<input style={{width:"100%",background:"transparent",border:"none",color:"#c0dce8",fontSize:"9px",fontFamily:"'Space Mono',monospace",outline:"none",padding:0}} value={p.name} onChange={e=>setParts(ps=>ps.map(pt=>pt.id===p.id?{...pt,name:e.target.value}:pt))} onClick={e=>e.stopPropagation()}/>
-            :<div style={{fontSize:"9px",color:"#c0dce8"}}>{p.name}</div>
-          }
-          <div style={{fontSize:"7px",color:"#3a6878"}}>{axL[p.axis]||p.axis}{meas[p.id]?.value?` · ${meas[p.id].value} ${unit}`:""}</div>
-        </div>
-        <input type="number" min="0" step=".1" placeholder="0" value={meas[p.id]?.value||""} onChange={e=>setMVal(p.id,e.target.value)} onClick={e=>e.stopPropagation()}
-          style={{width:"66px",padding:"5px 7px",background:selPart===p.id?"rgba(0,229,196,.08)":"rgba(0,12,22,.7)",border:`1px solid ${selPart===p.id?ACC:BDR}`,borderRadius:"5px",color:ACC,fontSize:"12px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
-        <span style={{fontSize:"9px",color:"#3a6878",minWidth:"16px"}}>{unit}</span>
-        {p.custom&&<button onClick={e=>{e.stopPropagation();delPart(p.id);}} style={{background:"transparent",border:"none",color:"#3a6878",cursor:"pointer",fontSize:"12px"}}>✕</button>}
-      </div>
-    ))}
-    <div style={{padding:"7px 11px"}}><button onClick={addCustom} style={{width:"100%",padding:"6px",background:"transparent",border:`1px dashed ${BDR}`,color:"#3a6878",borderRadius:"6px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>＋ Añadir medida personalizada</button></div>
-  </div>)}
-
-  {/* ── RESUMEN DE MEDIDAS ── */}
-  {!piping&&parts.some(p=>meas[p.id]?.value)&&(<div style={card}>
-    {lbl("📋 Resumen de medidas")}
-    <div style={{padding:"8px 11px",display:"flex",flexDirection:"column",gap:"4px"}}>
-      {parts.filter(p=>meas[p.id]?.value).map((p,i)=>(
-        <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:"1px solid #07141e"}}>
-          <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-            <div style={{width:"8px",height:"8px",borderRadius:"50%",background:p.color}}/>
-            <span style={{fontSize:"8px",color:"#7aaabb"}}>{p.name}</span>
-          </div>
-          <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
-            <span style={{fontSize:"10px",fontWeight:"700",color:ACC}}>{meas[p.id].value}</span>
-            <span style={{fontSize:"8px",color:"#3a6878"}}>{unit}</span>
-            <span style={{fontSize:"7px",color:"#2a5060"}}>({fmtV(toMM(meas[p.id].value,unit),"mm")})</span>
-          </div>
-        </div>
-      ))}
-      {/* Volumen si hay W+H+D */}
-      {["width","height","depth"].every(ax=>parts.some(p=>p.axis===ax&&meas[p.id]?.value))&&(()=>{
-        const gd=ax=>{const p=parts.find(pt=>pt.axis===ax);return toMM(meas[p?.id]?.value,unit);};
-        const vol=gd("width")*gd("height")*gd("depth");
-        return <div style={{marginTop:"4px",padding:"4px 0",display:"flex",justifyContent:"space-between"}}><span style={{fontSize:"7px",color:"#3a6878"}}>Volumen estimado</span><span style={{fontSize:"8px",color:"#7aaabb"}}>{(vol/1000).toFixed(1)} cm³</span></div>;
-      })()}
-    </div>
-  </div>)}
-
-  {/* ── BOTÓN GENERAR ── */}
-  {!piping&&(<button disabled={!hasDims} onClick={()=>setViewTab("2d")}
-    style={{width:"100%",padding:"13px",background:hasDims?`linear-gradient(135deg,${ACC},#00b89a)`:"#0b2535",color:hasDims?"#05101a":"#3a6878",border:"none",borderRadius:"8px",fontSize:"11px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:hasDims?"pointer":"not-allowed",letterSpacing:".1em"}}>
-    ▶ GENERAR MODELO 2D / 3D
-  </button>)}
-  {!piping&&!hasDims&&<p style={{fontSize:"8px",color:"#2a4858",textAlign:"center"}}>Ingresa al menos: ancho, alto o profundidad</p>}
-
-  {/* ── TABS VISTAS ── */}
-  {(hasDims||piping)&&(<div style={card}>
-    <div style={{display:"flex",gap:"4px",padding:"7px 9px",borderBottom:`1px solid ${BDR}`,flexWrap:"wrap"}}>
-      {!piping&&<button style={tabS(viewTab==="2d")} onClick={()=>setViewTab("2d")}>📐 2D AutoCAD</button>}
+  {/* MAIN TABS CARD */}
+  <div style={cardMain}>
+    <div style={{display:"flex",gap:"4px",padding:"7px 9px",borderBottom:"1px solid rgba(255,255,255,.07)",flexWrap:"wrap"}}>
+      {!piping&&<button style={tabS(viewTab==="ann")} onClick={()=>setViewTab("ann")}>✏ Anotar</button>}
+      {!piping&&<button style={tabS(viewTab==="2d")} onClick={()=>setViewTab("2d")}>📐 2D</button>}
       {!piping&&<button style={tabS(viewTab==="3d")} onClick={()=>setViewTab("3d")}>🎮 3D</button>}
       {piping&&<button style={tabS(viewTab==="pipe3d")} onClick={()=>setViewTab("pipe3d")}>🔩 Piping 3D</button>}
-      {piping&&<button style={tabS(viewTab==="picomp")} onClick={()=>setViewTab("picomp")}>📋 Componentes</button>}
+      {piping&&<button style={tabS(viewTab==="picomp")} onClick={()=>setViewTab("picomp")}>📋 Comp.</button>}
     </div>
 
-    {viewTab==="2d"&&(<div ref={captureRef}>
-      {lbl("📐 Vista 2D tipo AutoCAD — Frontal · Lateral · Planta")}
-      <View2D parts={parts} meas={meas} unit={unit} shape={objInfo?.shape} objName={objInfo?.name}/>
-    </div>)}
-
-    {viewTab==="3d"&&(<div ref={captureRef}>
-      {lbl("🎮 Modelo 3D — Arrastra para rotar")}
-      <V3D parts={parts} meas={meas} unit={unit} shape={objInfo?.shape}/>
-      <div style={{display:"flex",flexWrap:"wrap",gap:"6px",padding:"7px 10px",borderTop:`1px solid ${BDR}`,fontSize:"8px"}}>
-        {parts.filter(p=>meas[p.id]?.value).map(p=><span key={p.id} style={{color:p.color}}>{p.name}: {meas[p.id].value}{unit}</span>)}
+    {/* ANN VIEW */}
+    {viewTab==="ann"&&(<>
+      {/* Category tabs */}
+      <div style={{display:"flex",gap:"3px",padding:"5px 8px",borderBottom:"1px solid rgba(255,255,255,.06)",overflowX:"auto"}}>
+        {Object.keys(toolsByCategory).map(cat=><button key={cat} onClick={()=>setToolCat(cat)} style={{padding:"4px 8px",borderRadius:"5px",background:toolCat===cat?"rgba(0,229,196,.15)":"transparent",color:toolCat===cat?ACC:"#3a6070",border:`1px solid ${toolCat===cat?"rgba(0,229,196,.4)":"rgba(0,229,196,.1)"}`,fontSize:"7px",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"'Space Mono',monospace"}}>{CATS[cat]}</button>)}
       </div>
-    </div>)}
-
-    {viewTab==="pipe3d"&&piping&&(<div ref={captureRef}>
-      {lbl("🔩 Piping 3D — Calidad PBR 3ds Max")}
-      <V3DPipe components={piping.components} dn={piping.dn}/>
-      <div style={{padding:"5px 10px",fontSize:"7px",color:"#3a6878"}}>{piping.label}</div>
-    </div>)}
-
-    {viewTab==="picomp"&&piping&&(<>
-      {lbl("📋 Componentes detectados")}
-      <div style={{maxHeight:"280px",overflowY:"auto"}}>
-        {(piping.components||[]).map((c,i)=>(<div key={i} style={{padding:"7px 11px",borderBottom:"1px solid #05121c",display:"flex",gap:"8px"}}>
-          <div style={{width:"18px",height:"18px",borderRadius:"3px",background:`${COLS[i%COLS.length]}22`,border:`1px solid ${COLS[i%COLS.length]}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"7px",color:COLS[i%COLS.length],fontWeight:700,flexShrink:0}}>{i+1}</div>
-          <div><div style={{fontSize:"8px",color:"#c0dce8",fontWeight:700,textTransform:"capitalize"}}>{c.type?.replace(/_/g," ")}</div>
-            <div style={{fontSize:"7px",color:"#3a6878",lineHeight:1.7}}>{c.dn?`DN${c.dn} · `:""}{c.length?`L:${c.length}mm · `:""}{c.material?`${c.material} · `:""}{c.valve_type?`${c.valve_type} · `:""}{c.angle?`${c.angle}° · `:""}{c.orientation?`Dir:${c.orientation}`:""}</div>
-          </div>
-        </div>))}
-        {!piping.components?.length&&<div style={{padding:"14px",fontSize:"8px",color:"#3a6878",textAlign:"center"}}>Sin componentes. Añade la imagen del plano.</div>}
+      {/* Tools */}
+      <div style={{display:"flex",gap:"3px",padding:"5px 8px",borderBottom:"1px solid rgba(255,255,255,.06)",flexWrap:"wrap",alignItems:"center"}}>
+        {(toolsByCategory[toolCat]||[]).map(t=><button key={t.id} title={t.label} onClick={()=>{setTool(t.id);setPending([]);setCropPend([]);}} style={{padding:"5px 8px",borderRadius:"6px",background:tool===t.id?"linear-gradient(135deg,#00e5c4,#00b89a)":"rgba(255,255,255,.04)",color:tool===t.id?"#07101e":"#7799bb",border:`1px solid ${tool===t.id?"#00e5c4":"rgba(0,229,196,.15)"}`,fontSize:"13px",cursor:"pointer"}}>{t.icon}</button>)}
+        <button title="Mover" onClick={()=>{setTool("sel");setPending([]);setCropPend([]);}} style={{padding:"5px 8px",borderRadius:"6px",background:tool==="sel"?"linear-gradient(135deg,#00e5c4,#00b89a)":"rgba(255,255,255,.04)",color:tool==="sel"?"#07101e":"#7799bb",border:`1px solid ${tool==="sel"?"#00e5c4":"rgba(0,229,196,.15)"}`,fontSize:"13px",cursor:"pointer",marginLeft:"auto"}}>↖</button>
+        <div style={{display:"flex",gap:"3px",alignItems:"center"}}>
+          {COLS.slice(0,6).map((c,i)=><div key={c} onClick={()=>setColorIdx(i)} style={{width:"13px",height:"13px",borderRadius:"50%",background:c,cursor:"pointer",border:colorIdx===i?"2.5px solid #fff":"2px solid transparent",boxShadow:colorIdx===i?`0 0 6px ${c}`:"none"}}/>)}
+        </div>
       </div>
-      <div style={{padding:"8px 10px",borderTop:`1px solid ${BDR}`,display:"flex",gap:"6px",alignItems:"center"}}>
-        <span style={{fontSize:"7px",color:"#3a6878"}}>DN BASE:</span>
-        <input type="number" min="10" value={piping.dn} onChange={e=>setPiping(p=>({...p,dn:parseInt(e.target.value)||p.dn}))}
-          style={{width:"60px",padding:"4px 7px",background:"rgba(0,12,22,.8)",border:`1px solid ${BDR}`,borderRadius:"5px",color:ACC,fontSize:"11px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
-        <span style={{fontSize:"7px",color:ACC}}>mm</span>
-        <button onClick={()=>setViewTab("pipe3d")} style={{marginLeft:"auto",padding:"5px 10px",background:`linear-gradient(135deg,${ACC},#00b89a)`,color:"#05101a",border:"none",borderRadius:"6px",fontSize:"8px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer"}}>↗ Ver 3D</button>
+      {/* Hint bar */}
+      <div style={{padding:"3px 9px",fontSize:"7px",color:"#2a5070",borderBottom:"1px solid rgba(255,255,255,.05)",display:"flex",alignItems:"center",gap:"5px"}}>
+        <span style={{flex:1}}>{tool==="sel"?"↖ Toca para seleccionar · Arrastra para mover":tool==="calib"?"⚖ Dibuja línea sobre medida conocida":tool==="crop"?"✂ Dibuja el área a recortar":pending.length>0||cropPend.length>0?"Coloca el punto final":TOOLS.find(t=>t.id===tool)?.label}</span>
+        {(pending.length>0||cropPend.length>0)&&<button onClick={()=>{setPending([]);setCropPend([]);}} style={{background:"transparent",border:"none",color:"#ff5566",cursor:"pointer",fontSize:"8px"}}>✕</button>}
+        <button onClick={undo} disabled={!hist.length} style={{padding:"2px 6px",background:"transparent",border:`1px solid ${hist.length?"rgba(0,229,196,.25)":"transparent"}`,color:hist.length?ACC:"#2a5070",borderRadius:"4px",fontSize:"7px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>↩ Undo</button>
+      </div>
+      {/* CANVAS */}
+      <div ref={captureRef} style={{position:"relative",background:"#000",overflow:"hidden"}}>
+        <div ref={containerRef} style={{position:"relative",lineHeight:0,transform:`rotate(${rotation}deg)`,cursor:tool==="sel"?"default":tool==="crop"?"crosshair":"crosshair",userSelect:"none"}} onClick={handleCvClick}>
+          <img src={image} alt="" draggable="false" style={{width:"100%",display:"block",opacity:.92}}/>
+          {/* Crop overlay */}
+          {cropPend.length===1&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"rgba(0,229,196,.1)",border:"2px dashed rgba(0,229,196,.6)"}}/>}
+          {/* SVG layer */}
+          <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",overflow:"visible",pointerEvents:"none"}}>
+            {shapeAnns.map(a=><AnnSVG key={a.id} a={a}/>)}
+            {pending.length===1&&<circle cx={`${pending[0].x*100}%`} cy={`${pending[0].y*100}%`} r="5" fill={COLS[colorIdx%COLS.length]} opacity=".8" pointerEvents="none"/>}
+          </svg>
+          {/* Marker elements */}
+          {markerAnns.map((a,i)=>(
+            <div key={a.id} className="notch" onMouseDown={e=>startDrag(e,a.id,0)} onTouchStart={e=>startDrag(e,a.id,0)} onClick={e=>{e.stopPropagation();setSelId(a.id);setTool("sel");}}
+              style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",width:"26px",height:"26px",borderRadius:"50%",background:selId===a.id?a.color:"rgba(0,0,0,.85)",border:`2.5px solid ${a.color}`,color:selId===a.id?"#000":a.color,display:"flex",alignItems:"center",justifyContent:"center",cursor:"grab",zIndex:15,boxShadow:`0 0 ${selId===a.id?14:5}px ${a.color}`,fontSize:a.type==="pin"?"18px":"9px",fontWeight:"700"}}>
+              {a.type==="pin"?"📍":a.type==="star"?"★":a.type==="diam"?"◆":a.type==="tgt"?"⊕":a.type==="txt"?"T":(i+1)}
+              {(a.title||a.value)&&<div style={{position:"absolute",top:"-20px",left:"50%",transform:"translateX(-50%)",background:"rgba(0,0,0,.9)",color:a.color,fontSize:"7px",padding:"1px 5px",borderRadius:"4px",whiteSpace:"nowrap",fontFamily:"'Space Mono',monospace",border:`1px solid ${a.color}50`}}>{a.title||""}{a.value!=null?` ${a.value}${a.unit}`:""}</div>}
+            </div>
+          ))}
+          {/* Drag handles for selected */}
+          {selAnn&&!MTYPE.includes(selAnn.type)&&selAnn.points.map((p,pi)=>(
+            <div key={pi} className="notch" onMouseDown={e=>startDrag(e,selAnn.id,pi)} onTouchStart={e=>startDrag(e,selAnn.id,pi)} style={{position:"absolute",left:`${p.x*100}%`,top:`${p.y*100}%`,transform:"translate(-50%,-50%)",width:"14px",height:"14px",borderRadius:"50%",background:selAnn.color,cursor:"grab",zIndex:25,border:"2.5px solid #fff",boxShadow:`0 0 8px ${selAnn.color}`}}/>
+          ))}
+        </div>
+      </div>
+      {/* Controls bar */}
+      <div style={{display:"flex",gap:"4px",padding:"6px 9px",borderTop:"1px solid rgba(255,255,255,.06)",flexWrap:"wrap"}}>
+        <button onClick={()=>setRotation(r=>(r+90)%360)} style={{padding:"4px 9px",background:"rgba(68,170,255,.1)",border:"1px solid rgba(68,170,255,.3)",color:"#44aaff",borderRadius:"6px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>↻ +90°</button>
+        <button onClick={()=>setRotation(r=>(r-90+360)%360)} style={{padding:"4px 9px",background:"rgba(68,170,255,.1)",border:"1px solid rgba(68,170,255,.3)",color:"#44aaff",borderRadius:"6px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>↺ -90°</button>
+        {origImage&&origImage!==image&&<button onClick={()=>{setImage(origImage);setAnns([]);setHist([]);}} style={{padding:"4px 9px",background:"rgba(255,187,0,.1)",border:"1px solid rgba(255,187,0,.3)",color:"#ffbb00",borderRadius:"6px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>↩ Imagen original</button>}
+        {selId&&<button onClick={()=>delAnn(selId)} style={{padding:"4px 9px",background:"rgba(255,80,80,.1)",border:"1px solid rgba(255,80,80,.3)",color:"#ff7788",borderRadius:"6px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>🗑 Sel.</button>}
+        <button onClick={()=>{if(window.confirm("¿Borrar todas las anotaciones?"))setAnns([]);}} style={{padding:"4px 9px",background:"rgba(255,80,80,.06)",border:"1px solid rgba(255,80,80,.18)",color:"rgba(255,100,110,.7)",borderRadius:"6px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>🗑 Todo</button>
+        {scale&&<span style={{fontSize:"7px",color:ACC,padding:"4px 6px",background:"rgba(0,229,196,.08)",borderRadius:"5px",border:"1px solid rgba(0,229,196,.2)"}}>⚖ 1{scale.unit}={scale.ppu.toFixed(0)}px</span>}
       </div>
     </>)}
+
+    {/* 2D VIEW - ALWAYS RENDERS */}
+    {viewTab==="2d"&&(<div ref={captureRef}>
+      {lbl("📐 Plano 2D AutoCAD — Frontal · Lateral · Planta")}
+      {!hasDims&&<div style={{padding:"10px 12px",fontSize:"8px",color:"#5577aa",background:"rgba(0,100,200,.08)",borderBottom:"1px solid rgba(0,100,200,.15)"}}>
+        💡 Tip: para ver las vistas, edita una anotación y asígnale el eje (Ancho / Alto / Profundidad)
+      </div>}
+      <View2D anns={anns} objName={projTitle||objInfo?.name} scale2D={scale}/>
+    </div>)}
+
+    {/* 3D VIEW - ALWAYS RENDERS */}
+    {viewTab==="3d"&&(<div ref={captureRef}>
+      {lbl("🎮 Modelo 3D — Arrastra para rotar")}
+      {!hasDims&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#5577aa",background:"rgba(0,100,200,.08)",borderBottom:"1px solid rgba(0,100,200,.15)"}}>
+        💡 Muestra los 100 mm por defecto. Asigna eje a tus medidas para ver la escala real.
+      </div>}
+      <V3D anns={anns} shape={objInfo?.shape}/>
+      <div style={{display:"flex",flexWrap:"wrap",gap:"5px",padding:"7px 10px",borderTop:"1px solid rgba(255,255,255,.06)",fontSize:"7px"}}>
+        <span style={{color:"#ff5555"}}>▶ X (Ancho)</span><span style={{color:"#55ff55"}}>▶ Y (Alto)</span><span style={{color:"#5555ff"}}>▶ Z (Prof.)</span>
+        {["width","height","depth"].map(ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?<span key={ax} style={{color:a.color,marginLeft:"8px"}}>{a.title||ax}: {a.value}{a.unit}</span>:null;})}
+      </div>
+    </div>)}
+
+    {/* PIPING 3D */}
+    {viewTab==="pipe3d"&&piping&&(<div ref={captureRef}>
+      {lbl("🔩 Piping 3D — Calidad 3ds Max PBR","#ffbb00")}
+      <V3DPipe components={piping.components} dn={piping.dn}/>
+      <div style={{padding:"5px 10px 6px",fontSize:"7px",color:"#5577aa"}}>{piping.label}</div>
+    </div>)}
+
+    {/* PIPING COMPONENTS */}
+    {viewTab==="picomp"&&piping&&(<>
+      {lbl("📋 Componentes detectados","#ffbb00")}
+      <div style={{maxHeight:"260px",overflowY:"auto"}}>
+        {(piping.components||[]).map((c,i)=>(<div key={i} style={{padding:"7px 12px",borderBottom:"1px solid rgba(255,255,255,.05)",display:"flex",gap:"8px",alignItems:"flex-start"}}>
+          <div style={{width:"18px",height:"18px",borderRadius:"4px",background:`${COLS[i%COLS.length]}22`,border:`1px solid ${COLS[i%COLS.length]}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"7px",color:COLS[i%COLS.length],fontWeight:700,flexShrink:0}}>{i+1}</div>
+          <div style={{flex:1}}><div style={{fontSize:"8px",color:"#d0e8f8",fontWeight:700,textTransform:"capitalize"}}>{c.type?.replace(/_/g," ")}</div>
+            <div style={{fontSize:"7px",color:"#4477aa"}}>{c.dn?`DN${c.dn} `:""}{c.length?`L:${c.length}mm `:""}{c.material||""}{c.valve_type?` ${c.valve_type}`:""}</div>
+          </div>
+        </div>))}
+      </div>
+      <div style={{padding:"8px 10px",borderTop:"1px solid rgba(255,255,255,.06)",display:"flex",gap:"5px",alignItems:"center"}}>
+        <span style={{fontSize:"7px",color:"#4477aa"}}>DN:</span>
+        <input type="number" min="10" value={piping.dn} onChange={e=>setPiping(p=>({...p,dn:parseInt(e.target.value)||p.dn}))} style={{width:"55px",padding:"4px 7px",background:"rgba(0,10,25,.8)",border:"1px solid rgba(255,187,0,.3)",borderRadius:"5px",color:"#ffbb00",fontSize:"11px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
+        <span style={{fontSize:"7px",color:"#ffbb00"}}>mm</span>
+        <button onClick={()=>setViewTab("pipe3d")} style={{marginLeft:"auto",padding:"5px 10px",background:"linear-gradient(135deg,#ffbb00,#ff8800)",color:"#07101e",border:"none",borderRadius:"6px",fontSize:"8px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer"}}>↗ Ver 3D</button>
+      </div>
+    </>)}
+  </div>
+
+  {/* EDITOR SELECCIONADO */}
+  {selAnn&&(<div style={card3}>
+    {lbl("✏ Editar anotación seleccionada","#44dd88")}
+    <div style={{padding:"9px 12px",display:"flex",flexDirection:"column",gap:"7px"}}>
+      <div style={{display:"flex",gap:"5px"}}>
+        <input value={selAnn.title||""} placeholder="Título / etiqueta" onChange={e=>updAnn(selId,{title:e.target.value,label:e.target.value})} style={{flex:1,padding:"6px 9px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(68,220,140,.25)",borderRadius:"6px",color:"#d0e8f8",fontSize:"9px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
+        <select value={selAnn.axis||""} onChange={e=>updAnn(selId,{axis:e.target.value})} style={{padding:"6px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(68,220,140,.3)",borderRadius:"6px",color:"#44dd88",fontSize:"8px",fontFamily:"'Space Mono',monospace",outline:"none"}}>
+          <option value="">eje...</option><option value="width">Ancho (X)</option><option value="height">Alto (Y)</option><option value="depth">Prof. (Z)</option><option value="other">Otro</option>
+        </select>
+      </div>
+      <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
+        <input type="number" min="0" value={selAnn.value!=null?selAnn.value:""} placeholder="Valor medido" onChange={e=>updAnn(selId,{value:e.target.value===""?null:parseFloat(e.target.value)})} style={{flex:1,padding:"6px 9px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(0,229,196,.3)",borderRadius:"6px",color:ACC,fontSize:"13px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
+        <div style={{display:"flex",gap:"3px"}}>
+          {["mm","cm","m","in","ft"].map(u=><button key={u} style={uBtn((selAnn.unit||"cm")===u)} onClick={()=>updAnn(selId,{unit:u})}>{u}</button>)}
+        </div>
+      </div>
+      <div style={{display:"flex",gap:"3px",alignItems:"center",flexWrap:"wrap"}}>
+        <span style={{fontSize:"7px",color:"#3a6070"}}>COLOR:</span>
+        {COLS.map(c=><div key={c} onClick={()=>updAnn(selId,{color:c})} style={{width:"15px",height:"15px",borderRadius:"50%",background:c,cursor:"pointer",border:selAnn.color===c?"2.5px solid #fff":"2px solid transparent",boxShadow:selAnn.color===c?`0 0 6px ${c}`:"none"}}/>)}
+      </div>
+    </div>
   </div>)}
 
-  {/* ── EXPORTAR ── */}
-  <div style={card}>{lbl("📤 Exportar y compartir")}
+  {/* AI ASSISTANT */}
+  <div style={card2}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      {lbl("🤖 Asistente IA — siempre activo","#aa66ff")}
+      <button onClick={askAI} disabled={aiLoad} style={{margin:"4px 9px",padding:"5px 11px",background:aiLoad?"rgba(170,100,255,.1)":"linear-gradient(135deg,#aa44ff,#7722dd)",color:aiLoad?"#6644aa":"#fff",border:"none",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:aiLoad?"not-allowed":"pointer"}}>
+        {aiLoad?"Analizando...":"⚡ Analizar"}
+      </button>
+    </div>
+    {aiMsg&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#c0a8f8",lineHeight:1.8,borderTop:"1px solid rgba(170,100,255,.15)",background:"rgba(170,100,255,.04)"}}>{aiMsg}</div>}
+  </div>
+
+  {/* RESUMEN MEDIDAS */}
+  <div style={card4}>
+    <div style={{display:"flex",alignItems:"center",cursor:"pointer"}} onClick={()=>setShowSum(s=>!s)}>
+      {lbl(`📋 Resumen de medidas (${anns.filter(a=>a.value!=null).length})`,  "#ffbb00")}
+      <span style={{padding:"5px 10px",color:"#ffbb00",fontSize:"11px"}}>{showSum?"▲":"▼"}</span>
+    </div>
+    {showSum&&(<>
+      {anns.filter(a=>a.value!=null).length===0&&<div style={{padding:"12px",fontSize:"8px",color:"#5577aa",textAlign:"center"}}>Dibuja y añade medidas para verlas aquí<br/><span style={{fontSize:"7px",color:"#3a5060"}}>Selecciona herramienta → dibuja → confirma medida</span></div>}
+      {anns.filter(a=>a.value!=null).map(a=>(
+        <div key={a.id} onClick={()=>setSelId(a.id)} style={{display:"flex",alignItems:"center",gap:"8px",padding:"7px 12px",background:selId===a.id?"rgba(255,187,0,.06)":"transparent",borderBottom:"1px solid rgba(255,255,255,.04)",cursor:"pointer"}}>
+          <div style={{width:"10px",height:"10px",borderRadius:"50%",background:a.color,flexShrink:0,boxShadow:`0 0 5px ${a.color}`}}/>
+          <div style={{flex:1}}>
+            <span style={{fontSize:"8px",color:"#d0e8f8"}}>{a.title||a.type}</span>
+            {a.axis&&<span style={{fontSize:"7px",color:"#4477aa",marginLeft:"6px"}}>({a.axis==="width"?"Ancho":a.axis==="height"?"Alto":a.axis==="depth"?"Prof.":a.axis})</span>}
+          </div>
+          <span style={{fontSize:"11px",fontWeight:700,color:a.color}}>{a.value} {a.unit}</span>
+          <span style={{fontSize:"7px",color:"#3a5070"}}>= {fv(toMM(a.value,a.unit),"mm")}</span>
+          <button onClick={e=>{e.stopPropagation();delAnn(a.id);}} style={{background:"transparent",border:"none",color:"#ff5566",cursor:"pointer",fontSize:"11px",opacity:.7}}>✕</button>
+        </div>
+      ))}
+      {["width","height","depth"].every(ax=>anns.some(a=>a.axis===ax&&a.value!=null))&&(()=>{
+        const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return toMM(a.value,a.unit);};
+        const vol=gd("width")*gd("height")*gd("depth");
+        return <div style={{padding:"7px 12px",display:"flex",justifyContent:"space-between",fontSize:"8px",borderTop:"1px solid rgba(255,187,0,.15)",background:"rgba(255,187,0,.04)"}}>
+          <span style={{color:"#aa8800"}}>📦 Volumen estimado</span><span style={{color:"#ffbb00",fontWeight:700}}>{(vol/1000).toFixed(1)} cm³</span>
+        </div>;
+      })()}
+    </>)}
+  </div>
+
+  {/* SYNC + EXPORT */}
+  <div style={card1}>
+    {lbl("📤 Exportar · Compartir · Sincronizar","#44aaff")}
     <div style={{padding:"8px",display:"flex",gap:"5px",flexWrap:"wrap"}}>
-      <button onClick={exportPNG} style={{flex:1,padding:"8px 4px",background:"transparent",border:`1px solid ${ACC}`,color:ACC,borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"60px"}}>📥 PNG</button>
-      <button onClick={exportPDF} style={{flex:1,padding:"8px 4px",background:"rgba(255,80,80,.07)",border:"1px solid rgba(255,80,80,.25)",color:"#ff7766",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"60px"}}>📄 PDF</button>
-      <button onClick={shareWA} style={{flex:1,padding:"8px 4px",background:"rgba(37,211,102,.07)",border:"1px solid rgba(37,211,102,.25)",color:"#25d366",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"60px"}}>💬 WA</button>
-      <button onClick={async()=>{try{const cv=await doCapture();const a=document.createElement("a");a.href=cv.toDataURL("image/png");a.download=`${projName}.png`;a.click();alert("Imagen descargada. Adjúntala al email.");}catch(e){console.error(e);}}}
-        style={{flex:1,padding:"8px 4px",background:"rgba(100,150,255,.07)",border:"1px solid rgba(100,150,255,.25)",color:"#88aaff",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"60px"}}>📧 Email</button>
+      <button onClick={exportPNG} style={{flex:1,padding:"8px 4px",background:"rgba(0,229,196,.12)",border:"1px solid rgba(0,229,196,.35)",color:ACC,borderRadius:"7px",fontSize:"7px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"55px"}}>📥 PNG</button>
+      <button onClick={exportPDF} style={{flex:1,padding:"8px 4px",background:"rgba(255,80,80,.09)",border:"1px solid rgba(255,80,80,.3)",color:"#ff7788",borderRadius:"7px",fontSize:"7px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"55px"}}>📄 PDF</button>
+      <button onClick={shareWA} style={{flex:1,padding:"8px 4px",background:"rgba(37,211,102,.08)",border:"1px solid rgba(37,211,102,.3)",color:"#25d366",borderRadius:"7px",fontSize:"7px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"55px"}}>💬 WA</button>
+      <button onClick={shareEmail} style={{flex:1,padding:"8px 4px",background:"rgba(100,150,255,.08)",border:"1px solid rgba(100,150,255,.28)",color:"#88aaff",borderRadius:"7px",fontSize:"7px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"55px"}}>📧 Email</button>
+      <button onClick={generateSyncLink} style={{flex:2,padding:"8px 4px",background:"linear-gradient(135deg,rgba(0,150,255,.15),rgba(100,50,255,.12))",border:"1px solid rgba(0,150,255,.4)",color:"#44aaff",borderRadius:"7px",fontSize:"7px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"100px",fontWeight:700}}>☁ Enlace para móvil/PC</button>
     </div>
   </div>
 
@@ -692,6 +817,56 @@ Include 3-6 relevant measurable parts for the object. markerX/markerY = position
 
 </div>
 <canvas ref={canvasRef} style={{display:"none"}}/>
+
+{/* MEASURE PROMPT MODAL */}
+{(measuring||calibAnn)&&(
+<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(0,229,196,.5)",borderRadius:"16px 16px 0 0",padding:"16px",zIndex:500,animation:"slideUp .25s ease",backdropFilter:"blur(20px)",boxShadow:"0 -4px 30px rgba(0,0,0,.6)"}}>
+  <div style={{fontSize:"9px",color:ACC,letterSpacing:".18em",marginBottom:"12px",display:"flex",alignItems:"center",gap:"8px"}}>
+    <span>{calibAnn?"⚖ CALIBRAR ESCALA REAL":"📐 AÑADIR MEDIDA"}</span>
+    <span style={{marginLeft:"auto",fontSize:"18px"}}>{measuring?.icon||calibAnn?.icon||"📐"}</span>
+  </div>
+  <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+    <input placeholder="Título (ej: Ancho total, Diámetro...)" value={mIn.title} onChange={e=>setMIn(s=>({...s,title:e.target.value}))} style={{width:"100%",padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(0,229,196,.3)",borderRadius:"8px",color:"#d0e8f8",fontSize:"10px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
+    <div style={{display:"flex",gap:"7px",alignItems:"center"}}>
+      <input type="number" min="0" step=".01" placeholder="Valor numérico" value={mIn.value} onChange={e=>setMIn(s=>({...s,value:e.target.value}))} style={{flex:1,padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(0,229,196,.5)",borderRadius:"8px",color:ACC,fontSize:"15px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
+      <div style={{display:"flex",gap:"3px",flexWrap:"wrap"}}>
+        {["mm","cm","m","in","ft"].map(u=><button key={u} style={uBtn(mIn.unit===u)} onClick={()=>setMIn(s=>({...s,unit:u}))}>{u}</button>)}
+      </div>
+    </div>
+    {!calibAnn&&(<select value={mIn.axis} onChange={e=>setMIn(s=>({...s,axis:e.target.value}))} style={{padding:"8px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(68,170,255,.3)",borderRadius:"8px",color:"#44aaff",fontSize:"9px",fontFamily:"'Space Mono',monospace",outline:"none"}}>
+      <option value="">Tipo / eje de la medida (opcional pero recomendado)</option>
+      <option value="width">Ancho (eje X → activa vista 2D y 3D)</option>
+      <option value="height">Alto (eje Y → activa vista 2D y 3D)</option>
+      <option value="depth">Profundidad (eje Z → activa vista 2D y 3D)</option>
+      <option value="other">Otro / sin eje</option>
+    </select>)}
+    <div style={{display:"flex",gap:"7px",marginTop:"2px"}}>
+      <button onClick={calibAnn?()=>setCalibAnn(null):()=>setMeasuring(null)} style={{flex:1,padding:"10px",background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.12)",color:"#5577aa",borderRadius:"8px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>
+        {calibAnn?"✕ Cancelar":"Sin medida"}
+      </button>
+      <button onClick={calibAnn?confirmCalib:confirmMeasure} style={{flex:2,padding:"10px",background:"linear-gradient(135deg,#00e5c4,#0099ff)",color:"#07101e",border:"none",borderRadius:"8px",fontSize:"10px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer",boxShadow:"0 2px 14px rgba(0,229,196,.4)"}}>
+        ✓ {calibAnn?"CALIBRAR":"CONFIRMAR MEDIDA"}
+      </button>
+    </div>
+  </div>
+</div>
+)}
+
+{/* CROP CONFIRM MODAL */}
+{cropDlg&&(
+<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(255,187,0,.5)",borderRadius:"16px 16px 0 0",padding:"16px",zIndex:500,animation:"slideUp .25s ease",backdropFilter:"blur(20px)"}}>
+  <div style={{fontSize:"9px",color:"#ffbb00",letterSpacing:".18em",marginBottom:"10px"}}>✂ RECORTAR ZONA SELECCIONADA</div>
+  <div style={{fontSize:"8px",color:"#8899aa",lineHeight:1.8,marginBottom:"12px"}}>
+    ¿Quieres trabajar solo con la zona seleccionada o medir el objeto completo?<br/>
+    <span style={{color:"#4477aa"}}>Si recortas, las anotaciones actuales se borrarán.</span>
+  </div>
+  <div style={{display:"flex",gap:"7px"}}>
+    <button onClick={()=>setCropDlg(null)} style={{flex:1,padding:"10px",background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.12)",color:"#5577aa",borderRadius:"8px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>Medir todo</button>
+    <button onClick={()=>applyCrop(image,cropDlg.p1,cropDlg.p2)} style={{flex:2,padding:"10px",background:"linear-gradient(135deg,#ffbb00,#ff8800)",color:"#07101e",border:"none",borderRadius:"8px",fontSize:"10px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer"}}>✂ RECORTAR Y MEDIR ESTA ZONA</button>
+  </div>
+</div>
+)}
+
 </div>
   );
 }
