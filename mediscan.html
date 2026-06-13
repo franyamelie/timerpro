@@ -785,40 +785,114 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
       {piping&&<button style={tabS(viewTab==="picomp")} onClick={()=>setViewTab("picomp")}>📋 Comp.</button>}
     </div>
 
-    {/* ANNOTATE TAB */}
-    {viewTab==="ann"&&(<>
-      <div style={{display:"flex",gap:"3px",padding:"5px 8px",borderBottom:"1px solid rgba(255,255,255,.05)",overflowX:"auto"}}>
-        {Object.keys(toolsByCategory).map(cat=><button key={cat} onClick={()=>setToolCat(cat)} style={{padding:"4px 8px",borderRadius:"5px",background:toolCat===cat?"rgba(0,229,196,.14)":"transparent",color:toolCat===cat?ACC:"#3a6070",border:`1px solid ${toolCat===cat?"rgba(0,229,196,.38)":"rgba(0,229,196,.08)"}`,fontSize:"7px",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"'Space Mono',monospace"}}>{CATS[cat]}</button>)}
+         {/* ANNOTATE TAB */}
+      {viewTab==="ann"&&(<>
+
+      {/* ══ PASO 1: SELECCIONA HERRAMIENTA ══ */}
+      <div style={{background:"rgba(0,229,196,.06)",borderBottom:"1px solid rgba(0,229,196,.15)",padding:"8px 10px"}}>
+        <div style={{fontSize:"8px",color:ACC,fontWeight:700,marginBottom:"6px",letterSpacing:".1em"}}>
+          ① SELECCIONA HERRAMIENTA
+        </div>
+        <div style={{display:"flex",gap:"4px",marginBottom:"7px",overflowX:"auto",paddingBottom:"2px"}}>
+          {Object.keys(toolsByCategory).map(cat=>(
+            <button key={cat} onClick={()=>setToolCat(cat)}
+              style={{padding:"4px 10px",borderRadius:"6px",whiteSpace:"nowrap",
+                background:toolCat===cat?"rgba(0,229,196,.25)":"rgba(255,255,255,.04)",
+                color:toolCat===cat?ACC:"#7799bb",
+                border:`1.5px solid ${toolCat===cat?"#00e5c4":"rgba(0,229,196,.15)"}`,
+                fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",
+                fontWeight:toolCat===cat?700:400}}>
+              {CATS[cat]}
+            </button>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"flex-start"}}>
+          {(toolsByCategory[toolCat]||[]).map(t=>(
+            <button key={t.id} onClick={()=>{setTool(t.id);setPending([]);setPreview(null);}}
+              style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",
+                padding:"8px 6px",borderRadius:"8px",cursor:"pointer",minWidth:"44px",
+                background:tool===t.id?"linear-gradient(135deg,#00e5c4,#00b89a)":"rgba(255,255,255,.04)",
+                color:tool===t.id?"#07101e":"#8899bb",
+                border:`2px solid ${tool===t.id?"#00e5c4":"rgba(0,229,196,.12)"}`,
+                boxShadow:tool===t.id?"0 0 16px rgba(0,229,196,.55)":"none",
+                transform:tool===t.id?"scale(1.1)":"scale(1)",transition:"all .15s"}}>
+              <span style={{fontSize:"18px",lineHeight:1}}>{t.icon}</span>
+              <span style={{fontSize:"6px",fontFamily:"'Space Mono',monospace",fontWeight:700,
+                textAlign:"center",lineHeight:1.2,maxWidth:"40px"}}>{t.label.slice(0,8)}</span>
+            </button>
+          ))}
+          <button onClick={()=>{setTool("sel");setPending([]);setPreview(null);}}
+            style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",
+              padding:"8px 6px",borderRadius:"8px",cursor:"pointer",minWidth:"44px",
+              background:tool==="sel"?"linear-gradient(135deg,#00e5c4,#00b89a)":"rgba(255,255,255,.04)",
+              color:tool==="sel"?"#07101e":"#8899bb",
+              border:`2px solid ${tool==="sel"?"#00e5c4":"rgba(0,229,196,.12)"}`,
+              boxShadow:tool==="sel"?"0 0 16px rgba(0,229,196,.55)":"none"}}>
+            <span style={{fontSize:"18px",lineHeight:1}}>↖</span>
+            <span style={{fontSize:"6px",fontFamily:"'Space Mono',monospace",fontWeight:700}}>Mover</span>
+          </button>
+        </div>
+        <div style={{display:"flex",gap:"5px",alignItems:"center",marginTop:"7px",flexWrap:"wrap"}}>
+          <span style={{fontSize:"7px",color:"#4477aa"}}>Color:</span>
+          {COLS.slice(0,8).map((c,i)=>(
+            <div key={c} onClick={()=>setColorIdx(i)}
+              style={{width:"17px",height:"17px",borderRadius:"50%",background:c,cursor:"pointer",
+                border:colorIdx===i?"3px solid #fff":"2px solid transparent",
+                boxShadow:colorIdx===i?`0 0 8px ${c}`:"none"}}/>
+          ))}
+          {showStyleOpts&&<>
+            <span style={{fontSize:"7px",color:"#4477aa",marginLeft:"4px"}}>Línea:</span>
+            {[["solid","━ Cont."],["dashed","┄ Disc."],["dotted","··· Punt."]].map(([v,lb])=>(
+              <button key={v} onClick={()=>setLStyle(v)}
+                style={{padding:"2px 8px",borderRadius:"5px",
+                  background:lStyle===v?"rgba(0,229,196,.2)":"transparent",
+                  color:lStyle===v?ACC:"#5577aa",
+                  border:`1px solid ${lStyle===v?"rgba(0,229,196,.5)":"rgba(0,229,196,.12)"}`,
+                  fontSize:"7px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>{lb}</button>
+            ))}
+          </>}
+        </div>
       </div>
-      <div style={{display:"flex",gap:"3px",padding:"5px 8px",borderBottom:"1px solid rgba(255,255,255,.05)",flexWrap:"wrap",alignItems:"center"}}>
-        {(toolsByCategory[toolCat]||[]).map(t=><button key={t.id} title={t.label} onClick={()=>{setTool(t.id);setPending([]);pendingRef.current=[];setPreview(null);drawingRef.current=null;}}
-          style={{padding:"5px 8px",borderRadius:"6px",background:tool===t.id?"linear-gradient(135deg,#00e5c4,#00b89a)":"rgba(255,255,255,.04)",color:tool===t.id?"#07101e":"#7799bb",border:`1px solid ${tool===t.id?"#00e5c4":"rgba(0,229,196,.14)"}`,fontSize:"13px",cursor:"pointer",boxShadow:tool===t.id?"0 0 10px rgba(0,229,196,.4)":"none"}}>{t.icon}</button>)}
-        <button onClick={()=>{setTool("sel");setPending([]);pendingRef.current=[];setPreview(null);}} style={{padding:"5px 8px",borderRadius:"6px",background:tool==="sel"?"linear-gradient(135deg,#00e5c4,#00b89a)":"rgba(255,255,255,.04)",color:tool==="sel"?"#07101e":"#7799bb",border:`1px solid ${tool==="sel"?"#00e5c4":"rgba(0,229,196,.14)"}`,fontSize:"13px",cursor:"pointer",marginLeft:"auto"}}>↖</button>
-        {COLS.slice(0,6).map((c,i)=><div key={c} onClick={()=>setColorIdx(i)} style={{width:"13px",height:"13px",borderRadius:"50%",background:c,cursor:"pointer",border:colorIdx===i?"2.5px solid #fff":"2px solid transparent",boxShadow:colorIdx===i?`0 0 6px ${c}`:"none"}}/>)}
-      </div>
-      {showStyleOpts&&<div style={{padding:"5px 8px",borderBottom:"1px solid rgba(255,255,255,.05)",display:"flex",gap:"4px",flexWrap:"wrap",alignItems:"center",background:"rgba(0,229,196,.03)"}}>
-        <span style={{fontSize:"7px",color:ACC}}>ESTILO:</span>
-        {[["solid","━ Continua"],["dashed","┄ Discontinua"],["dotted","···"]].map(([v,lb])=><button key={v} onClick={()=>setLStyle(v)} style={{padding:"3px 7px",borderRadius:"4px",background:lStyle===v?"rgba(0,229,196,.18)":"transparent",color:lStyle===v?ACC:"#3a6878",border:`1px solid ${lStyle===v?"rgba(0,229,196,.45)":"rgba(0,229,196,.1)"}`,fontSize:"7px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>{lb}</button>)}
-        {["arr1","arr2","arr3","arr4","dist"].includes(tool)&&<>
-          <span style={{fontSize:"7px",color:"#44aaff",marginLeft:"4px"}}>FLECHA:</span>
-          {[["end","→ Final"],["both","↔ Ambas"],["none","─ Sin"]].map(([v,lb])=><button key={v} onClick={()=>setAHead(v)} style={{padding:"3px 7px",borderRadius:"4px",background:aHead===v?"rgba(68,170,255,.18)":"transparent",color:aHead===v?"#44aaff":"#3a6878",border:`1px solid ${aHead===v?"rgba(68,170,255,.45)":"rgba(68,170,255,.1)"}`,fontSize:"7px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>{lb}</button>)}
-        </>}
-      </div>}
-      {/* Active tool indicator */}
-      <div style={{padding:"4px 9px",borderBottom:"1px solid rgba(255,255,255,.04)",display:"flex",alignItems:"center",gap:"6px",background:tool!=="sel"?"rgba(0,229,196,.04)":"transparent",minHeight:"32px"}}>
-        {tool!=="sel"?<>
-          <div style={{display:"flex",alignItems:"center",gap:"5px",padding:"3px 10px",background:"linear-gradient(135deg,#00e5c4,#00b89a)",borderRadius:"20px",flexShrink:0}}>
-            <span style={{fontSize:"13px"}}>{TOOLS.find(t=>t.id===tool)?.icon}</span>
-            <span style={{fontSize:"7px",fontWeight:700,color:"#07101e",fontFamily:"'Space Mono',monospace",whiteSpace:"nowrap"}}>{TOOLS.find(t=>t.id===tool)?.label}</span>
+
+      {/* ══ PASO 2: DIBUJA EN LA IMAGEN ══ */}
+      <div style={{padding:"6px 10px",display:"flex",alignItems:"center",gap:"7px",
+        background:tool!=="sel"?"linear-gradient(90deg,rgba(0,229,196,.08),transparent)":"rgba(255,255,255,.01)",
+        borderBottom:"1px solid rgba(255,255,255,.05)",minHeight:"38px"}}>
+        {tool!=="sel" ? <>
+          <div style={{display:"flex",alignItems:"center",gap:"5px",padding:"4px 11px",
+            background:"linear-gradient(135deg,#00e5c4,#00b89a)",borderRadius:"20px",flexShrink:0}}>
+            <span style={{fontSize:"14px"}}>{TOOLS.find(t=>t.id===tool)?.icon}</span>
+            <span style={{fontSize:"8px",fontWeight:700,color:"#07101e",fontFamily:"'Space Mono',monospace"}}>
+              {TOOLS.find(t=>t.id===tool)?.label}
+            </span>
           </div>
-          <span style={{flex:1,fontSize:"7px",color:"#3a6070"}}>
-            {DRAG_TOOLS.includes(tool)?"👆 Manten pulsado y arrastra":pending.length>0?`👆 2º punto — toca en la imagen`:"👆 Toca en la imagen"}
+          <span style={{fontSize:"8px",color:"#7aaabb",flex:1}}>
+            {DRAG_TOOLS.includes(tool)
+              ? "② Mantén pulsado y arrastra en la imagen"
+              : pending.length===1
+                ? "② Toca el 2º punto en la imagen"
+                : "② Toca en la imagen para medir"}
           </span>
-        </>:<span style={{fontSize:"7px",color:"#3a6070"}}>↖ Selecciona herramienta o toca elemento para editar</span>}
-        {pending.length>0&&<button onClick={()=>{setPending([]);pendingRef.current=[];setPreview(null);}} style={{background:"rgba(255,80,80,.15)",border:"1px solid rgba(255,80,80,.3)",color:"#ff7788",cursor:"pointer",fontSize:"8px",padding:"2px 7px",borderRadius:"4px"}}>✕</button>}
-        <button onClick={undo} disabled={hist.length===0} style={{padding:"3px 8px",background:hist.length>0?"rgba(0,229,196,.12)":"transparent",border:`1px solid ${hist.length>0?"rgba(0,229,196,.35)":"transparent"}`,color:hist.length>0?ACC:"#2a5070",borderRadius:"5px",fontSize:"8px",cursor:hist.length>0?"pointer":"default",fontFamily:"'Space Mono',monospace",fontWeight:700,flexShrink:0}}>↩ {hist.length}</button>
+        </> : <span style={{fontSize:"8px",color:"#3a5070",flex:1}}>
+          ← Selecciona herramienta arriba y toca la imagen
+        </span>}
+        {pending.length>0&&(
+          <button onClick={()=>{setPending([]);setPreview(null);}}
+            style={{background:"rgba(255,80,80,.15)",border:"1px solid rgba(255,80,80,.35)",
+              color:"#ff7788",cursor:"pointer",fontSize:"8px",padding:"3px 9px",borderRadius:"5px",flexShrink:0}}>
+            ✕ Cancelar
+          </button>
+        )}
+        <button onClick={undo} disabled={hist.length===0}
+          style={{padding:"4px 9px",background:hist.length>0?"rgba(0,229,196,.12)":"transparent",
+            border:`1px solid ${hist.length>0?"rgba(0,229,196,.35)":"transparent"}`,
+            color:hist.length>0?ACC:"#2a5070",borderRadius:"6px",fontSize:"8px",
+            cursor:hist.length>0?"pointer":"default",fontFamily:"'Space Mono',monospace",fontWeight:700,flexShrink:0}}>
+          ↩ {hist.length}
+        </button>
       </div>
-      {/* IMAGE CANVAS */}
+
+            {/* IMAGE CANVAS */}
       <div ref={captureRef} style={{position:"relative",background:"#000",overflow:"hidden",borderRadius:"0 0 8px 8px"}}>
         <div ref={imgRef}
           onClick={handleClick}
@@ -851,9 +925,17 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
               onClick={e=>{e.stopPropagation();setSelId(a.id);setTool("sel");}}
               style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",width:"28px",height:"28px",borderRadius:"50%",background:selId===a.id?a.color:"rgba(0,0,0,.88)",border:`2.5px solid ${a.color}`,color:selId===a.id?"#000":a.color,display:"flex",alignItems:"center",justifyContent:"center",cursor:"grab",zIndex:15,boxShadow:`0 0 ${selId===a.id?16:7}px ${a.color}`,fontSize:a.type==="pin"?"18px":"10px",fontWeight:"700"}}>
               {a.type==="pin"?"📍":a.type==="star"?"★":a.type==="diam"?"◆":a.type==="tgt"?"⊕":a.type==="txt"?"T":(i+1)}
-              {(a.title||a.value!=null)&&<div style={{position:"absolute",top:"-28px",left:"50%",transform:"translateX(-50%)",background:a.value!=null?"rgba(255,255,255,.93)":"rgba(0,0,0,.88)",color:a.value!=null?"#1a1a2e":a.color,fontSize:"8px",fontWeight:"700",padding:"3px 8px",borderRadius:"20px",whiteSpace:"nowrap",fontFamily:"'Space Mono',monospace",boxShadow:"0 2px 8px rgba(0,0,0,.4)",pointerEvents:"none"}}>
-                {a.title||""}{a.value!=null?` ${a.value} ${a.unit}`:a.title?" —":"sin valor"}
-              </div>}
+              <div style={{position:"absolute",top:"-32px",left:"50%",transform:"translateX(-50%)",
+                background:a.value!=null?"rgba(255,255,255,.96)":"rgba(30,30,50,.92)",
+                color:a.value!=null?"#111":"#aaccff",
+                fontSize:"9px",fontWeight:"700",padding:"4px 10px",
+                borderRadius:"20px",whiteSpace:"nowrap",fontFamily:"'Space Mono',monospace",
+                boxShadow:`0 2px 10px rgba(0,0,0,.5), 0 0 0 2px ${a.color}`,
+                pointerEvents:"none",letterSpacing:".02em"}}>
+                {a.value!=null
+                  ? `${a.title?a.title+": ":""}${a.value} ${a.unit}`
+                  : a.title||"Toca ➕"}
+              </div>
             </div>
           ))}
           {selAnn&&!MRK.includes(selAnn.type)&&selAnn.points.map((p,pi)=>(
@@ -1022,7 +1104,10 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
 {/* MEASURE MODAL */}
 {measuring&&(<div data-modal="measure" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(0,229,196,.45)",borderRadius:"16px 16px 0 0",padding:"18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(22px)",boxShadow:"0 -4px 30px rgba(0,0,0,.7)"}}>
   {closeX(()=>setMeasuring(null))}
-  <div style={{fontSize:"9px",color:ACC,letterSpacing:".18em",marginBottom:"13px",paddingRight:"34px"}}>📐 AÑADIR MEDIDA · {measuring.icon} {TOOLS.find(t=>t.id===measuring.type)?.label||measuring.type}</div>
+  <div style={{marginBottom:"13px",paddingRight:"34px"}}>
+    <div style={{fontSize:"10px",color:ACC,letterSpacing:".12em",fontWeight:700}}>③ AÑADIR MEDIDA</div>
+    <div style={{fontSize:"8px",color:"#5577aa",marginTop:"3px"}}>{measuring.icon} {TOOLS.find(t=>t.id===measuring.type)?.label||measuring.type} — rellena y confirma</div>
+  </div>
   <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
     <input placeholder="Título (ej: Longitud total, Diámetro...)" value={mIn.title} onChange={e=>setMIn(s=>({...s,title:e.target.value}))} style={{width:"100%",padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(0,229,196,.25)",borderRadius:"8px",color:"#d0e8f8",fontSize:"10px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
     <div style={{display:"flex",gap:"7px",alignItems:"center"}}>
