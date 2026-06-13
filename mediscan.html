@@ -19,11 +19,10 @@ html,body{background:#07101e;min-height:100%;-webkit-tap-highlight-color:transpa
 @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
-@keyframes segPulse{0%,100%{opacity:.6}50%{opacity:1}}
+@keyframes segpulse{0%,100%{opacity:.7}50%{opacity:1}}
 .fade{animation:fadeIn .3s ease both;}
 .spin{animation:spin .9s linear infinite;}
 .blink{animation:pulse 2s ease infinite;}
-.segpulse{animation:segPulse 2s ease infinite;}
 button{transition:all .12s;-webkit-appearance:none;}
 button:active{transform:scale(.92);}
 input,select{-webkit-appearance:none;}
@@ -31,12 +30,10 @@ input[type=number]{-moz-appearance:textfield;}
 input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;}
 ::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-thumb{background:#1a3a5a;border-radius:4px;}
 .nc{touch-action:none;user-select:none;-webkit-user-select:none;}
-.tool-active{cursor:crosshair!important;}
-.tool-sel{cursor:default!important;}
+.sp{animation:segpulse 2s ease infinite;}
 </style>
 </head>
-<body>
-<div id="root"></div>
+<body><div id="root"></div>
 <script type="text/babel">
 const {useState,useRef,useEffect,useCallback,useMemo}=React;
 const GAPI="https://api.groq.com/openai/v1/chat/completions";
@@ -51,26 +48,26 @@ const fv=(mm,u)=>{if(mm==null)return"—";const r={mm:[1,0],cm:[0.1,1],m:[0.001,
 const MRK=["pin","dot","star","diam","tgt","txt"];
 const DRAG_TOOLS=["rect","circ","crop"];
 const TOOLS=[
-  {id:"sel",  cat:"nav", icon:"↖",  label:"Selec./Mover",  npts:0},
-  {id:"pin",  cat:"mrk", icon:"📍", label:"Pin marcador",   npts:1},
-  {id:"dot",  cat:"mrk", icon:"⬤",  label:"Punto medible",  npts:1},
-  {id:"star", cat:"mrk", icon:"★",  label:"Estrella",       npts:1},
-  {id:"diam", cat:"mrk", icon:"◆",  label:"Diamante",       npts:1},
-  {id:"tgt",  cat:"mrk", icon:"⊕",  label:"Diana",          npts:1},
-  {id:"line", cat:"lin", icon:"━",  label:"Línea+medida",   npts:2},
-  {id:"dline",cat:"lin", icon:"┄",  label:"Guía",           npts:2},
-  {id:"dim",  cat:"lin", icon:"⟺",  label:"Cota AutoCAD",   npts:2},
-  {id:"dist", cat:"lin", icon:"↔",  label:"Distancia A→B",  npts:2},
-  {id:"arr1", cat:"arr", icon:"→",  label:"Flecha →",       npts:2},
-  {id:"arr2", cat:"arr", icon:"⇒",  label:"Flecha gruesa",  npts:2},
-  {id:"arr3", cat:"arr", icon:"↗",  label:"Diagonal",       npts:2},
-  {id:"arr4", cat:"arr", icon:"⟹",  label:"Doble flecha",   npts:2},
-  {id:"rect", cat:"shp", icon:"▭",  label:"Rectángulo",     npts:2},
-  {id:"circ", cat:"shp", icon:"◯",  label:"Círculo",        npts:2},
-  {id:"tri",  cat:"shp", icon:"△",  label:"Triángulo",      npts:3},
-  {id:"calib",cat:"spc", icon:"⚖",  label:"Calibrar",       npts:2},
-  {id:"crop", cat:"spc", icon:"✂",  label:"Recortar",       npts:2},
-  {id:"txt",  cat:"spc", icon:"T",  label:"Texto",          npts:1},
+  {id:"sel",cat:"nav",icon:"↖",label:"Selec./Mover",npts:0},
+  {id:"pin",cat:"mrk",icon:"📍",label:"Pin marcador",npts:1},
+  {id:"dot",cat:"mrk",icon:"⬤",label:"Punto medible",npts:1},
+  {id:"star",cat:"mrk",icon:"★",label:"Estrella",npts:1},
+  {id:"diam",cat:"mrk",icon:"◆",label:"Diamante",npts:1},
+  {id:"tgt",cat:"mrk",icon:"⊕",label:"Diana",npts:1},
+  {id:"line",cat:"lin",icon:"━",label:"Línea+medida",npts:2},
+  {id:"dline",cat:"lin",icon:"┄",label:"Guía",npts:2},
+  {id:"dim",cat:"lin",icon:"⟺",label:"Cota AutoCAD",npts:2},
+  {id:"dist",cat:"lin",icon:"↔",label:"Distancia A→B",npts:2},
+  {id:"arr1",cat:"arr",icon:"→",label:"Flecha →",npts:2},
+  {id:"arr2",cat:"arr",icon:"⇒",label:"Flecha gruesa",npts:2},
+  {id:"arr3",cat:"arr",icon:"↗",label:"Diagonal",npts:2},
+  {id:"arr4",cat:"arr",icon:"⟹",label:"Doble flecha",npts:2},
+  {id:"rect",cat:"shp",icon:"▭",label:"Rectángulo",npts:2},
+  {id:"circ",cat:"shp",icon:"◯",label:"Círculo",npts:2},
+  {id:"tri",cat:"shp",icon:"△",label:"Triángulo",npts:3},
+  {id:"calib",cat:"spc",icon:"⚖",label:"Calibrar",npts:2},
+  {id:"crop",cat:"spc",icon:"✂",label:"Recortar",npts:2},
+  {id:"txt",cat:"spc",icon:"T",label:"Texto",npts:1},
 ];
 const CATS={nav:"Nav",mrk:"Marcadores",lin:"Líneas",arr:"Flechas",shp:"Formas",spc:"Especial"};
 
@@ -135,6 +132,7 @@ function View2D({anns,objName,sc}){
   return <canvas ref={ref} width={440} height={390} style={{width:"100%",display:"block"}}/>;
 }
 
+
 /* ══ V3D ══ */
 function V3D({anns,shape}){
   const ref=useRef(null);
@@ -181,6 +179,7 @@ function V3D({anns,shape}){
   },[anns,shape]);
   return <div ref={ref} style={{width:"100%",height:"250px"}}/>;
 }
+
 
 /* ══ Piping 3D ══ */
 function V3DPipe({components,dn}){
@@ -231,31 +230,25 @@ function V3DPipe({components,dn}){
   return <div ref={ref} style={{width:"100%",height:"270px"}}/>;
 }
 
-/* ══ Room Metrics Panel (like image 12) ══ */
-function RoomMetrics({anns,scale}){
-  const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?{mm:toMM(a.value,a.unit),v:a.value,u:a.unit}:null;};
-  const w=gd("width"),h=gd("height"),d=gd("depth");
-  if(!w&&!h&&!d)return null;
-  const wMM=w?.mm||0,hMM=h?.mm||0,dMM=d?.mm||0;
-  const wM=wMM/1000,hM=hMM/1000,dM=dMM/1000;
-  const area=wM&&dM?wM*dM:null;        // floor area
-  const perimeter=wM&&dM?2*(wM+dM):null;
-  const volume=wM&&hM&&dM?wM*hM*dM:null;
-  const wallsArea=hM&&(wM||dM)?2*hM*(wM+dM):null; // gross wall area
-  const ceilingArea=area;
-  const fmt=(v,u)=>`${v.toFixed(2)} ${u}`;
+
+
+/* ══ RoomMetrics ══ */
+function RoomMetrics({anns}){
+  const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?toMM(a.value,a.unit)/1000:0;};
+  const wM=gd("width"),hM=gd("height"),dM=gd("depth");
+  if(!wM&&!hM&&!dM)return null;
   const rows=[
-    area&&["Área suelo",fmt(area,"m²")],
-    perimeter&&["Perímetro",fmt(perimeter,"m")],
-    volume&&["Volumen",fmt(volume,"m³")],
-    hM&&["Altura",fmt(hM,"m")],
-    wallsArea&&["Área paredes",fmt(wallsArea,"m²")],
-    ceilingArea&&["Área techo",fmt(ceilingArea,"m²")],
+    wM&&dM&&["Área suelo",`${(wM*dM).toFixed(2)} m²`],
+    wM&&dM&&["Perímetro",`${(2*(wM+dM)).toFixed(2)} m`],
+    wM&&hM&&dM&&["Volumen",`${(wM*hM*dM).toFixed(2)} m³`],
+    hM&&["Altura",`${hM.toFixed(2)} m`],
+    hM&&(wM||dM)&&["Área paredes",`${(2*hM*(wM+dM)).toFixed(2)} m²`],
+    wM&&dM&&["Área techo",`${(wM*dM).toFixed(2)} m²`],
   ].filter(Boolean);
   if(!rows.length)return null;
   return <div style={{background:"linear-gradient(135deg,rgba(0,20,50,.88),rgba(0,30,62,.85))",border:"1px solid rgba(68,170,255,.28)",borderRadius:"12px",overflow:"hidden"}}>
-    <div style={{padding:"7px 12px",fontSize:"8px",letterSpacing:".18em",color:"#44aaff",textTransform:"uppercase",borderBottom:"1px solid rgba(68,170,255,.12)",background:"rgba(68,170,255,.04)"}}>📊 Métricas calculadas</div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0}}>
+    <div style={{padding:"7px 12px",fontSize:"8px",letterSpacing:".15em",color:"#44aaff",textTransform:"uppercase",borderBottom:"1px solid rgba(68,170,255,.12)",background:"rgba(68,170,255,.04)"}}>📊 Métricas calculadas</div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr"}}>
       {rows.map(([lb,val],i)=>(
         <div key={lb} style={{padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,.04)",borderRight:i%2===0?"1px solid rgba(255,255,255,.04)":"none"}}>
           <div style={{fontSize:"7px",color:"#4477aa",marginBottom:"2px"}}>{lb}</div>
@@ -266,20 +259,22 @@ function RoomMetrics({anns,scale}){
   </div>;
 }
 
-
-/* ══════════════════════════════════════════
-   MAIN APP
-══════════════════════════════════════════ */
+/* ══ MAIN APP ══ */
 function App(){
-  const imgRef=useRef(null);const captureRef=useRef(null);const videoRef=useRef(null);const canvasRef=useRef(null);const streamRef=useRef(null);const uploadRef=useRef(null);const camInRef=useRef(null);
-  const drawingRef=useRef(null);const isDraggingRef=useRef(false);const pendingRef=useRef([]);const toolRef=useRef("sel");
+  /* refs */
+  const imgRef=useRef(null);const captureRef=useRef(null);
+  const videoRef=useRef(null);const canvasRef=useRef(null);const streamRef=useRef(null);
+  const uploadRef=useRef(null);const camInRef=useRef(null);
+  const drawingRef=useRef(null);const isDraggingRef=useRef(false);
+  const pendingRef=useRef([]);const toolRef=useRef("sel");
+  const measuringRef=useRef(null);
 
-  /* Screen */
+  /* screen */
   const [scr,setScr]=useState(()=>getKey()?"home":"setup");
   const [keyIn,setKeyIn]=useState(getKey());
   const [camMode,setCamMode]=useState("off");
 
-  /* Project */
+  /* project */
   const [image,setImage]=useState(null);const [origImage,setOrigImage]=useState(null);
   const [rotation,setRotation]=useState(0);const [objInfo,setObjInfo]=useState(null);
   const [piping,setPiping]=useState(null);const [err,setErr]=useState("");
@@ -287,7 +282,7 @@ function App(){
   const [projects,setProjects]=useState(()=>{try{return JSON.parse(localStorage.getItem("ms3_pj")||"[]");}catch{return[];}});
   const [projName,setProjName]=useState("Proyecto");const [projTitle,setProjTitle]=useState("");
 
-  /* Annotations */
+  /* annotations */
   const [anns,setAnns]=useState([]);const [hist,setHist]=useState([]);
   const [tool,setTool]=useState("sel");const [pending,setPending]=useState([]);
   const [preview,setPreview]=useState(null);const [measuring,setMeasuring]=useState(null);
@@ -296,70 +291,48 @@ function App(){
   const [scale,setScale]=useState(null);const [lStyle,setLStyle]=useState("solid");
   const [aHead,setAHead]=useState("end");const [mIn,setMIn]=useState({title:"",value:"",unit:"cm",axis:""});
 
-  /* AI Segments (object part detection) */
+  /* AI segments */
   const [segments,setSegments]=useState([]);const [segLoad,setSegLoad]=useState(false);
-  const [showSegs,setShowSegs]=useState(true);const [selSeg,setSelSeg]=useState(null);
+  const [showSegs,setShowSegs]=useState(true);
 
-  /* View */
+  /* view */
   const [viewTab,setViewTab]=useState("ann");const [toolCat,setToolCat]=useState("mrk");
   const [showSum,setShowSum]=useState(true);const [syncMsg,setSyncMsg]=useState("");
 
-  /* ── FIX ANDROID BACK BUTTON ── */
-  useEffect(()=>{
-    // Push initial state to prevent back from exiting
-    window.history.pushState({page:"mediscan"},"",'#');
-    const handle=e=>{
-      e.preventDefault();
-      // Navigate within the app instead of browser back
-      if(scr==="annotate"){/* stay in annotate */}
-      else if(scr==="loading"||scr==="camera"){setScr("home");}
-      // Push state again to keep intercepting
-      window.history.pushState({page:"mediscan"},"",'#');
-    };
-    window.addEventListener("popstate",handle);
-    return()=>window.removeEventListener("popstate",handle);
-  },[scr]);
+  /* keep refs in sync */
+  useEffect(()=>{toolRef.current=tool;},[tool]);
+  useEffect(()=>{pendingRef.current=pending;},[pending]);
+  useEffect(()=>{measuringRef.current=measuring;},[measuring]);
 
-  /* ── Clear modals on screen change (NOT annotations) ── */
+  /* Android back button fix */
+  useEffect(()=>{
+    window.history.pushState({page:"ms"},"",'#');
+    const h=()=>{window.history.pushState({page:"ms"},"",'#');};
+    window.addEventListener("popstate",h);
+    return()=>window.removeEventListener("popstate",h);
+  },[]);
+
+  /* clear modals on screen change */
   useEffect(()=>{
     setMeasuring(null);setCalibAnn(null);setCropDlg(null);
-    setPending([]);pendingRef.current=[];drawingRef.current=null;isDraggingRef.current=false;setPreview(null);
+    setPending([]);pendingRef.current=[];drawingRef.current=null;
+    isDraggingRef.current=false;setPreview(null);
   },[scr]);
 
-  /* Derived */
+  /* derived */
   const hasDims=useMemo(()=>anns.some(a=>["width","height","depth"].includes(a.axis)&&a.value!=null),[anns]);
   const selAnn=useMemo(()=>anns.find(a=>a.id===selId),[anns,selId]);
   const toolsByCategory=useMemo(()=>{const cats={};TOOLS.forEach(t=>{if(!cats[t.cat])cats[t.cat]=[];cats[t.cat].push(t);});return cats;},[]);
   const showStyleOpts=useMemo(()=>["line","dline","dim","dist","arr1","arr2","arr3","arr4","rect","circ"].includes(tool),[tool]);
 
-  useEffect(()=>{toolRef.current=tool;},[tool]);
-  useEffect(()=>{pendingRef.current=pending;},[pending]);
+  /* undo - step by step */
+  const snap=useCallback(()=>setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]),[anns]);
+  const addAnn=useCallback(a=>{setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);setAnns(p=>[...p,a]);},[anns]);
+  const updAnn=(id,ch)=>{setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);setAnns(p=>p.map(a=>a.id===id?{...a,...ch}:a));};
+  const delAnn=id=>{setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);setAnns(p=>p.filter(a=>a.id!==id));if(selId===id)setSelId(null);};
+  const undo=useCallback(()=>{setHist(h=>{if(h.length===0)return h;const prev=h[h.length-1];setAnns(prev);setSelId(null);return h.slice(0,-1);});},[]);
 
-  /* ── UNDO – step by step ── */
-  const addAnn=useCallback(a=>{
-    setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);
-    setAnns(p=>[...p,a]);
-  },[anns]);
-  const updAnn=(id,ch)=>{
-    setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);
-    setAnns(p=>p.map(a=>a.id===id?{...a,...ch}:a));
-  };
-  const delAnn=id=>{
-    setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);
-    setAnns(p=>p.filter(a=>a.id!==id));if(selId===id)setSelId(null);
-  };
-  const undo=useCallback(()=>{
-    // Undo ONE step only, never navigates
-    setHist(h=>{
-      if(h.length===0)return h;
-      const prev=h[h.length-1];
-      setAnns(prev);
-      setSelId(null);
-      return h.slice(0,-1);
-    });
-  },[]);
-
-  /* Drawing interactions via native events */
+  /* get normalized position from event */
   const getPos=useCallback(e=>{
     const el=imgRef.current;if(!el)return{x:.5,y:.5};
     const r=el.getBoundingClientRect();
@@ -368,34 +341,39 @@ function App(){
     return{x:clamp((cx-r.left)/r.width,.01,.99),y:clamp((cy-r.top)/r.height,.01,.99)};
   },[]);
 
-  const finishShape=useCallback((type,points,lstyle,ahead)=>{
-    const color=COLS[colorIdx%COLS.length];
+  /* finish drawing a shape */
+  const finishShape=useCallback((type,points)=>{
     const td=TOOLS.find(t=>t.id===type);
-    const newA={id:uid(),type,icon:td?.icon||"◆",title:"",label:"",value:null,unit:"cm",axis:"",color,points,lineStyle:lstyle||"solid",arrowHead:ahead||"end"};
+    const color=COLS[colorIdx%COLS.length];
+    const newA={id:uid(),type,icon:td?.icon||"◆",title:"",label:"",value:null,unit:"cm",axis:"",
+               color,points,lineStyle:lStyle,arrowHead:aHead};
     if(type==="calib"){setCalibAnn(newA);setMIn({title:"Escala",value:"",unit:"cm",axis:""});addAnn(newA);}
     else if(type==="crop"){setCropDlg({p1:points[0],p2:points[1]});}
     else{setMeasuring(newA);setMIn({title:"",value:"",unit:"cm",axis:""});}
     setColorIdx(c=>c+1);
-  },[colorIdx,addAnn]);
+  },[colorIdx,lStyle,aHead,addAnn]);
 
+  /* native events for drawing */
   useEffect(()=>{
     const el=imgRef.current;if(!el)return;
+    const isModalOpen=()=>!!measuringRef.current||!!document.querySelector('[data-modal]');
     const onDown=e=>{
-      const t=toolRef.current;if(t==="sel")return;
-      // Don't draw while a modal is open
-      if(document.querySelector('[data-modal="measure"]'))return;
+      const t=toolRef.current;
+      if(t==="sel"||isModalOpen())return;
       if(DRAG_TOOLS.includes(t)){
-        e.preventDefault();const p=getPos(e.touches?.[0]||e);
+        e.preventDefault();
+        const p=getPos(e.touches?.[0]||e);
         drawingRef.current={type:t,p1:p};isDraggingRef.current=false;
-        setPreview({p1:p,p2:p,type:t});
+        setPreview({type:t,points:[p,p]});
       }
     };
     const onMove=e=>{
       const p=getPos(e.touches?.[0]||e);
-      if(pendingRef.current.length>0)setPreview({p1:pendingRef.current[0],p2:p,type:toolRef.current});
+      if(pendingRef.current.length===1)setPreview({type:toolRef.current,points:[pendingRef.current[0],p]});
       if(!drawingRef.current)return;
-      isDraggingRef.current=true;drawingRef.current={...drawingRef.current,p2:p};
-      setPreview(prev=>prev?{...prev,p2:p}:null);
+      isDraggingRef.current=true;
+      drawingRef.current.p2=p;
+      setPreview({type:drawingRef.current.type,points:[drawingRef.current.p1,p]});
     };
     const onUp=e=>{
       if(!drawingRef.current)return;
@@ -403,35 +381,35 @@ function App(){
       const p=getPos(e.changedTouches?.[0]||e);
       setPreview(null);
       const dx=Math.abs(p.x-(ds.p1?.x||.5)),dy=Math.abs(p.y-(ds.p1?.y||.5));
-      if(dx>.01||dy>.01)finishShape(ds.type,[ds.p1,p],lStyle,aHead);
+      if(dx>.01||dy>.01)finishShape(ds.type,[ds.p1,p]);
       setTimeout(()=>{isDraggingRef.current=false;},50);
     };
     const onClick=e=>{
-      if(isDraggingRef.current)return;
-      // Don't draw while a modal is open
-      if(document.querySelector('[data-modal="measure"]'))return;
-      const t=toolRef.current;if(t==="sel"||DRAG_TOOLS.includes(t))return;
+      if(isDraggingRef.current||isModalOpen())return;
+      const t=toolRef.current;
+      if(t==="sel"||DRAG_TOOLS.includes(t))return;
       const td=TOOLS.find(tt=>tt.id===t);if(!td||td.npts===0)return;
       const p=getPos(e);
-      if(MRK.includes(t)||td.npts===1){finishShape(t,[p],lStyle,aHead);return;}
+      if(MRK.includes(t)||td.npts===1){finishShape(t,[p]);return;}
       const pts=[...pendingRef.current,p];
-      if(pts.length>=td.npts){setPending([]);pendingRef.current=[];setPreview(null);finishShape(t,pts,lStyle,aHead);}
-      else{setPending(pts);pendingRef.current=pts;setPreview({p1:pts[0],p2:p,type:t});}
+      if(pts.length>=td.npts){setPending([]);pendingRef.current=[];setPreview(null);finishShape(t,pts);}
+      else{setPending(pts);pendingRef.current=pts;setPreview({type:t,points:[pts[0],p]});}
     };
     el.addEventListener("mousedown",onDown);el.addEventListener("touchstart",onDown,{passive:false});
-    el.addEventListener("mousemove",e=>onMove(e));
+    el.addEventListener("mousemove",onMove);
     window.addEventListener("mousemove",onMove);window.addEventListener("touchmove",onMove,{passive:true});
     window.addEventListener("mouseup",onUp);window.addEventListener("touchend",onUp);
     el.addEventListener("click",onClick);
     return()=>{
       el.removeEventListener("mousedown",onDown);el.removeEventListener("touchstart",onDown);
-      el.removeEventListener("mousemove",e=>onMove(e));
+      el.removeEventListener("mousemove",onMove);
       window.removeEventListener("mousemove",onMove);window.removeEventListener("touchmove",onMove);
       window.removeEventListener("mouseup",onUp);window.removeEventListener("touchend",onUp);
       el.removeEventListener("click",onClick);
     };
-  },[getPos,finishShape,lStyle,aHead]);
+  },[getPos,finishShape]);
 
+  /* drag annotation handles */
   const startDrag=useCallback((e,annId,pi)=>{
     e.preventDefault();e.stopPropagation();setSelId(annId);
     const r=imgRef.current?.getBoundingClientRect();if(!r)return;
@@ -441,12 +419,7 @@ function App(){
     window.addEventListener("mousemove",mv,{passive:false});window.addEventListener("touchmove",mv,{passive:false});window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
   },[]);
 
-  /* Bidirectional sync: update ann value from inline input */
-  const updateAnnValue=(id,val,unit)=>{
-    setAnns(p=>p.map(a=>a.id===id?{...a,value:val===""||val==null?null:parseFloat(val),unit:unit||a.unit}:a));
-  };
-
-  /* Confirm measure */
+  /* confirm measure */
   const confirmMeasure=()=>{
     if(!measuring)return;
     const a={...measuring,title:mIn.title,label:mIn.title,value:mIn.value===""||mIn.value==null?null:parseFloat(mIn.value),unit:mIn.unit,axis:mIn.axis};
@@ -456,35 +429,36 @@ function App(){
     const v=parseFloat(mIn.value);if(!v||v<=0){alert("Valor inválido");return;}
     const r=imgRef.current?.getBoundingClientRect();if(!r||!calibAnn)return;
     const pts=calibAnn.points;const dx=(pts[1].x-pts[0].x)*r.width,dy=(pts[1].y-pts[0].y)*r.height;
-    const px=Math.sqrt(dx*dx+dy*dy);setScale({ppu:px/v,unit:mIn.unit});
+    setScale({ppu:Math.sqrt(dx*dx+dy*dy)/v,unit:mIn.unit});
     updAnn(calibAnn.id,{title:`⚖ ${v}${mIn.unit}`,value:v,unit:mIn.unit});setCalibAnn(null);
   };
   const getCalMeasure=a=>{
     if(a.value!=null)return`${a.value} ${a.unit}`;
-    if(!scale||!a.points||a.points.length<2)return"?";
-    const r=imgRef.current?.getBoundingClientRect();if(!r)return"?";
+    if(!scale||!a.points||a.points.length<2)return"";
+    const r=imgRef.current?.getBoundingClientRect();if(!r)return"";
     const dx=(a.points[1].x-a.points[0].x)*r.width,dy=(a.points[1].y-a.points[0].y)*r.height;
     return`${(Math.sqrt(dx*dx+dy*dy)/scale.ppu).toFixed(1)} ${scale.unit}`;
   };
   const getRectArea=a=>{
-    if(a.type!=="rect"||a.points.length<2)return null;
-    if(!scale){return null;}
-    const[p1,p2]=a.points;const r=imgRef.current?.getBoundingClientRect();if(!r)return null;
-    const pw=Math.abs(p2.x-p1.x)*r.width/scale.ppu;const ph=Math.abs(p2.y-p1.y)*r.height/scale.ppu;
+    if(a.type!=="rect"||!scale||a.points.length<2)return null;
+    const r=imgRef.current?.getBoundingClientRect();if(!r)return null;
+    const pw=Math.abs(a.points[1].x-a.points[0].x)*r.width/scale.ppu;
+    const ph=Math.abs(a.points[1].y-a.points[0].y)*r.height/scale.ppu;
     return`${(pw*ph).toFixed(2)} ${scale.unit}²`;
   };
 
-  /* Crop */
+  /* crop */
   const applyCrop=()=>{
     if(!cropDlg||!image)return;const{p1,p2}=cropDlg;const im=new Image();im.onload=()=>{
-      const c2=document.createElement("canvas");const x1=Math.min(p1.x,p2.x),y1=Math.min(p1.y,p2.y),x2=Math.max(p1.x,p2.x),y2=Math.max(p1.y,p2.y);
+      const c2=document.createElement("canvas");
+      const x1=Math.min(p1.x,p2.x),y1=Math.min(p1.y,p2.y),x2=Math.max(p1.x,p2.x),y2=Math.max(p1.y,p2.y);
       c2.width=Math.max(Math.round(im.width*(x2-x1)),1);c2.height=Math.max(Math.round(im.height*(y2-y1)),1);
       c2.getContext("2d").drawImage(im,im.width*x1,im.height*y1,c2.width,c2.height,0,0,c2.width,c2.height);
       setImage(c2.toDataURL("image/jpeg",.9));setAnns([]);setHist([]);setSelId(null);setScale(null);setCropDlg(null);setTool("sel");
     };im.src=image;
   };
 
-  /* Camera */
+  /* camera */
   const stopCam=()=>{streamRef.current?.getTracks().forEach(t=>t.stop());setCamMode("off");};
   const startLive=async()=>{setCamMode("starting");try{const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280}}});streamRef.current=s;setTimeout(()=>{if(videoRef.current)videoRef.current.srcObject=s;},60);setCamMode("live");}catch{setCamMode("off");alert("Usa TOMAR FOTO o galería.");}};
   const capLive=()=>{const v=videoRef.current,c=canvasRef.current;if(!v||!c)return;c.width=v.videoWidth||640;c.height=v.videoHeight||480;c.getContext("2d").drawImage(v,0,0);go(c.toDataURL("image/jpeg",.87));};
@@ -494,58 +468,46 @@ function App(){
     setImage(img);setOrigImage(img);setScr("loading");stopCam();
     setAnns([]);setHist([]);setSelId(null);setPending([]);pendingRef.current=[];
     setTool("sel");setErr("");setPiping(null);setAiMsg("");setScale(null);
-    setPreview(null);drawingRef.current=null;setSegments([]);
-    identify(img);
+    setPreview(null);drawingRef.current=null;setSegments([]);identify(img);
   };
 
-  /* ── AI IDENTIFY ── */
+  /* AI identify */
   const identify=async(img)=>{
     const b64=img.split(",")[1];
-    const pr=`SIEMPRE responde en español. Nunca uses inglés.
+    const pr=`RESPONDE SIEMPRE EN ESPAÑOL. NUNCA EN INGLÉS.
 
-Analiza esta imagen con detalle.
+Analiza esta imagen:
 
-CASO 1 - si es boceto, plano dibujado a mano, croquis o plano técnico de construcción/habitación:
-Devuelve: {"type":"sketch","name":"nombre","rooms":[{"name":"Sala","x1":0.1,"y1":0.1,"x2":0.6,"y2":0.7,"w_est":400,"h_est":500}],"measurements":[{"name":"Ancho total","axis":"width","x":0.5,"y":0.3,"value_hint":400},{"name":"Alto total","axis":"height","x":0.85,"y":0.5,"value_hint":300}],"desc":"descripción"}
+CASO 1 - boceto/croquis/plano dibujado a mano o arquitectónico:
+{"type":"sketch","name":"nombre","desc":"desc","measurements":[{"name":"Ancho total","axis":"width","x":0.5,"y":0.3,"value_hint":400},{"name":"Alto total","axis":"height","x":0.85,"y":0.5,"value_hint":300}]}
 
-CASO 2 - si es plano técnico de tuberías/P&ID/calderería/isométrico:
-Devuelve: {"type":"piping","name":"nombre","dn":100,"material":"carbon_steel","components":[{"type":"pipe","dn":100,"length":2000,"orientation":"H"},{"type":"elbow","dn":100,"to_orientation":"V"},{"type":"valve","dn":100,"valve_type":"gate"}]}
+CASO 2 - plano técnico tuberías/P&ID/calderería:
+{"type":"piping","name":"nombre","dn":100,"material":"carbon_steel","components":[{"type":"pipe","dn":100,"length":2000,"orientation":"H"},{"type":"elbow","dn":100,"to_orientation":"V"},{"type":"valve","dn":100,"valve_type":"gate"}]}
 
-CASO 3 - cualquier otro caso (foto de objeto, pieza, mueble, herramienta, etc.):
-Devuelve: {"type":"object","name":"nombre","category":"categoría","shape":"box|table|chair|cylinder|sphere|bottle|cone|door|tube|default","desc":"descripción breve","measurements":[{"name":"Ancho total","axis":"width","x":0.5,"y":0.3},{"name":"Alto total","axis":"height","x":0.85,"y":0.5},{"name":"Profundidad","axis":"depth","x":0.6,"y":0.75}]}
+CASO 3 - cualquier otro (foto de objeto, pieza, herramienta, mueble...):
+{"type":"object","name":"nombre","category":"categoría","shape":"box|table|chair|cylinder|sphere|bottle|cone|door|tube|default","desc":"descripción","measurements":[{"name":"Ancho total","axis":"width","x":0.5,"y":0.3},{"name":"Alto total","axis":"height","x":0.85,"y":0.5},{"name":"Profundidad","axis":"depth","x":0.6,"y":0.75}]}
 
-x,y son posiciones en imagen 0-1. Incluye 3-6 medidas relevantes. SOLO JSON válido.`;
+x,y = posición en imagen 0-1. Entre 3-6 medidas relevantes. SOLO JSON.`;
     try{
-      const res=await fetch(GAPI,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${getKey()}`},body:JSON.stringify({model:GMOD,max_tokens:800,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:pr}]}]})});
+      const res=await fetch(GAPI,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${getKey()}`},body:JSON.stringify({model:GMOD,max_tokens:700,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:pr}]}]})});
       const data=await res.json();if(data.error)throw new Error(data.error.message);
       const txt=data.choices?.[0]?.message?.content||"{}";
       const info=JSON.parse(txt.replace(/```json|```/g,"").trim());
       if(info.type==="sketch"){
-        // Boceto: crear marcadores a partir de las habitaciones y medidas detectadas
-        setObjInfo({name:info.name||"Boceto/Plano",category:"Plano 2D",shape:"box",desc:info.desc||""});
+        setObjInfo({name:info.name||"Boceto",category:"Plano 2D",shape:"box",desc:info.desc||""});
         setViewTab("2d");
-        const autoAnns=[];
-        // Crear anotaciones de las medidas detectadas en el boceto
-        (info.measurements||[]).slice(0,6).forEach((m,i)=>{
-          const hint=m.value_hint?`${m.value_hint} cm`:"";
-          autoAnns.push({id:uid(),type:"dot",icon:"⬤",title:m.name+(hint?` ~${hint}`:""),label:m.name,
-            value:m.value_hint||null,unit:"cm",axis:m.axis||"",
-            color:COLS[i%COLS.length],points:[{x:clamp(m.x||.5,.05,.95),y:clamp(m.y||.5,.05,.95)}],
-            lineStyle:"solid",arrowHead:"end",isAI:true});
-        });
-        // Crear rectángulos para las habitaciones/zonas detectadas
-        (info.rooms||[]).forEach((room,i)=>{
-          autoAnns.push({id:uid(),type:"rect",icon:"▭",title:room.name,label:room.name,
-            value:null,unit:"cm",axis:"",color:COLS[(i+3)%COLS.length],
-            points:[{x:room.x1||0.1,y:room.y1||0.1},{x:room.x2||0.9,y:room.y2||0.9}],
-            lineStyle:"dashed",arrowHead:"end",isAI:true});
-        });
+        const autoAnns=(info.measurements||[]).slice(0,6).map((m,i)=>({
+          id:uid(),type:"dot",icon:"⬤",title:m.name,label:m.name,
+          value:m.value_hint||null,unit:"cm",axis:m.axis||"",
+          color:COLS[i%COLS.length],points:[{x:clamp(m.x||.5,.05,.95),y:clamp(m.y||.5,.05,.95)}],
+          lineStyle:"solid",arrowHead:"end",isAI:true
+        }));
         if(autoAnns.length)setAnns(autoAnns);
-        setAiMsg(`📐 Boceto detectado: ${info.name}. ${autoAnns.length} elementos identificados. Puedes ajustar los valores.`);
+        setAiMsg(`📐 Boceto detectado: ${info.name||""}. ${autoAnns.length} puntos identificados.`);
       }else if(info.type==="piping"){
         setPiping({components:info.components||[],dn:info.dn||100,label:`${info.name||"Piping"} · DN${info.dn||100} · ${info.material||"CS"}`});
-        setObjInfo({name:info.name||"Sistema piping",category:"Calderería",shape:"cylinder",desc:""});
-        setViewTab("pipe3d");setAiMsg(`🔩 Plano de piping: ${info.name||""} DN${info.dn||100}.`);
+        setObjInfo({name:info.name||"Piping",category:"Calderería",shape:"cylinder",desc:""});
+        setViewTab("pipe3d");setAiMsg(`🔩 Piping: ${info.name||""} DN${info.dn||100}.`);
       }else{
         setObjInfo(info);setViewTab("ann");
         const autoAnns=(info.measurements||[]).slice(0,6).map((m,i)=>({
@@ -555,38 +517,31 @@ x,y son posiciones en imagen 0-1. Incluye 3-6 medidas relevantes. SOLO JSON vál
           lineStyle:"solid",arrowHead:"end",isAI:true
         }));
         if(autoAnns.length)setAnns(autoAnns);
-        setAiMsg(`✅ Identificado: ${info.name}. ${autoAnns.length} puntos de medida detectados — tócalos para añadir valores.`);
+        setAiMsg(`✅ ${info.name}. ${info.desc||""} · ${autoAnns.length} puntos de medida.`);
       }
     }catch(e){
-      const msg=e.message||"";setErr(msg.includes("401")?"Clave API inválida — ⚙️":"No se identificó. Continúa manualmente.");
+      setErr(e.message?.includes("401")?"Clave API inválida":"No identificado. Continúa manualmente.");
       setObjInfo({name:"Objeto",category:"",shape:"default",desc:""});
     }finally{setScr("annotate");}
   };
 
-  /* ── AI SEGMENTATION ── */
-  const segmentWithAI=async()=>{
-    if(!image||segLoad)return;setSegLoad(true);setAiMsg("Segmentando partes del objeto...");
+  /* AI segmentation */
+  const segmentAI=async()=>{
+    if(!image||segLoad)return;setSegLoad(true);setAiMsg("Segmentando partes...");
     const b64=image.split(",")[1];
-    const pr=`SIEMPRE responde en español. Nunca uses inglés.
-
-Identifica y delimita todas las partes/componentes distintos visibles en esta imagen.
-Para cada parte proporciona:
-- nombre descriptivo en español
-- rectángulo que la delimita (x1,y1,x2,y2 entre 0 y 1)
-- sugerencia de qué se puede medir
-- color hex distintivo
-
-Devuelve JSON: {"segments":[{"id":"1","name":"Cuerpo principal","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.85,"hint":"Longitud, diámetro","color":"#00e5c4"},{"id":"2","name":"Tapa superior","x1":0.2,"y1":0.05,"x2":0.8,"y2":0.2,"hint":"Ancho de tapa","color":"#ff4477"}]}
-
-Proporciona entre 3 y 8 segmentos. SOLO JSON válido.`;
+    const pr=`RESPONDE EN ESPAÑOL.
+Identifica todas las partes/componentes distintos del objeto en la imagen.
+Para cada parte: nombre, rectángulo (x1,y1,x2,y2 entre 0-1), sugerencia de qué medir, color hex.
+JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.85,"hint":"Longitud","color":"#00e5c4"}]}
+3-8 segmentos. SOLO JSON.`;
     try{
-      const res=await fetch(GAPI,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${getKey()}`},body:JSON.stringify({model:GMOD,max_tokens:600,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:pr}]}]})});
+      const res=await fetch(GAPI,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${getKey()}`},body:JSON.stringify({model:GMOD,max_tokens:500,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:pr}]}]})});
       const data=await res.json();if(data.error)throw new Error(data.error.message);
       const txt=data.choices?.[0]?.message?.content||"{}";
       const info=JSON.parse(txt.replace(/```json|```/g,"").trim());
-      if(info.segments?.length){setSegments(info.segments);setShowSegs(true);setAiMsg(`🔍 ${info.segments.length} partes identificadas. Toca cada zona para añadir medidas.`);}
-      else setAiMsg("No se detectaron partes distinguibles. Intenta con otra imagen.");
-    }catch{setAiMsg("Error en segmentación. Intenta de nuevo.");}
+      if(info.segments?.length){setSegments(info.segments);setShowSegs(true);setAiMsg(`🔍 ${info.segments.length} partes identificadas. Toca para medir.`);}
+      else setAiMsg("No se detectaron partes distintas.");
+    }catch{setAiMsg("Error en segmentación.");}
     finally{setSegLoad(false);}
   };
 
@@ -595,86 +550,78 @@ Proporciona entre 3 y 8 segmentos. SOLO JSON válido.`;
     if(!image||aiLoad)return;setAiLoad(true);setAiMsg("Analizando...");
     const b64=image.split(",")[1];
     const sum=anns.filter(a=>a.value!=null).map(a=>`${a.title||a.type}: ${a.value}${a.unit}`).join(", ");
-    const pr=`SIEMPRE responde en español. Nunca uses inglés.
-Medidas actuales: ${sum||"ninguna"}. Objeto: ${objInfo?.name||"desconocido"}.
-En 3-4 frases: ¿qué medidas adicionales son importantes? ¿observaciones técnicas?`;
+    const pr=`RESPONDE EN ESPAÑOL. Medidas actuales: ${sum||"ninguna"}. Objeto: ${objInfo?.name||"desconocido"}. ¿Qué más medir? ¿Observaciones técnicas? Máx 3 frases.`;
     try{const res=await fetch(GAPI,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${getKey()}`},body:JSON.stringify({model:GMOD,max_tokens:200,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:pr}]}]})});
     const data=await res.json();setAiMsg(data.choices?.[0]?.message?.content||"Sin respuesta.");}
-    catch{setAiMsg("Error al contactar IA.");}finally{setAiLoad(false);}
+    catch{setAiMsg("Error IA.");}finally{setAiLoad(false);}
   };
 
-  /* Save/load */
+  /* save/load */
   const saveProj=()=>{const p={id:uid(),name:projName,title:projTitle,date:new Date().toLocaleDateString("es-ES"),image,origImage,rotation,anns,scale,objInfo,piping,segments};const all=[p,...projects.filter(x=>x.name!==projName)].slice(0,20);localStorage.setItem("ms3_pj",JSON.stringify(all));setProjects(all);setSyncMsg("✓ Guardado");setTimeout(()=>setSyncMsg(""),2500);};
   const loadProj=p=>{setImage(p.image||p.origImage);setOrigImage(p.origImage||p.image);setRotation(p.rotation||0);setAnns(p.anns||[]);setHist([]);setScale(p.scale||null);setObjInfo(p.objInfo);setPiping(p.piping||null);setProjName(p.name);setProjTitle(p.title||"");setSelId(null);setPending([]);setTool("sel");setSegments(p.segments||[]);setScr("annotate");setViewTab(p.piping?"pipe3d":"ann");};
   const delProj=(id,e)=>{e.stopPropagation();const all=projects.filter(p=>p.id!==id);localStorage.setItem("ms3_pj",JSON.stringify(all));setProjects(all);};
   const genLink=()=>{const d={name:projName,title:projTitle,anns,scale,objName:objInfo?.name,shape:objInfo?.shape,piping,segments};const enc=btoa(unescape(encodeURIComponent(JSON.stringify(d))));const url=`${window.location.href.split("?")[0].split("#")[0]}?sync=${enc}`;navigator.clipboard?.writeText(url).then(()=>{setSyncMsg("☁ Enlace copiado");setTimeout(()=>setSyncMsg(""),4000);}).catch(()=>prompt("Copia:",url));};
-  useEffect(()=>{const p=new URLSearchParams(window.location.search);const s=p.get("sync");if(!s)return;try{const d=JSON.parse(decodeURIComponent(escape(atob(s))));setAnns(d.anns||[]);setScale(d.scale||null);setProjName(d.name||"Proyecto");setProjTitle(d.title||"");setObjInfo({name:d.objName||"Objeto",shape:d.shape||"default",category:""});setPiping(d.piping||null);setSegments(d.segments||[]);setAiMsg(`Proyecto "${d.name}" importado. Sube la imagen.`);setScr("camera");window.history.replaceState({},"",window.location.pathname);}catch{};},[]);
+  useEffect(()=>{const p=new URLSearchParams(window.location.search);const s=p.get("sync");if(!s)return;try{const d=JSON.parse(decodeURIComponent(escape(atob(s))));setAnns(d.anns||[]);setScale(d.scale||null);setProjName(d.name||"Proyecto");setProjTitle(d.title||"");setObjInfo({name:d.objName||"Objeto",shape:d.shape||"default",category:""});setPiping(d.piping||null);setSegments(d.segments||[]);setAiMsg(`Proyecto "${d.name}" importado.`);setScr("camera");window.history.replaceState({},"",window.location.pathname);}catch{};},[]);
 
-  /* Export */
+  /* export */
   const doCapture=async()=>{if(!captureRef.current)return null;return html2canvas(captureRef.current,{scale:2,useCORS:true,allowTaint:true,backgroundColor:"#07101e"});};
   const exportPNG=async()=>{try{const cv=await doCapture();const url=cv.toDataURL("image/png");if(navigator.share&&navigator.canShare){try{const blob=await(await fetch(url)).blob();const file=new File([blob],"mediscan.png",{type:"image/png"});if(navigator.canShare({files:[file]})){await navigator.share({title:projName,files:[file]});return;}}catch{}}const a=document.createElement("a");a.href=url;a.download=`${projName}.png`;a.click();}catch{}};
   const exportPDF=async()=>{try{const cv=await doCapture();const{jsPDF}=window.jspdf;const pdf=new jsPDF({orientation:"landscape"});const W=pdf.internal.pageSize.getWidth(),H=cv.height*(W/cv.width);pdf.setFillColor(7,16,30);pdf.rect(0,0,W,H+14,"F");pdf.addImage(cv.toDataURL("image/jpeg",.92),"JPEG",0,0,W,H);pdf.setFontSize(8);pdf.setTextColor(0,229,196);pdf.text(`${projTitle||projName} · ${new Date().toLocaleDateString("es-ES")}`,3,H+10);pdf.save(`${projName}.pdf`);}catch{alert("Error PDF");}};
-  const shareWA=async()=>{try{const cv=await doCapture();const url=cv.toDataURL("image/png");if(navigator.share&&navigator.canShare){try{const blob=await(await fetch(url)).blob();const file=new File([blob],"mediscan.png",{type:"image/png"});if(navigator.canShare({files:[file]})){await navigator.share({title:projName,files:[file]});return;}}catch{}}const a=document.createElement("a");a.href=url;a.download=`${projName}.png`;a.click();setTimeout(()=>{if(window.confirm("Imagen descargada ✓\n¿Abrir WhatsApp?")){window.open("whatsapp://","_blank");}},600);}catch{}};
+  const shareWA=async()=>{try{const cv=await doCapture();const url=cv.toDataURL("image/png");if(navigator.share&&navigator.canShare){try{const blob=await(await fetch(url)).blob();const file=new File([blob],"mediscan.png",{type:"image/png"});if(navigator.canShare({files:[file]})){await navigator.share({title:projName,files:[file]});return;}}catch{}}const a=document.createElement("a");a.href=url;a.download=`${projName}.png`;a.click();setTimeout(()=>{if(window.confirm("Imagen descargada.\n¿Abrir WhatsApp?")){window.open("whatsapp://","_blank");}},600);}catch{}};
   const shareEmail=async()=>{try{const cv=await doCapture();const a=document.createElement("a");a.href=cv.toDataURL("image/png");a.download=`${projName}.png`;a.click();setTimeout(()=>alert("Imagen descargada. Adjúntala al email."),400);}catch{}};
 
-  /* ── SVG Annotation Renderer – pill badge style ── */
-  // Pill badge helper - white rounded pill with dark text (AR Meter style)
-  const PillBadge=({mx,my,text,col,fs="2.6%",dark=false})=>{
+  /* ═══ RENDER HELPERS ═══ */
+
+  /* White pill badge (AR Meter style) */
+  const Pill=({mx,my,text,col})=>{
     if(!text)return null;
     const w=Math.max(text.length*.62,3)+2.5;
     return <>
-      <defs><filter id="shadow2" x="-20%" y="-40%" width="140%" height="180%"><feDropShadow dx="0" dy="1" stdDeviation="1.5" floodOpacity="0.35"/></filter></defs>
-      <rect x={`${parseFloat(mx)-w/2}%`} y={`${parseFloat(my||0)-1.8}%`} width={`${w}%`} height="3.8%" rx="1.9%" fill={dark?"rgba(20,20,30,.85)":"rgba(255,255,255,.93)"} filter="url(#shadow2)"/>
-      <text x={mx} y={`${parseFloat(my||0)+.3}%`} fill={dark?col:"#1a1a2e"} fontSize={fs} fontFamily="Space Mono,monospace" fontWeight="700" textAnchor="middle" dominantBaseline="middle">{text}</text>
+      <rect x={`${parseFloat(mx)-w/2}%`} y={`${parseFloat(my)-1.9}%`} width={`${w}%`} height="3.8%" rx="1.9%"
+        fill="rgba(255,255,255,.93)" style={{filter:"drop-shadow(0 1px 3px rgba(0,0,0,.5))"}}/>
+      <text x={`${parseFloat(mx)}%`} y={`${parseFloat(my)+.3}%`} fill="#1a1a2e" fontSize="2.6%"
+        fontFamily="Space Mono,monospace" fontWeight="700" textAnchor="middle" dominantBaseline="middle">{text}</text>
     </>;
   };
 
-  const ShapeSVG=({a,isPreview=false})=>{
+  /* SVG annotation renderer - defined before use */
+  const ShapeSVG=({a,isPrev=false})=>{
     if(!a||!a.points||a.points.length<2)return null;
     const[p1,p2]=a.points;const col=a.color||"#00e5c4";
-    const sw=isPreview?1.5:(selId===a.id?3:2);
+    const sw=isPrev?1.5:(selId===a.id?3:2);
     const x1=`${p1.x*100}%`,y1=`${p1.y*100}%`,x2=`${p2.x*100}%`,y2=`${p2.y*100}%`;
     const mxN=(p1.x+p2.x)*50,myN=(p1.y+p2.y)*50;
-    const mx=`${mxN}%`,my=`${myN}%`;
-    const lm=isPreview?"":getCalMeasure(a);
-    const area=isPreview?"":getRectArea(a);
-    const aid=`m${a.id||"pv"}`;
+    const lm=isPrev?"":getCalMeasure(a);
+    const area=isPrev?"":getRectArea(a);
+    const badge=a.title?(lm?`${a.title}: ${lm}`:a.title):lm;
+    const aid=`sv${a.id||"p"}`;
     const ld=a.lineStyle==="dashed"?"8,5":a.lineStyle==="dotted"?"2,5":"none";
-    const sel=()=>{if(!isPreview){setSelId(a.id);setTool("sel");}};
-    const badgeText=lm&&lm!=="?"?lm:"";
-    const title=a.title||"";
-
-    if(a.type==="tri"&&a.points.length>=3){const[pp1,pp2,pp3]=a.points;
+    const sel=()=>{if(!isPrev){setSelId(a.id);setTool("sel");}};
+    if(a.type==="tri"&&a.points.length>=3){const[q1,q2,q3]=a.points;
       return <g onClick={e=>{e.stopPropagation();sel();}} style={{cursor:"pointer"}}>
-        <polygon points={`${pp1.x*100}%,${pp1.y*100}% ${pp2.x*100}%,${pp2.y*100}% ${pp3.x*100}%,${pp3.y*100}%`} stroke={col} strokeWidth={sw} fill={`${col}18`}/>
-        {!isPreview&&badgeText&&<PillBadge mx={mx} my={my} text={title?`${title}: ${badgeText}`:badgeText} col={col}/>}
+        <polygon points={`${q1.x*100}%,${q1.y*100}% ${q2.x*100}%,${q2.y*100}% ${q3.x*100}%,${q3.y*100}%`} stroke={col} strokeWidth={sw} fill={`${col}18`}/>
+        {!isPrev&&badge&&<Pill mx={`${mxN}`} my={`${myN}`} text={badge} col={col}/>}
       </g>;}
-
     if(a.type==="rect"||a.type==="crop"){
       const rx=Math.min(p1.x,p2.x)*100,ry=Math.min(p1.y,p2.y)*100,rw=Math.abs(p2.x-p1.x)*100,rh=Math.abs(p2.y-p1.y)*100;
-      const strokeC=a.type==="crop"?"#ffbb00":col;
+      const sc=a.type==="crop"?"#ffbb00":col;
       return <g onClick={e=>{e.stopPropagation();if(a.type!=="crop")sel();}} style={{cursor:a.type==="crop"?"default":"pointer"}}>
-        <rect x={`${rx}%`} y={`${ry}%`} width={`${rw}%`} height={`${rh}%`} stroke={strokeC} strokeWidth={sw} fill={isPreview?`${strokeC}12`:`${strokeC}16`} strokeDasharray={a.type==="crop"?"8,4":ld}/>
-        {!isPreview&&a.type!=="crop"&&<>
-          {(title||badgeText)&&<PillBadge mx={mx} my={`${myN}`} text={title?`${title}: ${badgeText}`:badgeText} col={col}/>}
-          {area&&<PillBadge mx={mx} my={`${myN+4}`} text={`A: ${area}`} col={col} fs="2.2%"/>}
-        </>}
+        <rect x={`${rx}%`} y={`${ry}%`} width={`${rw}%`} height={`${rh}%`} stroke={sc} strokeWidth={sw} fill={isPrev?`${sc}10`:`${sc}16`} strokeDasharray={a.type==="crop"?"8,4":ld}/>
+        {!isPrev&&a.type!=="crop"&&badge&&<Pill mx={`${mxN}`} my={`${myN}`} text={badge} col={col}/>}
+        {!isPrev&&area&&<Pill mx={`${mxN}`} my={`${myN+5}`} text={`A: ${area}`} col={col}/>}
       </g>;}
-
     if(a.type==="circ"){const r=Math.sqrt(Math.pow((p2.x-p1.x)*100,2)+Math.pow((p2.y-p1.y)*100,2));
       return <g onClick={e=>{e.stopPropagation();sel();}} style={{cursor:"pointer"}}>
-        <circle cx={x1} cy={y1} r={`${r}%`} stroke={col} strokeWidth={sw} fill={isPreview?`${col}10`:`${col}14`} strokeDasharray={ld}/>
-        {!isPreview&&<PillBadge mx={x1} my={y1} text={`${title?title+": ":""}${badgeText?`⌀${badgeText}`:""}`} col={col}/>}
+        <circle cx={x1} cy={y1} r={`${r}%`} stroke={col} strokeWidth={sw} fill={isPrev?`${col}10`:`${col}14`} strokeDasharray={ld}/>
+        {!isPrev&&badge&&<Pill mx={`${p1.x*100}`} my={`${p1.y*100}`} text={badge} col={col}/>}
       </g>;}
-
     const isDim=a.type==="dim"||a.type==="dist";
     const dbl=a.type==="dist"||a.arrowHead==="both";
     const noArr=a.arrowHead==="none";
-    return <g onClick={e=>{e.stopPropagation();sel();}} style={{cursor:isPreview?"crosshair":"pointer"}}>
+    return <g onClick={e=>{e.stopPropagation();sel();}} style={{cursor:isPrev?"crosshair":"pointer"}}>
       <defs>
         <marker id={aid+"e"} markerWidth="10" markerHeight="10" refX="7" refY="3.5" orient="auto"><path d="M0,0 L0,7 L10,3.5z" fill={col}/></marker>
         {dbl&&<marker id={aid+"s"} markerWidth="10" markerHeight="10" refX="3" refY="3.5" orient="auto-start-reverse"><path d="M0,0 L0,7 L10,3.5z" fill={col}/></marker>}
-        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="1" floodOpacity="0.4"/></filter>
       </defs>
       <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="transparent" strokeWidth="14"/>
       <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={col} strokeWidth={a.type==="arr2"?sw+2:sw} strokeDasharray={ld}
@@ -684,26 +631,57 @@ En 3-4 frases: ¿qué medidas adicionales son importantes? ¿observaciones técn
         <line x1={`${p1.x*100}%`} y1={`${(p1.y-.025)*100}%`} x2={`${p1.x*100}%`} y2={`${(p1.y+.025)*100}%`} stroke={col} strokeWidth={sw+1}/>
         <line x1={`${p2.x*100}%`} y1={`${(p2.y-.025)*100}%`} x2={`${p2.x*100}%`} y2={`${(p2.y+.025)*100}%`} stroke={col} strokeWidth={sw+1}/>
       </>}
-      {/* Endpoint circles */}
-      <circle cx={x1} cy={y1} r="1.2%" fill={col} opacity={isPreview?.5:.8}/>
-      <circle cx={x2} cy={y2} r="1.2%" fill={col} opacity={isPreview?.5:.8}/>
-      {!isPreview&&(badgeText||title)&&<PillBadge mx={mx} my={`${myN-3.5}`} text={title?`${title}: ${badgeText}`:badgeText} col={col}/>}
+      <circle cx={x1} cy={y1} r="1%" fill={col} opacity={isPrev?.4:.7}/>
+      <circle cx={x2} cy={y2} r="1%" fill={col} opacity={isPrev?.4:.7}/>
+      {!isPrev&&badge&&<Pill mx={`${mxN}`} my={`${myN-4}`} text={badge} col={col}/>}
     </g>;
   };
 
-    const markerAnns=anns.filter(a=>MRK.includes(a.type));
+  /* AI segment colored overlays - defined before use */
+  const SegOverlay=()=>{
+    if(!showSegs||!segments.length)return null;
+    return <>{segments.map(seg=>(
+      <g key={seg.id} className="sp" style={{cursor:"pointer"}}
+        onClick={e=>{e.stopPropagation();setMeasuring({id:uid(),type:"dot",icon:"🔍",title:seg.name,label:seg.name,value:null,unit:"cm",axis:"",color:seg.color||"#00e5c4",points:[{x:(seg.x1+seg.x2)/2,y:(seg.y1+seg.y2)/2}]});setMIn({title:seg.name,value:"",unit:"cm",axis:""});}}>
+        <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width={`${(seg.x2-seg.x1)*100}%`} height={`${(seg.y2-seg.y1)*100}%`}
+          stroke={seg.color||"#00e5c4"} strokeWidth="1.8" strokeDasharray="6,3" fill={`${seg.color||"#00e5c4"}14`} rx="2"/>
+        <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width="14%" height="5%" rx="2%" fill={`${seg.color||"#00e5c4"}dd`}/>
+        <text x={`${seg.x1*100+1}%`} y={`${seg.y1*100+3}%`} fill="#000" fontSize="2.3%" fontFamily="Space Mono,monospace" fontWeight="700" dominantBaseline="middle">{seg.id}. {(seg.name||"").slice(0,12)}</text>
+      </g>
+    ))}</>;
+  };
+
+  /* V/S/P stats overlay on image */
+  const StatsOverlay=()=>{
+    const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?toMM(a.value,a.unit)/1000:0;};
+    const wM=gd("width"),hM=gd("height"),dM=gd("depth");
+    if(!wM&&!hM&&!dM)return null;
+    const stats=[
+      wM&&dM&&`S = ${(wM*dM).toFixed(2)} m²`,
+      wM&&hM&&dM&&`V = ${(wM*hM*dM).toFixed(2)} m³`,
+      wM&&dM&&`P = ${(2*(wM+dM)).toFixed(2)} m`,
+    ].filter(Boolean);
+    return <>{stats.map((s,i)=>(
+      <g key={i} pointerEvents="none">
+        <rect x="2%" y={`${85+i*6}%`} width={`${s.length*.68+2}%`} height="5%" rx="2.5%" fill="rgba(255,255,255,.92)" style={{filter:"drop-shadow(0 1px 3px rgba(0,0,0,.5))"}}/>
+        <text x={`${(s.length*.68+2)/2+2}%`} y={`${87.5+i*6}%`} fill="#1a1a2e" fontSize="2.5%" fontFamily="Space Mono,monospace" fontWeight="700" textAnchor="middle" dominantBaseline="middle">{s}</text>
+      </g>
+    ))}</>;
+  };
+
+  const markerAnns=anns.filter(a=>MRK.includes(a.type));
   const shapeAnns=anns.filter(a=>!MRK.includes(a.type));
 
-  /* Styles */
-  const card=(border="rgba(0,229,196,.22)",bg="rgba(5,15,35,.9)")=>({background:`linear-gradient(135deg,${bg},rgba(8,20,42,.88))`,border:`1px solid ${border}`,borderRadius:"12px",overflow:"hidden"});
+  /* ═══ STYLES ═══ */
+  const ACC="#00e5c4";
+  const card=(bdr="rgba(0,229,196,.22)",bg="rgba(5,15,35,.9)")=>({background:`linear-gradient(135deg,${bg},rgba(8,20,42,.88))`,border:`1px solid ${bdr}`,borderRadius:"12px",overflow:"hidden"});
   const lbl=(t,col="#00e5c4")=><div style={{padding:"7px 12px",fontSize:"8px",letterSpacing:".18em",color:col,textTransform:"uppercase",borderBottom:"1px solid rgba(255,255,255,.06)",background:"rgba(255,255,255,.025)",display:"flex",alignItems:"center",gap:"6px"}}>{t}</div>;
   const tabS=a=>({flex:1,padding:"7px 3px",borderRadius:"7px",background:a?"linear-gradient(135deg,#00e5c4,#00b89a)":"transparent",color:a?"#070f1e":"#4477aa",border:`1px solid ${a?"#00e5c4":"rgba(0,150,180,.22)"}`,fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",fontWeight:a?700:400});
   const uBt=a=>({padding:"5px 7px",background:a?"rgba(0,229,196,.18)":"transparent",color:a?"#00e5c4":"#3a6878",border:`1px solid ${a?"rgba(0,229,196,.5)":"rgba(0,180,180,.2)"}`,borderRadius:"5px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer",fontWeight:a?700:400});
-  const closeX=fn=><button onClick={fn} style={{position:"absolute",top:"10px",right:"12px",background:"rgba(255,80,80,.15)",border:"1px solid rgba(255,80,80,.35)",color:"#ff8888",borderRadius:"50%",width:"26px",height:"26px",cursor:"pointer",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center",zIndex:20,lineHeight:1}}>✕</button>;
-  const ACC="#00e5c4";
+  const closeX=fn=><button onClick={fn} style={{position:"absolute",top:"10px",right:"12px",background:"rgba(255,80,80,.15)",border:"1px solid rgba(255,80,80,.35)",color:"#ff8888",borderRadius:"50%",width:"26px",height:"26px",cursor:"pointer",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center",zIndex:20}}>✕</button>;
 
   return (
-<div style={{minHeight:"100vh",background:"linear-gradient(160deg,#06101e,#0a1628,#070f1e)",color:"#d0e8f8",fontFamily:"'Space Mono',monospace",display:"flex",flexDirection:"column",maxWidth:"500px",margin:"0 auto"}}>
+<div style={{minHeight:"100vh",background:"linear-gradient(160deg,#06101e,#0a1628,#07101e)",color:"#d0e8f8",fontFamily:"'Space Mono',monospace",display:"flex",flexDirection:"column",maxWidth:"500px",margin:"0 auto"}}>
 
 {/* HEADER */}
 <div style={{padding:"9px 13px",display:"flex",alignItems:"center",gap:"7px",background:"rgba(4,10,22,.96)",backdropFilter:"blur(18px)",borderBottom:"1px solid rgba(0,229,196,.18)",position:"sticky",top:0,zIndex:300,boxShadow:"0 2px 22px rgba(0,0,0,.5)"}}>
@@ -718,7 +696,7 @@ En 3-4 frases: ¿qué medidas adicionales son importantes? ¿observaciones técn
 
 <div style={{flex:1,padding:"9px",display:"flex",flexDirection:"column",gap:"8px",overflowY:"auto"}}>
 
-{/* HOME */}
+{/* ═══ HOME ═══ */}
 {scr==="home"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
   <button onClick={()=>setScr("camera")} style={{width:"100%",padding:"15px",background:"linear-gradient(135deg,#00e5c4,#0099ff,#7744ff)",color:"#fff",border:"none",borderRadius:"12px",fontSize:"12px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer",letterSpacing:".1em",boxShadow:"0 4px 22px rgba(0,229,196,.35)"}}>＋ NUEVO PROYECTO</button>
   {projects.length>0?(<div style={card()}>{lbl("📁 Proyectos guardados")}
@@ -730,7 +708,7 @@ En 3-4 frases: ¿qué medidas adicionales son importantes? ¿observaciones técn
   </div>):(<div style={{textAlign:"center",padding:"22px",fontSize:"9px",color:"#3a6878"}}>Sin proyectos guardados</div>)}
 </div>)}
 
-{/* SETUP */}
+{/* ═══ SETUP ═══ */}
 {scr==="setup"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
   <div style={{textAlign:"center",padding:"10px 0 4px"}}><div style={{fontSize:"26px",marginBottom:"4px"}}>🔑</div><div style={{fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:800,color:"#fff"}}>Clave API de Groq</div><div style={{fontSize:"7px",color:"#7aaabb",lineHeight:1.7,marginTop:"4px"}}>Gratis en <span style={{color:ACC}}>console.groq.com</span> → API Keys</div></div>
   <div style={{...card(),padding:"13px",display:"flex",flexDirection:"column",gap:"8px"}}>
@@ -740,7 +718,7 @@ En 3-4 frases: ¿qué medidas adicionales son importantes? ¿observaciones técn
   {getKey()&&<button onClick={()=>setScr("home")} style={{padding:"8px",background:"transparent",border:"1px solid rgba(255,255,255,.1)",color:"#5577aa",borderRadius:"7px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>← Volver</button>}
 </div>)}
 
-{/* CAMERA */}
+{/* ═══ CAMERA ═══ */}
 {scr==="camera"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
   {aiMsg&&<div style={{...card("rgba(0,229,196,.2)"),padding:"10px 12px",fontSize:"8px",color:"#7aaabb",lineHeight:1.7}}><span style={{color:ACC}}>ℹ </span>{aiMsg}</div>}
   <div style={card()}>{lbl(<><span className="blink" style={{color:"#ff4477"}}>●</span>&nbsp;Cámara en vivo</>)}
@@ -750,38 +728,37 @@ En 3-4 frases: ¿qué medidas adicionales son importantes? ¿observaciones técn
       <video ref={videoRef} autoPlay playsInline muted style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
       <div style={{position:"absolute",left:0,right:0,height:"2px",background:"linear-gradient(90deg,transparent,#00e5c4,transparent)",animation:"scan 2.5s linear infinite",opacity:.6,pointerEvents:"none"}}/>
     </div><div style={{display:"flex",gap:"8px",padding:"10px",justifyContent:"center"}}>
-      <button onClick={stopCam} style={{padding:"7px 14px",background:"rgba(255,80,80,.14)",border:"1px solid rgba(255,80,80,.4)",color:"#ff7788",borderRadius:"7px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>✕ Cerrar</button>
+      <button onClick={stopCam} style={{padding:"7px 14px",background:"rgba(255,80,80,.14)",border:"1px solid rgba(255,80,80,.4)",color:"#ff7788",borderRadius:"7px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>✕</button>
       <button onClick={capLive} style={{width:"52px",height:"52px",borderRadius:"50%",border:"3px solid #00e5c4",background:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 22px rgba(0,229,196,.5)"}}><div style={{width:"36px",height:"36px",borderRadius:"50%",background:"linear-gradient(135deg,#00e5c4,#00b89a)"}}/></button>
     </div></>)}
   </div>
-  <div style={card("rgba(68,170,255,.3)")}>{lbl("📷 Foto directa o galería · 📐 Bocetos / Planos","#44aaff")}
+  <div style={card("rgba(68,170,255,.3)")}>{lbl("📷 Foto · Boceto · Plano","#44aaff")}
     <div style={{padding:"10px",display:"flex",flexDirection:"column",gap:"7px"}}>
       <button onClick={()=>camInRef.current?.click()} style={{display:"flex",alignItems:"center",gap:"12px",padding:"13px",background:"rgba(0,229,196,.1)",border:"1px solid rgba(0,229,196,.4)",borderRadius:"10px",cursor:"pointer",width:"100%"}}>
-        <span style={{fontSize:"20px"}}>📷</span><div><div style={{fontSize:"10px",fontWeight:700,color:ACC,fontFamily:"'Space Mono',monospace"}}>TOMAR FOTO</div><div style={{fontSize:"7px",color:"#5599bb"}}>Objeto, pieza, herramienta, plano…</div></div>
+        <span style={{fontSize:"20px"}}>📷</span><div><div style={{fontSize:"10px",fontWeight:700,color:ACC,fontFamily:"'Space Mono',monospace"}}>TOMAR FOTO</div><div style={{fontSize:"7px",color:"#5599bb"}}>Objeto, pieza, herramienta, plano...</div></div>
       </button>
       <input ref={camInRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleFile}/>
       <button onClick={()=>uploadRef.current?.click()} style={{display:"flex",alignItems:"center",gap:"12px",padding:"13px",background:"rgba(68,170,255,.08)",border:"1px solid rgba(68,170,255,.3)",borderRadius:"10px",cursor:"pointer",width:"100%"}}>
-        <span style={{fontSize:"20px"}}>🖼</span><div><div style={{fontSize:"10px",fontWeight:700,color:"#44aaff",fontFamily:"'Space Mono',monospace"}}>GALERÍA / BOCETO / PLANO</div><div style={{fontSize:"7px",color:"#5599bb"}}>JPG · PNG · Croquis · P&ID · Isométricos</div></div>
+        <span style={{fontSize:"20px"}}>🖼</span><div><div style={{fontSize:"10px",fontWeight:700,color:"#44aaff",fontFamily:"'Space Mono',monospace"}}>GALERÍA / BOCETO / PLANO</div><div style={{fontSize:"7px",color:"#5599bb"}}>JPG · PNG · P&ID · Isométricos · Croquis</div></div>
       </button>
       <input ref={uploadRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleFile}/>
     </div>
   </div>
 </div>)}
 
-{/* LOADING */}
+{/* ═══ LOADING ═══ */}
 {scr==="loading"&&(<div style={card()} className="fade">
   {lbl("⚡ IA identificando...")}
   {image&&<img src={image} alt="" style={{width:"100%",aspectRatio:"4/3",objectFit:"cover",opacity:.75}}/>}
   <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"10px",padding:"22px"}}>
     <div style={{width:"34px",height:"34px",borderRadius:"50%",border:"3px solid #1a3a5a",borderTop:"3px solid #00e5c4"}} className="spin"/>
-    <div style={{fontSize:"8px",color:"#4477aa",letterSpacing:".15em",textTransform:"uppercase"}}>Detectando objeto, plano o boceto…</div>
+    <div style={{fontSize:"8px",color:"#4477aa",letterSpacing:".15em",textTransform:"uppercase"}}>Detectando objeto, plano o boceto...</div>
   </div>
 </div>)}
 
-{/* ANNOTATE */}
+{/* ═══ ANNOTATE ═══ */}
 {scr==="annotate"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
 
-  {/* Header */}
   <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
     <input value={projName} onChange={e=>setProjName(e.target.value)} placeholder="Nombre" style={{flex:1,minWidth:"80px",padding:"7px 10px",background:"rgba(0,10,25,.8)",border:"1px solid rgba(0,229,196,.3)",borderRadius:"7px",color:ACC,fontSize:"10px",fontFamily:"'Syne',sans-serif",fontWeight:700,outline:"none"}}/>
     <input value={projTitle} onChange={e=>setProjTitle(e.target.value)} placeholder="Título del plano..." style={{flex:2,minWidth:"100px",padding:"7px 10px",background:"rgba(0,10,25,.7)",border:"1px solid rgba(68,170,255,.2)",borderRadius:"7px",color:"#d0e8f8",fontSize:"9px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
@@ -804,114 +781,87 @@ En 3-4 frases: ¿qué medidas adicionales son importantes? ¿observaciones técn
 
     {/* ANNOTATE TAB */}
     {viewTab==="ann"&&(<>
-      {/* Category tabs */}
       <div style={{display:"flex",gap:"3px",padding:"5px 8px",borderBottom:"1px solid rgba(255,255,255,.05)",overflowX:"auto"}}>
         {Object.keys(toolsByCategory).map(cat=><button key={cat} onClick={()=>setToolCat(cat)} style={{padding:"4px 8px",borderRadius:"5px",background:toolCat===cat?"rgba(0,229,196,.14)":"transparent",color:toolCat===cat?ACC:"#3a6070",border:`1px solid ${toolCat===cat?"rgba(0,229,196,.38)":"rgba(0,229,196,.08)"}`,fontSize:"7px",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"'Space Mono',monospace"}}>{CATS[cat]}</button>)}
       </div>
-      {/* Tools */}
       <div style={{display:"flex",gap:"3px",padding:"5px 8px",borderBottom:"1px solid rgba(255,255,255,.05)",flexWrap:"wrap",alignItems:"center"}}>
         {(toolsByCategory[toolCat]||[]).map(t=><button key={t.id} title={t.label} onClick={()=>{setTool(t.id);setPending([]);pendingRef.current=[];setPreview(null);drawingRef.current=null;}}
           style={{padding:"5px 8px",borderRadius:"6px",background:tool===t.id?"linear-gradient(135deg,#00e5c4,#00b89a)":"rgba(255,255,255,.04)",color:tool===t.id?"#07101e":"#7799bb",border:`1px solid ${tool===t.id?"#00e5c4":"rgba(0,229,196,.14)"}`,fontSize:"13px",cursor:"pointer",boxShadow:tool===t.id?"0 0 10px rgba(0,229,196,.4)":"none"}}>{t.icon}</button>)}
-        <button title="Seleccionar" onClick={()=>{setTool("sel");setPending([]);pendingRef.current=[];setPreview(null);}} style={{padding:"5px 8px",borderRadius:"6px",background:tool==="sel"?"linear-gradient(135deg,#00e5c4,#00b89a)":"rgba(255,255,255,.04)",color:tool==="sel"?"#07101e":"#7799bb",border:`1px solid ${tool==="sel"?"#00e5c4":"rgba(0,229,196,.14)"}`,fontSize:"13px",cursor:"pointer",marginLeft:"auto"}}>↖</button>
+        <button onClick={()=>{setTool("sel");setPending([]);pendingRef.current=[];setPreview(null);}} style={{padding:"5px 8px",borderRadius:"6px",background:tool==="sel"?"linear-gradient(135deg,#00e5c4,#00b89a)":"rgba(255,255,255,.04)",color:tool==="sel"?"#07101e":"#7799bb",border:`1px solid ${tool==="sel"?"#00e5c4":"rgba(0,229,196,.14)"}`,fontSize:"13px",cursor:"pointer",marginLeft:"auto"}}>↖</button>
         {COLS.slice(0,6).map((c,i)=><div key={c} onClick={()=>setColorIdx(i)} style={{width:"13px",height:"13px",borderRadius:"50%",background:c,cursor:"pointer",border:colorIdx===i?"2.5px solid #fff":"2px solid transparent",boxShadow:colorIdx===i?`0 0 6px ${c}`:"none"}}/>)}
       </div>
-      {/* Style options */}
       {showStyleOpts&&<div style={{padding:"5px 8px",borderBottom:"1px solid rgba(255,255,255,.05)",display:"flex",gap:"4px",flexWrap:"wrap",alignItems:"center",background:"rgba(0,229,196,.03)"}}>
         <span style={{fontSize:"7px",color:ACC}}>ESTILO:</span>
-        {[["solid","━ Continua"],["dashed","┄ Discontinua"],["dotted","··· Punteada"]].map(([v,lb])=><button key={v} onClick={()=>setLStyle(v)} style={{padding:"3px 7px",borderRadius:"4px",background:lStyle===v?"rgba(0,229,196,.18)":"transparent",color:lStyle===v?ACC:"#3a6878",border:`1px solid ${lStyle===v?"rgba(0,229,196,.45)":"rgba(0,229,196,.1)"}`,fontSize:"7px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>{lb}</button>)}
+        {[["solid","━ Continua"],["dashed","┄ Discontinua"],["dotted","···"]].map(([v,lb])=><button key={v} onClick={()=>setLStyle(v)} style={{padding:"3px 7px",borderRadius:"4px",background:lStyle===v?"rgba(0,229,196,.18)":"transparent",color:lStyle===v?ACC:"#3a6878",border:`1px solid ${lStyle===v?"rgba(0,229,196,.45)":"rgba(0,229,196,.1)"}`,fontSize:"7px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>{lb}</button>)}
         {["arr1","arr2","arr3","arr4","dist"].includes(tool)&&<>
           <span style={{fontSize:"7px",color:"#44aaff",marginLeft:"4px"}}>FLECHA:</span>
           {[["end","→ Final"],["both","↔ Ambas"],["none","─ Sin"]].map(([v,lb])=><button key={v} onClick={()=>setAHead(v)} style={{padding:"3px 7px",borderRadius:"4px",background:aHead===v?"rgba(68,170,255,.18)":"transparent",color:aHead===v?"#44aaff":"#3a6878",border:`1px solid ${aHead===v?"rgba(68,170,255,.45)":"rgba(68,170,255,.1)"}`,fontSize:"7px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>{lb}</button>)}
         </>}
       </div>}
-      {/* Hint bar */}
-      <div style={{padding:"3px 9px",fontSize:"7px",color:"#2a5070",borderBottom:"1px solid rgba(255,255,255,.04)",display:"flex",alignItems:"center",gap:"5px"}}>
-        <span style={{flex:1}}>
-          {tool==="sel"?"↖ Toca para seleccionar · Arrastra para mover":
-           tool==="calib"?"⚖ Haz clic en 2 puntos de medida conocida":
-           tool==="crop"?"✂ Arrastra para seleccionar zona":
-           DRAG_TOOLS.includes(tool)?"Arrastra → suelta → añade medida":
-           pending.length>0?`▸ Toca punto ${pending.length+1}`:
-           `${TOOLS.find(t=>t.id===tool)?.label} · Toca en la imagen`}
-        </span>
-        {(pending.length>0||drawingRef.current)&&<button onClick={()=>{setPending([]);pendingRef.current=[];setPreview(null);drawingRef.current=null;}} style={{background:"transparent",border:"none",color:"#ff5566",cursor:"pointer",fontSize:"9px"}}>✕</button>}
-        <button onClick={undo} disabled={hist.length===0} style={{padding:"2px 7px",background:hist.length>0?"rgba(0,229,196,.1)":"transparent",border:`1px solid ${hist.length>0?"rgba(0,229,196,.35)":"transparent"}`,color:hist.length>0?ACC:"#2a5070",borderRadius:"5px",fontSize:"8px",cursor:hist.length>0?"pointer":"default",fontFamily:"'Space Mono',monospace",fontWeight:700}}>↩ {hist.length}</button>
+      {/* Active tool indicator */}
+      <div style={{padding:"4px 9px",borderBottom:"1px solid rgba(255,255,255,.04)",display:"flex",alignItems:"center",gap:"6px",background:tool!=="sel"?"rgba(0,229,196,.04)":"transparent",minHeight:"32px"}}>
+        {tool!=="sel"?<>
+          <div style={{display:"flex",alignItems:"center",gap:"5px",padding:"3px 10px",background:"linear-gradient(135deg,#00e5c4,#00b89a)",borderRadius:"20px",flexShrink:0}}>
+            <span style={{fontSize:"13px"}}>{TOOLS.find(t=>t.id===tool)?.icon}</span>
+            <span style={{fontSize:"7px",fontWeight:700,color:"#07101e",fontFamily:"'Space Mono',monospace",whiteSpace:"nowrap"}}>{TOOLS.find(t=>t.id===tool)?.label}</span>
+          </div>
+          <span style={{flex:1,fontSize:"7px",color:"#3a6070"}}>
+            {DRAG_TOOLS.includes(tool)?"👆 Arrastra en la imagen":pending.length>0?`👆 Toca para punto ${pending.length+1} de 2`:"👆 Toca en la imagen para empezar"}
+          </span>
+        </>:<span style={{fontSize:"7px",color:"#3a6070"}}>↖ Selecciona herramienta o toca elemento para editar</span>}
+        {pending.length>0&&<button onClick={()=>{setPending([]);pendingRef.current=[];setPreview(null);}} style={{background:"rgba(255,80,80,.15)",border:"1px solid rgba(255,80,80,.3)",color:"#ff7788",cursor:"pointer",fontSize:"8px",padding:"2px 7px",borderRadius:"4px"}}>✕</button>}
+        <button onClick={undo} disabled={hist.length===0} style={{padding:"3px 8px",background:hist.length>0?"rgba(0,229,196,.12)":"transparent",border:`1px solid ${hist.length>0?"rgba(0,229,196,.35)":"transparent"}`,color:hist.length>0?ACC:"#2a5070",borderRadius:"5px",fontSize:"8px",cursor:hist.length>0?"pointer":"default",fontFamily:"'Space Mono',monospace",fontWeight:700,flexShrink:0}}>↩ {hist.length}</button>
       </div>
       {/* IMAGE CANVAS */}
       <div ref={captureRef} style={{position:"relative",background:"#000",overflow:"hidden"}}>
-        <div ref={imgRef} style={{position:"relative",lineHeight:0,transform:`rotate(${rotation}deg)`,cursor:tool==="sel"?"default":!!measuring||!!calibAnn?"not-allowed":"crosshair",userSelect:"none"}}>
+        <div ref={imgRef} style={{position:"relative",lineHeight:0,transform:`rotate(${rotation}deg)`,cursor:tool==="sel"?"default":"crosshair",userSelect:"none"}}>
           <img src={image} alt="" draggable="false" style={{width:"100%",display:"block",opacity:1,pointerEvents:"none"}}/>
           <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",overflow:"visible",pointerEvents:"all"}}>
             <SegOverlay/>
             {shapeAnns.map(a=><ShapeSVG key={a.id} a={a}/>)}
-            {preview&&<ShapeSVG a={{...preview,id:"pv",color:"rgba(0,229,196,.65)"}} isPreview={true}/>}
+            {preview&&<ShapeSVG a={{...preview,id:"pv",color:"rgba(0,229,196,.65)",lineStyle:"solid",arrowHead:"end"}} isPrev={true}/>}
             {pending.length===1&&<circle cx={`${pending[0].x*100}%`} cy={`${pending[0].y*100}%`} r="5" fill={COLS[colorIdx%COLS.length]} opacity=".8" pointerEvents="none"/>}
-            {/* V/S/P stats overlay on image - AR Meter style */}
-            {hasDims&&(()=>{
-              const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?toMM(a.value,a.unit)/1000:0;};
-              const wM=gd("width"),hM=gd("height"),dM=gd("depth");
-              if(!wM&&!hM&&!dM)return null;
-              const vol=wM&&hM&&dM?(wM*hM*dM).toFixed(2):null;
-              const area=wM&&dM?(wM*dM).toFixed(2):null;
-              const perim=wM&&dM?(2*(wM+dM)).toFixed(2):null;
-              const stats=[vol&&`V = ${vol} m³`,area&&`S = ${area} m²`,perim&&`P = ${perim} m`].filter(Boolean);
-              return <g pointerEvents="none">{stats.map((s,i)=>(
-                <g key={i}>
-                  <rect x={`${2}%`} y={`${86+i*5.5}%`} width={`${s.length*.7+3}%`} height="4.5%" rx="2.25%" fill="rgba(255,255,255,.92)" filter="url(#shadow2)"/>
-                  <text x={`${(s.length*.7+3)/2+2}%`} y={`${88+i*5.5}%`} fill="#1a1a2e" fontSize="2.5%" fontFamily="Space Mono,monospace" fontWeight="700" textAnchor="middle" dominantBaseline="middle">{s}</text>
-                </g>
-              ))}</g>;
-            })()}
+            <StatsOverlay/>
           </svg>
-          {/* Marker dots */}
           {markerAnns.map((a,i)=>(
             <div key={a.id} className="nc"
               onMouseDown={e=>startDrag(e,a.id,0)} onTouchStart={e=>startDrag(e,a.id,0)}
               onClick={e=>{e.stopPropagation();setSelId(a.id);setTool("sel");}}
-              style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",width:"28px",height:"28px",borderRadius:"50%",background:selId===a.id?a.color:"rgba(0,0,0,.88)",border:`2.5px solid ${a.color}`,color:selId===a.id?"#000":a.color,display:"flex",alignItems:"center",justifyContent:"center",cursor:"grab",zIndex:15,boxShadow:`0 0 ${selId===a.id?18:7}px ${a.color}`,fontSize:a.type==="pin"?"18px":"10px",fontWeight:"700"}}>
+              style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",width:"28px",height:"28px",borderRadius:"50%",background:selId===a.id?a.color:"rgba(0,0,0,.88)",border:`2.5px solid ${a.color}`,color:selId===a.id?"#000":a.color,display:"flex",alignItems:"center",justifyContent:"center",cursor:"grab",zIndex:15,boxShadow:`0 0 ${selId===a.id?16:7}px ${a.color}`,fontSize:a.type==="pin"?"18px":"10px",fontWeight:"700"}}>
               {a.type==="pin"?"📍":a.type==="star"?"★":a.type==="diam"?"◆":a.type==="tgt"?"⊕":a.type==="txt"?"T":(i+1)}
-              {(a.title||a.value!=null)&&<div style={{position:"absolute",top:"-28px",left:"50%",transform:"translateX(-50%)",background:a.value!=null?"rgba(255,255,255,.94)":"rgba(0,0,0,.8)",color:a.value!=null?"#1a1a2e":a.color,fontSize:"8px",fontWeight:"700",padding:"3px 8px",borderRadius:"20px",whiteSpace:"nowrap",fontFamily:"'Space Mono',monospace",boxShadow:"0 2px 8px rgba(0,0,0,.4)",border:`1px solid ${a.value!=null?"rgba(255,255,255,.5)":a.color+"50"}`,pointerEvents:"none"}}>
-                {a.title||""}{a.value!=null?` ${a.value} ${a.unit}`:a.title?" — sin valor":"sin valor"}
+              {(a.title||a.value!=null)&&<div style={{position:"absolute",top:"-28px",left:"50%",transform:"translateX(-50%)",background:a.value!=null?"rgba(255,255,255,.93)":"rgba(0,0,0,.88)",color:a.value!=null?"#1a1a2e":a.color,fontSize:"8px",fontWeight:"700",padding:"3px 8px",borderRadius:"20px",whiteSpace:"nowrap",fontFamily:"'Space Mono',monospace",boxShadow:"0 2px 8px rgba(0,0,0,.4)",pointerEvents:"none"}}>
+                {a.title||""}{a.value!=null?` ${a.value} ${a.unit}`:a.title?" —":"sin valor"}
               </div>}
             </div>
           ))}
-          {/* Drag handles for selected shape */}
           {selAnn&&!MRK.includes(selAnn.type)&&selAnn.points.map((p,pi)=>(
-            <div key={pi} className="nc"
-              onMouseDown={e=>startDrag(e,selAnn.id,pi)} onTouchStart={e=>startDrag(e,selAnn.id,pi)}
+            <div key={pi} className="nc" onMouseDown={e=>startDrag(e,selAnn.id,pi)} onTouchStart={e=>startDrag(e,selAnn.id,pi)}
               style={{position:"absolute",left:`${p.x*100}%`,top:`${p.y*100}%`,transform:"translate(-50%,-50%)",width:"14px",height:"14px",borderRadius:"50%",background:selAnn.color,cursor:"grab",zIndex:25,border:"2.5px solid #fff",boxShadow:`0 0 8px ${selAnn.color}`}}/>
           ))}
         </div>
       </div>
-      {/* Controls */}
       <div style={{display:"flex",gap:"4px",padding:"6px 9px",borderTop:"1px solid rgba(255,255,255,.05)",flexWrap:"wrap"}}>
-        <button onClick={()=>setRotation(r=>(r+90)%360)} style={{padding:"4px 8px",background:"rgba(68,170,255,.1)",border:"1px solid rgba(68,170,255,.28)",color:"#44aaff",borderRadius:"6px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>↻ +90°</button>
-        <button onClick={()=>setRotation(r=>(r-90+360)%360)} style={{padding:"4px 8px",background:"rgba(68,170,255,.1)",border:"1px solid rgba(68,170,255,.28)",color:"#44aaff",borderRadius:"6px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>↺ -90°</button>
+        <button onClick={()=>setRotation(r=>(r+90)%360)} style={{padding:"4px 8px",background:"rgba(68,170,255,.1)",border:"1px solid rgba(68,170,255,.28)",color:"#44aaff",borderRadius:"6px",fontSize:"9px",cursor:"pointer"}}>↻ +90°</button>
+        <button onClick={()=>setRotation(r=>(r-90+360)%360)} style={{padding:"4px 8px",background:"rgba(68,170,255,.1)",border:"1px solid rgba(68,170,255,.28)",color:"#44aaff",borderRadius:"6px",fontSize:"9px",cursor:"pointer"}}>↺ -90°</button>
         {origImage&&origImage!==image&&<button onClick={()=>{setImage(origImage);setAnns([]);setHist([]);}} style={{padding:"4px 8px",background:"rgba(255,187,0,.1)",border:"1px solid rgba(255,187,0,.3)",color:"#ffbb00",borderRadius:"6px",fontSize:"9px",cursor:"pointer"}}>↩ Original</button>}
-        {selId&&<button onClick={()=>delAnn(selId)} style={{padding:"4px 8px",background:"rgba(255,80,80,.1)",border:"1px solid rgba(255,80,80,.3)",color:"#ff7788",borderRadius:"6px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>🗑 Sel.</button>}
+        {selId&&<button onClick={()=>delAnn(selId)} style={{padding:"4px 8px",background:"rgba(255,80,80,.1)",border:"1px solid rgba(255,80,80,.3)",color:"#ff7788",borderRadius:"6px",fontSize:"9px",cursor:"pointer"}}>🗑 Sel.</button>}
         <button onClick={()=>{if(window.confirm("¿Borrar todas las anotaciones?"))setAnns([]);}} style={{padding:"4px 8px",background:"rgba(255,80,80,.06)",border:"1px solid rgba(255,80,80,.18)",color:"rgba(255,100,110,.7)",borderRadius:"6px",fontSize:"9px",cursor:"pointer"}}>🗑 Todo</button>
         {scale&&<span style={{fontSize:"7px",color:ACC,padding:"4px 6px",background:"rgba(0,229,196,.08)",borderRadius:"5px",border:"1px solid rgba(0,229,196,.2)"}}>⚖ 1{scale.unit}={scale.ppu.toFixed(0)}px</span>}
-        {segments.length>0&&<button onClick={()=>setShowSegs(s=>!s)} style={{padding:"4px 8px",background:showSegs?"rgba(0,229,196,.15)":"rgba(0,229,196,.04)",border:`1px solid rgba(0,229,196,${showSegs?.4:.15})`,color:showSegs?ACC:"#3a6878",borderRadius:"6px",fontSize:"9px",cursor:"pointer"}}>🔍 {showSegs?"Ocultar":"Partes"} ({segments.length})</button>}
+        {segments.length>0&&<button onClick={()=>setShowSegs(s=>!s)} style={{padding:"4px 8px",background:showSegs?"rgba(0,229,196,.15)":"rgba(0,229,196,.04)",border:`1px solid rgba(0,229,196,${showSegs?.4:.15})`,color:showSegs?ACC:"#3a6878",borderRadius:"6px",fontSize:"9px",cursor:"pointer"}}>🔍 {showSegs?"Partes":"Partes"} ({segments.length})</button>}
       </div>
     </>)}
 
-    {/* 2D VIEW */}
-    {viewTab==="2d"&&(<div ref={captureRef}>{lbl("📐 Plano 2D AutoCAD — Frontal · Lateral · Planta")}
-      {!hasDims&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#5577aa",background:"rgba(0,100,200,.07)",borderBottom:"1px solid rgba(0,100,200,.1)"}}>💡 Toca una medida → editar → asigna Eje (Ancho/Alto/Prof.) para ver las vistas a escala</div>}
+    {viewTab==="2d"&&(<div ref={captureRef}>{lbl("📐 Plano 2D AutoCAD")}
+      {!hasDims&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#5577aa",background:"rgba(0,100,200,.07)",borderBottom:"1px solid rgba(0,100,200,.1)"}}>💡 Toca medida → Editar → asigna Eje (Ancho/Alto/Prof.)</div>}
       <View2D anns={anns} objName={projTitle||objInfo?.name} sc={scale}/>
     </div>)}
 
-    {/* 3D VIEW */}
-    {viewTab==="3d"&&(<div ref={captureRef}>{lbl("🎮 Modelo 3D — Arrastra para rotar")}
-      {!hasDims&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#5577aa",background:"rgba(0,100,200,.07)",borderBottom:"1px solid rgba(0,100,200,.1)"}}>💡 Asigna eje Ancho/Alto/Prof. para ver la escala real</div>}
+    {viewTab==="3d"&&(<div ref={captureRef}>{lbl("🎮 Modelo 3D")}
+      {!hasDims&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#5577aa",background:"rgba(0,100,200,.07)",borderBottom:"1px solid rgba(0,100,200,.1)"}}>💡 Asigna eje Ancho/Alto/Prof. para escala real</div>}
       <V3D anns={anns} shape={objInfo?.shape}/>
-      <div style={{display:"flex",flexWrap:"wrap",gap:"5px",padding:"7px 10px",borderTop:"1px solid rgba(255,255,255,.06)",fontSize:"7px"}}>
-        {["width","height","depth"].map(ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?<span key={ax} style={{color:a.color}}>{a.title||ax}: {a.value}{a.unit}</span>:null;})}
-      </div>
     </div>)}
 
-    {/* PIPING */}
-    {viewTab==="pipe3d"&&piping&&(<div ref={captureRef}>{lbl("🔩 Piping 3D — PBR 3ds Max","#ffbb00")}<V3DPipe components={piping.components} dn={piping.dn}/><div style={{padding:"5px 10px 6px",fontSize:"7px",color:"#5577aa"}}>{piping.label}</div></div>)}
+    {viewTab==="pipe3d"&&piping&&(<div ref={captureRef}>{lbl("🔩 Piping 3D PBR","#ffbb00")}<V3DPipe components={piping.components} dn={piping.dn}/><div style={{padding:"5px 10px 6px",fontSize:"7px",color:"#5577aa"}}>{piping.label}</div></div>)}
 
     {viewTab==="picomp"&&piping&&(<>
       {lbl("📋 Componentes","#ffbb00")}
@@ -929,45 +879,43 @@ En 3-4 frases: ¿qué medidas adicionales son importantes? ¿observaciones técn
     </>)}
   </div>
 
-  {/* AI SEGMENTATION PANEL */}
+  {/* AI SEGMENTATION */}
   <div style={card("rgba(68,220,255,.28)","rgba(0,30,50,.88)")}>
     {lbl("🔍 Segmentación IA — Identificar partes","#44ddff")}
-    <div style={{padding:"8px 12px",display:"flex",gap:"6px",flexWrap:"wrap",borderBottom:"1px solid rgba(68,220,255,.12)"}}>
-      <button onClick={segmentWithAI} disabled={segLoad||!image} style={{flex:1,padding:"8px",background:segLoad?"rgba(68,220,255,.08)":"linear-gradient(135deg,#44ddff,#0099cc)",color:segLoad?"#337788":"#07101e",border:"none",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:segLoad||!image?"not-allowed":"pointer"}}>
+    <div style={{padding:"8px 12px",display:"flex",gap:"6px",borderBottom:"1px solid rgba(68,220,255,.12)"}}>
+      <button onClick={segmentAI} disabled={segLoad||!image} style={{flex:1,padding:"8px",background:segLoad?"rgba(68,220,255,.08)":"linear-gradient(135deg,#44ddff,#0099cc)",color:segLoad?"#337788":"#07101e",border:"none",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:segLoad||!image?"not-allowed":"pointer"}}>
         {segLoad?"⏳ Segmentando...":"🔍 Identificar partes del objeto"}
       </button>
-      {segments.length>0&&<button onClick={()=>setSegments([])} style={{padding:"8px 10px",background:"rgba(255,80,80,.1)",border:"1px solid rgba(255,80,80,.3)",color:"#ff7788",borderRadius:"7px",fontSize:"9px",cursor:"pointer"}}>✕ Limpiar</button>}
+      {segments.length>0&&<button onClick={()=>setSegments([])} style={{padding:"8px 10px",background:"rgba(255,80,80,.1)",border:"1px solid rgba(255,80,80,.3)",color:"#ff7788",borderRadius:"7px",fontSize:"9px",cursor:"pointer"}}>✕</button>}
     </div>
-    {segments.length>0&&<div style={{maxHeight:"140px",overflowY:"auto"}}>
+    {segments.length>0&&<div style={{maxHeight:"130px",overflowY:"auto"}}>
       {segments.map(seg=>(
-        <div key={seg.id} onClick={()=>setSelSeg(selSeg===seg.id?null:seg.id)} style={{display:"flex",alignItems:"center",gap:"8px",padding:"6px 12px",background:selSeg===seg.id?"rgba(68,220,255,.08)":"transparent",borderBottom:"1px solid rgba(255,255,255,.04)",cursor:"pointer"}}>
-          <div style={{width:"12px",height:"12px",borderRadius:"2px",background:seg.color||"#00e5c4",flexShrink:0,border:`1px solid ${seg.color||"#00e5c4"}80`}}/>
-          <div style={{flex:1}}><div style={{fontSize:"8px",color:"#d0e8f8",fontWeight:700}}>{seg.id}. {seg.name}</div><div style={{fontSize:"7px",color:"#3a7080"}}>{seg.hint||"Toca para medir"}</div></div>
-          <button onClick={e=>{e.stopPropagation();const cx=(seg.x1+seg.x2)/2,cy=(seg.y1+seg.y2)/2;setMeasuring({id:uid(),type:"dot",icon:"🔍",title:seg.name,label:seg.name,value:null,unit:"cm",axis:"",color:seg.color||"#00e5c4",points:[{x:cx,y:cy}]});setMIn({title:seg.name,value:"",unit:"cm",axis:"other"});}} style={{padding:"3px 7px",background:"linear-gradient(135deg,#44ddff,#0099cc)",border:"none",color:"#07101e",borderRadius:"5px",fontSize:"7px",cursor:"pointer",fontWeight:700}}>+ Medir</button>
+        <div key={seg.id} style={{display:"flex",alignItems:"center",gap:"8px",padding:"6px 12px",borderBottom:"1px solid rgba(255,255,255,.04)"}}>
+          <div style={{width:"12px",height:"12px",borderRadius:"2px",background:seg.color||"#00e5c4",flexShrink:0}}/>
+          <div style={{flex:1}}><div style={{fontSize:"8px",color:"#d0e8f8",fontWeight:700}}>{seg.id}. {seg.name}</div><div style={{fontSize:"7px",color:"#3a7080"}}>{seg.hint||""}</div></div>
+          <button onClick={()=>{setMeasuring({id:uid(),type:"dot",icon:"🔍",title:seg.name,label:seg.name,value:null,unit:"cm",axis:"",color:seg.color||"#00e5c4",points:[{x:(seg.x1+seg.x2)/2,y:(seg.y1+seg.y2)/2}]});setMIn({title:seg.name,value:"",unit:"cm",axis:"other"});}} style={{padding:"3px 7px",background:"linear-gradient(135deg,#44ddff,#0099cc)",border:"none",color:"#07101e",borderRadius:"5px",fontSize:"7px",cursor:"pointer",fontWeight:700}}>+ Medir</button>
         </div>
       ))}
     </div>}
   </div>
 
-  {/* EDIT SELECTED ANN */}
+  {/* EDIT SELECTED */}
   {selAnn&&(<div style={{...card("rgba(68,220,140,.28)","rgba(0,40,35,.9)"),position:"relative"}}>
     {closeX(()=>setSelId(null))}
-    {lbl("✏ Editar anotación — sync bidireccional","#44dd88")}
+    {lbl("✏ Editar anotación","#44dd88")}
     <div style={{padding:"9px 12px",display:"flex",flexDirection:"column",gap:"6px"}}>
       <div style={{display:"flex",gap:"5px"}}>
-        <input value={selAnn.title||""} placeholder="Título / etiqueta" onChange={e=>updAnn(selId,{title:e.target.value,label:e.target.value})} style={{flex:1,padding:"6px 9px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(68,220,140,.22)",borderRadius:"6px",color:"#d0e8f8",fontSize:"9px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
+        <input value={selAnn.title||""} placeholder="Título" onChange={e=>updAnn(selId,{title:e.target.value,label:e.target.value})} style={{flex:1,padding:"6px 9px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(68,220,140,.22)",borderRadius:"6px",color:"#d0e8f8",fontSize:"9px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
         <select value={selAnn.axis||""} onChange={e=>updAnn(selId,{axis:e.target.value})} style={{padding:"6px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(68,220,140,.3)",borderRadius:"6px",color:"#44dd88",fontSize:"8px",fontFamily:"'Space Mono',monospace",outline:"none"}}>
           <option value="">eje...</option><option value="width">Ancho X</option><option value="height">Alto Y</option><option value="depth">Prof. Z</option><option value="other">Otro</option>
         </select>
       </div>
-      {/* Inline value edit — syncs with summary */}
       <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
         <input type="number" min="0" value={selAnn.value!=null?selAnn.value:""} placeholder="Valor medido"
-          onChange={e=>{const v=e.target.value===""?null:parseFloat(e.target.value);updAnn(selId,{value:v});}}
+          onChange={e=>updAnn(selId,{value:e.target.value===""?null:parseFloat(e.target.value)})}
           style={{flex:1,padding:"6px 9px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(0,229,196,.4)",borderRadius:"6px",color:ACC,fontSize:"15px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
         <div style={{display:"flex",gap:"2px"}}>{["mm","cm","m","in","ft"].map(u=><button key={u} style={uBt((selAnn.unit||"cm")===u)} onClick={()=>updAnn(selId,{unit:u})}>{u}</button>)}</div>
       </div>
-      <div style={{fontSize:"8px",color:"#3a7050",padding:"2px 0"}}>← El valor se actualiza en imagen y resumen simultáneamente</div>
       <div style={{display:"flex",gap:"3px",flexWrap:"wrap",alignItems:"center"}}>
         <span style={{fontSize:"7px",color:"#2a5060"}}>COLOR:</span>
         {COLS.map(c=><div key={c} onClick={()=>updAnn(selId,{color:c})} style={{width:"14px",height:"14px",borderRadius:"50%",background:c,cursor:"pointer",border:selAnn.color===c?"2.5px solid #fff":"2px solid transparent",boxShadow:selAnn.color===c?`0 0 6px ${c}`:"none"}}/>)}
@@ -977,7 +925,7 @@ En 3-4 frases: ¿qué medidas adicionales son importantes? ¿observaciones técn
 
   {/* AI ASSISTANT */}
   <div style={card("rgba(170,100,255,.28)","rgba(28,0,58,.85)")}>
-    {lbl("🤖 Asistente IA — siempre en español","#aa66ff")}
+    {lbl("🤖 Asistente IA","#aa66ff")}
     <div style={{padding:"8px 12px",borderBottom:"1px solid rgba(170,100,255,.1)"}}>
       <button onClick={askAI} disabled={aiLoad||!image} style={{width:"100%",padding:"8px",background:aiLoad?"rgba(170,100,255,.08)":"linear-gradient(135deg,#aa44ff,#7722dd)",color:aiLoad?"#6644aa":"#fff",border:"none",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:aiLoad?"not-allowed":"pointer"}}>
         {aiLoad?"⏳ Analizando...":"⚡ Analizar imagen con IA"}
@@ -986,28 +934,31 @@ En 3-4 frases: ¿qué medidas adicionales son importantes? ¿observaciones técn
     {aiMsg&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#c0a8f8",lineHeight:1.8}}>{aiMsg}</div>}
   </div>
 
-  {/* RESUMEN — sync bidireccional */}
+  {/* RESUMEN */}
   <div style={card("rgba(220,140,0,.28)","rgba(50,25,0,.82)")}>
     <div style={{display:"flex",alignItems:"center",cursor:"pointer"}} onClick={()=>setShowSum(s=>!s)}>
-      {lbl(`📋 Resumen de medidas (${anns.filter(a=>a.value!=null).length})`,  "#ffbb00")}
+      {lbl(`📋 Resumen (${anns.filter(a=>a.value!=null).length} medidas)`,  "#ffbb00")}
       <span style={{padding:"5px 10px",color:"#ffbb00",fontSize:"11px"}}>{showSum?"▲":"▼"}</span>
     </div>
     {showSum&&(<>
-      {anns.filter(a=>a.value!=null).length===0&&<div style={{padding:"12px",fontSize:"8px",color:"#5577aa",textAlign:"center",lineHeight:1.8}}>
-        {anns.length>0?`${anns.length} pts IA → tócalos para añadir valor, o edítalos aquí`:
-        "Dibuja → confirma medida → aparece aquí"}
+      {anns.filter(a=>a.value!=null).length===0&&anns.filter(a=>a.isAI).length>0&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#5577aa"}}>
+        {anns.filter(a=>a.isAI).length} puntos IA — tócalos para añadir valor
       </div>}
-      {/* AI markers without value — quick fill */}
-      {anns.filter(a=>a.value==null&&a.isAI).slice(0,3).map(a=>(
+      {anns.filter(a=>a.value!=null).length===0&&anns.filter(a=>a.isAI).length===0&&<div style={{padding:"12px",fontSize:"8px",color:"#5577aa",textAlign:"center",lineHeight:1.8}}>
+        Selecciona herramienta → dibuja → confirma medida
+      </div>}
+      {/* Quick fill for AI points without value */}
+      {anns.filter(a=>a.value==null&&a.isAI).slice(0,4).map(a=>(
         <div key={a.id} style={{display:"flex",alignItems:"center",gap:"7px",padding:"6px 12px",background:"rgba(0,229,196,.03)",borderBottom:"1px solid rgba(255,255,255,.04)"}}>
-          <div style={{width:"9px",height:"9px",borderRadius:"50%",background:a.color,flexShrink:0,boxShadow:`0 0 4px ${a.color}`}}/>
+          <div style={{width:"9px",height:"9px",borderRadius:"50%",background:a.color,flexShrink:0}}/>
           <span style={{flex:1,fontSize:"8px",color:"#7aaabb"}}>{a.title||a.type}</span>
           <input type="number" min="0" placeholder="0" value={a.value!=null?a.value:""}
-            onChange={e=>updateAnnValue(a.id,e.target.value,a.unit)}
+            onChange={e=>{const v=e.target.value===""?null:parseFloat(e.target.value);updAnn(a.id,{value:v});}}
             style={{width:"55px",padding:"3px 6px",background:"rgba(0,12,22,.8)",border:"1px solid rgba(0,229,196,.3)",borderRadius:"4px",color:ACC,fontSize:"11px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
           <span style={{fontSize:"7px",color:"#3a5070"}}>{a.unit}</span>
         </div>
       ))}
+      {/* Measured annotations */}
       {anns.filter(a=>a.value!=null).map(a=>(
         <div key={a.id} onClick={()=>setSelId(a.id)} style={{display:"flex",alignItems:"center",gap:"7px",padding:"7px 12px",background:selId===a.id?"rgba(255,187,0,.06)":"transparent",borderBottom:"1px solid rgba(255,255,255,.04)",cursor:"pointer"}}>
           <div style={{width:"9px",height:"9px",borderRadius:"50%",background:a.color,flexShrink:0,boxShadow:`0 0 5px ${a.color}`}}/>
@@ -1015,29 +966,20 @@ En 3-4 frases: ¿qué medidas adicionales son importantes? ¿observaciones técn
             <span style={{fontSize:"8px",color:"#d0e8f8",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.title||a.type}</span>
             {a.axis&&<span style={{fontSize:"7px",color:"#4477aa"}}>({a.axis==="width"?"Ancho":a.axis==="height"?"Alto":a.axis==="depth"?"Prof.":a.axis})</span>}
           </div>
-          {/* Inline edit — bidireccional con imagen */}
           <input type="number" min="0" value={a.value} onClick={e=>e.stopPropagation()}
-            onChange={e=>{e.stopPropagation();const v=e.target.value===""?null:parseFloat(e.target.value);updAnn(a.id,{value:v});}}
-            style={{width:"60px",padding:"3px 6px",background:selId===a.id?"rgba(255,187,0,.1)":"rgba(0,12,22,.8)",border:`1px solid ${selId===a.id?"rgba(255,187,0,.5)":"rgba(0,229,196,.25)"}`,borderRadius:"4px",color:selId===a.id?"#ffbb00":a.color,fontSize:"12px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
+            onChange={e=>{e.stopPropagation();updAnn(a.id,{value:e.target.value===""?null:parseFloat(e.target.value)});}}
+            style={{width:"58px",padding:"3px 6px",background:"rgba(0,12,22,.8)",border:`1px solid ${selId===a.id?"rgba(255,187,0,.5)":"rgba(0,229,196,.25)"}`,borderRadius:"4px",color:selId===a.id?"#ffbb00":a.color,fontSize:"12px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
           <select value={a.unit} onClick={e=>e.stopPropagation()} onChange={e=>{e.stopPropagation();updAnn(a.id,{unit:e.target.value});}} style={{padding:"3px 4px",background:"rgba(0,12,22,.8)",border:"1px solid rgba(0,229,196,.2)",borderRadius:"4px",color:"#7aaabb",fontSize:"8px",fontFamily:"'Space Mono',monospace",outline:"none"}}>
             {["mm","cm","m","in","ft"].map(u=><option key={u} value={u}>{u}</option>)}
           </select>
-          <span style={{fontSize:"7px",color:"#3a5070",flexShrink:0}}>{fv(toMM(a.value,a.unit),"mm")}</span>
+          <span style={{fontSize:"7px",color:"#3a5070",flexShrink:0,minWidth:"40px"}}>{fv(toMM(a.value,a.unit),"mm")}</span>
           <button onClick={e=>{e.stopPropagation();delAnn(a.id);}} style={{background:"transparent",border:"none",color:"#ff5566",cursor:"pointer",fontSize:"11px",opacity:.7,flexShrink:0}}>✕</button>
         </div>
       ))}
-      {["width","height","depth"].every(ax=>anns.some(a=>a.axis===ax&&a.value!=null))&&(()=>{
-        const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return toMM(a.value,a.unit);};
-        const vol=gd("width")*gd("height")*gd("depth");
-        return <div style={{padding:"7px 12px",display:"flex",justifyContent:"space-between",fontSize:"8px",borderTop:"1px solid rgba(255,187,0,.15)",background:"rgba(255,187,0,.03)"}}>
-          <span style={{color:"#aa8800"}}>📦 Volumen</span><span style={{color:"#ffbb00",fontWeight:700}}>{(vol/1000).toFixed(1)} cm³ · {(vol/1e6).toFixed(4)} m³</span>
-        </div>;
-      })()}
     </>)}
   </div>
 
-  {/* ROOM METRICS */}
-  <RoomMetrics anns={anns} scale={scale}/>
+  <RoomMetrics anns={anns}/>
 
   {/* EXPORT */}
   <div style={card("rgba(68,170,255,.28)","rgba(0,20,50,.88)")}>{lbl("📤 Exportar · Compartir · Sincronizar","#44aaff")}
@@ -1055,7 +997,7 @@ En 3-4 frases: ¿qué medidas adicionales son importantes? ¿observaciones técn
 
 <canvas ref={canvasRef} style={{display:"none"}}/>
 
-{/* ── MEASURE MODAL ── */}
+{/* MEASURE MODAL */}
 {measuring&&(<div data-modal="measure" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(0,229,196,.45)",borderRadius:"16px 16px 0 0",padding:"18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(22px)",boxShadow:"0 -4px 30px rgba(0,0,0,.7)"}}>
   {closeX(()=>setMeasuring(null))}
   <div style={{fontSize:"9px",color:ACC,letterSpacing:".18em",marginBottom:"13px",paddingRight:"34px"}}>📐 AÑADIR MEDIDA · {measuring.icon} {TOOLS.find(t=>t.id===measuring.type)?.label||measuring.type}</div>
@@ -1066,7 +1008,7 @@ En 3-4 frases: ¿qué medidas adicionales son importantes? ¿observaciones técn
       <div style={{display:"flex",gap:"3px",flexWrap:"wrap"}}>{["mm","cm","m","in","ft"].map(u=><button key={u} style={uBt(mIn.unit===u)} onClick={()=>setMIn(s=>({...s,unit:u}))}>{u}</button>)}</div>
     </div>
     <select value={mIn.axis} onChange={e=>setMIn(s=>({...s,axis:e.target.value}))} style={{padding:"8px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(68,170,255,.3)",borderRadius:"8px",color:"#44aaff",fontSize:"9px",fontFamily:"'Space Mono',monospace",outline:"none"}}>
-      <option value="">Tipo (opcional — activa 2D y 3D si asignas eje)</option>
+      <option value="">Tipo de medida (activa 2D y 3D si asignas eje)</option>
       <option value="width">Ancho (X) → activa vistas 2D y 3D</option>
       <option value="height">Alto (Y) → activa vistas 2D y 3D</option>
       <option value="depth">Profundidad (Z) → activa vistas 2D y 3D</option>
@@ -1079,8 +1021,8 @@ En 3-4 frases: ¿qué medidas adicionales son importantes? ¿observaciones técn
   </div>
 </div>)}
 
-{/* ── CALIB MODAL ── */}
-{calibAnn&&(<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(255,187,0,.45)",borderRadius:"16px 16px 0 0",padding:"18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(22px)"}}>
+{/* CALIB MODAL */}
+{calibAnn&&(<div data-modal="calib" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(255,187,0,.45)",borderRadius:"16px 16px 0 0",padding:"18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(22px)"}}>
   {closeX(()=>setCalibAnn(null))}
   <div style={{fontSize:"9px",color:"#ffbb00",letterSpacing:".18em",marginBottom:"10px"}}>⚖ CALIBRAR ESCALA REAL</div>
   <div style={{fontSize:"8px",color:"#7aaabb",marginBottom:"10px"}}>¿Cuánto mide la línea trazada?</div>
@@ -1094,8 +1036,8 @@ En 3-4 frases: ¿qué medidas adicionales son importantes? ¿observaciones técn
   </div>
 </div>)}
 
-{/* ── CROP MODAL ── */}
-{cropDlg&&(<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(255,187,0,.45)",borderRadius:"16px 16px 0 0",padding:"18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(22px)"}}>
+{/* CROP MODAL */}
+{cropDlg&&(<div data-modal="crop" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(255,187,0,.45)",borderRadius:"16px 16px 0 0",padding:"18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(22px)"}}>
   {closeX(()=>setCropDlg(null))}
   <div style={{fontSize:"9px",color:"#ffbb00",letterSpacing:".18em",marginBottom:"10px"}}>✂ ZONA SELECCIONADA</div>
   <div style={{fontSize:"8px",color:"#8899aa",lineHeight:1.8,marginBottom:"12px"}}>¿Medir solo esta zona o el objeto completo?</div>
