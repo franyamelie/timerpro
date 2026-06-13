@@ -637,19 +637,7 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
     </g>;
   };
 
-  /* AI segment colored overlays - defined before use */
-  const SegOverlay=()=>{
-    if(!showSegs||!segments.length)return null;
-    return <>{segments.map(seg=>(
-      <g key={seg.id} className="sp" style={{cursor:"pointer"}}
-        onClick={e=>{e.stopPropagation();setMeasuring({id:uid(),type:"dot",icon:"🔍",title:seg.name,label:seg.name,value:null,unit:"cm",axis:"",color:seg.color||"#00e5c4",points:[{x:(seg.x1+seg.x2)/2,y:(seg.y1+seg.y2)/2}]});setMIn({title:seg.name,value:"",unit:"cm",axis:""});}}>
-        <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width={`${(seg.x2-seg.x1)*100}%`} height={`${(seg.y2-seg.y1)*100}%`}
-          stroke={seg.color||"#00e5c4"} strokeWidth="1.8" strokeDasharray="6,3" fill={`${seg.color||"#00e5c4"}14`} rx="2"/>
-        <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width="14%" height="5%" rx="2%" fill={`${seg.color||"#00e5c4"}dd`}/>
-        <text x={`${seg.x1*100+1}%`} y={`${seg.y1*100+3}%`} fill="#000" fontSize="2.3%" fontFamily="Space Mono,monospace" fontWeight="700" dominantBaseline="middle">{seg.id}. {(seg.name||"").slice(0,12)}</text>
-      </g>
-    ))}</>;
-  };
+  /* SegOverlay inlined in JSX */
 
   /* V/S/P stats overlay on image */
   const StatsOverlay=()=>{
@@ -817,7 +805,15 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
         <div ref={imgRef} style={{position:"relative",lineHeight:0,transform:`rotate(${rotation}deg)`,cursor:tool==="sel"?"default":"crosshair",userSelect:"none"}}>
           <img src={image} alt="" draggable="false" style={{width:"100%",display:"block",opacity:1,pointerEvents:"none"}}/>
           <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",overflow:"visible",pointerEvents:"all"}}>
-            <SegOverlay/>
+            {showSegs&&segments.map(seg=>(
+              <g key={seg.id} className="sp" style={{cursor:"pointer"}}
+                onClick={e=>{e.stopPropagation();setMeasuring({id:uid(),type:"dot",icon:"🔍",title:seg.name,label:seg.name,value:null,unit:"cm",axis:"",color:seg.color||"#00e5c4",points:[{x:(seg.x1+seg.x2)/2,y:(seg.y1+seg.y2)/2}]});setMIn({title:seg.name,value:"",unit:"cm",axis:"other"});}}>
+                <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width={`${(seg.x2-seg.x1)*100}%`} height={`${(seg.y2-seg.y1)*100}%`}
+                  stroke={seg.color||"#00e5c4"} strokeWidth="1.8" strokeDasharray="6,3" fill={`${seg.color||"#00e5c4"}14`} rx="2"/>
+                <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width="14%" height="5%" rx="2%" fill={`${seg.color||"#00e5c4"}dd`}/>
+                <text x={`${seg.x1*100+1}%`} y={`${seg.y1*100+3}%`} fill="#000" fontSize="2.3%" fontFamily="Space Mono,monospace" fontWeight="700" dominantBaseline="middle">{seg.id}. {(seg.name||"").slice(0,12)}</text>
+              </g>
+            ))}
             {shapeAnns.map(a=><ShapeSVG key={a.id} a={a}/>)}
             {preview&&<ShapeSVG a={{...preview,id:"pv",color:"rgba(0,229,196,.65)",lineStyle:"solid",arrowHead:"end"}} isPrev={true}/>}
             {pending.length===1&&<circle cx={`${pending[0].x*100}%`} cy={`${pending[0].y*100}%`} r="5" fill={COLS[colorIdx%COLS.length]} opacity=".8" pointerEvents="none"/>}
