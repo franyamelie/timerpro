@@ -2,6 +2,9 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8"/>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+<meta http-equiv="Pragma" content="no-cache"/>
+<meta http-equiv="Expires" content="0"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
 <title>MediScan 3D Pro</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -509,7 +512,7 @@ x,y son posiciones en la imagen entre 0 y 1. Incluye 3-6 medidas relevantes para
       const info=JSON.parse(txt.replace(/```json|```/g,"").trim());
       if(info.type==="sketch"){
         setObjInfo({name:info.name||"Boceto",category:"Plano 2D",shape:"box",desc:info.desc||""});
-        setViewTab("2d");
+        setViewTab("ann");  // Siempre empezar en anotación
         const autoAnns=(info.measurements||[]).slice(0,6).map((m,i)=>({
           id:uid(),type:"dot",icon:"⬤",title:m.name,label:m.name,
           value:m.value_hint||null,unit:"cm",axis:m.axis||"",
@@ -521,7 +524,7 @@ x,y son posiciones en la imagen entre 0 y 1. Incluye 3-6 medidas relevantes para
       }else if(info.type==="piping"){
         setPiping({components:info.components||[],dn:info.dn||100,label:`${info.name||"Piping"} · DN${info.dn||100} · ${info.material||"CS"}`});
         setObjInfo({name:info.name||"Piping",category:"Calderería",shape:"cylinder",desc:""});
-        setViewTab("pipe3d");setAiMsg(`🔩 Piping: ${info.name||""} DN${info.dn||100}.`);
+        setViewTab("ann");  // Siempre empezar en anotación - el usuario ve su foto primerosetAiMsg(`🔩 Piping: ${info.name||""} DN${info.dn||100}.`);
       }else{
         setObjInfo(info);setViewTab("ann");
         const autoAnns=(info.measurements||[]).slice(0,6).map((m,i)=>({
@@ -572,7 +575,7 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
 
   /* save/load */
   const saveProj=()=>{const p={id:uid(),name:projName,title:projTitle,date:new Date().toLocaleDateString("es-ES"),image,origImage,rotation,anns,scale,objInfo,piping,segments};const all=[p,...projects.filter(x=>x.name!==projName)].slice(0,20);localStorage.setItem("ms3_pj",JSON.stringify(all));setProjects(all);setSyncMsg("✓ Guardado");setTimeout(()=>setSyncMsg(""),2500);};
-  const loadProj=p=>{setImage(p.image||p.origImage);setOrigImage(p.origImage||p.image);setRotation(p.rotation||0);setAnns(p.anns||[]);setHist([]);setScale(p.scale||null);setObjInfo(p.objInfo);setPiping(p.piping||null);setProjName(p.name);setProjTitle(p.title||"");setSelId(null);setPending([]);setTool("sel");setSegments(p.segments||[]);setScr("annotate");setViewTab(p.piping?"pipe3d":"ann");};
+  const loadProj=p=>{setImage(p.image||p.origImage);setOrigImage(p.origImage||p.image);setRotation(p.rotation||0);setAnns(p.anns||[]);setHist([]);setScale(p.scale||null);setObjInfo(p.objInfo);setPiping(p.piping||null);setProjName(p.name);setProjTitle(p.title||"");setSelId(null);setPending([]);setTool("sel");setSegments(p.segments||[]);setScr("annotate");setViewTab("ann");};
   const delProj=(id,e)=>{e.stopPropagation();const all=projects.filter(p=>p.id!==id);localStorage.setItem("ms3_pj",JSON.stringify(all));setProjects(all);};
   const genLink=()=>{const d={name:projName,title:projTitle,anns,scale,objName:objInfo?.name,shape:objInfo?.shape,piping,segments};const enc=btoa(unescape(encodeURIComponent(JSON.stringify(d))));const url=`${window.location.href.split("?")[0].split("#")[0]}?sync=${enc}`;navigator.clipboard?.writeText(url).then(()=>{setSyncMsg("☁ Enlace copiado");setTimeout(()=>setSyncMsg(""),4000);}).catch(()=>prompt("Copia:",url));};
   useEffect(()=>{const p=new URLSearchParams(window.location.search);const s=p.get("sync");if(!s)return;try{const d=JSON.parse(decodeURIComponent(escape(atob(s))));setAnns(d.anns||[]);setScale(d.scale||null);setProjName(d.name||"Proyecto");setProjTitle(d.title||"");setObjInfo({name:d.objName||"Objeto",shape:d.shape||"default",category:""});setPiping(d.piping||null);setSegments(d.segments||[]);setAiMsg(`Proyecto "${d.name}" importado.`);setScr("camera");window.history.replaceState({},"",window.location.pathname);}catch{};},[]);
@@ -778,9 +781,9 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
   {/* MAIN CARD */}
   <div style={card()}>
     <div style={{display:"flex",gap:"4px",padding:"7px 9px",borderBottom:"1px solid rgba(255,255,255,.07)",flexWrap:"wrap"}}>
-      {!piping&&<button style={tabS(viewTab==="ann")} onClick={()=>setViewTab("ann")}>✏ Anotar</button>}
-      {!piping&&<button style={tabS(viewTab==="2d")} onClick={()=>setViewTab("2d")}>📐 2D</button>}
-      {!piping&&<button style={tabS(viewTab==="3d")} onClick={()=>setViewTab("3d")}>🎮 3D</button>}
+      <button style={tabS(viewTab==="ann")} onClick={()=>setViewTab("ann")}>✏ Anotar</button>
+      <button style={tabS(viewTab==="2d")} onClick={()=>setViewTab("2d")}>📐 2D</button>
+      <button style={tabS(viewTab==="3d")} onClick={()=>setViewTab("3d")}>🎮 3D</button>
       {piping&&<button style={tabS(viewTab==="pipe3d")} onClick={()=>setViewTab("pipe3d")}>🔩 Piping</button>}
       {piping&&<button style={tabS(viewTab==="picomp")} onClick={()=>setViewTab("picomp")}>📋 Comp.</button>}
     </div>
@@ -1105,7 +1108,7 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
 {measuring&&(<div data-modal="measure" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(0,229,196,.45)",borderRadius:"16px 16px 0 0",padding:"18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(22px)",boxShadow:"0 -4px 30px rgba(0,0,0,.7)"}}>
   {closeX(()=>setMeasuring(null))}
   <div style={{marginBottom:"13px",paddingRight:"34px"}}>
-    <div style={{fontSize:"10px",color:ACC,letterSpacing:".12em",fontWeight:700}}>③ AÑADIR MEDIDA</div>
+    <div style={{fontSize:"10px",color:ACC,letterSpacing:".12em",fontWeight:700}}>PASO 3 — AÑADIR MEDIDA</div>
     <div style={{fontSize:"8px",color:"#5577aa",marginTop:"3px"}}>{measuring.icon} {TOOLS.find(t=>t.id===measuring.type)?.label||measuring.type} — rellena y confirma</div>
   </div>
   <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
