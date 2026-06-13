@@ -13,27 +13,29 @@
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap');
 *{box-sizing:border-box;margin:0;padding:0;}
-html,body{background:#070f1e;min-height:100%;-webkit-tap-highlight-color:transparent;}
+html,body{background:#07101e;min-height:100%;-webkit-tap-highlight-color:transparent;}
 @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 10px #00e5c4}50%{opacity:.3;box-shadow:none}}
 @keyframes scan{0%{top:0}100%{top:100%}}
 @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
-.fade{animation:fadeUp .28s ease both;}
+.fade{animation:fadeIn .3s ease both;}
 .spin{animation:spin .9s linear infinite;}
 .blink{animation:pulse 2s ease infinite;}
 button{transition:all .12s;-webkit-appearance:none;}
-button:active{transform:scale(.92);opacity:.8;}
+button:active{transform:scale(.92);}
 input,select,textarea{-webkit-appearance:none;}
 input[type=number]{-moz-appearance:textfield;}
 input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;}
 ::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-thumb{background:#1a3a5a;border-radius:4px;}
-.nt{touch-action:none;user-select:none;-webkit-user-select:none;}
+.nc{touch-action:none;user-select:none;-webkit-user-select:none;}
 </style>
 </head>
-<body><div id="root"></div>
+<body>
+<div id="root"></div>
 <script type="text/babel">
 const {useState,useRef,useEffect,useCallback,useMemo}=React;
+/* ── Constants ── */
 const GAPI="https://api.groq.com/openai/v1/chat/completions";
 const GMOD="meta-llama/llama-4-scout-17b-16e-instruct";
 const getKey=()=>localStorage.getItem("ms3_k")||"";
@@ -43,112 +45,103 @@ const COLS=["#00e5c4","#ff4477","#4499ff","#ffbb00","#aa44ff","#44dd88","#ff6622
 const UFAC={mm:1,cm:10,m:1000,"in":25.4,ft:304.8};
 const toMM=(v,u)=>(parseFloat(v)||0)*(UFAC[u]||10);
 const fv=(mm,u)=>{if(mm==null)return"—";const r={mm:[1,0],cm:[0.1,1],m:[0.001,3],"in":[0.0393701,2],ft:[0.00328,3]}[u]||[0.1,1];return`${(mm*r[0]).toFixed(r[1])} ${u}`;};
-const MARKER_TYPES=["pin","dot","star","diam","tgt","txt"];
-const TWO_PT=["line","dline","dim","dist","arr1","arr2","arr3","arr4","arr5","rect","circ","calib","crop"];
-const DRAG_DRAW=["rect","circ","crop"];
+const MRK=["pin","dot","star","diam","tgt","txt","aim"];
+const DRAG_TOOLS=["rect","circ","crop"];
 const TOOLS=[
-  {id:"sel",  cat:"nav", icon:"↖",  label:"Mover/Seleccionar"},
-  {id:"pin",  cat:"mrk", icon:"📍", label:"Pin"},
-  {id:"dot",  cat:"mrk", icon:"⬤",  label:"Punto"},
-  {id:"star", cat:"mrk", icon:"★",  label:"Estrella"},
-  {id:"diam", cat:"mrk", icon:"◆",  label:"Diamante"},
-  {id:"tgt",  cat:"mrk", icon:"⊕",  label:"Diana"},
-  {id:"line", cat:"lin", icon:"━",  label:"Línea + medida"},
-  {id:"dline",cat:"lin", icon:"┄",  label:"Línea guía"},
-  {id:"dim",  cat:"lin", icon:"⟺",  label:"Cota AutoCAD"},
-  {id:"dist", cat:"lin", icon:"↔",  label:"Distancia A→B"},
-  {id:"arr1", cat:"arr", icon:"→",  label:"Flecha simple"},
-  {id:"arr2", cat:"arr", icon:"⇒",  label:"Flecha gruesa"},
-  {id:"arr3", cat:"arr", icon:"↔",  label:"Doble flecha"},
-  {id:"arr4", cat:"arr", icon:"↗",  label:"Flecha diagonal"},
-  {id:"arr5", cat:"arr", icon:"⟹",  label:"Flecha abierta"},
-  {id:"rect", cat:"shp", icon:"▭",  label:"Rectángulo"},
-  {id:"circ", cat:"shp", icon:"◯",  label:"Círculo"},
-  {id:"tri",  cat:"shp", icon:"△",  label:"Triángulo"},
-  {id:"calib",cat:"spc", icon:"⚖",  label:"Calibrar escala"},
-  {id:"crop", cat:"spc", icon:"✂",  label:"Recortar zona"},
-  {id:"txt",  cat:"spc", icon:"T",  label:"Texto"},
+  {id:"sel",  cat:"nav", icon:"↖",  label:"Mover/Seleccionar", npts:0},
+  {id:"pin",  cat:"mrk", icon:"📍", label:"Pin marcador",  npts:1},
+  {id:"dot",  cat:"mrk", icon:"⬤",  label:"Punto medible", npts:1},
+  {id:"star", cat:"mrk", icon:"★",  label:"Estrella",      npts:1},
+  {id:"diam", cat:"mrk", icon:"◆",  label:"Diamante",      npts:1},
+  {id:"tgt",  cat:"mrk", icon:"⊕",  label:"Diana",         npts:1},
+  {id:"line", cat:"lin", icon:"━",  label:"Línea + medida", npts:2},
+  {id:"dline",cat:"lin", icon:"┄",  label:"Guía",          npts:2},
+  {id:"dim",  cat:"lin", icon:"⟺",  label:"Cota AutoCAD",  npts:2},
+  {id:"dist", cat:"lin", icon:"↔",  label:"Distancia A→B", npts:2},
+  {id:"arr1", cat:"arr", icon:"→",  label:"Flecha simple",  npts:2},
+  {id:"arr2", cat:"arr", icon:"⇒",  label:"Flecha gruesa", npts:2},
+  {id:"arr3", cat:"arr", icon:"↗",  label:"Flecha diagonal",npts:2},
+  {id:"arr4", cat:"arr", icon:"⟹",  label:"Flecha doble",  npts:2},
+  {id:"rect", cat:"shp", icon:"▭",  label:"Rectángulo",    npts:2},
+  {id:"circ", cat:"shp", icon:"◯",  label:"Círculo",       npts:2},
+  {id:"tri",  cat:"shp", icon:"△",  label:"Triángulo",     npts:3},
+  {id:"calib",cat:"spc", icon:"⚖",  label:"Calibrar escala",npts:2},
+  {id:"crop", cat:"spc", icon:"✂",  label:"Recortar zona", npts:2},
+  {id:"txt",  cat:"spc", icon:"T",  label:"Solo texto",    npts:1},
 ];
 const CATS={nav:"Nav",mrk:"Marcadores",lin:"Líneas",arr:"Flechas",shp:"Formas",spc:"Especial"};
 
-/* ═══════ VIEW 2D AutoCAD ═══════ */
-function View2D({anns,objName,scale2D}){
+/* ══════════════════════════════════════════
+   VIEW 2D – Plano AutoCAD
+══════════════════════════════════════════ */
+function View2D({anns,objName,sc}){
   const ref=useRef(null);
   useEffect(()=>{
-    const cv=ref.current;if(!cv)return;
-    const ctx=cv.getContext("2d"),CW=cv.width,CH=cv.height;
-    ctx.clearRect(0,0,CW,CH);ctx.fillStyle="#f0f3f8";ctx.fillRect(0,0,CW,CH);
+    const cv=ref.current; if(!cv)return;
+    const ctx=cv.getContext("2d"),W=cv.width,H=cv.height;
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle="#f0f3f8";ctx.fillRect(0,0,W,H);
     ctx.strokeStyle="#d5dae8";ctx.lineWidth=.5;
-    for(let x=0;x<CW;x+=20){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,CH);ctx.stroke();}
-    for(let y=0;y<CH;y+=20){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(CW,y);ctx.stroke();}
-    const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?{v:toMM(a.value,a.unit),lbl:`${a.value} ${a.unit}`}:null;};
+    for(let x=0;x<W;x+=20){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+    for(let y=0;y<H;y+=20){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+    const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?{mm:toMM(a.value,a.unit),lbl:`${a.value} ${a.unit}`}:null;};
     const wd=gd("width"),hd=gd("height"),dd=gd("depth");
-    const w=wd?.v,h=hd?.v,d=dd?.v;
-    const OBJ="#1a3a8a",DIM="#cc0000",TXT="#111133",aux="#9999cc";
+    const w=wd?.mm,h=hd?.mm,d=dd?.mm;
+    const OBJ="#1a3a8a",DIM="#cc0000",TXT="#111133";
     const mg=46,gap=12,tH=52;
-    const aW=CW-mg*2-gap,aH=CH-mg*2-tH-gap;
+    const aW=W-mg*2-gap,aH=H-mg*2-tH-gap;
     const vW=aW*.58,vW2=aW-vW-gap,vH=aH*.62,vH2=aH-vH-gap;
-    if(!w&&!h&&!d){
-      ctx.fillStyle="#5566aa";ctx.font="10px 'Space Mono'";ctx.textAlign="center";ctx.fillText("Asigna eje a tus medidas para ver el plano",CW/2,CH*.35);
-      ctx.fillStyle="#8899cc";ctx.font="8px 'Space Mono'";ctx.fillText("Editar anotación → seleccionar Ancho/Alto/Profundidad",CW/2,CH*.35+20);
-      // Still draw title block
-    }
-    const drawV=(x,y,vw,vh,lbl,wx,hy,wlbl,hlbl)=>{
-      const v1=wx||100,v2=hy||100;const sc=Math.min(vw/v1,vh/v2)*.7;
-      const rW=v1*sc,rH=v2*sc,rx=x+(vw-rW)/2,ry=y+(vh-rH)/2;
+    const dv=(x,y,vw,vh,lb,wx,hy,wl,hl)=>{
+      const v1=wx||100,v2=hy||100,sc2=Math.min(vw/v1,vh/v2)*.7;
+      const rW=v1*sc2,rH=v2*sc2,rx=x+(vw-rW)/2,ry=y+(vh-rH)/2;
       ctx.strokeStyle="#c8cde0";ctx.lineWidth=.5;ctx.strokeRect(x,y,vw,vh);
       ctx.fillStyle="rgba(26,58,138,.07)";ctx.fillRect(rx,ry,rW,rH);
-      // Centerlines
       ctx.strokeStyle="rgba(200,0,0,.18)";ctx.lineWidth=.5;ctx.setLineDash([5,3]);
-      ctx.beginPath();ctx.moveTo(rx+rW/2,ry-5);ctx.lineTo(rx+rW/2,ry+rH+5);ctx.stroke();
-      ctx.beginPath();ctx.moveTo(rx-5,ry+rH/2);ctx.lineTo(rx+rW+5,ry+rH/2);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(rx+rW/2,ry-4);ctx.lineTo(rx+rW/2,ry+rH+4);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(rx-4,ry+rH/2);ctx.lineTo(rx+rW+4,ry+rH/2);ctx.stroke();
       ctx.setLineDash([]);ctx.strokeStyle=OBJ;ctx.lineWidth=2;ctx.strokeRect(rx,ry,rW,rH);
-      ctx.fillStyle=aux;ctx.font="bold 7px 'Space Mono'";ctx.textAlign="left";ctx.fillText("VISTA "+lbl,x+3,y+10);
-      if(wx){const dY=ry+rH+22;
-        ctx.strokeStyle=DIM;ctx.lineWidth=.8;
-        ctx.beginPath();ctx.moveTo(rx,ry+rH+2);ctx.lineTo(rx,dY+3);ctx.stroke();
-        ctx.beginPath();ctx.moveTo(rx+rW,ry+rH+2);ctx.lineTo(rx+rW,dY+3);ctx.stroke();
+      ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Space Mono'";ctx.textAlign="left";
+      ctx.fillText("VISTA "+lb,x+3,y+10);
+      if(wx){const dY=ry+rH+22;ctx.strokeStyle=DIM;ctx.lineWidth=.8;
+        ctx.beginPath();ctx.moveTo(rx,ry+rH+2);ctx.lineTo(rx,dY+2);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(rx+rW,ry+rH+2);ctx.lineTo(rx+rW,dY+2);ctx.stroke();
         ctx.beginPath();ctx.moveTo(rx,dY);ctx.lineTo(rx+rW,dY);ctx.stroke();
         ctx.fillStyle=DIM;[[rx,1],[rx+rW,-1]].forEach(([ax,d])=>{ctx.beginPath();ctx.moveTo(ax,dY);ctx.lineTo(ax+d*7,dY-3);ctx.lineTo(ax+d*7,dY+3);ctx.closePath();ctx.fill();});
-        ctx.fillStyle=TXT;ctx.font="8px 'Space Mono'";ctx.textAlign="center";ctx.fillText(wlbl||`${wx}mm`,rx+rW/2,dY-5);}
-      if(hy){const dX=rx-26;
-        ctx.strokeStyle=DIM;ctx.lineWidth=.8;
+        ctx.fillStyle=TXT;ctx.font="8px 'Space Mono'";ctx.textAlign="center";ctx.fillText(wl||`${wx}mm`,rx+rW/2,dY-5);}
+      if(hy){const dX=rx-26;ctx.strokeStyle=DIM;ctx.lineWidth=.8;
         ctx.beginPath();ctx.moveTo(rx-2,ry);ctx.lineTo(dX-2,ry);ctx.stroke();
         ctx.beginPath();ctx.moveTo(rx-2,ry+rH);ctx.lineTo(dX-2,ry+rH);ctx.stroke();
         ctx.beginPath();ctx.moveTo(dX,ry);ctx.lineTo(dX,ry+rH);ctx.stroke();
-        ctx.fillStyle=DIM;[[ry,1],[ry+rH,-1]].forEach(([ay,d])=>{ctx.beginPath();ctx.moveTo(dX,ay);ctx.lineTo(dX-3,ay+d*7);ctx.lineTo(dX+3,ay+d*7);ctx.closePath();ctx.fill();});
+        [[ry,1],[ry+rH,-1]].forEach(([ay,d])=>{ctx.beginPath();ctx.moveTo(dX,ay);ctx.lineTo(dX-3,ay+d*7);ctx.lineTo(dX+3,ay+d*7);ctx.closePath();ctx.fill();});
         ctx.save();ctx.translate(dX-9,(ry*2+rH)/2);ctx.rotate(-Math.PI/2);
-        ctx.fillStyle=TXT;ctx.font="8px 'Space Mono'";ctx.textAlign="center";ctx.fillText(hlbl||`${hy}mm`,0,0);ctx.restore();}
+        ctx.fillStyle=TXT;ctx.font="8px 'Space Mono'";ctx.textAlign="center";ctx.fillText(hl||`${hy}mm`,0,0);ctx.restore();}
     };
-    if(w||h||d){
-      drawV(mg,mg,vW,vH,"FRONTAL",w,h,wd?.lbl,hd?.lbl);
-      drawV(mg+vW+gap,mg,vW2,vH,"LATERAL",d,h,dd?.lbl,hd?.lbl);
-      drawV(mg,mg+vH+gap,vW,vH2,"PLANTA",w,d,wd?.lbl,dd?.lbl);
-    }
-    // Title block
+    if(w||h||d){dv(mg,mg,vW,vH,"FRONTAL",w,h,wd?.lbl,hd?.lbl);dv(mg+vW+gap,mg,vW2,vH,"LATERAL",d,h,dd?.lbl,hd?.lbl);dv(mg,mg+vH+gap,vW,vH2,"PLANTA",w,d,wd?.lbl,dd?.lbl);}
+    else{ctx.fillStyle="#5566aa";ctx.font="9px 'Space Mono'";ctx.textAlign="center";ctx.fillText("Asigna eje a una medida para ver el plano",W/2,H*.35);ctx.fillStyle="#8899cc";ctx.font="8px 'Space Mono'";ctx.fillText("Toca medida → Editar → Eje: Ancho / Alto / Prof.",W/2,H*.35+18);}
     const tbX=mg+vW+gap,tbY=mg+vH+gap,tbW=vW2,tbH=vH2;
-    ctx.fillStyle="#e2e7f4";ctx.fillRect(tbX,tbY,tbW,tbH);
+    ctx.fillStyle="#e0e6f4";ctx.fillRect(tbX,tbY,tbW,tbH);
     ctx.strokeStyle=OBJ;ctx.lineWidth=1.2;ctx.strokeRect(tbX,tbY,tbW,tbH);
-    ctx.beginPath();ctx.moveTo(tbX,tbY+tbH*.38);ctx.lineTo(tbX+tbW,tbY+tbH*.38);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(tbX,tbY+tbH*.68);ctx.lineTo(tbX+tbW,tbY+tbH*.68);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(tbX,tbY+tbH*.36);ctx.lineTo(tbX+tbW,tbY+tbH*.36);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(tbX,tbY+tbH*.66);ctx.lineTo(tbX+tbW,tbY+tbH*.66);ctx.stroke();
     ctx.fillStyle=OBJ;ctx.font="bold 9px 'Space Mono'";ctx.textAlign="center";
     ctx.fillText((objName||"OBJETO").toUpperCase().slice(0,18),tbX+tbW/2,tbY+14);
     ctx.fillStyle="#334455";ctx.font="7px 'Space Mono'";ctx.textAlign="left";
-    ctx.fillText(`ESCALA 1:1 · ${new Date().toLocaleDateString("es-ES")}`,tbX+4,tbY+tbH*.38+11);
-    ctx.fillText("MEDISCAN 3D PRO",tbX+4,tbY+tbH*.68+11);
-    if(scale2D)ctx.fillText(`Cal: 1${scale2D.unit}=${scale2D.ppu.toFixed(0)}px`,tbX+4,tbY+tbH*.68+22);
-    const extras=anns.filter(a=>a.value!=null&&!["width","height","depth"].includes(a.axis)).slice(0,5);
-    let ey=tbY+tbH*.38+24;extras.forEach(a=>{if(ey<tbY+tbH-5){ctx.fillText(`${a.title||a.type}: ${a.value}${a.unit}`,tbX+4,ey);ey+=11;}});
-  },[anns,objName,scale2D]);
+    ctx.fillText("ESCALA 1:1",tbX+4,tbY+tbH*.36+11);ctx.fillText(new Date().toLocaleDateString("es-ES"),tbX+4,tbY+tbH*.36+22);
+    ctx.fillText("MEDISCAN 3D PRO",tbX+4,tbY+tbH*.66+11);
+    if(sc)ctx.fillText(`Cal: 1${sc.unit}=${sc.ppu.toFixed(0)}px`,tbX+4,tbY+tbH*.66+22);
+    anns.filter(a=>a.value!=null&&!["width","height","depth"].includes(a.axis)).slice(0,4).forEach((a,i)=>{const ey=tbY+tbH*.66+34+i*11;if(ey<tbY+tbH-4)ctx.fillText(`${a.title||a.type}: ${a.value}${a.unit}`,tbX+4,ey);});
+  },[anns,objName,sc]);
   return <canvas ref={ref} width={440} height={390} style={{width:"100%",display:"block"}}/>;
 }
 
-/* ═══════ VIEW 3D GENÉRICO ═══════ */
+/* ══════════════════════════════════════════
+   VIEW 3D
+══════════════════════════════════════════ */
 function V3D({anns,shape}){
   const ref=useRef(null);
   useEffect(()=>{
     if(!ref.current)return;
-    const E=ref.current,W=E.clientWidth,H=E.clientHeight||250;
+    const E=ref.current,W=E.clientWidth||320,H=250;
     const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?Math.max(toMM(a.value,a.unit),1):100;};
     const rw=gd("width"),rh=gd("height"),rd=gd("depth");
     const mx=Math.max(rw,rh,rd,1),sc=1.8/mx;
@@ -162,32 +155,29 @@ function V3D({anns,shape}){
     rdr.outputEncoding=THREE.sRGBEncoding;rdr.toneMapping=THREE.ACESFilmicToneMapping;rdr.toneMappingExposure=1.1;
     E.appendChild(rdr.domElement);
     const pivot=new THREE.Group();scene.add(pivot);
-    const fM=c=>new THREE.MeshStandardMaterial({color:c||0x1144bb,metalness:.4,roughness:.5,transparent:true,opacity:.82,side:THREE.DoubleSide});
+    const fM=c=>new THREE.MeshStandardMaterial({color:c||0x1144bb,metalness:.42,roughness:.5,transparent:true,opacity:.83,side:THREE.DoubleSide});
     const eM=()=>new THREE.LineBasicMaterial({color:0x00e5c4});
     const bx=(bw,bh,bd,x=0,y=0,z=0,c)=>{const g=new THREE.BoxGeometry(bw,bh,bd);const m=new THREE.Mesh(g,fM(c));m.position.set(x,y,z);m.castShadow=true;pivot.add(m);const l=new THREE.LineSegments(new THREE.EdgesGeometry(g),eM());l.position.set(x,y,z);pivot.add(l);};
     const cy=(r,ch)=>{const g=new THREE.CylinderGeometry(r,r,ch,32);const m=new THREE.Mesh(g,fM());m.castShadow=true;pivot.add(m);pivot.add(new THREE.LineSegments(new THREE.EdgesGeometry(g),eM()));};
     const s=shape||"box";
     if(s==="table"){const th=Math.max(sh*.08,.04),lw=Math.max(Math.min(sw,sd)*.07,.03),lh=sh-th;bx(sw,th,sd,0,sh/2-th/2,0,0x1144cc);[[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([a,b])=>bx(lw,lh,lw,a*(sw/2-lw/2)*.85,-sh/2+lh/2,b*(sd/2-lw/2)*.85,0x0a2266));}
     else if(s==="chair"){const th=.04,lw=.05,sy2=sh*.45,bkh=sh-sy2;bx(sw,th,sd,0,-sh/2+sy2,0);bx(sw,bkh,th,0,-sh/2+sy2+bkh/2+th/2,-sd/2+th/2);[[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([a,b])=>bx(lw,sy2,lw,a*(sw/2-lw/2)*.8,-sh/2+sy2/2,b*(sd/2-lw/2)*.8));}
-    else if(["cylinder","bottle","vase","cup","glass"].includes(s))cy(Math.min(sw,sd)/2,sh);
+    else if(["cylinder","bottle","vase","cup","glass","tube","pipe"].includes(s))cy(Math.min(sw,sd)/2,sh);
     else if(["sphere","ball"].includes(s)){const r=Math.min(sw,sh,sd)/2;const m=new THREE.Mesh(new THREE.SphereGeometry(r,28,28),fM());m.castShadow=true;pivot.add(m);}
     else if(s==="cone"){const g=new THREE.ConeGeometry(Math.min(sw,sd)/2,sh,24);const m=new THREE.Mesh(g,fM());m.castShadow=true;pivot.add(m);pivot.add(new THREE.LineSegments(new THREE.EdgesGeometry(g),eM()));}
     else bx(sw,sh,sd);
-    // Vertex dots
-    const dg=new THREE.SphereGeometry(.035,8,8);const dm=new THREE.MeshBasicMaterial({color:0x00e5c4});
+    const dg=new THREE.SphereGeometry(.035,8,8),dm=new THREE.MeshBasicMaterial({color:0x00e5c4});
     [[-1,-1,-1],[1,-1,-1],[-1,1,-1],[1,1,-1],[-1,-1,1],[1,-1,1],[-1,1,1],[1,1,1]].forEach(([a,b,c])=>{const dot=new THREE.Mesh(dg,dm);dot.position.set(a*sw/2,b*sh/2,c*sd/2);pivot.add(dot);});
-    // Grid + floor (outside pivot)
     const fl=new THREE.Mesh(new THREE.PlaneGeometry(14,14),new THREE.MeshStandardMaterial({color:0x0a1020,roughness:.9}));
     fl.rotation.x=-Math.PI/2;fl.position.y=-sh/2-.02;fl.receiveShadow=true;scene.add(fl);
     scene.add(new THREE.GridHelper(14,14,0x1a2540,0x121c30));
-    // Lights
     scene.add(new THREE.AmbientLight(0x405060,.8));
     const kl=new THREE.DirectionalLight(0xfff5ee,2.4);kl.position.set(7,13,5);kl.castShadow=true;kl.shadow.mapSize.set(1024,1024);kl.shadow.bias=-.001;scene.add(kl);
     scene.add(Object.assign(new THREE.DirectionalLight(0x5588cc,.6),{position:new THREE.Vector3(-6,4,-9)}));
     let drag=false,lx=0,ly=0,ry=.5,rx=.18;
     const px=e=>e.clientX??e.touches?.[0]?.clientX??0,py=e=>e.clientY??e.touches?.[0]?.clientY??0;
     const dn=e=>{drag=true;lx=px(e);ly=py(e);rdr.domElement.style.cursor="grabbing";};
-    const mv=e=>{if(!drag)return;ry+=(px(e)-lx)*.012;rx+=(py(e)-ly)*.012;lx=px(e);ly=py(e);};
+    const mv=e=>{if(!drag)return;ry+=(px(e)-lx)*.012;rx=clamp(rx+(py(e)-ly)*.012,-.8,.8);lx=px(e);ly=py(e);};
     const up=()=>{drag=false;rdr.domElement.style.cursor="grab";};
     rdr.domElement.addEventListener("mousedown",dn);rdr.domElement.addEventListener("touchstart",dn,{passive:true});
     window.addEventListener("mousemove",mv);window.addEventListener("touchmove",mv,{passive:true});window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
@@ -197,36 +187,31 @@ function V3D({anns,shape}){
   return <div ref={ref} style={{width:"100%",height:"250px",cursor:"grab"}}/>;
 }
 
-/* ═══════ PIPING 3D ═══════ */
+/* ══════════════════════════════════════════
+   PIPING 3D
+══════════════════════════════════════════ */
 function V3DPipe({components,dn}){
   const ref=useRef(null);
   useEffect(()=>{
     if(!ref.current)return;
-    const E=ref.current,W=E.clientWidth,H=E.clientHeight||270;
-    const S=.001;
+    const E=ref.current,W=E.clientWidth||320,H=270,S=.001;
     const scene=new THREE.Scene();scene.background=new THREE.Color(0x0c1020);
     const cam=new THREE.PerspectiveCamera(40,W/H,.05,50);cam.position.set(3,2.5,4);cam.lookAt(0,.5,0);
-    const rdr=new THREE.WebGLRenderer({antialias:true});
-    rdr.setSize(W,H);rdr.setPixelRatio(Math.min(devicePixelRatio,2));
-    rdr.shadowMap.enabled=true;rdr.outputEncoding=THREE.sRGBEncoding;rdr.toneMapping=THREE.ACESFilmicToneMapping;rdr.toneMappingExposure=1.15;
-    E.appendChild(rdr.domElement);
-    const pivot=new THREE.Group();scene.add(pivot); // ALL objects go into pivot
+    const rdr=new THREE.WebGLRenderer({antialias:true});rdr.setSize(W,H);rdr.setPixelRatio(Math.min(devicePixelRatio,2));
+    rdr.shadowMap.enabled=true;rdr.outputEncoding=THREE.sRGBEncoding;rdr.toneMapping=THREE.ACESFilmicToneMapping;rdr.toneMappingExposure=1.15;E.appendChild(rdr.domElement);
+    const pivot=new THREE.Group();scene.add(pivot);
     const mP=new THREE.MeshStandardMaterial({color:0x4477bb,metalness:.92,roughness:.15});
     const mI=new THREE.MeshStandardMaterial({color:0x050a10,side:THREE.BackSide});
     const mF=new THREE.MeshStandardMaterial({color:0x7799cc,metalness:.96,roughness:.06});
     const mV=new THREE.MeshStandardMaterial({color:0x223344,metalness:.82,roughness:.22});
     const mH=new THREE.MeshStandardMaterial({color:0xff2200,metalness:.35,roughness:.5});
-    scene.add(new THREE.AmbientLight(0x304050,.9));
-    const kl=new THREE.DirectionalLight(0xfff8f0,2.6);kl.position.set(8,14,6);kl.castShadow=true;kl.shadow.mapSize.set(1024,1024);scene.add(kl);
+    scene.add(new THREE.AmbientLight(0x304050,.9));const kl=new THREE.DirectionalLight(0xfff8f0,2.6);kl.position.set(8,14,6);kl.castShadow=true;kl.shadow.mapSize.set(1024,1024);scene.add(kl);
     scene.add(Object.assign(new THREE.DirectionalLight(0x6088bb,.7),{position:new THREE.Vector3(-8,4,-10)}));
     scene.add(new THREE.HemisphereLight(0x3355aa,0x221a11,.5));
-    const fl=new THREE.Mesh(new THREE.PlaneGeometry(20,20),new THREE.MeshStandardMaterial({color:0x0a0e18,roughness:.95}));
-    fl.rotation.x=-Math.PI/2;fl.position.y=-.05;fl.receiveShadow=true;scene.add(fl);
+    const fl=new THREE.Mesh(new THREE.PlaneGeometry(20,20),new THREE.MeshStandardMaterial({color:0x0a0e18,roughness:.95}));fl.rotation.x=-Math.PI/2;fl.position.y=-.05;fl.receiveShadow=true;scene.add(fl);
     scene.add(new THREE.GridHelper(20,20,0x1a2035,0x141828));
     const or=(m,s,e)=>{const d=new THREE.Vector3().subVectors(e,s).normalize(),u=new THREE.Vector3(0,1,0);if(Math.abs(d.dot(u))>.999){m.rotation.z=d.y>0?0:Math.PI;}else{const ax=new THREE.Vector3().crossVectors(u,d).normalize();m.setRotationFromAxisAngle(ax,Math.acos(clamp(u.dot(d),-1,1)));}};
-    const addT=(s,e,r)=>{const d=new THREE.Vector3().subVectors(e,s),len=d.length();if(len<.001)return;const mid=new THREE.Vector3().addVectors(s,e).multiplyScalar(.5);
-      const g=new THREE.CylinderGeometry(r,r,len,20);const m=new THREE.Mesh(g,mP);m.position.copy(mid);or(m,s,e);m.castShadow=true;pivot.add(m);
-      const gi=new THREE.CylinderGeometry(r*.76,r*.76,len+.002,18);const mi=new THREE.Mesh(gi,mI);mi.position.copy(mid);or(mi,s,e);pivot.add(mi);};
+    const addT=(s,e,r)=>{const d=new THREE.Vector3().subVectors(e,s),len=d.length();if(len<.001)return;const mid=new THREE.Vector3().addVectors(s,e).multiplyScalar(.5);const g=new THREE.CylinderGeometry(r,r,len,20);const m=new THREE.Mesh(g,mP);m.position.copy(mid);or(m,s,e);m.castShadow=true;pivot.add(m);const gi=new THREE.CylinderGeometry(r*.76,r*.76,len+.002,18);const mi=new THREE.Mesh(gi,mI);mi.position.copy(mid);or(mi,s,e);pivot.add(mi);};
     const addF=(pos,dir,r)=>{const g=new THREE.CylinderGeometry(r*1.7,r*1.7,r*.22,16);const m=new THREE.Mesh(g,mF);m.position.copy(pos);const f=pos.clone().sub(dir.clone().multiplyScalar(.1));or(m,f,pos.clone().add(dir.clone().multiplyScalar(.1)));m.castShadow=true;pivot.add(m);};
     const addV=(pos,dir,r,vt)=>{const vl=r*5;const vb=new THREE.Mesh(new THREE.CylinderGeometry(r*1.3,r*1.3,vl,14),mV);vb.position.copy(pos.clone().addScaledVector(dir,vl/2));const f=pos.clone().sub(dir.clone().multiplyScalar(.1));or(vb,f,pos.clone().add(dir.clone().multiplyScalar(vl)));vb.castShadow=true;pivot.add(vb);addF(pos,dir,r);addF(pos.clone().addScaledVector(dir,vl),dir,r);const perp=new THREE.Vector3(0,1,0);if(Math.abs(dir.dot(perp))>.9)perp.set(0,0,1);const sPos=pos.clone().addScaledVector(dir,vl*.5).addScaledVector(perp,r*1.8);if(vt==="ball"||vt==="ball_valve"){const sp=new THREE.Mesh(new THREE.SphereGeometry(r*.9,12,12),mV);sp.position.copy(pos.clone().addScaledVector(dir,vl*.5));sp.castShadow=true;pivot.add(sp);}const mhw=new THREE.Mesh(new THREE.TorusGeometry(r*1.1,r*.12,8,16),mH);mhw.position.copy(sPos);pivot.add(mhw);};
     const dm2={H:[1,0,0],V:[0,1,0],Z:[0,0,1],"-H":[-1,0,0],"-V":[0,-1,0],"-Z":[0,0,-1],X:[1,0,0],Y:[0,1,0]};
@@ -239,15 +224,12 @@ function V3DPipe({components,dn}){
       else if(c.type==="flange"){fits.push({t:"f",pos:pos.clone(),dir:dir.clone(),r});pos=pos.clone().addScaledVector(dir,r*.4);wp.push(pos.clone());}
     }
     const dd2=wp.filter((p,i)=>i===0||p.distanceTo(wp[i-1])>.005);
-    if(dd2.length>1){const baseDN=(comps.find(c=>c.dn)||{dn:dn||100}).dn;const baseR=baseDN*S*.5;const curve=new THREE.CatmullRomCurve3(dd2,false,"catmullrom",.4);const pts=curve.getPoints(Math.max(dd2.length*8,60));for(let i=0;i<pts.length-1;i++)addT(pts[i],pts[i+1],baseR);}
+    if(dd2.length>1){const bDN=(comps.find(c=>c.dn)||{dn:dn||100}).dn;const bR=bDN*S*.5;const curve=new THREE.CatmullRomCurve3(dd2,false,"catmullrom",.4);const pts=curve.getPoints(Math.max(dd2.length*8,60));for(let i=0;i<pts.length-1;i++)addT(pts[i],pts[i+1],bR);}
     fits.forEach(f=>{if(f.t==="f")addF(f.pos,f.dir,f.r);else if(f.t==="v")addV(f.pos,f.dir,f.r,f.vt);});
-    // Center pivot on its content
-    const box=new THREE.Box3().setFromObject(pivot);const center=box.getCenter(new THREE.Vector3());
-    pivot.position.copy(center.negate());
-    const size2=box.getSize(new THREE.Vector3()).length();
-    cam.position.set(size2*.7,size2*.55,size2*.9);cam.lookAt(0,0,0);
+    const box=new THREE.Box3().setFromObject(pivot);const center=box.getCenter(new THREE.Vector3());const sz=box.getSize(new THREE.Vector3()).length();
+    pivot.position.copy(center.negate());cam.position.set(sz*.7,sz*.55,sz*.9);cam.lookAt(0,0,0);
     let drag=false,lx=0,ly=0,ry=0,rx=.15;const px=e=>e.clientX??e.touches?.[0]?.clientX??0,py=e=>e.clientY??e.touches?.[0]?.clientY??0;
-    const dn2=e=>{drag=true;lx=px(e);ly=py(e);};const mv=e=>{if(!drag)return;ry+=(px(e)-lx)*.009;rx+=(py(e)-ly)*.009;lx=px(e);ly=py(e);};const up=()=>drag=false;
+    const dn2=e=>{drag=true;lx=px(e);ly=py(e);};const mv=e=>{if(!drag)return;ry+=(px(e)-lx)*.009;rx=clamp(rx+(py(e)-ly)*.009,-.8,.8);lx=px(e);ly=py(e);};const up=()=>drag=false;
     rdr.domElement.addEventListener("mousedown",dn2);rdr.domElement.addEventListener("touchstart",dn2,{passive:true});window.addEventListener("mousemove",mv);window.addEventListener("touchmove",mv,{passive:true});window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
     let id;const anim=()=>{id=requestAnimationFrame(anim);if(!drag)ry+=.005;pivot.rotation.set(rx,ry,0);rdr.render(scene,cam);};anim();
     return()=>{cancelAnimationFrame(id);window.removeEventListener("mousemove",mv);window.removeEventListener("touchmove",mv);window.removeEventListener("mouseup",up);window.removeEventListener("touchend",up);rdr.dispose();if(E.contains(rdr.domElement))E.removeChild(rdr.domElement);};
@@ -255,134 +237,170 @@ function V3DPipe({components,dn}){
   return <div ref={ref} style={{width:"100%",height:"270px",cursor:"grab"}}/>;
 }
 
-/* ═══════ APP ═══════ */
+/* ══════════════════════════════════════════
+   MAIN APP
+══════════════════════════════════════════ */
 function App(){
-  const containerRef=useRef(null);const captureRef=useRef(null);
-  const videoRef=useRef(null);const canvasRef=useRef(null);const streamRef=useRef(null);
-  const uploadRef=useRef(null);const camInRef=useRef(null);
+  /* refs */
+  const imgRef=useRef(null);
+  const captureRef=useRef(null);
+  const videoRef=useRef(null);
+  const canvasRef=useRef(null);
+  const streamRef=useRef(null);
+  const uploadRef=useRef(null);
+  const camInRef=useRef(null);
+  const drawingRef=useRef(null);      // live drawing state (no re-render lag)
+  const isDraggingRef=useRef(false);  // suppress onClick after drag
+  const pendingRef=useRef([]);        // click-click points
+  const toolRef=useRef("sel");        // always current tool
 
+  /* screen state */
   const [scr,setScr]=useState(()=>getKey()?"home":"setup");
   const [keyIn,setKeyIn]=useState(getKey());
   const [camMode,setCamMode]=useState("off");
+
+  /* project state */
   const [image,setImage]=useState(null);
   const [origImage,setOrigImage]=useState(null);
   const [rotation,setRotation]=useState(0);
   const [objInfo,setObjInfo]=useState(null);
   const [piping,setPiping]=useState(null);
-  const [err,setErr]=useState(null);
-  const [aiMsg,setAiMsg]=useState("");const [aiLoad,setAiLoad]=useState(false);
-  const [projects,setProjects]=useState(()=>JSON.parse(localStorage.getItem("ms3_pj")||"[]"));
+  const [err,setErr]=useState("");
+  const [aiMsg,setAiMsg]=useState("");
+  const [aiLoad,setAiLoad]=useState(false);
+  const [projects,setProjects]=useState(()=>{try{return JSON.parse(localStorage.getItem("ms3_pj")||"[]");}catch{return [];}});
   const [projName,setProjName]=useState("Proyecto");
   const [projTitle,setProjTitle]=useState("");
-  // Annotations
+
+  /* annotation state */
   const [anns,setAnns]=useState([]);
   const [hist,setHist]=useState([]);
   const [tool,setTool]=useState("sel");
-  const [pending,setPending]=useState([]);
-  const [mousePos,setMousePos]=useState(null);
-  const [dragDraw,setDragDraw]=useState(null);// {p1} for rect/circ drag
-  const [measuring,setMeasuring]=useState(null);
+  const [pending,setPending]=useState([]);  // click-click intermediate points
+  const [preview,setPreview]=useState(null); // {p1,p2} live preview
+  const [measuring,setMeasuring]=useState(null); // ann waiting measure input
   const [calibAnn,setCalibAnn]=useState(null);
   const [cropDlg,setCropDlg]=useState(null);
   const [selId,setSelId]=useState(null);
   const [colorIdx,setColorIdx]=useState(0);
   const [scale,setScale]=useState(null);
+  const [lStyle,setLStyle]=useState("solid");
+  const [aHead,setAHead]=useState("end");
   const [mIn,setMIn]=useState({title:"",value:"",unit:"cm",axis:""});
-  const [lStyle,setLStyle]=useState("solid");// solid|dashed|dotted
-  const [aHead,setAHead]=useState("end");// end|both|none
+
+  /* view state */
   const [viewTab,setViewTab]=useState("ann");
   const [toolCat,setToolCat]=useState("mrk");
   const [showSum,setShowSum]=useState(true);
   const [syncMsg,setSyncMsg]=useState("");
 
-  // CRITICAL: clear measuring/crop on screen change
-  useEffect(()=>{setMeasuring(null);setCalibAnn(null);setCropDlg(null);setPending([]);setDragDraw(null);},[scr]);
-
+  /* derived */
   const hasDims=useMemo(()=>anns.some(a=>["width","height","depth"].includes(a.axis)&&a.value!=null),[anns]);
   const selAnn=useMemo(()=>anns.find(a=>a.id===selId),[anns,selId]);
   const toolsByCategory=useMemo(()=>{const cats={};TOOLS.forEach(t=>{if(!cats[t.cat])cats[t.cat]=[];cats[t.cat].push(t);});return cats;},[]);
-  const isShapeTool=useMemo(()=>!["sel","pin","dot","star","diam","tgt","txt"].includes(tool),[tool]);
-  const showStyleOpts=useMemo(()=>["line","dline","dim","dist","arr1","arr2","arr3","arr4","arr5","rect","circ"].includes(tool),[tool]);
+  const showStyleOpts=useMemo(()=>["line","dline","dim","dist","arr1","arr2","arr3","arr4","rect","circ"].includes(tool),[tool]);
 
-  // Undo — one step at a time
-  const pushH=useCallback(()=>setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]),[anns]);
+  /* sync refs */
+  useEffect(()=>{toolRef.current=tool;},[tool]);
+  useEffect(()=>{pendingRef.current=pending;},[pending]);
+
+  /* clear state on screen change */
+  useEffect(()=>{setMeasuring(null);setCalibAnn(null);setCropDlg(null);setPending([]);pendingRef.current=[];drawingRef.current=null;isDraggingRef.current=false;setPreview(null);},[scr]);
+
+  /* undo */
+  const snapshot=useCallback(()=>{setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);},[anns]);
   const undo=()=>{if(!hist.length)return;setAnns(hist[hist.length-1]);setHist(h=>h.slice(0,-1));setSelId(null);};
   const addAnn=useCallback(a=>{setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);setAnns(p=>[...p,a]);},[anns]);
   const updAnn=(id,ch)=>{setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);setAnns(p=>p.map(a=>a.id===id?{...a,...ch}:a));};
   const delAnn=id=>{setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);setAnns(p=>p.filter(a=>a.id!==id));if(selId===id)setSelId(null);};
 
-  // Camera
-  const stopCam=()=>{streamRef.current?.getTracks().forEach(t=>t.stop());setCamMode("off");};
-  const startLive=async()=>{setCamMode("starting");try{const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280}}});streamRef.current=s;setTimeout(()=>{if(videoRef.current)videoRef.current.srcObject=s;},60);setCamMode("live");}catch{setCamMode("off");alert("Usa TOMAR FOTO o galería.");}};
-  const capLive=()=>{const v=videoRef.current,c=canvasRef.current;if(!v||!c)return;c.width=v.videoWidth||640;c.height=v.videoHeight||480;c.getContext("2d").drawImage(v,0,0);go(c.toDataURL("image/jpeg",.87));};
-  const handleFile=e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>go(ev.target.result);r.readAsDataURL(f);e.target.value="";};
-  const go=img=>{setImage(img);setOrigImage(img);setScr("loading");stopCam();setAnns([]);setHist([]);setSelId(null);setPending([]);setTool("sel");setErr(null);setPiping(null);setAiMsg("");setScale(null);setDragDraw(null);identify(img);};
-
-  // Get canvas-relative position
+  /* ── DRAWING via native events ── */
   const getPos=useCallback(e=>{
-    const rect=containerRef.current?.getBoundingClientRect();if(!rect)return{x:.5,y:.5};
-    const cx=e.clientX??e.touches?.[0]?.clientX??0,cy=e.clientY??e.touches?.[0]?.clientY??0;
-    return{x:clamp((cx-rect.left)/rect.width,.01,.99),y:clamp((cy-rect.top)/rect.height,.01,.99)};
+    const el=imgRef.current;if(!el)return{x:.5,y:.5};
+    const r=el.getBoundingClientRect();
+    const cx=e.clientX??e.touches?.[0]?.clientX??0;
+    const cy=e.clientY??e.touches?.[0]?.clientY??0;
+    return{x:clamp((cx-r.left)/r.width,.01,.99),y:clamp((cy-r.top)/r.height,.01,.99)};
   },[]);
 
-  // Pointer events for drawing
-  const handlePointerDown=useCallback(e=>{
-    if(tool==="sel"||!tool)return;
-    e.preventDefault();
-    const pos=getPos(e);
-    if(DRAG_DRAW.includes(tool)){setDragDraw(pos);}
-  },[tool,getPos]);
+  const finishShape=useCallback((type,points,lstyle,ahead)=>{
+    const color=COLS[colorIdx%COLS.length];
+    const td=TOOLS.find(t=>t.id===type);
+    const newA={id:uid(),type,icon:td?.icon||"◆",title:"",label:"",value:null,unit:"cm",axis:"",color,points,lineStyle:lstyle||"solid",arrowHead:ahead||"end"};
+    if(type==="calib"){setCalibAnn(newA);setMIn({title:"Escala",value:"",unit:"cm",axis:""});addAnn(newA);}
+    else if(type==="crop"){setCropDlg({p1:points[0],p2:points[1]});}
+    else{setMeasuring(newA);setMIn({title:"",value:"",unit:"cm",axis:""});}
+    setColorIdx(c=>c+1);
+  },[colorIdx,addAnn]);
 
-  const handlePointerMove=useCallback(e=>{
-    const pos=getPos(e);
-    setMousePos(pos);
-  },[getPos]);
-
-  const handlePointerUp=useCallback(e=>{
-    if(dragDraw&&DRAG_DRAW.includes(tool)){
-      const pos=getPos(e);
-      // Only create if user actually dragged
-      const dx=Math.abs(pos.x-dragDraw.x),dy=Math.abs(pos.y-dragDraw.y);
-      if(dx>.01||dy>.01){
-        const id=uid(),color=COLS[colorIdx%COLS.length];
-        const newA={id,type:tool,icon:TOOLS.find(t=>t.id===tool)?.icon,title:"",label:"",value:null,unit:"cm",axis:"",color,points:[dragDraw,pos],lineStyle:lStyle};
-        if(tool==="crop"){setCropDlg({p1:dragDraw,p2:pos});}
-        else{setMeasuring(newA);setMIn({title:"",value:"",unit:"cm",axis:""});}
-        setColorIdx(c=>c+1);
+  useEffect(()=>{
+    const el=imgRef.current;if(!el)return;
+    const onDown=e=>{
+      const t=toolRef.current;
+      if(t==="sel")return;
+      if(DRAG_TOOLS.includes(t)){
+        e.preventDefault();
+        const p=getPos(e.touches?.[0]||e);
+        drawingRef.current={type:t,p1:p};
+        isDraggingRef.current=false;
+        setPreview({p1:p,p2:p,type:t});
       }
-      setDragDraw(null);
-    }
-  },[dragDraw,tool,getPos,colorIdx,lStyle]);
+    };
+    const onMove=e=>{
+      if(!drawingRef.current)return;
+      const p=getPos(e.touches?.[0]||e);
+      isDraggingRef.current=true;
+      drawingRef.current={...drawingRef.current,p2:p};
+      setPreview(prev=>prev?{...prev,p2:p}:null);
+    };
+    const onUp=e=>{
+      if(!drawingRef.current)return;
+      const ds=drawingRef.current;drawingRef.current=null;
+      const p=getPos(e.changedTouches?.[0]||e);
+      setPreview(null);
+      const dx=Math.abs(p.x-(ds.p1.x||.5)),dy=Math.abs(p.y-(ds.p1.y||.5));
+      if(dx>.01||dy>.01){finishShape(ds.type,[ds.p1,p],lStyle,aHead);}
+      setTimeout(()=>{isDraggingRef.current=false;},50);
+    };
+    const onClick=e=>{
+      if(isDraggingRef.current)return;
+      const t=toolRef.current;
+      if(t==="sel"||DRAG_TOOLS.includes(t))return;
+      const td=TOOLS.find(tt=>tt.id===t);if(!td||td.npts===0)return;
+      const p=getPos(e);
+      if(MRK.includes(t)||td.npts===1){finishShape(t,[p],lStyle,aHead);return;}
+      const pts=[...pendingRef.current,p];
+      if(pts.length>=td.npts){setPending([]);pendingRef.current=[];setPreview(null);finishShape(t,pts,lStyle,aHead);}
+      else{setPending(pts);pendingRef.current=pts;setPreview({p1:pts[0],p2:p,type:t});}
+    };
+    const onMouseMove=e=>{
+      if(pendingRef.current.length>0){const p=getPos(e);setPreview({p1:pendingRef.current[0],p2:p,type:toolRef.current});}
+    };
+    el.addEventListener("mousedown",onDown);el.addEventListener("touchstart",onDown,{passive:false});
+    el.addEventListener("mousemove",onMouseMove);
+    window.addEventListener("mousemove",onMove);window.addEventListener("touchmove",onMove,{passive:true});
+    window.addEventListener("mouseup",onUp);window.addEventListener("touchend",onUp);
+    el.addEventListener("click",onClick);
+    return()=>{
+      el.removeEventListener("mousedown",onDown);el.removeEventListener("touchstart",onDown);
+      el.removeEventListener("mousemove",onMouseMove);
+      window.removeEventListener("mousemove",onMove);window.removeEventListener("touchmove",onMove);
+      window.removeEventListener("mouseup",onUp);window.removeEventListener("touchend",onUp);
+      el.removeEventListener("click",onClick);
+    };
+  },[getPos,finishShape,lStyle,aHead]);
 
-  // Click for non-drag tools
-  const handleCanvasClick=useCallback(e=>{
-    if(DRAG_DRAW.includes(tool)||tool==="sel")return;
-    const td=TOOLS.find(t=>t.id===tool);if(!td||td.id==="sel")return;
-    const pos=getPos(e);
-    // Single-point marker tools
-    if(MARKER_TYPES.includes(tool)){
-      const id=uid(),color=COLS[colorIdx%COLS.length];
-      const newA={id,type:tool,icon:td.icon,title:"",label:"",value:null,unit:"cm",axis:"",color,points:[pos]};
-      setMeasuring(newA);setMIn({title:"",value:"",unit:"cm",axis:""});
-      setColorIdx(c=>c+1);return;
-    }
-    // Multi-point tools
-    const pts=[...pending,pos];
-    const npts=td.npts!=null?td.npts:2;
-    if(npts===1){
-      const id=uid(),color=COLS[colorIdx%COLS.length];
-      const newA={id,type:tool,icon:td.icon,title:"",label:"",value:null,unit:"cm",axis:"",color,points:pts};
-      setMeasuring(newA);setMIn({title:"",value:"",unit:"cm",axis:""});
-      setColorIdx(c=>c+1);setPending([]);
-    }else if(pts.length>=npts){
-      const id=uid(),color=COLS[colorIdx%COLS.length];
-      const newA={id,type:tool,icon:td.icon,title:"",label:"",value:null,unit:"cm",axis:"",color,points:pts,lineStyle:lStyle,arrowHead:aHead};
-      if(tool==="calib"){setCalibAnn(newA);setMIn({title:"Escala",value:"",unit:"cm",axis:""});addAnn(newA);}
-      else{setMeasuring(newA);setMIn({title:"",value:"",unit:"cm",axis:""});}
-      setPending([]);setColorIdx(c=>c+1);
-    }else setPending(pts);
-  },[tool,getPos,pending,colorIdx,lStyle,aHead,anns,addAnn]);
+  /* drag marker handle */
+  const startDrag=useCallback((e,annId,pi)=>{
+    e.preventDefault();e.stopPropagation();setSelId(annId);
+    const r=imgRef.current?.getBoundingClientRect();if(!r)return;
+    const mv=ev=>{ev.preventDefault();const cx=ev.clientX??ev.touches?.[0]?.clientX??0,cy=ev.clientY??ev.touches?.[0]?.clientY??0;
+      setAnns(p=>p.map(a=>{if(a.id!==annId)return a;const pp=[...a.points];pp[pi]={x:clamp((cx-r.left)/r.width,.01,.99),y:clamp((cy-r.top)/r.height,.01,.99)};return{...a,points:pp};}));};
+    const up=()=>{window.removeEventListener("mousemove",mv);window.removeEventListener("touchmove",mv);window.removeEventListener("mouseup",up);window.removeEventListener("touchend",up);};
+    window.addEventListener("mousemove",mv,{passive:false});window.addEventListener("touchmove",mv,{passive:false});window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
+  },[]);
 
+  /* measure modal confirm */
   const confirmMeasure=()=>{
     if(!measuring)return;
     const a={...measuring,title:mIn.title,label:mIn.title,value:mIn.value===""||mIn.value==null?null:parseFloat(mIn.value),unit:mIn.unit,axis:mIn.axis};
@@ -390,273 +408,278 @@ function App(){
   };
   const confirmCalib=()=>{
     const v=parseFloat(mIn.value);if(!v||v<=0){alert("Valor inválido");return;}
-    const rect=containerRef.current?.getBoundingClientRect();if(!rect||!calibAnn)return;
-    const pts=calibAnn.points;const dx=(pts[1].x-pts[0].x)*rect.width,dy=(pts[1].y-pts[0].y)*rect.height;
+    const r=imgRef.current?.getBoundingClientRect();if(!r||!calibAnn)return;
+    const pts=calibAnn.points;const dx=(pts[1].x-pts[0].x)*r.width,dy=(pts[1].y-pts[0].y)*r.height;
     const px=Math.sqrt(dx*dx+dy*dy);setScale({ppu:px/v,unit:mIn.unit});
     updAnn(calibAnn.id,{title:`⚖ ${v}${mIn.unit}`,value:v,unit:mIn.unit});setCalibAnn(null);
   };
-
-  const getCalMeasure=a=>{
+  const getCalibMeasure=a=>{
     if(a.value!=null)return`${a.value} ${a.unit}`;
     if(!scale||!a.points||a.points.length<2)return"?";
-    const rect=containerRef.current?.getBoundingClientRect();if(!rect)return"?";
-    const dx=(a.points[1].x-a.points[0].x)*rect.width,dy=(a.points[1].y-a.points[0].y)*rect.height;
+    const r=imgRef.current?.getBoundingClientRect();if(!r)return"?";
+    const dx=(a.points[1].x-a.points[0].x)*r.width,dy=(a.points[1].y-a.points[0].y)*r.height;
     return`${(Math.sqrt(dx*dx+dy*dy)/scale.ppu).toFixed(1)} ${scale.unit}`;
   };
 
-  const startDrag=useCallback((e,annId,pi)=>{
-    e.preventDefault();e.stopPropagation();setSelId(annId);
-    const rect=containerRef.current?.getBoundingClientRect();if(!rect)return;
-    const mv=ev=>{ev.preventDefault();const cx=ev.clientX??ev.touches?.[0]?.clientX??0,cy=ev.clientY??ev.touches?.[0]?.clientY??0;
-      setAnns(p=>p.map(a=>{if(a.id!==annId)return a;const pp=[...a.points];pp[pi]={x:clamp((cx-rect.left)/rect.width,.01,.99),y:clamp((cy-rect.top)/rect.height,.01,.99)};return{...a,points:pp};}));};
-    const up=()=>{window.removeEventListener("mousemove",mv);window.removeEventListener("touchmove",mv);window.removeEventListener("mouseup",up);window.removeEventListener("touchend",up);};
-    window.addEventListener("mousemove",mv,{passive:false});window.addEventListener("touchmove",mv,{passive:false});window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
-  },[]);
-
-  const applyCrop=(p1,p2)=>{
-    const im=new Image();im.onload=()=>{
+  /* crop */
+  const applyCrop=()=>{
+    if(!cropDlg||!image)return;
+    const{p1,p2}=cropDlg;const im=new Image();im.onload=()=>{
       const c2=document.createElement("canvas");
-      const x1=Math.min(p1.x,p2.x),y1=Math.min(p1.y,p2.y),x2=Math.max(p1.x,p2.x),y2=Math.max(p1.y,p2.y);
+      const x1=Math.min(p1.x,p2.x),y1=Math.min(p1.y,p2.y);
+      const x2=Math.max(p1.x,p2.x),y2=Math.max(p1.y,p2.y);
       c2.width=Math.max(Math.round(im.width*(x2-x1)),1);c2.height=Math.max(Math.round(im.height*(y2-y1)),1);
       c2.getContext("2d").drawImage(im,im.width*x1,im.height*y1,c2.width,c2.height,0,0,c2.width,c2.height);
       setImage(c2.toDataURL("image/jpeg",.9));setAnns([]);setHist([]);setSelId(null);setScale(null);setCropDlg(null);setTool("sel");
     };im.src=image;
   };
 
-  // AI
+  /* camera */
+  const stopCam=()=>{streamRef.current?.getTracks().forEach(t=>t.stop());setCamMode("off");};
+  const startLive=async()=>{setCamMode("starting");try{const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280}}});streamRef.current=s;setTimeout(()=>{if(videoRef.current)videoRef.current.srcObject=s;},60);setCamMode("live");}catch{setCamMode("off");alert("Usa TOMAR FOTO o galería.");}};
+  const capLive=()=>{const v=videoRef.current,c=canvasRef.current;if(!v||!c)return;c.width=v.videoWidth||640;c.height=v.videoHeight||480;c.getContext("2d").drawImage(v,0,0);go(c.toDataURL("image/jpeg",.87));};
+  const handleFile=e=>{const f=e.target.files?.[0];if(!f)return;const rd=new FileReader();rd.onload=ev=>go(ev.target.result);rd.readAsDataURL(f);e.target.value="";};
+
+  const go=img=>{
+    setImage(img);setOrigImage(img);setScr("loading");stopCam();
+    setAnns([]);setHist([]);setSelId(null);setPending([]);pendingRef.current=[];
+    setTool("sel");setErr("");setPiping(null);setAiMsg("");setScale(null);
+    setPreview(null);drawingRef.current=null;
+    identify(img);
+  };
+
+  /* ── AI IDENTIFY ── */
   const identify=async(img)=>{
     const b64=img.split(",")[1];
-    const pr=`You are an expert in identifying objects and technical drawings. Analyze this image carefully.
+    const pr=`IMPORTANTE: Responde SIEMPRE en español. Nunca uses inglés.
 
-IF it shows a piping system, P&ID, isometric piping drawing, or caldery technical drawing: return {"type":"piping","name":"System name in Spanish","dn":100,"material":"carbon_steel","components":[{"id":"1","type":"pipe","dn":100,"length":2000,"orientation":"H"},{"type":"elbow","dn":100,"to_orientation":"V"},{"type":"valve","dn":100,"valve_type":"gate"}]}
+Analiza esta imagen detenidamente.
 
-OTHERWISE for ANY other image (photo, object, drawing, document, etc.): return {"type":"object","name":"name in Spanish","category":"category in Spanish","shape":"box|table|chair|cylinder|sphere|bottle|cone|door|default","desc":"description in Spanish","suggested_measurements":[{"axis":"width","label":"Ancho total"},{"axis":"height","label":"Alto total"},{"axis":"depth","label":"Profundidad"}]}
+SI es un plano técnico de tuberías, P&ID, isométrico de piping o calderería:
+Devuelve: {"type":"piping","name":"nombre","dn":100,"material":"carbon_steel","components":[{"type":"pipe","dn":100,"length":2000,"orientation":"H"},{"type":"elbow","dn":100,"to_orientation":"V"},{"type":"valve","dn":100,"valve_type":"gate"}]}
 
-IMPORTANT: Always return valid JSON. Never return empty or error.`;
+EN CUALQUIER OTRO CASO (fotos de objetos, piezas, herramientas, muebles, etc.):
+Devuelve: {"type":"object","name":"nombre en español","category":"categoría","shape":"box|table|chair|cylinder|sphere|bottle|cone|door|tube|default","desc":"descripción breve en español","measurements":[{"name":"Ancho total","axis":"width","x":0.5,"y":0.3},{"name":"Alto total","axis":"height","x":0.85,"y":0.5},{"name":"Profundidad","axis":"depth","x":0.6,"y":0.75}]}
+
+Las coordenadas x,y son posiciones en la imagen entre 0 y 1.
+Incluye entre 3 y 6 medidas relevantes para el objeto identificado.
+Responde SOLO JSON válido, nada más.`;
     try{
-      const res=await fetch(GAPI,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${getKey()}`},body:JSON.stringify({model:GMOD,max_tokens:600,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:pr}]}]})});
-      const data=await res.json();if(data.error)throw new Error(data.error.message);
+      const res=await fetch(GAPI,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${getKey()}`},body:JSON.stringify({model:GMOD,max_tokens:700,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:pr}]}]})});
+      const data=await res.json();
+      if(data.error)throw new Error(data.error.message);
       const txt=data.choices?.[0]?.message?.content||"{}";
       const info=JSON.parse(txt.replace(/```json|```/g,"").trim());
       if(info.type==="piping"){
         setPiping({components:info.components||[],dn:info.dn||100,label:`${info.name||"Piping"} · DN${info.dn||100} · ${info.material||"CS"}`});
         setObjInfo({name:info.name||"Sistema piping",category:"Calderería",shape:"cylinder",desc:""});
-        setViewTab("pipe3d");setAiMsg(`Plano de piping: ${info.name||""} DN${info.dn||100}.`);
+        setViewTab("pipe3d");setAiMsg(`Plano de piping detectado: ${info.name||""} DN${info.dn||100}.`);
       }else{
         setObjInfo(info);setViewTab("ann");
-        setAiMsg(`Identificado: ${info.name}. ${info.desc||""} Sugiero medir: ${(info.suggested_measurements||[]).map(m=>m.label).join(", ")}.`);
+        setAiMsg(`Identificado: ${info.name}. ${info.desc||""}`);
+        // Crear marcadores automáticos por defecto de la IA
+        if(info.measurements&&info.measurements.length>0){
+          const autoAnns=info.measurements.slice(0,6).map((m,i)=>({
+            id:uid(),type:"dot",icon:"⬤",
+            title:m.name,label:m.name,
+            value:null,unit:"cm",axis:m.axis||"",
+            color:COLS[i%COLS.length],
+            points:[{x:clamp(m.x||.5,.05,.95),y:clamp(m.y||.5,.05,.95)}],
+            lineStyle:"solid",arrowHead:"end",
+            isAI:true
+          }));
+          setAnns(autoAnns);
+          setAiMsg(`Identificado: ${info.name}. ${info.desc||""} · ${autoAnns.length} puntos de medida detectados.`);
+        }
       }
     }catch(e){
       const msg=e.message||"";
-      setErr(msg.includes("401")?"Clave API inválida — ⚙️":"No se identificó automáticamente.");
-      setObjInfo({name:"Objeto sin identificar",category:"",shape:"default",desc:""});
+      setErr(msg.includes("401")?"Clave API inválida — ⚙️":"No se identificó. Continúa manualmente.");
+      setObjInfo({name:"Objeto",category:"",shape:"default",desc:""});
     }finally{setScr("annotate");}
   };
 
+  /* AI assistant */
   const askAI=async()=>{
     if(!image||aiLoad)return;setAiLoad(true);setAiMsg("Analizando...");
     const b64=image.split(",")[1];
     const sum=anns.filter(a=>a.value!=null).map(a=>`${a.title||a.type}: ${a.value}${a.unit}`).join(", ");
-    const pr=`Image measurements so far: ${sum||"none"}. Object: ${objInfo?.name||"unknown"}. In Spanish: 1) What additional measurements should be taken? 2) Any technical observations? Max 3 sentences.`;
+    const pr=`IMPORTANTE: Responde SIEMPRE en español. Nunca uses inglés.
+
+Medidas actuales: ${sum||"ninguna aún"}. Objeto: ${objInfo?.name||"desconocido"}.
+En 3-4 frases: ¿qué medidas adicionales debería tomar? ¿alguna observación técnica?`;
     try{const res=await fetch(GAPI,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${getKey()}`},body:JSON.stringify({model:GMOD,max_tokens:200,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:pr}]}]})});
     const data=await res.json();setAiMsg(data.choices?.[0]?.message?.content||"Sin respuesta.");}
     catch{setAiMsg("Error al contactar IA.");}finally{setAiLoad(false);}
   };
 
-  // Save / Load / Sync
-  const saveProj=()=>{const p={id:uid(),name:projName,title:projTitle,date:new Date().toLocaleDateString("es-ES"),image,origImage,rotation,anns,scale,objInfo,piping};const all=[p,...projects.filter(x=>x.name!==projName)].slice(0,20);localStorage.setItem("ms3_pj",JSON.stringify(all));setProjects(all);setSyncMsg("✓ Guardado");setTimeout(()=>setSyncMsg(""),2000);};
+  /* save/load */
+  const saveProj=()=>{const p={id:uid(),name:projName,title:projTitle,date:new Date().toLocaleDateString("es-ES"),image,origImage,rotation,anns,scale,objInfo,piping};const all=[p,...projects.filter(x=>x.name!==projName)].slice(0,20);localStorage.setItem("ms3_pj",JSON.stringify(all));setProjects(all);setSyncMsg("✓ Guardado");setTimeout(()=>setSyncMsg(""),2500);};
   const loadProj=p=>{setImage(p.image||p.origImage);setOrigImage(p.origImage||p.image);setRotation(p.rotation||0);setAnns(p.anns||[]);setHist([]);setScale(p.scale||null);setObjInfo(p.objInfo);setPiping(p.piping||null);setProjName(p.name);setProjTitle(p.title||"");setSelId(null);setPending([]);setTool("sel");setScr("annotate");setViewTab(p.piping?"pipe3d":"ann");};
   const delProj=(id,e)=>{e.stopPropagation();const all=projects.filter(p=>p.id!==id);localStorage.setItem("ms3_pj",JSON.stringify(all));setProjects(all);};
-  const genSyncLink=()=>{const data={name:projName,title:projTitle,anns,scale,objName:objInfo?.name,shape:objInfo?.shape,piping};const enc=btoa(unescape(encodeURIComponent(JSON.stringify(data))));const url=`${window.location.href.split("?")[0]}?sync=${enc}`;navigator.clipboard?.writeText(url).then(()=>{setSyncMsg("☁ Enlace copiado — ábrelo en cualquier dispositivo");setTimeout(()=>setSyncMsg(""),4000);}).catch(()=>prompt("Copia este enlace:",url));};
+  const genLink=()=>{const d={name:projName,title:projTitle,anns,scale,objName:objInfo?.name,shape:objInfo?.shape,piping};const enc=btoa(unescape(encodeURIComponent(JSON.stringify(d))));const url=`${window.location.href.split("?")[0]}?sync=${enc}`;navigator.clipboard?.writeText(url).then(()=>{setSyncMsg("☁ Enlace copiado — ábrelo en cualquier dispositivo");setTimeout(()=>setSyncMsg(""),4000);}).catch(()=>prompt("Copia este enlace:",url));};
   useEffect(()=>{const p=new URLSearchParams(window.location.search);const s=p.get("sync");if(!s)return;try{const d=JSON.parse(decodeURIComponent(escape(atob(s))));setAnns(d.anns||[]);setScale(d.scale||null);setProjName(d.name||"Proyecto");setProjTitle(d.title||"");setObjInfo({name:d.objName||"Objeto",shape:d.shape||"default",category:""});setPiping(d.piping||null);setAiMsg(`Proyecto "${d.name}" importado. Sube la imagen.`);setScr("camera");window.history.replaceState({},"",window.location.pathname);}catch{};},[]);
 
-  // Export / Share
+  /* export */
   const doCapture=async()=>{if(!captureRef.current)return null;return html2canvas(captureRef.current,{scale:2,useCORS:true,allowTaint:true,backgroundColor:"#07101e"});};
-  const exportPNG=async()=>{try{const cv=await doCapture();const url=cv.toDataURL("image/png");if(navigator.share&&navigator.canShare?.({files:[]})){const blob=await(await fetch(url)).blob();const file=new File([blob],"mediscan.png",{type:"image/png"});if(navigator.canShare({files:[file]})){await navigator.share({title:projName,files:[file]});return;}}const a=document.createElement("a");a.href=url;a.download=`${projName}.png`;a.click();}catch(e){console.error(e);}};
-  const exportPDF=async()=>{try{const cv=await doCapture();const{jsPDF}=window.jspdf;const pdf=new jsPDF({orientation:"landscape"});const W=pdf.internal.pageSize.getWidth(),H=cv.height*(W/cv.width);pdf.setFillColor(7,16,30);pdf.rect(0,0,W,H+14,"F");pdf.addImage(cv.toDataURL("image/jpeg",.92),"JPEG",0,0,W,H);pdf.setFontSize(8);pdf.setTextColor(0,229,196);pdf.text(`${projTitle||projName} · ${new Date().toLocaleDateString("es-ES")}`,3,H+10);pdf.save(`${projName}.pdf`);}catch(e){alert("Error PDF");}};
-  const shareWA=async()=>{
-    try{const cv=await doCapture();const url=cv.toDataURL("image/png");
-    // Try native share first
-    if(navigator.share&&navigator.canShare?.({files:[]})){try{const blob=await(await fetch(url)).blob();const file=new File([blob],"mediscan.png",{type:"image/png"});if(navigator.canShare({files:[file]})){await navigator.share({title:projName,files:[file]});return;}}catch{}}
-    // Fallback: download + open WA
-    const a=document.createElement("a");a.href=url;a.download=`${projName}.png`;a.click();
-    setTimeout(()=>{if(window.confirm("Imagen descargada ✓\n\n¿Abrir WhatsApp ahora?")){window.open("whatsapp://","_blank");}},600);
-    }catch(e){console.error(e);}
-  };
+  const exportPNG=async()=>{try{const cv=await doCapture();const url=cv.toDataURL("image/png");if(navigator.share&&navigator.canShare){try{const blob=await(await fetch(url)).blob();const file=new File([blob],"mediscan.png",{type:"image/png"});if(navigator.canShare({files:[file]})){await navigator.share({title:projName,files:[file]});return;}}catch{}}const a=document.createElement("a");a.href=url;a.download=`${projName}.png`;a.click();}catch(e){console.error(e);}};
+  const exportPDF=async()=>{try{const cv=await doCapture();const{jsPDF}=window.jspdf;const pdf=new jsPDF({orientation:"landscape"});const W=pdf.internal.pageSize.getWidth(),H=cv.height*(W/cv.width);pdf.setFillColor(7,16,30);pdf.rect(0,0,W,H+14,"F");pdf.addImage(cv.toDataURL("image/jpeg",.92),"JPEG",0,0,W,H);pdf.setFontSize(8);pdf.setTextColor(0,229,196);pdf.text(`${projTitle||projName} · ${new Date().toLocaleDateString("es-ES")}`,3,H+10);pdf.save(`${projName}.pdf`);}catch{alert("Error PDF");}};
+  const shareWA=async()=>{try{const cv=await doCapture();const url=cv.toDataURL("image/png");if(navigator.share&&navigator.canShare){try{const blob=await(await fetch(url)).blob();const file=new File([blob],"mediscan.png",{type:"image/png"});if(navigator.canShare({files:[file]})){await navigator.share({title:projName,files:[file]});return;}}catch{}}const a=document.createElement("a");a.href=url;a.download=`${projName}.png`;a.click();setTimeout(()=>{if(window.confirm("Imagen descargada ✓\n¿Abrir WhatsApp?")){window.open("whatsapp://","_blank");}},600);}catch{}};
   const shareEmail=async()=>{try{const cv=await doCapture();const a=document.createElement("a");a.href=cv.toDataURL("image/png");a.download=`${projName}.png`;a.click();setTimeout(()=>alert("Imagen descargada. Adjúntala al email."),400);}catch{}};
 
-  /* ── SVG Annotation Renderer ── */
-  const AnnSVG=useCallback(({a,isPreview})=>{
-    if(!a.points||a.points.length<2)return null;
-    const[p1,p2]=a.points;const col=a.color||(isPreview?"rgba(0,229,196,.6)":"#00e5c4");
+  /* ── SVG renderer ── */
+  const ShapeSVG=({a,isPreview=false})=>{
+    if(!a||!a.points||a.points.length<2)return null;
+    const[p1,p2]=a.points;const col=a.color||"#00e5c4";
     const sw=isPreview?1.5:(selId===a.id?2.8:1.8);
     const x1=`${p1.x*100}%`,y1=`${p1.y*100}%`,x2=`${p2.x*100}%`,y2=`${p2.y*100}%`;
     const mx=`${(p1.x+p2.x)*50}%`,my=`${(p1.y+p2.y)*50}%`;
-    const lm=isPreview?"":getCalMeasure(a);
+    const lm=isPreview?"":getCalibMeasure(a);
     const fs="drop-shadow(0 0 3px #000) drop-shadow(0 0 3px #000)";
-    const aid=`m${a.id||"prev"}`;
-    const lsDash=a.lineStyle==="dashed"?"8,5":a.lineStyle==="dotted"?"2,5":"none";
+    const aid=`m${a.id||"pv"}`;
+    const ld=a.lineStyle==="dashed"?"8,5":a.lineStyle==="dotted"?"2,5":"none";
     const sel=()=>{if(!isPreview){setSelId(a.id);setTool("sel");}};
     if(a.type==="tri"&&a.points.length>=3){const[pp1,pp2,pp3]=a.points;
-      return(<g onClick={e=>{e.stopPropagation();sel();}} style={{cursor:"pointer"}}>
+      return <g onClick={e=>{e.stopPropagation();sel();}} style={{cursor:"pointer"}}>
         <polygon points={`${pp1.x*100}%,${pp1.y*100}% ${pp2.x*100}%,${pp2.y*100}% ${pp3.x*100}%,${pp3.y*100}%`} stroke={col} strokeWidth={sw} fill={`${col}16`}/>
         {!isPreview&&(a.title||a.value!=null)&&<text x={mx} y={my} fill={col} fontSize="2.8%" fontFamily="Space Mono,monospace" textAnchor="middle" dominantBaseline="middle" style={{filter:fs}}>{a.title||""}{a.value!=null?` ${a.value}${a.unit}`:""}</text>}
-      </g>);}
-    if(a.type==="rect"){const rx=Math.min(p1.x,p2.x)*100,ry=Math.min(p1.y,p2.y)*100,rw=Math.abs(p2.x-p1.x)*100,rh=Math.abs(p2.y-p1.y)*100;
-      return(<g onClick={e=>{e.stopPropagation();sel();}} style={{cursor:isPreview?"crosshair":"pointer"}}>
-        <rect x={`${rx}%`} y={`${ry}%`} width={`${rw}%`} height={`${rh}%`} stroke={col} strokeWidth={sw} fill={isPreview?"rgba(0,229,196,.08)":`${col}14`} strokeDasharray={lsDash}/>
-        {!isPreview&&(a.title||a.value!=null)&&<text x={mx} y={my} fill={col} fontSize="2.8%" fontFamily="Space Mono,monospace" textAnchor="middle" dominantBaseline="middle" style={{filter:fs}}>{a.title||""}{a.value!=null?` ${a.value}${a.unit}`:""}</text>}
-      </g>);}
+      </g>;}
+    if(a.type==="rect"||a.type==="crop"){
+      const rx=Math.min(p1.x,p2.x)*100,ry=Math.min(p1.y,p2.y)*100,rw=Math.abs(p2.x-p1.x)*100,rh=Math.abs(p2.y-p1.y)*100;
+      const strokeC=a.type==="crop"?"#ffbb00":col;
+      return <g onClick={e=>{e.stopPropagation();if(a.type!=="crop")sel();}} style={{cursor:"pointer"}}>
+        <rect x={`${rx}%`} y={`${ry}%`} width={`${rw}%`} height={`${rh}%`} stroke={strokeC} strokeWidth={sw} fill={isPreview?`${strokeC}10`:`${strokeC}14`} strokeDasharray={a.type==="crop"?"8,4":ld}/>
+        {!isPreview&&a.type!=="crop"&&(a.title||a.value!=null)&&<text x={mx} y={my} fill={col} fontSize="2.8%" fontFamily="Space Mono,monospace" textAnchor="middle" dominantBaseline="middle" style={{filter:fs}}>{a.title||""}{a.value!=null?` ${a.value}${a.unit}`:""}</text>}
+      </g>;}
     if(a.type==="circ"){const r=Math.sqrt(Math.pow((p2.x-p1.x)*100,2)+Math.pow((p2.y-p1.y)*100,2));
-      return(<g onClick={e=>{e.stopPropagation();sel();}} style={{cursor:isPreview?"crosshair":"pointer"}}>
-        <circle cx={x1} cy={y1} r={`${r}%`} stroke={col} strokeWidth={sw} fill={isPreview?"rgba(0,229,196,.08)":`${col}12`} strokeDasharray={lsDash}/>
+      return <g onClick={e=>{e.stopPropagation();sel();}} style={{cursor:"pointer"}}>
+        <circle cx={x1} cy={y1} r={`${r}%`} stroke={col} strokeWidth={sw} fill={isPreview?`${col}10`:`${col}12`} strokeDasharray={ld}/>
         {!isPreview&&(a.title||a.value!=null)&&<text x={x1} y={y1} fill={col} fontSize="2.8%" fontFamily="Space Mono,monospace" textAnchor="middle" dominantBaseline="middle" style={{filter:fs}}>{a.title||""}{a.value!=null?` ⌀${a.value}${a.unit}`:""}</text>}
-      </g>);}
-    if(a.type==="crop"){const rx=Math.min(p1.x,p2.x)*100,ry=Math.min(p1.y,p2.y)*100,rw=Math.abs(p2.x-p1.x)*100,rh=Math.abs(p2.y-p1.y)*100;
-      return(<rect x={`${rx}%`} y={`${ry}%`} width={`${rw}%`} height={`${rh}%`} stroke="#ffbb00" strokeWidth={2} fill="rgba(255,187,0,.08)" strokeDasharray="8,4"/>);}
-    // Lines and arrows
-    const isDim=a.type==="dim",dbl=a.type==="arr3",isDist=a.type==="dist";
-    return(<g onClick={e=>{e.stopPropagation();sel();}} style={{cursor:isPreview?"crosshair":"pointer"}}>
+      </g>;}
+    const isDim=a.type==="dim"||a.type==="dist";
+    const dbl=a.type==="dist"||a.type==="arr4"||(a.arrowHead==="both");
+    const noArr=a.arrowHead==="none";
+    return <g onClick={e=>{e.stopPropagation();sel();}} style={{cursor:isPreview?"crosshair":"pointer"}}>
       <defs>
         <marker id={aid+"e"} markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3z" fill={col}/></marker>
-        {(dbl||isDist)&&<marker id={aid+"s"} markerWidth="8" markerHeight="8" refX="2" refY="3" orient="auto-start-reverse"><path d="M0,0 L0,6 L8,3z" fill={col}/></marker>}
+        {dbl&&<marker id={aid+"s"} markerWidth="8" markerHeight="8" refX="2" refY="3" orient="auto-start-reverse"><path d="M0,0 L0,6 L8,3z" fill={col}/></marker>}
       </defs>
-      <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={col} strokeWidth={a.type==="arr2"?sw+1.5:sw}
-        strokeDasharray={lsDash}
-        markerEnd={["line","dim","dist","arr1","arr2","arr3","arr4","arr5"].includes(a.type)?`url(#${aid+"e"})`:"none"}
-        markerStart={(dbl||isDist)?`url(#${aid+"s"})`:"none"}/>
-      {(isDim||isDist)&&<>
+      <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={col} strokeWidth={a.type==="arr2"?sw+1.5:sw} strokeDasharray={ld}
+        markerEnd={!noArr&&["line","dim","dist","arr1","arr2","arr3","arr4"].includes(a.type)?`url(#${aid+"e"})`:"none"}
+        markerStart={dbl?`url(#${aid+"s"})`:"none"}/>
+      {isDim&&<>
         <line x1={`${p1.x*100}%`} y1={`${(p1.y-.025)*100}%`} x2={`${p1.x*100}%`} y2={`${(p1.y+.025)*100}%`} stroke={col} strokeWidth={sw+1}/>
         <line x1={`${p2.x*100}%`} y1={`${(p2.y-.025)*100}%`} x2={`${p2.x*100}%`} y2={`${(p2.y+.025)*100}%`} stroke={col} strokeWidth={sw+1}/>
       </>}
       {!isPreview&&<text x={mx} y={my} dy="-3.5%" fill={col} fontSize="2.8%" fontFamily="Space Mono,monospace" textAnchor="middle" style={{filter:fs}}>{a.title?`${a.title}: `:""}{lm}</text>}
-    </g>);
-  },[selId,scale,anns]);
+    </g>;
+  };
 
-  const MARKER_TYPES2=["pin","dot","star","diam","tgt","txt"];
-  const markerAnns=anns.filter(a=>MARKER_TYPES2.includes(a.type));
-  const shapeAnns=anns.filter(a=>!MARKER_TYPES2.includes(a.type));
+  const markerAnns=anns.filter(a=>MRK.includes(a.type));
+  const shapeAnns=anns.filter(a=>!MRK.includes(a.type));
 
-  // Live preview while drawing
-  const previewAnn=useMemo(()=>{
-    if(!mousePos)return null;
-    if(dragDraw&&DRAG_DRAW.includes(tool)&&tool!=="crop"){
-      return{id:"prev",type:tool,points:[dragDraw,mousePos],color:"rgba(0,229,196,.7)"};
-    }
-    if(pending.length===1&&!DRAG_DRAW.includes(tool)&&!MARKER_TYPES2.includes(tool)){
-      return{id:"prev",type:tool,points:[pending[0],mousePos],color:"rgba(0,229,196,.7)"};
-    }
-    if(dragDraw&&tool==="crop"){
-      return{id:"prev",type:"crop",points:[dragDraw,mousePos]};
-    }
-    return null;
-  },[mousePos,dragDraw,tool,pending]);
-
-  /* Styles */
-  const cardMain={background:"linear-gradient(135deg,rgba(5,15,35,.92),rgba(8,20,44,.9))",border:"1px solid rgba(0,229,196,.22)",borderRadius:"12px",overflow:"hidden"};
-  const card1={background:"linear-gradient(135deg,rgba(0,20,50,.88),rgba(0,30,62,.85))",border:"1px solid rgba(0,120,200,.35)",borderRadius:"12px",overflow:"hidden"};
-  const card2={background:"linear-gradient(135deg,rgba(28,0,58,.82),rgba(20,0,52,.85))",border:"1px solid rgba(120,60,220,.3)",borderRadius:"12px",overflow:"hidden"};
-  const card3={background:"linear-gradient(135deg,rgba(0,42,35,.86),rgba(0,32,28,.88))",border:"1px solid rgba(0,180,140,.3)",borderRadius:"12px",overflow:"hidden"};
-  const card4={background:"linear-gradient(135deg,rgba(50,25,0,.82),rgba(42,18,0,.85))",border:"1px solid rgba(220,140,0,.3)",borderRadius:"12px",overflow:"hidden"};
-  const lbl=(t,col="#00e5c4")=><div style={{padding:"6px 12px",fontSize:"8px",letterSpacing:".18em",color:col,textTransform:"uppercase",borderBottom:"1px solid rgba(255,255,255,.06)",background:"rgba(255,255,255,.02)",display:"flex",alignItems:"center",gap:"6px"}}>{t}</div>;
+  /* ── Styles ── */
+  const C={acc:"#00e5c4",bdr:"rgba(0,229,196,.22)"};
+  const card=(border="rgba(0,229,196,.22)",bg="rgba(5,15,35,.9)")=>({background:`linear-gradient(135deg,${bg},rgba(8,20,42,.88))`,border:`1px solid ${border}`,borderRadius:"12px",overflow:"hidden"});
+  const lbl=(t,col="#00e5c4")=><div style={{padding:"7px 12px",fontSize:"8px",letterSpacing:".18em",color:col,textTransform:"uppercase",borderBottom:"1px solid rgba(255,255,255,.06)",background:"rgba(255,255,255,.025)",display:"flex",alignItems:"center",gap:"6px"}}>{t}</div>;
   const tabS=a=>({flex:1,padding:"7px 3px",borderRadius:"7px",background:a?"linear-gradient(135deg,#00e5c4,#00b89a)":"transparent",color:a?"#070f1e":"#4477aa",border:`1px solid ${a?"#00e5c4":"rgba(0,150,180,.22)"}`,fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",fontWeight:a?700:400});
-  const uBtn=a=>({padding:"5px 7px",background:a?"rgba(0,229,196,.18)":"transparent",color:a?"#00e5c4":"#3a6878",border:`1px solid ${a?"rgba(0,229,196,.5)":"rgba(0,180,180,.2)"}`,borderRadius:"5px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer",fontWeight:a?700:400});
-  const ACC="#00e5c4";
-  const toolCursor=useMemo(()=>{if(tool==="sel")return"default";if(tool==="crop")return"crosshair";if(dragDraw)return"crosshair";return"crosshair";},[tool,dragDraw]);
-  const closeBtn=(fn)=><button onClick={fn} style={{position:"absolute",top:"10px",right:"12px",background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.15)",color:"#cc8888",borderRadius:"50%",width:"24px",height:"24px",cursor:"pointer",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",zIndex:10}}>✕</button>;
+  const uBt=a=>({padding:"5px 7px",background:a?"rgba(0,229,196,.18)":"transparent",color:a?"#00e5c4":"#3a6878",border:`1px solid ${a?"rgba(0,229,196,.5)":"rgba(0,180,180,.2)"}`,borderRadius:"5px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer",fontWeight:a?700:400});
+  const closeX=fn=><button onClick={fn} style={{position:"absolute",top:"10px",right:"12px",background:"rgba(255,100,100,.15)",border:"1px solid rgba(255,100,100,.3)",color:"#ff8888",borderRadius:"50%",width:"26px",height:"26px",cursor:"pointer",fontSize:"14px",display:"flex",alignItems:"center",justifyContent:"center",zIndex:20,lineHeight:1}}>✕</button>;
+  const toolCursor=tool==="sel"?"default":DRAG_TOOLS.includes(tool)?"crosshair":"crosshair";
 
   return(
 <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#06101e,#0a1628,#070f1e)",color:"#d0e8f8",fontFamily:"'Space Mono',monospace",display:"flex",flexDirection:"column",maxWidth:"500px",margin:"0 auto"}}>
 
-{/* HEADER */}
-<div style={{padding:"9px 12px",display:"flex",alignItems:"center",gap:"7px",background:"rgba(4,10,22,.96)",backdropFilter:"blur(18px)",borderBottom:"1px solid rgba(0,229,196,.18)",position:"sticky",top:0,zIndex:300,boxShadow:"0 2px 22px rgba(0,0,0,.5)"}}>
-  <div style={{width:"8px",height:"8px",borderRadius:"50%",background:ACC,boxShadow:`0 0 10px ${ACC}`}} className="blink"/>
+{/* ─ HEADER ─ */}
+<div style={{padding:"9px 13px",display:"flex",alignItems:"center",gap:"7px",background:"rgba(4,10,22,.96)",backdropFilter:"blur(18px)",borderBottom:"1px solid rgba(0,229,196,.18)",position:"sticky",top:0,zIndex:300,boxShadow:"0 2px 22px rgba(0,0,0,.5)"}}>
+  <div style={{width:"8px",height:"8px",borderRadius:"50%",background:"#00e5c4",boxShadow:"0 0 10px #00e5c4"}} className="blink"/>
   <div style={{flex:1}}>
     <div style={{fontFamily:"'Syne',sans-serif",fontSize:"14px",fontWeight:800,background:"linear-gradient(90deg,#00e5c4,#44aaff)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>MediScan 3D Pro</div>
     <div style={{fontSize:"7px",color:"#3a6878",letterSpacing:".08em"}}>IA · Mide · Modela · Exporta · Sincroniza</div>
   </div>
-  {scr==="annotate"&&<button onClick={()=>setScr("home")} style={{background:"rgba(0,229,196,.1)",border:"1px solid rgba(0,229,196,.3)",color:ACC,borderRadius:"7px",padding:"4px 8px",fontSize:"11px",cursor:"pointer"}}>🏠</button>}
-  <button onClick={()=>setScr("setup")} style={{background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.12)",color:"#7aaabb",borderRadius:"7px",padding:"4px 8px",fontSize:"11px",cursor:"pointer"}}>⚙️</button>
+  {scr==="annotate"&&<button onClick={()=>setScr("home")} style={{background:"rgba(0,229,196,.1)",border:"1px solid rgba(0,229,196,.3)",color:"#00e5c4",borderRadius:"7px",padding:"4px 9px",fontSize:"11px",cursor:"pointer"}}>🏠</button>}
+  <button onClick={()=>setScr("setup")} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",color:"#7aaabb",borderRadius:"7px",padding:"4px 9px",fontSize:"11px",cursor:"pointer"}}>⚙️</button>
 </div>
 
 <div style={{flex:1,padding:"9px",display:"flex",flexDirection:"column",gap:"8px",overflowY:"auto"}}>
 
-{/* HOME */}
+{/* ═══ HOME ═══ */}
 {scr==="home"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
   <button onClick={()=>setScr("camera")} style={{width:"100%",padding:"15px",background:"linear-gradient(135deg,#00e5c4,#0099ff,#7744ff)",color:"#fff",border:"none",borderRadius:"12px",fontSize:"12px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer",letterSpacing:".1em",boxShadow:"0 4px 22px rgba(0,229,196,.35)"}}>＋ NUEVO PROYECTO</button>
-  {projects.length>0?(<div style={cardMain}>{lbl("📁 Proyectos guardados")}
+  {projects.length>0?(<div style={card()}>{lbl("📁 Proyectos guardados")}
     {projects.map(p=>(<div key={p.id} onClick={()=>loadProj(p)} style={{display:"flex",alignItems:"center",gap:"9px",padding:"9px 12px",borderBottom:"1px solid rgba(255,255,255,.05)",cursor:"pointer"}}>
       {p.image&&<img src={p.image} style={{width:"40px",height:"30px",objectFit:"cover",borderRadius:"6px",opacity:.85,border:"1px solid rgba(0,229,196,.25)"}}/>}
-      <div style={{flex:1}}><div style={{fontSize:"9px",color:"#d0e8f8",fontWeight:700}}>{p.name}</div><div style={{fontSize:"7px",color:"#4477aa"}}>{p.date} · {p.objInfo?.name||"?"} · {(p.anns||[]).length} ann.</div></div>
+      <div style={{flex:1}}><div style={{fontSize:"9px",color:"#d0e8f8",fontWeight:700}}>{p.name}</div><div style={{fontSize:"7px",color:"#4477aa"}}>{p.date} · {p.objInfo?.name||"?"} · {(p.anns||[]).length} medidas</div></div>
       <button onClick={e=>delProj(p.id,e)} style={{background:"transparent",border:"none",color:"#ff5566",cursor:"pointer",fontSize:"14px",opacity:.7}}>✕</button>
     </div>))}
   </div>):(<div style={{textAlign:"center",padding:"22px",fontSize:"9px",color:"#3a6878"}}>Sin proyectos guardados</div>)}
 </div>)}
 
-{/* SETUP */}
+{/* ═══ SETUP ═══ */}
 {scr==="setup"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-  <div style={{textAlign:"center",padding:"10px 0 4px"}}><div style={{fontSize:"26px",marginBottom:"4px"}}>🔑</div><div style={{fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:800,color:"#fff",marginBottom:"2px"}}>Clave API de Groq</div><div style={{fontSize:"7px",color:"#7aaabb",lineHeight:1.7}}>Gratis en <span style={{color:ACC}}>console.groq.com</span> → API Keys</div></div>
-  <div style={{...cardMain,padding:"13px",display:"flex",flexDirection:"column",gap:"8px"}}>
+  <div style={{textAlign:"center",padding:"10px 0 4px"}}><div style={{fontSize:"26px",marginBottom:"4px"}}>🔑</div><div style={{fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:800,color:"#fff",marginBottom:"2px"}}>Clave API de Groq</div><div style={{fontSize:"7px",color:"#7aaabb",lineHeight:1.7}}>Gratis en <span style={{color:"#00e5c4"}}>console.groq.com</span> → API Keys</div></div>
+  <div style={{...card(),padding:"13px",display:"flex",flexDirection:"column",gap:"8px"}}>
     <input type="text" placeholder="gsk_xxxxxxxxxxxxxxxx" value={keyIn} onChange={e=>setKeyIn(e.target.value.trim())} style={{width:"100%",padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(0,229,196,.3)",borderRadius:"8px",color:"#d0e8f8",fontSize:"10px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
     <button onClick={()=>{if(!keyIn.startsWith("gsk_")){alert("Debe empezar por gsk_");return;}localStorage.setItem("ms3_k",keyIn);setScr("home");}} style={{padding:"10px",background:"linear-gradient(135deg,#00e5c4,#00b89a)",color:"#07101e",border:"none",borderRadius:"8px",fontSize:"10px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer"}}>GUARDAR Y CONTINUAR</button>
   </div>
   {getKey()&&<button onClick={()=>setScr("home")} style={{padding:"8px",background:"transparent",border:"1px solid rgba(255,255,255,.1)",color:"#5577aa",borderRadius:"7px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>← Volver</button>}
 </div>)}
 
-{/* CAMERA */}
+{/* ═══ CAMERA ═══ */}
 {scr==="camera"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-  {aiMsg&&<div style={{...cardMain,padding:"10px 12px",fontSize:"8px",color:"#7aaabb",lineHeight:1.7}}><span style={{color:ACC}}>ℹ </span>{aiMsg}</div>}
-  <div style={cardMain}>{lbl(<><span className="blink" style={{color:"#ff4477"}}>●</span>&nbsp;Cámara en vivo</>)}
+  {aiMsg&&<div style={{...card("rgba(0,229,196,.2)"),padding:"10px 12px",fontSize:"8px",color:"#7aaabb",lineHeight:1.7}}><span style={{color:"#00e5c4"}}>ℹ </span>{aiMsg}</div>}
+  <div style={card()}>{lbl(<><span className="blink" style={{color:"#ff4477"}}>●</span>&nbsp;Cámara en vivo</>)}
     {camMode==="off"&&<div style={{padding:"18px",textAlign:"center"}}><button onClick={startLive} style={{padding:"10px 24px",background:"linear-gradient(135deg,#00e5c4,#0099ff)",color:"#07101e",border:"none",borderRadius:"9px",fontSize:"10px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer",boxShadow:"0 4px 16px rgba(0,229,196,.4)"}}>📹 ACTIVAR VISOR</button></div>}
-    {camMode==="starting"&&<div style={{padding:"18px",textAlign:"center"}}><div style={{width:"28px",height:"28px",borderRadius:"50%",border:"3px solid #1a3a5a",borderTop:`3px solid ${ACC}`,margin:"0 auto"}} className="spin"/></div>}
+    {camMode==="starting"&&<div style={{padding:"18px",textAlign:"center"}}><div style={{width:"28px",height:"28px",borderRadius:"50%",border:"3px solid #1a3a5a",borderTop:"3px solid #00e5c4",margin:"0 auto"}} className="spin"/></div>}
     {camMode==="live"&&(<><div style={{position:"relative",background:"#000",aspectRatio:"4/3"}}>
       <video ref={videoRef} autoPlay playsInline muted style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
-      <div style={{position:"absolute",left:0,right:0,height:"2px",background:`linear-gradient(90deg,transparent,${ACC},transparent)`,animation:"scan 2.5s linear infinite",opacity:.6,pointerEvents:"none"}}/>
+      <div style={{position:"absolute",left:0,right:0,height:"2px",background:"linear-gradient(90deg,transparent,#00e5c4,transparent)",animation:"scan 2.5s linear infinite",opacity:.6,pointerEvents:"none"}}/>
     </div><div style={{display:"flex",gap:"8px",padding:"10px",justifyContent:"center"}}>
       <button onClick={stopCam} style={{padding:"7px 14px",background:"rgba(255,80,80,.14)",border:"1px solid rgba(255,80,80,.4)",color:"#ff7788",borderRadius:"7px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>✕ Cerrar</button>
-      <button onClick={capLive} style={{width:"52px",height:"52px",borderRadius:"50%",border:`3px solid ${ACC}`,background:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 22px rgba(0,229,196,.5)`}}><div style={{width:"36px",height:"36px",borderRadius:"50%",background:"linear-gradient(135deg,#00e5c4,#00b89a)"}}/></button>
+      <button onClick={capLive} style={{width:"52px",height:"52px",borderRadius:"50%",border:"3px solid #00e5c4",background:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 22px rgba(0,229,196,.5)"}}><div style={{width:"36px",height:"36px",borderRadius:"50%",background:"linear-gradient(135deg,#00e5c4,#00b89a)"}}/></button>
     </div></>)}
   </div>
-  <div style={card1}>{lbl("📷 Foto directa o galería","#44aaff")}
+  <div style={card("rgba(68,170,255,.3)")}>{lbl("📷 Foto directa o galería","#44aaff")}
     <div style={{padding:"10px",display:"flex",flexDirection:"column",gap:"7px"}}>
       <button onClick={()=>camInRef.current?.click()} style={{display:"flex",alignItems:"center",gap:"12px",padding:"13px",background:"rgba(0,229,196,.1)",border:"1px solid rgba(0,229,196,.4)",borderRadius:"10px",cursor:"pointer",width:"100%"}}>
-        <span style={{fontSize:"20px"}}>📷</span><div><div style={{fontSize:"10px",fontWeight:700,color:ACC,fontFamily:"'Space Mono',monospace"}}>TOMAR FOTO</div><div style={{fontSize:"7px",color:"#5599bb"}}>Abre la cámara del móvil directamente</div></div>
+        <span style={{fontSize:"20px"}}>📷</span><div><div style={{fontSize:"10px",fontWeight:700,color:"#00e5c4",fontFamily:"'Space Mono',monospace"}}>TOMAR FOTO</div><div style={{fontSize:"7px",color:"#5599bb"}}>Abre la cámara directamente</div></div>
       </button>
       <input ref={camInRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleFile}/>
       <button onClick={()=>uploadRef.current?.click()} style={{display:"flex",alignItems:"center",gap:"12px",padding:"13px",background:"rgba(68,170,255,.08)",border:"1px solid rgba(68,170,255,.3)",borderRadius:"10px",cursor:"pointer",width:"100%"}}>
-        <span style={{fontSize:"20px"}}>🖼</span><div><div style={{fontSize:"10px",fontWeight:700,color:"#44aaff",fontFamily:"'Space Mono',monospace"}}>ELEGIR DE GALERÍA</div><div style={{fontSize:"7px",color:"#5599bb"}}>JPG · PNG · Planos · P&ID · Isométricos</div></div>
+        <span style={{fontSize:"20px"}}>🖼</span><div><div style={{fontSize:"10px",fontWeight:700,color:"#44aaff",fontFamily:"'Space Mono',monospace"}}>GALERÍA / ARCHIVO</div><div style={{fontSize:"7px",color:"#5599bb"}}>JPG · PNG · Planos · P&ID · Isométricos</div></div>
       </button>
       <input ref={uploadRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleFile}/>
     </div>
   </div>
 </div>)}
 
-{/* LOADING */}
-{scr==="loading"&&(<div style={cardMain} className="fade">
+{/* ═══ LOADING ═══ */}
+{scr==="loading"&&(<div style={card()} className="fade">
   {lbl("⚡ Identificando con IA...")}
   {image&&<img src={image} alt="" style={{width:"100%",aspectRatio:"4/3",objectFit:"cover",opacity:.75}}/>}
   <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"10px",padding:"22px"}}>
-    <div style={{width:"34px",height:"34px",borderRadius:"50%",border:"3px solid #1a3a5a",borderTop:`3px solid ${ACC}`}} className="spin"/>
-    <div style={{fontSize:"8px",color:"#4477aa",letterSpacing:".15em",textTransform:"uppercase"}}>Detectando objeto o plano técnico...</div>
+    <div style={{width:"34px",height:"34px",borderRadius:"50%",border:"3px solid #1a3a5a",borderTop:"3px solid #00e5c4"}} className="spin"/>
+    <div style={{fontSize:"8px",color:"#4477aa",letterSpacing:".15em",textTransform:"uppercase"}}>Detectando y colocando puntos de medida...</div>
   </div>
 </div>)}
 
-{/* ANNOTATE */}
+{/* ═══ ANNOTATE ═══ */}
 {scr==="annotate"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
 
-  {/* Project header */}
-  <div style={{display:"flex",gap:"5px",alignItems:"center",flexWrap:"wrap"}}>
-    <input value={projName} onChange={e=>setProjName(e.target.value)} placeholder="Nombre proyecto" style={{flex:1,minWidth:"80px",padding:"7px 10px",background:"rgba(0,10,25,.8)",border:"1px solid rgba(0,229,196,.3)",borderRadius:"7px",color:ACC,fontSize:"10px",fontFamily:"'Syne',sans-serif",fontWeight:700,outline:"none"}}/>
+  {/* Header row */}
+  <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+    <input value={projName} onChange={e=>setProjName(e.target.value)} placeholder="Nombre" style={{flex:1,minWidth:"80px",padding:"7px 10px",background:"rgba(0,10,25,.8)",border:"1px solid rgba(0,229,196,.3)",borderRadius:"7px",color:"#00e5c4",fontSize:"10px",fontFamily:"'Syne',sans-serif",fontWeight:700,outline:"none"}}/>
     <input value={projTitle} onChange={e=>setProjTitle(e.target.value)} placeholder="Título del plano..." style={{flex:2,minWidth:"100px",padding:"7px 10px",background:"rgba(0,10,25,.7)",border:"1px solid rgba(68,170,255,.2)",borderRadius:"7px",color:"#d0e8f8",fontSize:"9px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
-    <button onClick={saveProj} style={{padding:"7px 10px",background:"rgba(0,229,196,.12)",border:"1px solid rgba(0,229,196,.35)",color:ACC,borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>💾</button>
+    <button onClick={saveProj} style={{padding:"7px 10px",background:"rgba(0,229,196,.12)",border:"1px solid rgba(0,229,196,.35)",color:"#00e5c4",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>💾</button>
     <button onClick={()=>setScr("camera")} style={{padding:"7px 9px",background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",color:"#5577aa",borderRadius:"7px",fontSize:"8px",cursor:"pointer"}}>↩</button>
   </div>
-  {syncMsg&&<div style={{fontSize:"8px",color:ACC,padding:"4px 10px",background:"rgba(0,229,196,.08)",borderRadius:"6px",border:"1px solid rgba(0,229,196,.2)"}}>{syncMsg}</div>}
+  {syncMsg&&<div style={{fontSize:"8px",color:"#00e5c4",padding:"4px 10px",background:"rgba(0,229,196,.08)",borderRadius:"6px",border:"1px solid rgba(0,229,196,.2)"}}>{syncMsg}</div>}
   {err&&<div style={{fontSize:"8px",color:"#ff7788",padding:"5px 10px",background:"rgba(255,80,80,.07)",borderRadius:"7px",border:"1px solid rgba(255,100,100,.22)"}}>{err}</div>}
-  {objInfo?.name&&<div style={{fontSize:"8px",padding:"2px"}}><span style={{background:"linear-gradient(90deg,#00e5c4,#44aaff)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontWeight:700}}>{objInfo.name}</span>{objInfo.category?<span style={{color:"#4477aa"}}> · {objInfo.category}</span>:null}{piping&&<span style={{color:"#ffbb00"}}> · DN{piping.dn}</span>}</div>}
+  {objInfo?.name&&<div style={{fontSize:"8px",padding:"1px"}}><span style={{background:"linear-gradient(90deg,#00e5c4,#44aaff)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontWeight:700}}>{objInfo.name}</span>{objInfo.category?<span style={{color:"#4477aa"}}> · {objInfo.category}</span>:null}{piping&&<span style={{color:"#ffbb00"}}> · DN{piping.dn}</span>}</div>}
 
-  {/* MAIN CARD with tabs */}
-  <div style={cardMain}>
+  {/* MAIN CARD */}
+  <div style={card()}>
+    {/* Tabs */}
     <div style={{display:"flex",gap:"4px",padding:"7px 9px",borderBottom:"1px solid rgba(255,255,255,.07)",flexWrap:"wrap"}}>
       {!piping&&<button style={tabS(viewTab==="ann")} onClick={()=>setViewTab("ann")}>✏ Anotar</button>}
       {!piping&&<button style={tabS(viewTab==="2d")} onClick={()=>setViewTab("2d")}>📐 2D</button>}
@@ -665,67 +688,68 @@ IMPORTANT: Always return valid JSON. Never return empty or error.`;
       {piping&&<button style={tabS(viewTab==="picomp")} onClick={()=>setViewTab("picomp")}>📋 Comp.</button>}
     </div>
 
-    {/* ANNOTATE TAB */}
+    {/* ── ANNOTATE TAB ── */}
     {viewTab==="ann"&&(<>
-      {/* Category tabs */}
+      {/* Category selector */}
       <div style={{display:"flex",gap:"3px",padding:"5px 8px",borderBottom:"1px solid rgba(255,255,255,.05)",overflowX:"auto"}}>
-        {Object.keys(toolsByCategory).map(cat=><button key={cat} onClick={()=>setToolCat(cat)} style={{padding:"4px 8px",borderRadius:"5px",background:toolCat===cat?"rgba(0,229,196,.14)":"transparent",color:toolCat===cat?ACC:"#3a6070",border:`1px solid ${toolCat===cat?"rgba(0,229,196,.38)":"rgba(0,229,196,.08)"}`,fontSize:"7px",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"'Space Mono',monospace"}}>{CATS[cat]}</button>)}
+        {Object.keys(toolsByCategory).map(cat=><button key={cat} onClick={()=>setToolCat(cat)} style={{padding:"4px 8px",borderRadius:"5px",background:toolCat===cat?"rgba(0,229,196,.14)":"transparent",color:toolCat===cat?"#00e5c4":"#3a6070",border:`1px solid ${toolCat===cat?"rgba(0,229,196,.38)":"rgba(0,229,196,.08)"}`,fontSize:"7px",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"'Space Mono',monospace"}}>{CATS[cat]}</button>)}
       </div>
       {/* Tools */}
       <div style={{display:"flex",gap:"3px",padding:"5px 8px",borderBottom:"1px solid rgba(255,255,255,.05)",flexWrap:"wrap",alignItems:"center"}}>
-        {(toolsByCategory[toolCat]||[]).map(t=><button key={t.id} title={t.label} onClick={()=>{setTool(t.id);setPending([]);setDragDraw(null);}}
-          style={{padding:"5px 8px",borderRadius:"6px",background:tool===t.id?"linear-gradient(135deg,#00e5c4,#00b89a)":"rgba(255,255,255,.04)",color:tool===t.id?"#07101e":"#7799bb",border:`1px solid ${tool===t.id?"#00e5c4":"rgba(0,229,196,.14)"}`,fontSize:"13px",cursor:"pointer",boxShadow:tool===t.id?`0 0 10px rgba(0,229,196,.4)`:"none"}}>{t.icon}</button>)}
-        <button title="Seleccionar/Mover" onClick={()=>{setTool("sel");setPending([]);setDragDraw(null);}} style={{padding:"5px 8px",borderRadius:"6px",background:tool==="sel"?"linear-gradient(135deg,#00e5c4,#00b89a)":"rgba(255,255,255,.04)",color:tool==="sel"?"#07101e":"#7799bb",border:`1px solid ${tool==="sel"?"#00e5c4":"rgba(0,229,196,.14)"}`,fontSize:"13px",cursor:"pointer",marginLeft:"auto"}}>↖</button>
+        {(toolsByCategory[toolCat]||[]).map(t=><button key={t.id} title={t.label} onClick={()=>{setTool(t.id);setPending([]);pendingRef.current=[];setPreview(null);drawingRef.current=null;}}
+          style={{padding:"5px 8px",borderRadius:"6px",background:tool===t.id?"linear-gradient(135deg,#00e5c4,#00b89a)":"rgba(255,255,255,.04)",color:tool===t.id?"#07101e":"#7799bb",border:`1px solid ${tool===t.id?"#00e5c4":"rgba(0,229,196,.14)"}`,fontSize:"13px",cursor:"pointer",boxShadow:tool===t.id?"0 0 10px rgba(0,229,196,.4)":"none"}}>{t.icon}</button>)}
+        <button title="Mover/Seleccionar" onClick={()=>{setTool("sel");setPending([]);pendingRef.current=[];setPreview(null);}} style={{padding:"5px 8px",borderRadius:"6px",background:tool==="sel"?"linear-gradient(135deg,#00e5c4,#00b89a)":"rgba(255,255,255,.04)",color:tool==="sel"?"#07101e":"#7799bb",border:`1px solid ${tool==="sel"?"#00e5c4":"rgba(0,229,196,.14)"}`,fontSize:"13px",cursor:"pointer",marginLeft:"auto"}}>↖</button>
         {COLS.slice(0,6).map((c,i)=><div key={c} onClick={()=>setColorIdx(i)} style={{width:"13px",height:"13px",borderRadius:"50%",background:c,cursor:"pointer",border:colorIdx===i?"2.5px solid #fff":"2px solid transparent",boxShadow:colorIdx===i?`0 0 6px ${c}`:"none"}}/>)}
       </div>
-      {/* Line/shape style options — only when relevant tool selected */}
-      {showStyleOpts&&(<div style={{padding:"5px 8px",borderBottom:"1px solid rgba(255,255,255,.05)",display:"flex",gap:"4px",flexWrap:"wrap",alignItems:"center",background:"rgba(0,229,196,.03)"}}>
-        <span style={{fontSize:"7px",color:ACC,letterSpacing:".1em"}}>ESTILO:</span>
-        {[["solid","━━ Continua"],["dashed","┄┄ Discontinua"],["dotted","···· Punteada"]].map(([v,lb])=><button key={v} onClick={()=>setLStyle(v)} style={{padding:"3px 7px",borderRadius:"4px",background:lStyle===v?"rgba(0,229,196,.18)":"transparent",color:lStyle===v?ACC:"#3a6878",border:`1px solid ${lStyle===v?"rgba(0,229,196,.45)":"rgba(0,229,196,.1)"}`,fontSize:"7px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>{lb}</button>)}
-        {["arr1","arr2","arr3","arr4","arr5","dist"].includes(tool)&&<>
+      {/* Style options */}
+      {showStyleOpts&&<div style={{padding:"5px 8px",borderBottom:"1px solid rgba(255,255,255,.05)",display:"flex",gap:"4px",flexWrap:"wrap",alignItems:"center",background:"rgba(0,229,196,.03)"}}>
+        <span style={{fontSize:"7px",color:"#00e5c4",letterSpacing:".1em"}}>ESTILO:</span>
+        {[["solid","━ Continua"],["dashed","┄ Discontinua"],["dotted","··· Punteada"]].map(([v,lb])=><button key={v} onClick={()=>setLStyle(v)} style={{padding:"3px 7px",borderRadius:"4px",background:lStyle===v?"rgba(0,229,196,.18)":"transparent",color:lStyle===v?"#00e5c4":"#3a6878",border:`1px solid ${lStyle===v?"rgba(0,229,196,.45)":"rgba(0,229,196,.1)"}`,fontSize:"7px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>{lb}</button>)}
+        {["arr1","arr2","arr3","arr4","dist"].includes(tool)&&<>
           <span style={{fontSize:"7px",color:"#44aaff",letterSpacing:".1em",marginLeft:"4px"}}>FLECHA:</span>
           {[["end","→ Final"],["both","↔ Ambas"],["none","─ Sin"]].map(([v,lb])=><button key={v} onClick={()=>setAHead(v)} style={{padding:"3px 7px",borderRadius:"4px",background:aHead===v?"rgba(68,170,255,.18)":"transparent",color:aHead===v?"#44aaff":"#3a6878",border:`1px solid ${aHead===v?"rgba(68,170,255,.45)":"rgba(68,170,255,.1)"}`,fontSize:"7px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>{lb}</button>)}
         </>}
-      </div>)}
-      {/* Hint + undo */}
+      </div>}
+      {/* Hint bar */}
       <div style={{padding:"3px 9px",fontSize:"7px",color:"#2a5070",borderBottom:"1px solid rgba(255,255,255,.04)",display:"flex",alignItems:"center",gap:"5px"}}>
         <span style={{flex:1}}>
-          {tool==="sel"?"↖ Toca elemento · Arrastra para mover":
-           tool==="calib"?"⚖ Dibuja línea sobre medida conocida":
-           tool==="crop"?"✂ Arrastra para seleccionar zona a recortar":
-           DRAG_DRAW.includes(tool)?"Arrastra para dibujar · suelta para confirmar medida":
-           pending.length>0?`Toca para colocar punto ${pending.length+1}`:
-           TOOLS.find(t=>t.id===tool)?.label+" · toca en la imagen"}
+          {tool==="sel"?"↖ Toca para seleccionar · Arrastra para mover":
+           tool==="calib"?"⚖ Haz clic en dos puntos de medida conocida":
+           tool==="crop"?"✂ Arrastra para seleccionar zona":
+           DRAG_TOOLS.includes(tool)?"Arrastra en la imagen → suelta → añade medida":
+           pending.length>0?`▸ Toca para colocar punto ${pending.length+1}`:
+           `${TOOLS.find(t=>t.id===tool)?.label} · Toca en la imagen`}
         </span>
-        {(pending.length>0||dragDraw)&&<button onClick={()=>{setPending([]);setDragDraw(null);}} style={{background:"transparent",border:"none",color:"#ff5566",cursor:"pointer",fontSize:"8px"}}>✕</button>}
-        <button onClick={undo} disabled={!hist.length} style={{padding:"2px 6px",background:"transparent",border:`1px solid ${hist.length?"rgba(0,229,196,.25)":"transparent"}`,color:hist.length?ACC:"#2a5070",borderRadius:"4px",fontSize:"7px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>↩ Undo</button>
+        {(pending.length>0||drawingRef.current)&&<button onClick={()=>{setPending([]);pendingRef.current=[];setPreview(null);drawingRef.current=null;}} style={{background:"transparent",border:"none",color:"#ff5566",cursor:"pointer",fontSize:"9px"}}>✕ Cancelar</button>}
+        <button onClick={undo} disabled={!hist.length} style={{padding:"2px 6px",background:"transparent",border:`1px solid ${hist.length?"rgba(0,229,196,.25)":"transparent"}`,color:hist.length?"#00e5c4":"#2a5070",borderRadius:"4px",fontSize:"7px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>↩ Undo</button>
       </div>
-      {/* CANVAS */}
+      {/* IMAGE CANVAS */}
       <div ref={captureRef} style={{position:"relative",background:"#000",overflow:"hidden"}}>
-        <div ref={containerRef}
-          style={{position:"relative",lineHeight:0,transform:`rotate(${rotation}deg)`,cursor:toolCursor,userSelect:"none"}}
-          onClick={handleCanvasClick}
-          onMouseDown={handlePointerDown}
-          onMouseMove={handlePointerMove}
-          onMouseUp={handlePointerUp}
-          onTouchStart={handlePointerDown}
-          onTouchMove={e=>{handlePointerMove(e.touches[0]);}}
-          onTouchEnd={handlePointerUp}>
-          <img src={image} alt="" draggable="false" style={{width:"100%",display:"block",opacity:.92}}/>
-          <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",overflow:"visible",pointerEvents:"none"}}>
-            {shapeAnns.map(a=><AnnSVG key={a.id} a={a} isPreview={false}/>)}
-            {previewAnn&&<AnnSVG a={previewAnn} isPreview={true}/>}
+        <div ref={imgRef} style={{position:"relative",lineHeight:0,transform:`rotate(${rotation}deg)`,cursor:toolCursor,userSelect:"none"}}>
+          <img src={image} alt="" draggable="false" style={{width:"100%",display:"block",opacity:.9,pointerEvents:"none"}}/>
+          {/* SVG overlay */}
+          <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",overflow:"visible",pointerEvents:"all"}}>
+            {shapeAnns.map(a=><ShapeSVG key={a.id} a={a}/>)}
+            {preview&&<ShapeSVG a={{...preview,id:"pv",color:"rgba(0,229,196,.65)"}} isPreview={true}/>}
             {pending.length===1&&<circle cx={`${pending[0].x*100}%`} cy={`${pending[0].y*100}%`} r="5" fill={COLS[colorIdx%COLS.length]} opacity=".8" pointerEvents="none"/>}
           </svg>
+          {/* Marker dots */}
           {markerAnns.map((a,i)=>(
-            <div key={a.id} className="nt" onMouseDown={e=>startDrag(e,a.id,0)} onTouchStart={e=>startDrag(e,a.id,0)} onClick={e=>{e.stopPropagation();setSelId(a.id);setTool("sel");}}
-              style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",width:"26px",height:"26px",borderRadius:"50%",background:selId===a.id?a.color:"rgba(0,0,0,.85)",border:`2.5px solid ${a.color}`,color:selId===a.id?"#000":a.color,display:"flex",alignItems:"center",justifyContent:"center",cursor:"grab",zIndex:15,boxShadow:`0 0 ${selId===a.id?14:5}px ${a.color}`,fontSize:a.type==="pin"?"18px":"9px",fontWeight:"700"}}>
+            <div key={a.id} className="nc"
+              onMouseDown={e=>startDrag(e,a.id,0)} onTouchStart={e=>startDrag(e,a.id,0)}
+              onClick={e=>{e.stopPropagation();setSelId(a.id);setTool("sel");}}
+              style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",width:"28px",height:"28px",borderRadius:"50%",background:selId===a.id?a.color:"rgba(0,0,0,.85)",border:`2.5px solid ${a.color}`,color:selId===a.id?"#000":a.color,display:"flex",alignItems:"center",justifyContent:"center",cursor:"grab",zIndex:15,boxShadow:`0 0 ${selId===a.id?16:6}px ${a.color}`,fontSize:a.type==="pin"?"18px":"10px",fontWeight:"700"}}>
               {a.type==="pin"?"📍":a.type==="star"?"★":a.type==="diam"?"◆":a.type==="tgt"?"⊕":a.type==="txt"?"T":(i+1)}
-              {(a.title||a.value!=null)&&<div style={{position:"absolute",top:"-22px",left:"50%",transform:"translateX(-50%)",background:"rgba(0,0,0,.9)",color:a.color,fontSize:"7px",padding:"1px 5px",borderRadius:"4px",whiteSpace:"nowrap",fontFamily:"'Space Mono',monospace",border:`1px solid ${a.color}50`}}>{a.title||""}{a.value!=null?` ${a.value}${a.unit}`:""}</div>}
+              {(a.title||a.value!=null)&&<div style={{position:"absolute",top:"-24px",left:"50%",transform:"translateX(-50%)",background:"rgba(0,0,0,.9)",color:a.color,fontSize:"7px",padding:"2px 6px",borderRadius:"4px",whiteSpace:"nowrap",fontFamily:"'Space Mono',monospace",border:`1px solid ${a.color}50`,pointerEvents:"none"}}>
+                {a.title||""}{a.value!=null?` ${a.value}${a.unit}`:""}
+              </div>}
             </div>
           ))}
-          {selAnn&&!MARKER_TYPES2.includes(selAnn.type)&&selAnn.points.map((p,pi)=>(
-            <div key={pi} className="nt" onMouseDown={e=>startDrag(e,selAnn.id,pi)} onTouchStart={e=>startDrag(e,selAnn.id,pi)} style={{position:"absolute",left:`${p.x*100}%`,top:`${p.y*100}%`,transform:"translate(-50%,-50%)",width:"14px",height:"14px",borderRadius:"50%",background:selAnn.color,cursor:"grab",zIndex:25,border:"2.5px solid #fff",boxShadow:`0 0 8px ${selAnn.color}`}}/>
+          {/* Drag handles for selected shape */}
+          {selAnn&&!MRK.includes(selAnn.type)&&selAnn.points.map((p,pi)=>(
+            <div key={pi} className="nc"
+              onMouseDown={e=>startDrag(e,selAnn.id,pi)} onTouchStart={e=>startDrag(e,selAnn.id,pi)}
+              style={{position:"absolute",left:`${p.x*100}%`,top:`${p.y*100}%`,transform:"translate(-50%,-50%)",width:"14px",height:"14px",borderRadius:"50%",background:selAnn.color,cursor:"grab",zIndex:25,border:"2.5px solid #fff",boxShadow:`0 0 8px ${selAnn.color}`}}/>
           ))}
         </div>
       </div>
@@ -739,75 +763,132 @@ IMPORTANT: Always return valid JSON. Never return empty or error.`;
         {scale&&<span style={{fontSize:"7px",color:"#00e5c4",padding:"4px 6px",background:"rgba(0,229,196,.08)",borderRadius:"5px",border:"1px solid rgba(0,229,196,.2)"}}>⚖ 1{scale.unit}={scale.ppu.toFixed(0)}px</span>}
       </div>
     </>)}
-    {viewTab==="2d"&&(<div ref={captureRef}>{lbl("📐 Plano 2D AutoCAD")}{!hasDims&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#5577aa",background:"rgba(0,100,200,.07)",borderBottom:"1px solid rgba(0,100,200,.12)"}}>💡 Asigna eje (Ancho/Alto/Prof.) a una medida para ver las vistas a escala</div>}<View2D anns={anns} objName={projTitle||objInfo?.name} scale2D={scale}/></div>)}
-    {viewTab==="3d"&&(<div ref={captureRef}>{lbl("🎮 Modelo 3D")}{!hasDims&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#5577aa",background:"rgba(0,100,200,.07)",borderBottom:"1px solid rgba(0,100,200,.12)"}}>💡 Sin ejes asignados muestra 100mm. Asigna ejes para escala real.</div>}<V3D anns={anns} shape={objInfo?.shape}/><div style={{display:"flex",flexWrap:"wrap",gap:"5px",padding:"7px 10px",borderTop:"1px solid rgba(255,255,255,.06)",fontSize:"7px"}}>{["width","height","depth"].map(ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?<span key={ax} style={{color:a.color}}>{a.title||ax}: {a.value}{a.unit}</span>:null;})}</div></div>)}
-    {viewTab==="pipe3d"&&piping&&(<div ref={captureRef}>{lbl("🔩 Piping 3D — PBR 3ds Max","#ffbb00")}<V3DPipe components={piping.components} dn={piping.dn}/><div style={{padding:"5px 10px 6px",fontSize:"7px",color:"#5577aa"}}>{piping.label}</div></div>)}
-    {viewTab==="picomp"&&piping&&(<>{lbl("📋 Componentes","#ffbb00")}<div style={{maxHeight:"260px",overflowY:"auto"}}>{(piping.components||[]).map((c,i)=>(<div key={i} style={{padding:"7px 12px",borderBottom:"1px solid rgba(255,255,255,.04)",display:"flex",gap:"8px"}}><div style={{width:"18px",height:"18px",borderRadius:"3px",background:`${COLS[i%COLS.length]}22`,border:`1px solid ${COLS[i%COLS.length]}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"7px",color:COLS[i%COLS.length],fontWeight:700,flexShrink:0}}>{i+1}</div><div><div style={{fontSize:"8px",color:"#d0e8f8",fontWeight:700,textTransform:"capitalize"}}>{c.type?.replace(/_/g," ")}</div><div style={{fontSize:"7px",color:"#4477aa"}}>{c.dn?`DN${c.dn} `:""}{c.length?`L:${c.length}mm `:""}{c.material||""}{c.valve_type?` ${c.valve_type}`:""}</div></div></div>))}</div><div style={{padding:"8px 10px",borderTop:"1px solid rgba(255,255,255,.06)",display:"flex",gap:"5px",alignItems:"center"}}><span style={{fontSize:"7px",color:"#4477aa"}}>DN:</span><input type="number" min="10" value={piping.dn} onChange={e=>setPiping(p=>({...p,dn:parseInt(e.target.value)||p.dn}))} style={{width:"55px",padding:"4px 7px",background:"rgba(0,10,25,.8)",border:"1px solid rgba(255,187,0,.3)",borderRadius:"5px",color:"#ffbb00",fontSize:"11px",fontFamily:"'Space Mono',monospace",outline:"none"}}/><button onClick={()=>setViewTab("pipe3d")} style={{marginLeft:"auto",padding:"5px 10px",background:"linear-gradient(135deg,#ffbb00,#ff8800)",color:"#07101e",border:"none",borderRadius:"6px",fontSize:"8px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer"}}>↗ 3D</button></div></>)}
-  </div>
 
-  {selAnn&&(<div style={{background:"linear-gradient(135deg,rgba(0,42,35,.86),rgba(0,32,28,.88))",border:"1px solid rgba(0,180,140,.3)",borderRadius:"12px",overflow:"hidden",position:"relative"}}>
-    <button onClick={()=>setSelId(null)} style={{position:"absolute",top:"8px",right:"10px",background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.15)",color:"#cc8888",borderRadius:"50%",width:"24px",height:"24px",cursor:"pointer",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",zIndex:10}}>✕</button>
-    {lbl("✏ Editar anotación","#44dd88")}
-    <div style={{padding:"9px 12px",display:"flex",flexDirection:"column",gap:"6px"}}>
-      <div style={{display:"flex",gap:"5px"}}>
-        <input value={selAnn.title||""} placeholder="Título" onChange={e=>updAnn(selId,{title:e.target.value,label:e.target.value})} style={{flex:1,padding:"6px 9px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(68,220,140,.22)",borderRadius:"6px",color:"#d0e8f8",fontSize:"9px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
-        <select value={selAnn.axis||""} onChange={e=>updAnn(selId,{axis:e.target.value})} style={{padding:"6px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(68,220,140,.3)",borderRadius:"6px",color:"#44dd88",fontSize:"8px",fontFamily:"'Space Mono',monospace",outline:"none"}}>
-          <option value="">eje...</option><option value="width">Ancho X</option><option value="height">Alto Y</option><option value="depth">Prof. Z</option><option value="other">Otro</option>
-        </select>
+    {viewTab==="2d"&&(<div ref={captureRef}>{lbl("📐 Plano 2D AutoCAD — Frontal · Lateral · Planta")}
+      {!hasDims&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#5577aa",background:"rgba(0,100,200,.07)",borderBottom:"1px solid rgba(0,100,200,.1)"}}>💡 Toca una medida → editar → asigna Eje (Ancho/Alto/Prof.) → aparecen las 3 vistas</div>}
+      <View2D anns={anns} objName={projTitle||objInfo?.name} sc={scale}/>
+    </div>)}
+
+    {viewTab==="3d"&&(<div ref={captureRef}>{lbl("🎮 Modelo 3D — Arrastra para rotar")}
+      {!hasDims&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#5577aa",background:"rgba(0,100,200,.07)",borderBottom:"1px solid rgba(0,100,200,.1)"}}>💡 Asigna eje a tus medidas para ver la escala real (ahora muestra 100mm por defecto)</div>}
+      <V3D anns={anns} shape={objInfo?.shape}/>
+      <div style={{display:"flex",flexWrap:"wrap",gap:"5px",padding:"7px 10px",borderTop:"1px solid rgba(255,255,255,.06)",fontSize:"7px"}}>
+        <span style={{color:"#ff5555",marginRight:"4px"}}>X=Ancho</span><span style={{color:"#55ff55",marginRight:"4px"}}>Y=Alto</span><span style={{color:"#5555ff",marginRight:"4px"}}>Z=Prof.</span>
+        {["width","height","depth"].map(ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?<span key={ax} style={{color:a.color}}>{a.title||ax}: {a.value}{a.unit}</span>:null;})}
       </div>
-      <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
-        <input type="number" min="0" value={selAnn.value!=null?selAnn.value:""} placeholder="Valor" onChange={e=>updAnn(selId,{value:e.target.value===""?null:parseFloat(e.target.value)})} style={{flex:1,padding:"6px 9px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(0,229,196,.3)",borderRadius:"6px",color:"#00e5c4",fontSize:"13px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
-        <div style={{display:"flex",gap:"2px"}}>{["mm","cm","m","in","ft"].map(u=><button key={u} onClick={()=>updAnn(selId,{unit:u})} style={{padding:"5px 7px",background:(selAnn.unit||"cm")===u?"rgba(0,229,196,.18)":"transparent",color:(selAnn.unit||"cm")===u?"#00e5c4":"#3a6878",border:`1px solid ${(selAnn.unit||"cm")===u?"rgba(0,229,196,.5)":"rgba(0,180,180,.2)"}`,borderRadius:"5px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer",fontWeight:(selAnn.unit||"cm")===u?700:400}}>{u}</button>)}</div>
+    </div>)}
+
+    {viewTab==="pipe3d"&&piping&&(<div ref={captureRef}>{lbl("🔩 Piping 3D — Calidad 3ds Max PBR","#ffbb00")}<V3DPipe components={piping.components} dn={piping.dn}/><div style={{padding:"5px 10px 6px",fontSize:"7px",color:"#5577aa"}}>{piping.label}</div></div>)}
+
+    {viewTab==="picomp"&&piping&&(<>
+      {lbl("📋 Componentes detectados","#ffbb00")}
+      <div style={{maxHeight:"260px",overflowY:"auto"}}>
+        {(piping.components||[]).map((c,i)=>(<div key={i} style={{padding:"7px 12px",borderBottom:"1px solid rgba(255,255,255,.04)",display:"flex",gap:"8px"}}>
+          <div style={{width:"18px",height:"18px",borderRadius:"3px",background:`${COLS[i%COLS.length]}22`,border:`1px solid ${COLS[i%COLS.length]}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"7px",color:COLS[i%COLS.length],fontWeight:700,flexShrink:0}}>{i+1}</div>
+          <div><div style={{fontSize:"8px",color:"#d0e8f8",fontWeight:700,textTransform:"capitalize"}}>{c.type?.replace(/_/g," ")}</div><div style={{fontSize:"7px",color:"#4477aa"}}>{c.dn?`DN${c.dn} `:""}{c.length?`L:${c.length}mm `:""}{c.material||""}{c.valve_type?` ${c.valve_type}`:""}</div></div>
+        </div>))}
       </div>
-      <div style={{display:"flex",gap:"3px",flexWrap:"wrap",alignItems:"center"}}><span style={{fontSize:"7px",color:"#2a5060"}}>COLOR:</span>{COLS.map(c=><div key={c} onClick={()=>updAnn(selId,{color:c})} style={{width:"14px",height:"14px",borderRadius:"50%",background:c,cursor:"pointer",border:selAnn.color===c?"2.5px solid #fff":"2px solid transparent",boxShadow:selAnn.color===c?`0 0 6px ${c}`:"none"}}/>)}</div>
-    </div>
-  </div>)}
-
-  <div style={{background:"linear-gradient(135deg,rgba(28,0,58,.82),rgba(20,0,52,.85))",border:"1px solid rgba(120,60,220,.3)",borderRadius:"12px",overflow:"hidden"}}>
-    {lbl("🤖 Asistente IA","#aa66ff")}
-    <div style={{padding:"8px 12px",borderBottom:"1px solid rgba(170,100,255,.1)"}}><button onClick={askAI} disabled={aiLoad} style={{width:"100%",padding:"8px",background:aiLoad?"rgba(170,100,255,.08)":"linear-gradient(135deg,#aa44ff,#7722dd)",color:aiLoad?"#6644aa":"#fff",border:"none",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:aiLoad?"not-allowed":"pointer"}}>{aiLoad?"⏳ Analizando...":"⚡ Analizar imagen con IA"}</button></div>
-    {aiMsg&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#c0a8f8",lineHeight:1.8}}>{aiMsg}</div>}
-  </div>
-
-  <div style={{background:"linear-gradient(135deg,rgba(50,25,0,.82),rgba(42,18,0,.85))",border:"1px solid rgba(220,140,0,.3)",borderRadius:"12px",overflow:"hidden"}}>
-    <div style={{display:"flex",alignItems:"center",cursor:"pointer"}} onClick={()=>setShowSum(s=>!s)}>{lbl(`📋 Resumen (${anns.filter(a=>a.value!=null).length})`,  "#ffbb00")}<span style={{padding:"5px 10px",color:"#ffbb00",fontSize:"11px"}}>{showSum?"▲":"▼"}</span></div>
-    {showSum&&(<>{anns.filter(a=>a.value!=null).length===0&&<div style={{padding:"12px",fontSize:"8px",color:"#5577aa",textAlign:"center",lineHeight:1.8}}>Dibuja → confirma medida → aparece aquí<br/><span style={{fontSize:"7px",color:"#3a5060"}}>Asigna eje para activar 2D y 3D</span></div>}
-    {anns.filter(a=>a.value!=null).map(a=>(<div key={a.id} onClick={()=>setSelId(a.id)} style={{display:"flex",alignItems:"center",gap:"7px",padding:"7px 12px",background:selId===a.id?"rgba(255,187,0,.06)":"transparent",borderBottom:"1px solid rgba(255,255,255,.04)",cursor:"pointer"}}>
-      <div style={{width:"9px",height:"9px",borderRadius:"50%",background:a.color,flexShrink:0,boxShadow:`0 0 5px ${a.color}`}}/><div style={{flex:1,minWidth:0}}><span style={{fontSize:"8px",color:"#d0e8f8",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.title||a.type}</span>{a.axis&&<span style={{fontSize:"7px",color:"#4477aa"}}>({a.axis==="width"?"Ancho":a.axis==="height"?"Alto":a.axis==="depth"?"Prof.":a.axis})</span>}</div>
-      <span style={{fontSize:"11px",fontWeight:700,color:a.color,flexShrink:0}}>{a.value} {a.unit}</span>
-      <span style={{fontSize:"7px",color:"#3a5070",flexShrink:0}}>{fv(toMM(a.value,a.unit),"mm")}</span>
-      <button onClick={e=>{e.stopPropagation();delAnn(a.id);}} style={{background:"transparent",border:"none",color:"#ff5566",cursor:"pointer",fontSize:"11px",opacity:.7,flexShrink:0}}>✕</button>
-    </div>))}
-    {["width","height","depth"].every(ax=>anns.some(a=>a.axis===ax&&a.value!=null))&&(()=>{const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return toMM(a.value,a.unit);};const vol=gd("width")*gd("height")*gd("depth");return <div style={{padding:"7px 12px",display:"flex",justifyContent:"space-between",fontSize:"8px",borderTop:"1px solid rgba(255,187,0,.15)",background:"rgba(255,187,0,.03)"}}><span style={{color:"#aa8800"}}>📦 Volumen</span><span style={{color:"#ffbb00",fontWeight:700}}>{(vol/1000).toFixed(1)} cm³</span></div>;})()}
+      <div style={{padding:"8px 10px",borderTop:"1px solid rgba(255,255,255,.06)",display:"flex",gap:"5px",alignItems:"center"}}>
+        <span style={{fontSize:"7px",color:"#4477aa"}}>DN:</span>
+        <input type="number" min="10" value={piping.dn} onChange={e=>setPiping(p=>({...p,dn:parseInt(e.target.value)||p.dn}))} style={{width:"55px",padding:"4px 7px",background:"rgba(0,10,25,.8)",border:"1px solid rgba(255,187,0,.3)",borderRadius:"5px",color:"#ffbb00",fontSize:"11px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
+        <button onClick={()=>setViewTab("pipe3d")} style={{marginLeft:"auto",padding:"5px 10px",background:"linear-gradient(135deg,#ffbb00,#ff8800)",color:"#07101e",border:"none",borderRadius:"6px",fontSize:"8px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer"}}>↗ Ver 3D</button>
+      </div>
     </>)}
   </div>
 
-  <div style={{background:"linear-gradient(135deg,rgba(0,20,50,.88),rgba(0,30,62,.85))",border:"1px solid rgba(0,120,200,.35)",borderRadius:"12px",overflow:"hidden"}}>
-    {lbl("📤 Exportar · Compartir · Sincronizar","#44aaff")}
+  {/* EDIT SELECTED */}
+  {selAnn&&(<div style={{...card("rgba(68,220,140,.28)","rgba(0,40,35,.9)"),position:"relative"}}>
+    {closeX(()=>setSelId(null))}
+    {lbl("✏ Editar anotación seleccionada","#44dd88")}
+    <div style={{padding:"9px 12px",display:"flex",flexDirection:"column",gap:"6px"}}>
+      <div style={{display:"flex",gap:"5px"}}>
+        <input value={selAnn.title||""} placeholder="Título / etiqueta" onChange={e=>updAnn(selId,{title:e.target.value,label:e.target.value})} style={{flex:1,padding:"6px 9px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(68,220,140,.22)",borderRadius:"6px",color:"#d0e8f8",fontSize:"9px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
+        <select value={selAnn.axis||""} onChange={e=>updAnn(selId,{axis:e.target.value})} style={{padding:"6px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(68,220,140,.3)",borderRadius:"6px",color:"#44dd88",fontSize:"8px",fontFamily:"'Space Mono',monospace",outline:"none"}}>
+          <option value="">eje...</option><option value="width">Ancho (X)</option><option value="height">Alto (Y)</option><option value="depth">Prof. (Z)</option><option value="other">Otro</option>
+        </select>
+      </div>
+      <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
+        <input type="number" min="0" value={selAnn.value!=null?selAnn.value:""} placeholder="Valor medido" onChange={e=>updAnn(selId,{value:e.target.value===""?null:parseFloat(e.target.value)})} style={{flex:1,padding:"6px 9px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(0,229,196,.3)",borderRadius:"6px",color:"#00e5c4",fontSize:"13px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
+        <div style={{display:"flex",gap:"2px"}}>{["mm","cm","m","in","ft"].map(u=><button key={u} style={uBt((selAnn.unit||"cm")===u)} onClick={()=>updAnn(selId,{unit:u})}>{u}</button>)}</div>
+      </div>
+      <div style={{display:"flex",gap:"3px",flexWrap:"wrap",alignItems:"center"}}>
+        <span style={{fontSize:"7px",color:"#2a5060"}}>COLOR:</span>
+        {COLS.map(c=><div key={c} onClick={()=>updAnn(selId,{color:c})} style={{width:"14px",height:"14px",borderRadius:"50%",background:c,cursor:"pointer",border:selAnn.color===c?"2.5px solid #fff":"2px solid transparent",boxShadow:selAnn.color===c?`0 0 6px ${c}`:"none"}}/>)}
+      </div>
+    </div>
+  </div>)}
+
+  {/* AI ASSISTANT */}
+  <div style={card("rgba(170,100,255,.28)","rgba(28,0,58,.85)")}>
+    {lbl("🤖 Asistente IA — siempre en español","#aa66ff")}
+    <div style={{padding:"8px 12px",borderBottom:"1px solid rgba(170,100,255,.1)"}}>
+      <button onClick={askAI} disabled={aiLoad} style={{width:"100%",padding:"8px",background:aiLoad?"rgba(170,100,255,.08)":"linear-gradient(135deg,#aa44ff,#7722dd)",color:aiLoad?"#6644aa":"#fff",border:"none",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:aiLoad?"not-allowed":"pointer"}}>
+        {aiLoad?"⏳ Analizando...":"⚡ Analizar imagen con IA"}
+      </button>
+    </div>
+    {aiMsg&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#c0a8f8",lineHeight:1.8}}>{aiMsg}</div>}
+  </div>
+
+  {/* RESUMEN */}
+  <div style={card("rgba(220,140,0,.28)","rgba(50,25,0,.82)")}>
+    <div style={{display:"flex",alignItems:"center",cursor:"pointer"}} onClick={()=>setShowSum(s=>!s)}>
+      {lbl(`📋 Resumen de medidas (${anns.filter(a=>a.value!=null).length})`,  "#ffbb00")}
+      <span style={{padding:"5px 10px",color:"#ffbb00",fontSize:"11px"}}>{showSum?"▲":"▼"}</span>
+    </div>
+    {showSum&&(<>
+      {anns.filter(a=>a.value!=null).length===0&&<div style={{padding:"12px",fontSize:"8px",color:"#5577aa",textAlign:"center",lineHeight:1.8}}>
+        {anns.length>0?`${anns.length} puntos de la IA → tócalos para añadir valor`:"Dibuja o toca un punto → añade medida → aparece aquí"}
+      </div>}
+      {anns.filter(a=>a.value!=null).map(a=>(
+        <div key={a.id} onClick={()=>setSelId(a.id)} style={{display:"flex",alignItems:"center",gap:"7px",padding:"7px 12px",background:selId===a.id?"rgba(255,187,0,.06)":"transparent",borderBottom:"1px solid rgba(255,255,255,.04)",cursor:"pointer"}}>
+          <div style={{width:"10px",height:"10px",borderRadius:"50%",background:a.color,flexShrink:0,boxShadow:`0 0 5px ${a.color}`}}/>
+          <div style={{flex:1,minWidth:0}}>
+            <span style={{fontSize:"8px",color:"#d0e8f8",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.title||a.type}</span>
+            {a.axis&&<span style={{fontSize:"7px",color:"#4477aa"}}>({a.axis==="width"?"Ancho":a.axis==="height"?"Alto":a.axis==="depth"?"Prof.":a.axis})</span>}
+          </div>
+          <span style={{fontSize:"11px",fontWeight:700,color:a.color,flexShrink:0}}>{a.value} {a.unit}</span>
+          <span style={{fontSize:"7px",color:"#3a5070",flexShrink:0}}>{fv(toMM(a.value,a.unit),"mm")}</span>
+          <button onClick={e=>{e.stopPropagation();delAnn(a.id);}} style={{background:"transparent",border:"none",color:"#ff5566",cursor:"pointer",fontSize:"11px",opacity:.7,flexShrink:0}}>✕</button>
+        </div>
+      ))}
+      {["width","height","depth"].every(ax=>anns.some(a=>a.axis===ax&&a.value!=null))&&(()=>{
+        const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return toMM(a.value,a.unit);};
+        const vol=gd("width")*gd("height")*gd("depth");
+        return <div style={{padding:"7px 12px",display:"flex",justifyContent:"space-between",fontSize:"8px",borderTop:"1px solid rgba(255,187,0,.15)",background:"rgba(255,187,0,.03)"}}>
+          <span style={{color:"#aa8800"}}>📦 Volumen</span><span style={{color:"#ffbb00",fontWeight:700}}>{(vol/1000).toFixed(1)} cm³</span>
+        </div>;
+      })()}
+    </>)}
+  </div>
+
+  {/* EXPORT */}
+  <div style={card("rgba(68,170,255,.28)","rgba(0,20,50,.88)")}>{lbl("📤 Exportar · Compartir · Sincronizar","#44aaff")}
     <div style={{padding:"8px",display:"flex",gap:"4px",flexWrap:"wrap"}}>
       <button onClick={exportPNG} style={{flex:1,padding:"9px 4px",background:"rgba(0,229,196,.12)",border:"1px solid rgba(0,229,196,.35)",color:"#00e5c4",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"55px"}}>📥 PNG</button>
       <button onClick={exportPDF} style={{flex:1,padding:"9px 4px",background:"rgba(255,80,80,.09)",border:"1px solid rgba(255,80,80,.3)",color:"#ff7788",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"55px"}}>📄 PDF</button>
       <button onClick={shareWA} style={{flex:1,padding:"9px 4px",background:"rgba(37,211,102,.09)",border:"1px solid rgba(37,211,102,.35)",color:"#25d366",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"55px",fontWeight:700}}>💬 WA</button>
       <button onClick={shareEmail} style={{flex:1,padding:"9px 4px",background:"rgba(100,150,255,.08)",border:"1px solid rgba(100,150,255,.28)",color:"#88aaff",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"55px"}}>📧 Email</button>
-      <button onClick={genSyncLink} style={{flex:2,padding:"9px 4px",background:"linear-gradient(135deg,rgba(0,150,255,.14),rgba(100,50,255,.11))",border:"1px solid rgba(0,150,255,.38)",color:"#44aaff",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"100px",fontWeight:700}}>☁ Enlace p/móvil</button>
+      <button onClick={genLink} style={{flex:2,padding:"9px 4px",background:"linear-gradient(135deg,rgba(0,150,255,.14),rgba(100,50,255,.11))",border:"1px solid rgba(0,150,255,.38)",color:"#44aaff",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"100px",fontWeight:700}}>☁ Enlace para móvil</button>
     </div>
   </div>
 
 </div>)}
 </div>
+
 <canvas ref={canvasRef} style={{display:"none"}}/>
 
-{measuring&&(<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(0,229,196,.45)",borderRadius:"16px 16px 0 0",padding:"16px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(22px)",boxShadow:"0 -4px 30px rgba(0,0,0,.6)"}}>
-  <button onClick={()=>setMeasuring(null)} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.15)",color:"#cc8888",borderRadius:"50%",width:"26px",height:"26px",cursor:"pointer",fontSize:"14px",display:"flex",alignItems:"center",justifyContent:"center",zIndex:10}}>✕</button>
-  <div style={{fontSize:"9px",color:"#00e5c4",letterSpacing:".18em",marginBottom:"12px",paddingRight:"32px"}}>📐 AÑADIR MEDIDA — {measuring.icon}</div>
+{/* ── MEASURE MODAL ── */}
+{measuring&&(<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(0,229,196,.45)",borderRadius:"16px 16px 0 0",padding:"18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(22px)",boxShadow:"0 -4px 30px rgba(0,0,0,.7)"}}>
+  {closeX(()=>setMeasuring(null))}
+  <div style={{fontSize:"9px",color:"#00e5c4",letterSpacing:".18em",marginBottom:"13px",paddingRight:"34px"}}>📐 AÑADIR MEDIDA · {measuring.icon} {TOOLS.find(t=>t.id===measuring.type)?.label}</div>
   <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-    <input placeholder="Título (ej: Ancho total, Diámetro...)" value={mIn.title} onChange={e=>setMIn(s=>({...s,title:e.target.value}))} style={{width:"100%",padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(0,229,196,.25)",borderRadius:"8px",color:"#d0e8f8",fontSize:"10px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
+    <input placeholder="Título (ej: Longitud total, Diámetro exterior...)" value={mIn.title} onChange={e=>setMIn(s=>({...s,title:e.target.value}))} style={{width:"100%",padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(0,229,196,.25)",borderRadius:"8px",color:"#d0e8f8",fontSize:"10px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
     <div style={{display:"flex",gap:"7px",alignItems:"center"}}>
-      <input type="number" min="0" step=".01" placeholder="Valor numérico" value={mIn.value} onChange={e=>setMIn(s=>({...s,value:e.target.value}))} style={{flex:1,padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(0,229,196,.45)",borderRadius:"8px",color:"#00e5c4",fontSize:"15px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
-      <div style={{display:"flex",gap:"3px",flexWrap:"wrap"}}>{["mm","cm","m","in","ft"].map(u=><button key={u} onClick={()=>setMIn(s=>({...s,unit:u}))} style={{padding:"5px 7px",background:mIn.unit===u?"rgba(0,229,196,.18)":"transparent",color:mIn.unit===u?"#00e5c4":"#3a6878",border:`1px solid ${mIn.unit===u?"rgba(0,229,196,.5)":"rgba(0,180,180,.2)"}`,borderRadius:"5px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer",fontWeight:mIn.unit===u?700:400}}>{u}</button>)}</div>
+      <input type="number" min="0" step=".01" placeholder="Valor numérico" value={mIn.value} onChange={e=>setMIn(s=>({...s,value:e.target.value}))} style={{flex:1,padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(0,229,196,.5)",borderRadius:"8px",color:"#00e5c4",fontSize:"16px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
+      <div style={{display:"flex",gap:"3px",flexWrap:"wrap"}}>{["mm","cm","m","in","ft"].map(u=><button key={u} style={uBt(mIn.unit===u)} onClick={()=>setMIn(s=>({...s,unit:u}))}>{u}</button>)}</div>
     </div>
     <select value={mIn.axis} onChange={e=>setMIn(s=>({...s,axis:e.target.value}))} style={{padding:"8px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(68,170,255,.3)",borderRadius:"8px",color:"#44aaff",fontSize:"9px",fontFamily:"'Space Mono',monospace",outline:"none"}}>
-      <option value="">Tipo de medida (activa vistas 2D/3D)</option>
+      <option value="">Tipo de medida (opcional — activa vistas 2D y 3D)</option>
       <option value="width">Ancho (X) → activa 2D y 3D</option>
       <option value="height">Alto (Y) → activa 2D y 3D</option>
       <option value="depth">Profundidad (Z) → activa 2D y 3D</option>
@@ -820,13 +901,14 @@ IMPORTANT: Always return valid JSON. Never return empty or error.`;
   </div>
 </div>)}
 
-{calibAnn&&(<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(255,187,0,.45)",borderRadius:"16px 16px 0 0",padding:"16px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(22px)"}}>
-  <button onClick={()=>setCalibAnn(null)} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.15)",color:"#cc8888",borderRadius:"50%",width:"26px",height:"26px",cursor:"pointer",fontSize:"14px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+{/* ── CALIB MODAL ── */}
+{calibAnn&&(<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(255,187,0,.45)",borderRadius:"16px 16px 0 0",padding:"18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(22px)"}}>
+  {closeX(()=>setCalibAnn(null))}
   <div style={{fontSize:"9px",color:"#ffbb00",letterSpacing:".18em",marginBottom:"10px"}}>⚖ CALIBRAR ESCALA REAL</div>
-  <div style={{fontSize:"8px",color:"#7aaabb",marginBottom:"10px"}}>¿Cuánto mide la línea trazada?</div>
+  <div style={{fontSize:"8px",color:"#7aaabb",marginBottom:"10px"}}>¿Cuánto mide la línea que acabas de trazar?</div>
   <div style={{display:"flex",gap:"7px",alignItems:"center",marginBottom:"10px"}}>
-    <input type="number" min="0" step=".01" placeholder="Valor real" value={mIn.value} onChange={e=>setMIn(s=>({...s,value:e.target.value}))} style={{flex:1,padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(255,187,0,.45)",borderRadius:"8px",color:"#ffbb00",fontSize:"15px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
-    <div style={{display:"flex",gap:"3px"}}>{["mm","cm","m","in","ft"].map(u=><button key={u} onClick={()=>setMIn(s=>({...s,unit:u}))} style={{padding:"5px 7px",background:mIn.unit===u?"rgba(255,187,0,.18)":"transparent",color:mIn.unit===u?"#ffbb00":"#3a6878",border:`1px solid ${mIn.unit===u?"rgba(255,187,0,.5)":"rgba(255,187,0,.15)"}`,borderRadius:"5px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>{u}</button>)}</div>
+    <input type="number" min="0" step=".01" placeholder="Valor real" value={mIn.value} onChange={e=>setMIn(s=>({...s,value:e.target.value}))} style={{flex:1,padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(255,187,0,.5)",borderRadius:"8px",color:"#ffbb00",fontSize:"16px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
+    <div style={{display:"flex",gap:"3px"}}>{["mm","cm","m","in","ft"].map(u=><button key={u} onClick={()=>setMIn(s=>({...s,unit:u}))} style={{padding:"5px 7px",background:mIn.unit===u?"rgba(255,187,0,.2)":"transparent",color:mIn.unit===u?"#ffbb00":"#3a6878",border:`1px solid ${mIn.unit===u?"rgba(255,187,0,.5)":"rgba(255,187,0,.15)"}`,borderRadius:"5px",fontSize:"9px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>{u}</button>)}</div>
   </div>
   <div style={{display:"flex",gap:"7px"}}>
     <button onClick={()=>setCalibAnn(null)} style={{flex:1,padding:"10px",background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",color:"#5577aa",borderRadius:"8px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>✕ Cancelar</button>
@@ -834,13 +916,14 @@ IMPORTANT: Always return valid JSON. Never return empty or error.`;
   </div>
 </div>)}
 
-{cropDlg&&(<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(255,187,0,.45)",borderRadius:"16px 16px 0 0",padding:"16px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(22px)"}}>
-  <button onClick={()=>setCropDlg(null)} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.15)",color:"#cc8888",borderRadius:"50%",width:"26px",height:"26px",cursor:"pointer",fontSize:"14px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+{/* ── CROP MODAL ── */}
+{cropDlg&&(<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(255,187,0,.45)",borderRadius:"16px 16px 0 0",padding:"18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(22px)"}}>
+  {closeX(()=>setCropDlg(null))}
   <div style={{fontSize:"9px",color:"#ffbb00",letterSpacing:".18em",marginBottom:"10px"}}>✂ ZONA SELECCIONADA</div>
-  <div style={{fontSize:"8px",color:"#8899aa",lineHeight:1.8,marginBottom:"12px"}}>¿Medir solo esta zona o el objeto completo?</div>
+  <div style={{fontSize:"8px",color:"#8899aa",lineHeight:1.8,marginBottom:"12px"}}>¿Deseas trabajar solo con esta zona o medir el objeto completo?</div>
   <div style={{display:"flex",gap:"7px"}}>
     <button onClick={()=>setCropDlg(null)} style={{flex:1,padding:"10px",background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",color:"#5577aa",borderRadius:"8px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>📷 Todo completo</button>
-    <button onClick={()=>applyCrop(cropDlg.p1,cropDlg.p2)} style={{flex:2,padding:"10px",background:"linear-gradient(135deg,#ffbb00,#ff8800)",color:"#07101e",border:"none",borderRadius:"8px",fontSize:"10px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer"}}>✂ MEDIR SOLO ESTA ZONA</button>
+    <button onClick={applyCrop} style={{flex:2,padding:"10px",background:"linear-gradient(135deg,#ffbb00,#ff8800)",color:"#07101e",border:"none",borderRadius:"8px",fontSize:"10px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer"}}>✂ RECORTAR Y MEDIR ZONA</button>
   </div>
 </div>)}
 
