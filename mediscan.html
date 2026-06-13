@@ -17,7 +17,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap');
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{background:#07101e;min-height:100%;-webkit-tap-highlight-color:transparent;}
-@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 10px #00e5c4}50%{opacity:.3;box-shadow:none}}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 10px #00b4ff}50%{opacity:.3;box-shadow:none}}
 @keyframes scan{0%{top:0}100%{top:100%}}
 @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -44,7 +44,7 @@ const GMOD="meta-llama/llama-4-scout-17b-16e-instruct";
 const getKey=()=>localStorage.getItem("ms3_k")||"";
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const uid=()=>`_${Math.random().toString(36).slice(2,8)}`;
-const COLS=["#00e5c4","#ff4477","#4499ff","#ffbb00","#aa44ff","#44dd88","#ff6622","#22ccff","#ffcc44","#dd44ff","#ff8844","#44ffbb"];
+const COLS=["#00b4ff","#ff4477","#4499ff","#00b4ff","#aa44ff","#44dd88","#ff6622","#22ccff","#ffcc44","#dd44ff","#ff8844","#44ffbb"];
 const UFAC={mm:1,cm:10,m:1000,"in":25.4,ft:304.8};
 const toMM=(v,u)=>(parseFloat(v)||0)*(UFAC[u]||10);
 const fv=(mm,u)=>{if(mm==null)return"—";const r={mm:[1,0],cm:[0.1,1],m:[0.001,3],"in":[0.0393701,2],ft:[0.00328,3]}[u]||[0.1,1];return`${(mm*r[0]).toFixed(r[1])} ${u}`;};
@@ -249,13 +249,13 @@ function RoomMetrics({anns}){
     wM&&dM&&["Área techo",`${(wM*dM).toFixed(2)} m²`],
   ].filter(Boolean);
   if(!rows.length)return null;
-  return <div style={{background:"linear-gradient(135deg,rgba(0,20,50,.88),rgba(0,30,62,.85))",border:"1px solid rgba(68,170,255,.28)",borderRadius:"12px",overflow:"hidden"}}>
+  return <div style={{background:"linear-gradient(135deg,rgba(0,20,50,.88),rgba(0,30,62,.85))",border:"1px solid rgba(68,170,255,.28)",borderRadius:"14px",overflow:"hidden",boxShadow:"0 4px 24px rgba(0,0,0,.35)"}}>
     <div style={{padding:"7px 12px",fontSize:"8px",letterSpacing:".15em",color:"#44aaff",textTransform:"uppercase",borderBottom:"1px solid rgba(68,170,255,.12)",background:"rgba(68,170,255,.04)"}}>📊 Métricas calculadas</div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr"}}>
       {rows.map(([lb,val],i)=>(
         <div key={lb} style={{padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,.04)",borderRight:i%2===0?"1px solid rgba(255,255,255,.04)":"none"}}>
-          <div style={{fontSize:"7px",color:"#4477aa",marginBottom:"2px"}}>{lb}</div>
-          <div style={{fontSize:"11px",fontWeight:700,color:"#44aaff",fontFamily:"'Space Mono',monospace"}}>{val}</div>
+          <div style={{fontSize:"7px",color:"#3355aa",marginBottom:"2px"}}>{lb}</div>
+          <div style={{fontSize:"11px",fontWeight:700,color:"#44aaff",fontFamily:"'Inter',sans-serif"}}>{val}</div>
         </div>
       ))}
     </div>
@@ -549,7 +549,7 @@ x,y son posiciones en la imagen entre 0 y 1. Incluye 3-6 medidas relevantes para
     const pr=`RESPONDE EN ESPAÑOL.
 Identifica todas las partes/componentes distintos del objeto en la imagen.
 Para cada parte: nombre, rectángulo (x1,y1,x2,y2 entre 0-1), sugerencia de qué medir, color hex.
-JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.85,"hint":"Longitud","color":"#00e5c4"}]}
+JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.85,"hint":"Longitud","color":"#00b4ff"}]}
 3-8 segmentos. SOLO JSON.`;
     try{
       const res=await fetch(GAPI,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${getKey()}`},body:JSON.stringify({model:GMOD,max_tokens:500,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:pr}]}]})});
@@ -596,18 +596,18 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
     const mxN=parseFloat(mx),myN=parseFloat(my);
     return <>
       <rect x={`${mxN-w/2}%`} y={`${myN-2.1}%`} width={`${w}%`} height="4.2%" rx="2.1%"
-        fill="rgba(255,255,255,.95)" style={{filter:"drop-shadow(0 1px 4px rgba(0,0,0,.55))"}}/>
+        fill="rgba(10,14,25,.88)" style={{filter:"drop-shadow(0 1px 4px rgba(0,0,0,.55))"}}/>
       <rect x={`${mxN-w/2}%`} y={`${myN-2.1}%`} width="1.2%" height="4.2%" rx="0.6%"
-        fill={col||"#00e5c4"} opacity="1"/>
+        fill={col||"#00b4ff"} opacity="1"/>
       <text x={`${mxN+0.3}%`} y={`${myN+.35}%`} fill="#111" fontSize="2.7%"
-        fontFamily="Space Mono,monospace" fontWeight="700" textAnchor="middle" dominantBaseline="middle">{text}</text>
+        fontFamily="Inter,sans-serif" fontWeight="700" textAnchor="middle" dominantBaseline="middle">{text}</text>
     </>;
   };
 
   /* SVG annotation renderer - defined before use */
   const ShapeSVG=({a,isPrev=false})=>{
     if(!a||!a.points||a.points.length<2)return null;
-    const[p1,p2]=a.points;const col=a.color||"#00e5c4";
+    const[p1,p2]=a.points;const col=a.color||"#00b4ff";
     const sw=isPrev?1.5:(selId===a.id?3:2);
     const x1=`${p1.x*100}%`,y1=`${p1.y*100}%`,x2=`${p2.x*100}%`,y2=`${p2.y*100}%`;
     const mxN=(p1.x+p2.x)*50,myN=(p1.y+p2.y)*50;
@@ -624,7 +624,7 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
       </g>;}
     if(a.type==="rect"||a.type==="crop"){
       const rx=Math.min(p1.x,p2.x)*100,ry=Math.min(p1.y,p2.y)*100,rw=Math.abs(p2.x-p1.x)*100,rh=Math.abs(p2.y-p1.y)*100;
-      const sc=a.type==="crop"?"#ffbb00":col;
+      const sc=a.type==="crop"?"#00b4ff":col;
       return <g onClick={e=>{e.stopPropagation();if(a.type!=="crop")sel();}} style={{cursor:a.type==="crop"?"default":"pointer"}}>
         <rect x={`${rx}%`} y={`${ry}%`} width={`${rw}%`} height={`${rh}%`} stroke={sc} strokeWidth={sw} fill={isPrev?`${sc}10`:`${sc}16`} strokeDasharray={a.type==="crop"?"8,4":ld}/>
         {!isPrev&&a.type!=="crop"&&badge&&<Pill mx={`${mxN}`} my={`${myN}`} text={badge} col={col}/>}
@@ -672,7 +672,7 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
     return <>{stats.map((s,i)=>(
       <g key={i} pointerEvents="none">
         <rect x="2%" y={`${85+i*6}%`} width={`${s.length*.68+2}%`} height="5%" rx="2.5%" fill="rgba(255,255,255,.92)" style={{filter:"drop-shadow(0 1px 3px rgba(0,0,0,.5))"}}/>
-        <text x={`${(s.length*.68+2)/2+2}%`} y={`${87.5+i*6}%`} fill="#1a1a2e" fontSize="2.5%" fontFamily="Space Mono,monospace" fontWeight="700" textAnchor="middle" dominantBaseline="middle">{s}</text>
+        <text x={`${(s.length*.68+2)/2+2}%`} y={`${87.5+i*6}%`} fill="#1a1a2e" fontSize="2.5%" fontFamily="Inter,sans-serif" fontWeight="700" textAnchor="middle" dominantBaseline="middle">{s}</text>
       </g>
     ))}</>;
   };
@@ -681,24 +681,24 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
   const shapeAnns=anns.filter(a=>!MRK.includes(a.type));
 
   /* ═══ STYLES ═══ */
-  const ACC="#00e5c4";
-  const card=(bdr="rgba(0,229,196,.22)",bg="rgba(5,15,35,.9)")=>({background:`linear-gradient(135deg,${bg},rgba(8,20,42,.88))`,border:`1px solid ${bdr}`,borderRadius:"12px",overflow:"hidden"});
-  const lbl=(t,col="#00e5c4")=><div style={{padding:"7px 12px",fontSize:"8px",letterSpacing:".18em",color:col,textTransform:"uppercase",borderBottom:"1px solid rgba(255,255,255,.06)",background:"rgba(255,255,255,.025)",display:"flex",alignItems:"center",gap:"6px"}}>{t}</div>;
-  const tabS=a=>({flex:1,padding:"7px 3px",borderRadius:"7px",background:a?"linear-gradient(135deg,#00e5c4,#00b89a)":"transparent",color:a?"#070f1e":"#4477aa",border:`1px solid ${a?"#00e5c4":"rgba(0,150,180,.22)"}`,fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",fontWeight:a?700:400});
-  const uBt=a=>({padding:"5px 7px",background:a?"rgba(0,229,196,.18)":"transparent",color:a?"#00e5c4":"#3a6878",border:`1px solid ${a?"rgba(0,229,196,.5)":"rgba(0,180,180,.2)"}`,borderRadius:"5px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer",fontWeight:a?700:400});
+  const ACC="#00b4ff";
+  const card=(bdr="rgba(0,150,255,.22)",bg="rgba(5,15,35,.9)")=>({background:`linear-gradient(135deg,${bg},rgba(8,20,42,.88))`,border:`1px solid ${bdr}`,borderRadius:"14px",overflow:"hidden",boxShadow:"0 4px 24px rgba(0,0,0,.35)"});
+  const lbl=(t,col="#00b4ff")=><div style={{padding:"7px 12px",fontSize:"8px",letterSpacing:".18em",color:col,textTransform:"uppercase",borderBottom:"1px solid rgba(255,255,255,.06)",background:"rgba(255,255,255,.025)",display:"flex",alignItems:"center",gap:"6px"}}>{t}</div>;
+  const tabS=a=>({flex:1,padding:"7px 3px",borderRadius:"7px",background:a?"linear-gradient(135deg,#0066ff,#00b4ff)":"transparent",color:a?"#070f1e":"#4477aa",border:`1px solid ${a?"#00b4ff":"rgba(0,150,180,.22)"}`,fontSize:"8px",fontFamily:"'Inter',sans-serif",cursor:"pointer",fontWeight:a?700:400});
+  const uBt=a=>({padding:"5px 7px",background:a?"rgba(0,150,255,.18)":"transparent",color:a?"#00b4ff":"#3a6878",border:`1px solid ${a?"rgba(0,150,255,.5)":"rgba(0,180,180,.2)"}`,borderRadius:"5px",fontSize:"9px",fontFamily:"'Inter',sans-serif",cursor:"pointer",fontWeight:a?700:400});
   const closeX=fn=><button onClick={fn} style={{position:"absolute",top:"10px",right:"12px",background:"rgba(255,80,80,.15)",border:"1px solid rgba(255,80,80,.35)",color:"#ff8888",borderRadius:"50%",width:"26px",height:"26px",cursor:"pointer",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center",zIndex:20}}>✕</button>;
 
   return (
-<div style={{minHeight:"100vh",background:"linear-gradient(160deg,#06101e,#0a1628,#07101e)",color:"#d0e8f8",fontFamily:"'Space Mono',monospace",display:"flex",flexDirection:"column",maxWidth:"500px",margin:"0 auto"}}>
+<div style={{minHeight:"100vh",background:"#0a0d14",color:"#d0e8f8",fontFamily:"'Inter',sans-serif",display:"flex",flexDirection:"column",maxWidth:"500px",margin:"0 auto"}}>
 
 {/* HEADER */}
-<div style={{padding:"9px 13px",display:"flex",alignItems:"center",gap:"7px",background:"rgba(4,10,22,.96)",backdropFilter:"blur(18px)",borderBottom:"1px solid rgba(0,229,196,.18)",position:"sticky",top:0,zIndex:300,boxShadow:"0 2px 22px rgba(0,0,0,.5)"}}>
+<div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:"10px",background:"rgba(8,10,18,.98)",backdropFilter:"blur(20px)",borderBottom:"1px solid rgba(0,100,200,.15)",position:"sticky",top:0,zIndex:300,boxShadow:"0 2px 22px rgba(0,0,0,.5)"}}>
   <div style={{width:"8px",height:"8px",borderRadius:"50%",background:ACC,boxShadow:`0 0 10px ${ACC}`}} className="blink"/>
   <div style={{flex:1}}>
-    <div style={{fontFamily:"'Syne',sans-serif",fontSize:"14px",fontWeight:800,background:"linear-gradient(90deg,#00e5c4,#44aaff)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>MediScan 3D Pro</div>
-    <div style={{fontSize:"7px",color:"#3a6878",letterSpacing:".08em"}}>📐 Mide · 🔍 Segmenta · 🗺 Planos · 📦 3D · IA</div>
+    <div style={{fontFamily:"'Syne',sans-serif",fontSize:"14px",fontWeight:800,background:"linear-gradient(90deg,#00b4ff,#44aaff)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>MediScan 3D Pro</div>
+    <div style={{fontSize:"7px",color:"#334455",letterSpacing:".08em"}}>📐 Mide · 🔍 Segmenta · 🗺 Planos · 📦 3D · IA</div>
   </div>
-  {scr==="annotate"&&<button onClick={()=>setScr("home")} style={{background:"rgba(0,229,196,.1)",border:"1px solid rgba(0,229,196,.3)",color:ACC,borderRadius:"7px",padding:"4px 9px",fontSize:"11px",cursor:"pointer"}}>🏠</button>}
+  {scr==="annotate"&&<button onClick={()=>setScr("home")} style={{background:"rgba(0,150,255,.1)",border:"1px solid rgba(0,150,255,.3)",color:ACC,borderRadius:"7px",padding:"4px 9px",fontSize:"11px",cursor:"pointer"}}>🏠</button>}
   <button onClick={()=>setScr("setup")} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",color:"#7aaabb",borderRadius:"7px",padding:"4px 9px",fontSize:"11px",cursor:"pointer"}}>⚙️</button>
 </div>
 
@@ -706,49 +706,49 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
 
 {/* ═══ HOME ═══ */}
 {scr==="home"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-  <button onClick={()=>setScr("camera")} style={{width:"100%",padding:"15px",background:"linear-gradient(135deg,#00e5c4,#0099ff,#7744ff)",color:"#fff",border:"none",borderRadius:"12px",fontSize:"12px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer",letterSpacing:".1em",boxShadow:"0 4px 22px rgba(0,229,196,.35)"}}>＋ NUEVO PROYECTO</button>
-  {!getKey()&&<div style={{background:"rgba(255,187,0,.1)",border:"1px solid rgba(255,187,0,.35)",borderRadius:"8px",padding:"10px 14px",fontSize:"8px",color:"#ffbb00",display:"flex",alignItems:"center",gap:"8px"}}>⚠️ Sin clave API Groq — toca ⚙️ para configurarla. La IA no funcionará sin ella.</div>}
+  <button onClick={()=>setScr("camera")} style={{width:"100%",padding:"15px",background:"linear-gradient(135deg,#0044ff,#0088ff,#00b4ff)",color:"#fff",border:"none",borderRadius:"12px",fontSize:"12px",fontFamily:"'Inter',sans-serif",fontWeight:700,cursor:"pointer",letterSpacing:".1em",boxShadow:"0 4px 22px rgba(0,150,255,.35)"}}>＋ NUEVO PROYECTO</button>
+  {!getKey()&&<div style={{background:"rgba(255,187,0,.1)",border:"1px solid rgba(255,187,0,.35)",borderRadius:"8px",padding:"10px 14px",fontSize:"8px",color:"#00b4ff",display:"flex",alignItems:"center",gap:"8px"}}>⚠️ Sin clave API Groq — toca ⚙️ para configurarla. La IA no funcionará sin ella.</div>}
   {projects.length>0?(<div style={card()}>{lbl("📁 Proyectos guardados")}
     {projects.map(p=>(<div key={p.id} onClick={()=>loadProj(p)} style={{display:"flex",alignItems:"center",gap:"9px",padding:"9px 12px",borderBottom:"1px solid rgba(255,255,255,.05)",cursor:"pointer"}}>
-      {p.image&&<img src={p.image} style={{width:"40px",height:"30px",objectFit:"cover",borderRadius:"6px",opacity:.85,border:"1px solid rgba(0,229,196,.25)"}}/>}
-      <div style={{flex:1}}><div style={{fontSize:"9px",color:"#d0e8f8",fontWeight:700}}>{p.name}</div><div style={{fontSize:"7px",color:"#4477aa"}}>{p.date} · {p.objInfo?.name||"?"} · {(p.anns||[]).length} medidas</div></div>
+      {p.image&&<img src={p.image} style={{width:"40px",height:"30px",objectFit:"cover",borderRadius:"6px",opacity:.85,border:"1px solid rgba(0,150,255,.25)"}}/>}
+      <div style={{flex:1}}><div style={{fontSize:"9px",color:"#d0e8f8",fontWeight:700}}>{p.name}</div><div style={{fontSize:"7px",color:"#3355aa"}}>{p.date} · {p.objInfo?.name||"?"} · {(p.anns||[]).length} medidas</div></div>
       <button onClick={e=>delProj(p.id,e)} style={{background:"transparent",border:"none",color:"#ff5566",cursor:"pointer",fontSize:"14px",opacity:.7}}>✕</button>
     </div>))}
-  </div>):(<div style={{textAlign:"center",padding:"22px",fontSize:"9px",color:"#3a6878"}}>Sin proyectos guardados</div>)}
+  </div>):(<div style={{textAlign:"center",padding:"22px",fontSize:"9px",color:"#334455"}}>Sin proyectos guardados</div>)}
 </div>)}
 
 {/* ═══ SETUP ═══ */}
 {scr==="setup"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
   <div style={{textAlign:"center",padding:"10px 0 4px"}}><div style={{fontSize:"26px",marginBottom:"4px"}}>🔑</div><div style={{fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:800,color:"#fff"}}>Clave API de Groq</div><div style={{fontSize:"7px",color:"#7aaabb",lineHeight:1.7,marginTop:"4px"}}>Gratis en <span style={{color:ACC}}>console.groq.com</span> → API Keys</div></div>
   <div style={{...card(),padding:"13px",display:"flex",flexDirection:"column",gap:"8px"}}>
-    <input type="text" placeholder="gsk_xxxxxxxxxxxxxxxx" value={keyIn} onChange={e=>setKeyIn(e.target.value.trim())} style={{width:"100%",padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(0,229,196,.3)",borderRadius:"8px",color:"#d0e8f8",fontSize:"10px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
-    <button onClick={()=>{if(!keyIn.startsWith("gsk_")){alert("Debe empezar por gsk_");return;}localStorage.setItem("ms3_k",keyIn);setScr("home");}} style={{padding:"10px",background:"linear-gradient(135deg,#00e5c4,#00b89a)",color:"#07101e",border:"none",borderRadius:"8px",fontSize:"10px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer"}}>GUARDAR Y CONTINUAR</button>
+    <input type="text" placeholder="gsk_xxxxxxxxxxxxxxxx" value={keyIn} onChange={e=>setKeyIn(e.target.value.trim())} style={{width:"100%",padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(0,150,255,.3)",borderRadius:"8px",color:"#d0e8f8",fontSize:"10px",fontFamily:"'Inter',sans-serif",outline:"none"}}/>
+    <button onClick={()=>{if(!keyIn.startsWith("gsk_")){alert("Debe empezar por gsk_");return;}localStorage.setItem("ms3_k",keyIn);setScr("home");}} style={{padding:"10px",background:"linear-gradient(135deg,#0066ff,#00b4ff)",color:"#07101e",border:"none",borderRadius:"8px",fontSize:"10px",fontFamily:"'Inter',sans-serif",fontWeight:700,cursor:"pointer"}}>GUARDAR Y CONTINUAR</button>
   </div>
-  {getKey()&&<button onClick={()=>setScr("home")} style={{padding:"8px",background:"transparent",border:"1px solid rgba(255,255,255,.1)",color:"#5577aa",borderRadius:"7px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>← Volver</button>}
+  {getKey()&&<button onClick={()=>setScr("home")} style={{padding:"8px",background:"transparent",border:"1px solid rgba(255,255,255,.1)",color:"#445577",borderRadius:"7px",fontSize:"9px",fontFamily:"'Inter',sans-serif",cursor:"pointer"}}>← Volver</button>}
 </div>)}
 
 {/* ═══ CAMERA ═══ */}
 {scr==="camera"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-  {aiMsg&&<div style={{...card("rgba(0,229,196,.2)"),padding:"10px 12px",fontSize:"8px",color:"#7aaabb",lineHeight:1.7}}><span style={{color:ACC}}>ℹ </span>{aiMsg}</div>}
+  {aiMsg&&<div style={{...card("rgba(0,150,255,.2)"),padding:"10px 12px",fontSize:"8px",color:"#7aaabb",lineHeight:1.7}}><span style={{color:ACC}}>ℹ </span>{aiMsg}</div>}
   <div style={card()}>{lbl(<><span className="blink" style={{color:"#ff4477"}}>●</span>&nbsp;Cámara en vivo</>)}
-    {camMode==="off"&&<div style={{padding:"18px",textAlign:"center"}}><button onClick={startLive} style={{padding:"10px 24px",background:"linear-gradient(135deg,#00e5c4,#0099ff)",color:"#07101e",border:"none",borderRadius:"9px",fontSize:"10px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer",boxShadow:"0 4px 16px rgba(0,229,196,.4)"}}>📹 ACTIVAR VISOR</button></div>}
-    {camMode==="starting"&&<div style={{padding:"18px",textAlign:"center"}}><div style={{width:"28px",height:"28px",borderRadius:"50%",border:"3px solid #1a3a5a",borderTop:"3px solid #00e5c4",margin:"0 auto"}} className="spin"/></div>}
+    {camMode==="off"&&<div style={{padding:"18px",textAlign:"center"}}><button onClick={startLive} style={{padding:"10px 24px",background:"linear-gradient(135deg,#0055ff,#00aaff)",color:"#07101e",border:"none",borderRadius:"9px",fontSize:"10px",fontFamily:"'Inter',sans-serif",fontWeight:700,cursor:"pointer",boxShadow:"0 4px 16px rgba(0,150,255,.4)"}}>📹 ACTIVAR VISOR</button></div>}
+    {camMode==="starting"&&<div style={{padding:"18px",textAlign:"center"}}><div style={{width:"28px",height:"28px",borderRadius:"50%",border:"3px solid #1a3a5a",borderTop:"3px solid #00b4ff",margin:"0 auto"}} className="spin"/></div>}
     {camMode==="live"&&(<><div style={{position:"relative",background:"#000",aspectRatio:"4/3"}}>
       <video ref={videoRef} autoPlay playsInline muted style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
-      <div style={{position:"absolute",left:0,right:0,height:"2px",background:"linear-gradient(90deg,transparent,#00e5c4,transparent)",animation:"scan 2.5s linear infinite",opacity:.6,pointerEvents:"none"}}/>
+      <div style={{position:"absolute",left:0,right:0,height:"2px",background:"linear-gradient(90deg,transparent,#00b4ff,transparent)",animation:"scan 2.5s linear infinite",opacity:.6,pointerEvents:"none"}}/>
     </div><div style={{display:"flex",gap:"8px",padding:"10px",justifyContent:"center"}}>
-      <button onClick={stopCam} style={{padding:"7px 14px",background:"rgba(255,80,80,.14)",border:"1px solid rgba(255,80,80,.4)",color:"#ff7788",borderRadius:"7px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>✕</button>
-      <button onClick={capLive} style={{width:"52px",height:"52px",borderRadius:"50%",border:"3px solid #00e5c4",background:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 22px rgba(0,229,196,.5)"}}><div style={{width:"36px",height:"36px",borderRadius:"50%",background:"linear-gradient(135deg,#00e5c4,#00b89a)"}}/></button>
+      <button onClick={stopCam} style={{padding:"7px 14px",background:"rgba(255,80,80,.14)",border:"1px solid rgba(255,80,80,.4)",color:"#ff7788",borderRadius:"7px",fontSize:"9px",fontFamily:"'Inter',sans-serif",cursor:"pointer"}}>✕</button>
+      <button onClick={capLive} style={{width:"52px",height:"52px",borderRadius:"50%",border:"3px solid #00b4ff",background:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 22px rgba(0,150,255,.5)"}}><div style={{width:"36px",height:"36px",borderRadius:"50%",background:"linear-gradient(135deg,#0066ff,#00b4ff)"}}/></button>
     </div></>)}
   </div>
   <div style={card("rgba(68,170,255,.3)")}>{lbl("📷 Foto · Boceto · Plano","#44aaff")}
     <div style={{padding:"10px",display:"flex",flexDirection:"column",gap:"7px"}}>
-      <button onClick={()=>camInRef.current?.click()} style={{display:"flex",alignItems:"center",gap:"12px",padding:"13px",background:"rgba(0,229,196,.1)",border:"1px solid rgba(0,229,196,.4)",borderRadius:"10px",cursor:"pointer",width:"100%"}}>
-        <span style={{fontSize:"20px"}}>📷</span><div><div style={{fontSize:"10px",fontWeight:700,color:ACC,fontFamily:"'Space Mono',monospace"}}>TOMAR FOTO</div><div style={{fontSize:"7px",color:"#5599bb"}}>Objeto, pieza, herramienta, plano...</div></div>
+      <button onClick={()=>camInRef.current?.click()} style={{display:"flex",alignItems:"center",gap:"12px",padding:"13px",background:"rgba(0,150,255,.1)",border:"1px solid rgba(0,150,255,.4)",borderRadius:"10px",cursor:"pointer",width:"100%"}}>
+        <span style={{fontSize:"20px"}}>📷</span><div><div style={{fontSize:"10px",fontWeight:700,color:ACC,fontFamily:"'Inter',sans-serif"}}>TOMAR FOTO</div><div style={{fontSize:"7px",color:"#5599bb"}}>Objeto, pieza, herramienta, plano...</div></div>
       </button>
       <input ref={camInRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleFile}/>
       <button onClick={()=>uploadRef.current?.click()} style={{display:"flex",alignItems:"center",gap:"12px",padding:"13px",background:"rgba(68,170,255,.08)",border:"1px solid rgba(68,170,255,.3)",borderRadius:"10px",cursor:"pointer",width:"100%"}}>
-        <span style={{fontSize:"20px"}}>🖼</span><div><div style={{fontSize:"10px",fontWeight:700,color:"#44aaff",fontFamily:"'Space Mono',monospace"}}>GALERÍA / BOCETO / PLANO</div><div style={{fontSize:"7px",color:"#5599bb"}}>JPG · PNG · P&ID · Isométricos · Croquis</div></div>
+        <span style={{fontSize:"20px"}}>🖼</span><div><div style={{fontSize:"10px",fontWeight:700,color:"#44aaff",fontFamily:"'Inter',sans-serif"}}>GALERÍA / BOCETO / PLANO</div><div style={{fontSize:"7px",color:"#5599bb"}}>JPG · PNG · P&ID · Isométricos · Croquis</div></div>
       </button>
       <input ref={uploadRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleFile}/>
     </div>
@@ -760,8 +760,8 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
   {lbl("⚡ IA identificando...")}
   {image&&<img src={image} alt="" style={{width:"100%",aspectRatio:"4/3",objectFit:"cover",opacity:.75}}/>}
   <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"10px",padding:"22px"}}>
-    <div style={{width:"34px",height:"34px",borderRadius:"50%",border:"3px solid #1a3a5a",borderTop:"3px solid #00e5c4"}} className="spin"/>
-    <div style={{fontSize:"8px",color:"#4477aa",letterSpacing:".15em",textTransform:"uppercase"}}>Detectando objeto, plano o boceto...</div>
+    <div style={{width:"34px",height:"34px",borderRadius:"50%",border:"3px solid #1a3a5a",borderTop:"3px solid #00b4ff"}} className="spin"/>
+    <div style={{fontSize:"8px",color:"#3355aa",letterSpacing:".15em",textTransform:"uppercase"}}>Detectando objeto, plano o boceto...</div>
   </div>
 </div>)}
 
@@ -769,14 +769,14 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
 {scr==="annotate"&&(<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
 
   <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
-    <input value={projName} onChange={e=>setProjName(e.target.value)} placeholder="Nombre" style={{flex:1,minWidth:"80px",padding:"7px 10px",background:"rgba(0,10,25,.8)",border:"1px solid rgba(0,229,196,.3)",borderRadius:"7px",color:ACC,fontSize:"10px",fontFamily:"'Syne',sans-serif",fontWeight:700,outline:"none"}}/>
-    <input value={projTitle} onChange={e=>setProjTitle(e.target.value)} placeholder="Título del plano..." style={{flex:2,minWidth:"100px",padding:"7px 10px",background:"rgba(0,10,25,.7)",border:"1px solid rgba(68,170,255,.2)",borderRadius:"7px",color:"#d0e8f8",fontSize:"9px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
-    <button onClick={saveProj} style={{padding:"7px 10px",background:"rgba(0,229,196,.12)",border:"1px solid rgba(0,229,196,.35)",color:ACC,borderRadius:"7px",fontSize:"8px",cursor:"pointer"}}>💾</button>
-    <button onClick={()=>setScr("camera")} style={{padding:"7px 9px",background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",color:"#5577aa",borderRadius:"7px",fontSize:"8px",cursor:"pointer"}}>📷</button>
+    <input value={projName} onChange={e=>setProjName(e.target.value)} placeholder="Nombre" style={{flex:1,minWidth:"80px",padding:"7px 10px",background:"rgba(0,10,25,.8)",border:"1px solid rgba(0,150,255,.3)",borderRadius:"7px",color:ACC,fontSize:"10px",fontFamily:"'Syne',sans-serif",fontWeight:700,outline:"none"}}/>
+    <input value={projTitle} onChange={e=>setProjTitle(e.target.value)} placeholder="Título del plano..." style={{flex:2,minWidth:"100px",padding:"7px 10px",background:"rgba(0,10,25,.7)",border:"1px solid rgba(68,170,255,.2)",borderRadius:"7px",color:"#d0e8f8",fontSize:"9px",fontFamily:"'Inter',sans-serif",outline:"none"}}/>
+    <button onClick={saveProj} style={{padding:"7px 10px",background:"rgba(0,150,255,.12)",border:"1px solid rgba(0,150,255,.35)",color:ACC,borderRadius:"7px",fontSize:"8px",cursor:"pointer"}}>💾</button>
+    <button onClick={()=>setScr("camera")} style={{padding:"7px 9px",background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",color:"#445577",borderRadius:"7px",fontSize:"8px",cursor:"pointer"}}>📷</button>
   </div>
-  {syncMsg&&<div style={{fontSize:"8px",color:ACC,padding:"4px 10px",background:"rgba(0,229,196,.08)",borderRadius:"6px",border:"1px solid rgba(0,229,196,.2)"}}>{syncMsg}</div>}
-  {err&&<div style={{fontSize:"8px",color:"#ff7788",padding:"5px 10px",background:"rgba(255,80,80,.07)",borderRadius:"7px",border:"1px solid rgba(255,100,100,.22)",display:"flex",alignItems:"center",gap:"6px"}}>⚠️ {err}{err.includes("API")&&<button onClick={()=>setScr("setup")} style={{background:"rgba(255,187,0,.2)",border:"1px solid rgba(255,187,0,.4)",color:"#ffbb00",borderRadius:"5px",padding:"2px 8px",fontSize:"8px",cursor:"pointer"}}>⚙️ Configurar</button>}</div>}
-  {objInfo?.name&&<div style={{fontSize:"8px",padding:"1px"}}><span style={{background:"linear-gradient(90deg,#00e5c4,#44aaff)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontWeight:700}}>{objInfo.name}</span>{objInfo.category?<span style={{color:"#4477aa"}}> · {objInfo.category}</span>:null}{piping&&<span style={{color:"#ffbb00"}}> · DN{piping.dn}</span>}</div>}
+  {syncMsg&&<div style={{fontSize:"8px",color:ACC,padding:"4px 10px",background:"rgba(0,150,255,.08)",borderRadius:"6px",border:"1px solid rgba(0,150,255,.2)"}}>{syncMsg}</div>}
+  {err&&<div style={{fontSize:"8px",color:"#ff7788",padding:"5px 10px",background:"rgba(255,80,80,.07)",borderRadius:"7px",border:"1px solid rgba(255,100,100,.22)",display:"flex",alignItems:"center",gap:"6px"}}>⚠️ {err}{err.includes("API")&&<button onClick={()=>setScr("setup")} style={{background:"rgba(255,187,0,.2)",border:"1px solid rgba(255,187,0,.4)",color:"#00b4ff",borderRadius:"5px",padding:"2px 8px",fontSize:"8px",cursor:"pointer"}}>⚙️ Configurar</button>}</div>}
+  {objInfo?.name&&<div style={{fontSize:"8px",padding:"1px"}}><span style={{background:"linear-gradient(90deg,#00b4ff,#44aaff)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontWeight:700}}>{objInfo.name}</span>{objInfo.category?<span style={{color:"#3355aa"}}> · {objInfo.category}</span>:null}{piping&&<span style={{color:"#00b4ff"}}> · DN{piping.dn}</span>}</div>}
 
   {/* MAIN CARD */}
   <div style={card()}>
@@ -792,7 +792,7 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
       {viewTab==="ann"&&(<>
 
       {/* ══ PASO 1: SELECCIONA HERRAMIENTA ══ */}
-      <div style={{background:"rgba(0,229,196,.06)",borderBottom:"1px solid rgba(0,229,196,.15)",padding:"8px 10px"}}>
+      <div style={{background:"rgba(0,150,255,.06)",borderBottom:"1px solid rgba(0,150,255,.15)",padding:"8px 10px"}}>
         <div style={{fontSize:"8px",color:ACC,fontWeight:700,marginBottom:"6px",letterSpacing:".1em"}}>
           ① SELECCIONA HERRAMIENTA
         </div>
@@ -800,10 +800,10 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
           {Object.keys(toolsByCategory).map(cat=>(
             <button key={cat} onClick={()=>setToolCat(cat)}
               style={{padding:"4px 10px",borderRadius:"6px",whiteSpace:"nowrap",
-                background:toolCat===cat?"rgba(0,229,196,.25)":"rgba(255,255,255,.04)",
+                background:toolCat===cat?"rgba(0,150,255,.25)":"rgba(255,255,255,.04)",
                 color:toolCat===cat?ACC:"#7799bb",
-                border:`1.5px solid ${toolCat===cat?"#00e5c4":"rgba(0,229,196,.15)"}`,
-                fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",
+                border:`1.5px solid ${toolCat===cat?"#00b4ff":"rgba(0,150,255,.15)"}`,
+                fontSize:"8px",fontFamily:"'Inter',sans-serif",cursor:"pointer",
                 fontWeight:toolCat===cat?700:400}}>
               {CATS[cat]}
             </button>
@@ -814,29 +814,29 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
             <button key={t.id} onClick={()=>{setTool(t.id);setPending([]);setPreview(null);}}
               style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",
                 padding:"8px 6px",borderRadius:"8px",cursor:"pointer",minWidth:"44px",
-                background:tool===t.id?"linear-gradient(135deg,#00e5c4,#00b89a)":"rgba(255,255,255,.04)",
+                background:tool===t.id?"linear-gradient(135deg,#0066ff,#00b4ff)":"rgba(255,255,255,.04)",
                 color:tool===t.id?"#07101e":"#8899bb",
-                border:`2px solid ${tool===t.id?"#00e5c4":"rgba(0,229,196,.12)"}`,
-                boxShadow:tool===t.id?"0 0 16px rgba(0,229,196,.55)":"none",
+                border:`2px solid ${tool===t.id?"#00b4ff":"rgba(0,150,255,.12)"}`,
+                boxShadow:tool===t.id?"0 0 16px rgba(0,150,255,.55)":"none",
                 transform:tool===t.id?"scale(1.1)":"scale(1)",transition:"all .15s"}}>
               <span style={{fontSize:"18px",lineHeight:1}}>{t.icon}</span>
-              <span style={{fontSize:"6px",fontFamily:"'Space Mono',monospace",fontWeight:700,
+              <span style={{fontSize:"6px",fontFamily:"'Inter',sans-serif",fontWeight:700,
                 textAlign:"center",lineHeight:1.2,maxWidth:"40px"}}>{t.label.slice(0,8)}</span>
             </button>
           ))}
           <button onClick={()=>{setTool("sel");setPending([]);setPreview(null);}}
             style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",
               padding:"8px 6px",borderRadius:"8px",cursor:"pointer",minWidth:"44px",
-              background:tool==="sel"?"linear-gradient(135deg,#00e5c4,#00b89a)":"rgba(255,255,255,.04)",
+              background:tool==="sel"?"linear-gradient(135deg,#0066ff,#00b4ff)":"rgba(255,255,255,.04)",
               color:tool==="sel"?"#07101e":"#8899bb",
-              border:`2px solid ${tool==="sel"?"#00e5c4":"rgba(0,229,196,.12)"}`,
-              boxShadow:tool==="sel"?"0 0 16px rgba(0,229,196,.55)":"none"}}>
+              border:`2px solid ${tool==="sel"?"#00b4ff":"rgba(0,150,255,.12)"}`,
+              boxShadow:tool==="sel"?"0 0 16px rgba(0,150,255,.55)":"none"}}>
             <span style={{fontSize:"18px",lineHeight:1}}>↖</span>
-            <span style={{fontSize:"6px",fontFamily:"'Space Mono',monospace",fontWeight:700}}>Mover</span>
+            <span style={{fontSize:"6px",fontFamily:"'Inter',sans-serif",fontWeight:700}}>Mover</span>
           </button>
         </div>
         <div style={{display:"flex",gap:"5px",alignItems:"center",marginTop:"7px",flexWrap:"wrap"}}>
-          <span style={{fontSize:"7px",color:"#4477aa"}}>Color:</span>
+          <span style={{fontSize:"7px",color:"#3355aa"}}>Color:</span>
           {COLS.slice(0,8).map((c,i)=>(
             <div key={c} onClick={()=>setColorIdx(i)}
               style={{width:"17px",height:"17px",borderRadius:"50%",background:c,cursor:"pointer",
@@ -844,14 +844,14 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
                 boxShadow:colorIdx===i?`0 0 8px ${c}`:"none"}}/>
           ))}
           {showStyleOpts&&<>
-            <span style={{fontSize:"7px",color:"#4477aa",marginLeft:"4px"}}>Línea:</span>
+            <span style={{fontSize:"7px",color:"#3355aa",marginLeft:"4px"}}>Línea:</span>
             {[["solid","━ Cont."],["dashed","┄ Disc."],["dotted","··· Punt."]].map(([v,lb])=>(
               <button key={v} onClick={()=>setLStyle(v)}
                 style={{padding:"2px 8px",borderRadius:"5px",
-                  background:lStyle===v?"rgba(0,229,196,.2)":"transparent",
+                  background:lStyle===v?"rgba(0,150,255,.2)":"transparent",
                   color:lStyle===v?ACC:"#5577aa",
-                  border:`1px solid ${lStyle===v?"rgba(0,229,196,.5)":"rgba(0,229,196,.12)"}`,
-                  fontSize:"7px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>{lb}</button>
+                  border:`1px solid ${lStyle===v?"rgba(0,150,255,.5)":"rgba(0,150,255,.12)"}`,
+                  fontSize:"7px",cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>{lb}</button>
             ))}
           </>}
         </div>
@@ -859,13 +859,13 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
 
       {/* ══ PASO 2: DIBUJA EN LA IMAGEN ══ */}
       <div style={{padding:"6px 10px",display:"flex",alignItems:"center",gap:"7px",
-        background:tool!=="sel"?"linear-gradient(90deg,rgba(0,229,196,.08),transparent)":"rgba(255,255,255,.01)",
+        background:tool!=="sel"?"linear-gradient(90deg,rgba(0,150,255,.08),transparent)":"rgba(255,255,255,.01)",
         borderBottom:"1px solid rgba(255,255,255,.05)",minHeight:"38px"}}>
         {tool!=="sel" ? <>
           <div style={{display:"flex",alignItems:"center",gap:"5px",padding:"4px 11px",
-            background:"linear-gradient(135deg,#00e5c4,#00b89a)",borderRadius:"20px",flexShrink:0}}>
+            background:"linear-gradient(135deg,#0066ff,#00b4ff)",borderRadius:"20px",flexShrink:0}}>
             <span style={{fontSize:"14px"}}>{TOOLS.find(t=>t.id===tool)?.icon}</span>
-            <span style={{fontSize:"8px",fontWeight:700,color:"#07101e",fontFamily:"'Space Mono',monospace"}}>
+            <span style={{fontSize:"8px",fontWeight:700,color:"#07101e",fontFamily:"'Inter',sans-serif"}}>
               {TOOLS.find(t=>t.id===tool)?.label}
             </span>
           </div>
@@ -887,10 +887,10 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
           </button>
         )}
         <button onClick={undo} disabled={hist.length===0}
-          style={{padding:"4px 9px",background:hist.length>0?"rgba(0,229,196,.12)":"transparent",
-            border:`1px solid ${hist.length>0?"rgba(0,229,196,.35)":"transparent"}`,
+          style={{padding:"4px 9px",background:hist.length>0?"rgba(0,150,255,.12)":"transparent",
+            border:`1px solid ${hist.length>0?"rgba(0,150,255,.35)":"transparent"}`,
             color:hist.length>0?ACC:"#2a5070",borderRadius:"6px",fontSize:"8px",
-            cursor:hist.length>0?"pointer":"default",fontFamily:"'Space Mono',monospace",fontWeight:700,flexShrink:0}}>
+            cursor:hist.length>0?"pointer":"default",fontFamily:"'Inter',sans-serif",fontWeight:700,flexShrink:0}}>
           ↩ {hist.length}
         </button>
       </div>
@@ -910,15 +910,15 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
           <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",overflow:"visible",pointerEvents:"all"}}>
             {showSegs&&segments.map(seg=>(
               <g key={seg.id} className="sp" style={{cursor:"pointer"}}
-                onClick={e=>{e.stopPropagation();setMeasuring({id:uid(),type:"dot",icon:"🔍",title:seg.name,label:seg.name,value:null,unit:"cm",axis:"",color:seg.color||"#00e5c4",points:[{x:(seg.x1+seg.x2)/2,y:(seg.y1+seg.y2)/2}]});setMIn({title:seg.name,value:"",unit:"cm",axis:"other"});}}>
+                onClick={e=>{e.stopPropagation();setMeasuring({id:uid(),type:"dot",icon:"🔍",title:seg.name,label:seg.name,value:null,unit:"cm",axis:"",color:seg.color||"#00b4ff",points:[{x:(seg.x1+seg.x2)/2,y:(seg.y1+seg.y2)/2}]});setMIn({title:seg.name,value:"",unit:"cm",axis:"other"});}}>
                 <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width={`${(seg.x2-seg.x1)*100}%`} height={`${(seg.y2-seg.y1)*100}%`}
-                  stroke={seg.color||"#00e5c4"} strokeWidth="1.8" strokeDasharray="6,3" fill={`${seg.color||"#00e5c4"}14`} rx="2"/>
-                <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width="14%" height="5%" rx="2%" fill={`${seg.color||"#00e5c4"}dd`}/>
-                <text x={`${seg.x1*100+1}%`} y={`${seg.y1*100+3}%`} fill="#000" fontSize="2.3%" fontFamily="Space Mono,monospace" fontWeight="700" dominantBaseline="middle">{seg.id}. {(seg.name||"").slice(0,12)}</text>
+                  stroke={seg.color||"#00b4ff"} strokeWidth="1.8" strokeDasharray="6,3" fill={`${seg.color||"#00b4ff"}14`} rx="2"/>
+                <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width="14%" height="5%" rx="2%" fill={`${seg.color||"#00b4ff"}dd`}/>
+                <text x={`${seg.x1*100+1}%`} y={`${seg.y1*100+3}%`} fill="#000" fontSize="2.3%" fontFamily="Inter,sans-serif" fontWeight="700" dominantBaseline="middle">{seg.id}. {(seg.name||"").slice(0,12)}</text>
               </g>
             ))}
             {shapeAnns.map(a=><ShapeSVG key={a.id} a={a}/>)}
-            {preview&&<ShapeSVG a={{...preview,id:"pv",color:"rgba(0,229,196,.65)",lineStyle:"solid",arrowHead:"end"}} isPrev={true}/>}
+            {preview&&<ShapeSVG a={{...preview,id:"pv",color:"rgba(0,150,255,.65)",lineStyle:"solid",arrowHead:"end"}} isPrev={true}/>}
             {pending.length===1&&<circle cx={`${pending[0].x*100}%`} cy={`${pending[0].y*100}%`} r="5" fill={COLS[colorIdx%COLS.length]} opacity=".8" pointerEvents="none"/>}
             <StatsOverlay/>
           </svg>
@@ -932,7 +932,7 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
                 background:a.value!=null?"rgba(255,255,255,.96)":"rgba(30,30,50,.92)",
                 color:a.value!=null?"#111":"#aaccff",
                 fontSize:"9px",fontWeight:"700",padding:"4px 10px",
-                borderRadius:"20px",whiteSpace:"nowrap",fontFamily:"'Space Mono',monospace",
+                borderRadius:"20px",whiteSpace:"nowrap",fontFamily:"'Inter',sans-serif",
                 boxShadow:`0 2px 10px rgba(0,0,0,.5), 0 0 0 2px ${a.color}`,
                 pointerEvents:"none",letterSpacing:".02em"}}>
                 {a.value!=null
@@ -950,47 +950,47 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
       <div style={{display:"flex",gap:"4px",padding:"6px 9px",borderTop:"1px solid rgba(255,255,255,.05)",flexWrap:"wrap"}}>
         <button onClick={()=>setRotation(r=>(r+90)%360)} style={{padding:"4px 8px",background:"rgba(68,170,255,.1)",border:"1px solid rgba(68,170,255,.28)",color:"#44aaff",borderRadius:"6px",fontSize:"9px",cursor:"pointer"}}>↻ +90°</button>
         <button onClick={()=>setRotation(r=>(r-90+360)%360)} style={{padding:"4px 8px",background:"rgba(68,170,255,.1)",border:"1px solid rgba(68,170,255,.28)",color:"#44aaff",borderRadius:"6px",fontSize:"9px",cursor:"pointer"}}>↺ -90°</button>
-        {origImage&&origImage!==image&&<button onClick={()=>{setImage(origImage);setAnns([]);setHist([]);}} style={{padding:"4px 8px",background:"rgba(255,187,0,.1)",border:"1px solid rgba(255,187,0,.3)",color:"#ffbb00",borderRadius:"6px",fontSize:"9px",cursor:"pointer"}}>↩ Original</button>}
+        {origImage&&origImage!==image&&<button onClick={()=>{setImage(origImage);setAnns([]);setHist([]);}} style={{padding:"4px 8px",background:"rgba(255,187,0,.1)",border:"1px solid rgba(255,187,0,.3)",color:"#00b4ff",borderRadius:"6px",fontSize:"9px",cursor:"pointer"}}>↩ Original</button>}
         {selId&&<button onClick={()=>delAnn(selId)} style={{padding:"4px 8px",background:"rgba(255,80,80,.1)",border:"1px solid rgba(255,80,80,.3)",color:"#ff7788",borderRadius:"6px",fontSize:"9px",cursor:"pointer"}}>🗑 Sel.</button>}
         <button onClick={()=>{if(window.confirm("¿Borrar todas las anotaciones?"))setAnns([]);}} style={{padding:"4px 8px",background:"rgba(255,80,80,.06)",border:"1px solid rgba(255,80,80,.18)",color:"rgba(255,100,110,.7)",borderRadius:"6px",fontSize:"9px",cursor:"pointer"}}>🗑 Todo</button>
-        {scale&&<span style={{fontSize:"7px",color:ACC,padding:"4px 6px",background:"rgba(0,229,196,.08)",borderRadius:"5px",border:"1px solid rgba(0,229,196,.2)"}}>⚖ 1{scale.unit}={scale.ppu.toFixed(0)}px</span>}
-        {segments.length>0&&<button onClick={()=>setShowSegs(s=>!s)} style={{padding:"4px 8px",background:showSegs?"rgba(0,229,196,.15)":"rgba(0,229,196,.04)",border:`1px solid rgba(0,229,196,${showSegs?.4:.15})`,color:showSegs?ACC:"#3a6878",borderRadius:"6px",fontSize:"9px",cursor:"pointer"}}>🔍 {showSegs?"Partes":"Partes"} ({segments.length})</button>}
+        {scale&&<span style={{fontSize:"7px",color:ACC,padding:"4px 6px",background:"rgba(0,150,255,.08)",borderRadius:"5px",border:"1px solid rgba(0,150,255,.2)"}}>⚖ 1{scale.unit}={scale.ppu.toFixed(0)}px</span>}
+        {segments.length>0&&<button onClick={()=>setShowSegs(s=>!s)} style={{padding:"4px 8px",background:showSegs?"rgba(0,150,255,.15)":"rgba(0,150,255,.04)",border:`1px solid rgba(0,150,196,${showSegs?.4:.15})`,color:showSegs?ACC:"#3a6878",borderRadius:"6px",fontSize:"9px",cursor:"pointer"}}>🔍 {showSegs?"Partes":"Partes"} ({segments.length})</button>}
       </div>
     </>)}
 
     {viewTab==="2d"&&(<div ref={captureRef}>{lbl("📐 Plano 2D AutoCAD")}
-      {!hasDims&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#5577aa",background:"rgba(0,100,200,.07)",borderBottom:"1px solid rgba(0,100,200,.1)"}}>💡 Toca medida → Editar → asigna Eje (Ancho/Alto/Prof.)</div>}
+      {!hasDims&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#445577",background:"rgba(0,100,200,.07)",borderBottom:"1px solid rgba(0,100,200,.1)"}}>💡 Toca medida → Editar → asigna Eje (Ancho/Alto/Prof.)</div>}
       <View2D anns={anns} objName={projTitle||objInfo?.name} sc={scale}/>
     </div>)}
 
     {viewTab==="3d"&&(<div ref={captureRef}>{lbl("🎮 Modelo 3D")}
-      {!hasDims&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#5577aa",background:"rgba(0,100,200,.07)",borderBottom:"1px solid rgba(0,100,200,.1)"}}>💡 Asigna eje Ancho/Alto/Prof. para escala real</div>}
+      {!hasDims&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#445577",background:"rgba(0,100,200,.07)",borderBottom:"1px solid rgba(0,100,200,.1)"}}>💡 Asigna eje Ancho/Alto/Prof. para escala real</div>}
       <V3D anns={anns} shape={objInfo?.shape}/>
     </div>)}
 
-    {viewTab==="pipe3d"&&piping&&(<div ref={captureRef}>{lbl("🔩 Piping 3D PBR","#ffbb00")}<V3DPipe components={piping.components} dn={piping.dn}/><div style={{padding:"5px 10px 6px",fontSize:"7px",color:"#5577aa"}}>{piping.label}</div></div>)}
+    {viewTab==="pipe3d"&&piping&&(<div ref={captureRef}>{lbl("🔩 Piping 3D PBR","#00b4ff")}<V3DPipe components={piping.components} dn={piping.dn}/><div style={{padding:"5px 10px 6px",fontSize:"7px",color:"#445577"}}>{piping.label}</div></div>)}
 
     {viewTab==="picomp"&&piping&&(<>
-      {lbl("📋 Componentes","#ffbb00")}
+      {lbl("📋 Componentes","#00b4ff")}
       <div style={{maxHeight:"260px",overflowY:"auto"}}>
         {(piping.components||[]).map((c,i)=>(<div key={i} style={{padding:"7px 12px",borderBottom:"1px solid rgba(255,255,255,.04)",display:"flex",gap:"8px"}}>
           <div style={{width:"18px",height:"18px",borderRadius:"3px",background:`${COLS[i%COLS.length]}22`,border:`1px solid ${COLS[i%COLS.length]}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"7px",color:COLS[i%COLS.length],fontWeight:700,flexShrink:0}}>{i+1}</div>
-          <div><div style={{fontSize:"8px",color:"#d0e8f8",fontWeight:700,textTransform:"capitalize"}}>{c.type?.replace(/_/g," ")}</div><div style={{fontSize:"7px",color:"#4477aa"}}>{c.dn?`DN${c.dn} `:""}{c.length?`L:${c.length}mm `:""}{c.material||""}{c.valve_type?` ${c.valve_type}`:""}</div></div>
+          <div><div style={{fontSize:"8px",color:"#d0e8f8",fontWeight:700,textTransform:"capitalize"}}>{c.type?.replace(/_/g," ")}</div><div style={{fontSize:"7px",color:"#3355aa"}}>{c.dn?`DN${c.dn} `:""}{c.length?`L:${c.length}mm `:""}{c.material||""}{c.valve_type?` ${c.valve_type}`:""}</div></div>
         </div>))}
       </div>
       <div style={{padding:"8px 10px",borderTop:"1px solid rgba(255,255,255,.06)",display:"flex",gap:"5px",alignItems:"center"}}>
-        <span style={{fontSize:"7px",color:"#4477aa"}}>DN:</span>
-        <input type="number" min="10" value={piping.dn} onChange={e=>setPiping(p=>({...p,dn:parseInt(e.target.value)||p.dn}))} style={{width:"55px",padding:"4px 7px",background:"rgba(0,10,25,.8)",border:"1px solid rgba(255,187,0,.3)",borderRadius:"5px",color:"#ffbb00",fontSize:"11px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
-        <button onClick={()=>setViewTab("pipe3d")} style={{marginLeft:"auto",padding:"5px 10px",background:"linear-gradient(135deg,#ffbb00,#ff8800)",color:"#07101e",border:"none",borderRadius:"6px",fontSize:"8px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer"}}>↗ 3D</button>
+        <span style={{fontSize:"7px",color:"#3355aa"}}>DN:</span>
+        <input type="number" min="10" value={piping.dn} onChange={e=>setPiping(p=>({...p,dn:parseInt(e.target.value)||p.dn}))} style={{width:"55px",padding:"4px 7px",background:"rgba(0,10,25,.8)",border:"1px solid rgba(255,187,0,.3)",borderRadius:"5px",color:"#00b4ff",fontSize:"11px",fontFamily:"'Inter',sans-serif",outline:"none"}}/>
+        <button onClick={()=>setViewTab("pipe3d")} style={{marginLeft:"auto",padding:"5px 10px",background:"linear-gradient(135deg,#ff7700,#ffaa00)",color:"#07101e",border:"none",borderRadius:"6px",fontSize:"8px",fontFamily:"'Inter',sans-serif",fontWeight:700,cursor:"pointer"}}>↗ 3D</button>
       </div>
     </>)}
   </div>
 
   {/* AI SEGMENTATION */}
-  <div style={card("rgba(68,220,255,.28)","rgba(0,30,50,.88)")}>
+  <div style={card("rgba(0,120,255,.22)","rgba(8,12,28,.95)")}>
     {lbl("🔍 Segmentación IA — Identificar partes","#44ddff")}
     <div style={{padding:"8px 12px",display:"flex",gap:"6px",borderBottom:"1px solid rgba(68,220,255,.12)"}}>
-      <button onClick={segmentAI} disabled={segLoad||!image} style={{flex:1,padding:"8px",background:segLoad?"rgba(68,220,255,.08)":"linear-gradient(135deg,#44ddff,#0099cc)",color:segLoad?"#337788":"#07101e",border:"none",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:segLoad||!image?"not-allowed":"pointer"}}>
+      <button onClick={segmentAI} disabled={segLoad||!image} style={{flex:1,padding:"8px",background:segLoad?"rgba(0,100,255,.08)":"linear-gradient(135deg,#0066ff,#00aaff)",color:segLoad?"#337788":"#07101e",border:"none",borderRadius:"7px",fontSize:"8px",fontFamily:"'Inter',sans-serif",fontWeight:700,cursor:segLoad||!image?"not-allowed":"pointer"}}>
         {segLoad?"⏳ Segmentando...":"🔍 Identificar partes del objeto"}
       </button>
       {segments.length>0&&<button onClick={()=>setSegments([])} style={{padding:"8px 10px",background:"rgba(255,80,80,.1)",border:"1px solid rgba(255,80,80,.3)",color:"#ff7788",borderRadius:"7px",fontSize:"9px",cursor:"pointer"}}>✕</button>}
@@ -998,9 +998,9 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
     {segments.length>0&&<div style={{maxHeight:"130px",overflowY:"auto"}}>
       {segments.map(seg=>(
         <div key={seg.id} style={{display:"flex",alignItems:"center",gap:"8px",padding:"6px 12px",borderBottom:"1px solid rgba(255,255,255,.04)"}}>
-          <div style={{width:"12px",height:"12px",borderRadius:"2px",background:seg.color||"#00e5c4",flexShrink:0}}/>
+          <div style={{width:"12px",height:"12px",borderRadius:"2px",background:seg.color||"#00b4ff",flexShrink:0}}/>
           <div style={{flex:1}}><div style={{fontSize:"8px",color:"#d0e8f8",fontWeight:700}}>{seg.id}. {seg.name}</div><div style={{fontSize:"7px",color:"#3a7080"}}>{seg.hint||""}</div></div>
-          <button onClick={()=>{setMeasuring({id:uid(),type:"dot",icon:"🔍",title:seg.name,label:seg.name,value:null,unit:"cm",axis:"",color:seg.color||"#00e5c4",points:[{x:(seg.x1+seg.x2)/2,y:(seg.y1+seg.y2)/2}]});setMIn({title:seg.name,value:"",unit:"cm",axis:"other"});}} style={{padding:"3px 7px",background:"linear-gradient(135deg,#44ddff,#0099cc)",border:"none",color:"#07101e",borderRadius:"5px",fontSize:"7px",cursor:"pointer",fontWeight:700}}>+ Medir</button>
+          <button onClick={()=>{setMeasuring({id:uid(),type:"dot",icon:"🔍",title:seg.name,label:seg.name,value:null,unit:"cm",axis:"",color:seg.color||"#00b4ff",points:[{x:(seg.x1+seg.x2)/2,y:(seg.y1+seg.y2)/2}]});setMIn({title:seg.name,value:"",unit:"cm",axis:"other"});}} style={{padding:"3px 7px",background:"linear-gradient(135deg,#0066ff,#00aaff)",border:"none",color:"#07101e",borderRadius:"5px",fontSize:"7px",cursor:"pointer",fontWeight:700}}>+ Medir</button>
         </div>
       ))}
     </div>}
@@ -1012,15 +1012,15 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
     {lbl("✏ Editar anotación","#44dd88")}
     <div style={{padding:"9px 12px",display:"flex",flexDirection:"column",gap:"6px"}}>
       <div style={{display:"flex",gap:"5px"}}>
-        <input value={selAnn.title||""} placeholder="Título" onChange={e=>updAnn(selId,{title:e.target.value,label:e.target.value})} style={{flex:1,padding:"6px 9px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(68,220,140,.22)",borderRadius:"6px",color:"#d0e8f8",fontSize:"9px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
-        <select value={selAnn.axis||""} onChange={e=>updAnn(selId,{axis:e.target.value})} style={{padding:"6px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(68,220,140,.3)",borderRadius:"6px",color:"#44dd88",fontSize:"8px",fontFamily:"'Space Mono',monospace",outline:"none"}}>
+        <input value={selAnn.title||""} placeholder="Título" onChange={e=>updAnn(selId,{title:e.target.value,label:e.target.value})} style={{flex:1,padding:"6px 9px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(68,220,140,.22)",borderRadius:"6px",color:"#d0e8f8",fontSize:"9px",fontFamily:"'Inter',sans-serif",outline:"none"}}/>
+        <select value={selAnn.axis||""} onChange={e=>updAnn(selId,{axis:e.target.value})} style={{padding:"6px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(68,220,140,.3)",borderRadius:"6px",color:"#44dd88",fontSize:"8px",fontFamily:"'Inter',sans-serif",outline:"none"}}>
           <option value="">eje...</option><option value="width">Ancho X</option><option value="height">Alto Y</option><option value="depth">Prof. Z</option><option value="other">Otro</option>
         </select>
       </div>
       <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
         <input type="number" min="0" value={selAnn.value!=null?selAnn.value:""} placeholder="Valor medido"
           onChange={e=>updAnn(selId,{value:e.target.value===""?null:parseFloat(e.target.value)})}
-          style={{flex:1,padding:"6px 9px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(0,229,196,.4)",borderRadius:"6px",color:ACC,fontSize:"15px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
+          style={{flex:1,padding:"6px 9px",background:"rgba(0,10,20,.8)",border:"1px solid rgba(0,150,255,.4)",borderRadius:"6px",color:ACC,fontSize:"15px",fontFamily:"'Inter',sans-serif",outline:"none",textAlign:"right"}}/>
         <div style={{display:"flex",gap:"2px"}}>{["mm","cm","m","in","ft"].map(u=><button key={u} style={uBt((selAnn.unit||"cm")===u)} onClick={()=>updAnn(selId,{unit:u})}>{u}</button>)}</div>
       </div>
       <div style={{display:"flex",gap:"3px",flexWrap:"wrap",alignItems:"center"}}>
@@ -1031,10 +1031,10 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
   </div>)}
 
   {/* AI ASSISTANT */}
-  <div style={card("rgba(170,100,255,.28)","rgba(28,0,58,.85)")}>
+  <div style={card("rgba(120,60,255,.2)","rgba(14,8,30,.95)")}>
     {lbl("🤖 Asistente IA","#aa66ff")}
     <div style={{padding:"8px 12px",borderBottom:"1px solid rgba(170,100,255,.1)"}}>
-      <button onClick={askAI} disabled={aiLoad||!image} style={{width:"100%",padding:"8px",background:aiLoad?"rgba(170,100,255,.08)":"linear-gradient(135deg,#aa44ff,#7722dd)",color:aiLoad?"#6644aa":"#fff",border:"none",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:aiLoad?"not-allowed":"pointer"}}>
+      <button onClick={askAI} disabled={aiLoad||!image} style={{width:"100%",padding:"8px",background:aiLoad?"rgba(170,100,255,.08)":"linear-gradient(135deg,#aa44ff,#7722dd)",color:aiLoad?"#6644aa":"#fff",border:"none",borderRadius:"7px",fontSize:"8px",fontFamily:"'Inter',sans-serif",fontWeight:700,cursor:aiLoad?"not-allowed":"pointer"}}>
         {aiLoad?"⏳ Analizando...":"⚡ Analizar imagen con IA"}
       </button>
     </div>
@@ -1042,26 +1042,26 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
   </div>
 
   {/* RESUMEN */}
-  <div style={card("rgba(220,140,0,.28)","rgba(50,25,0,.82)")}>
+  <div style={card("rgba(0,100,220,.22)","rgba(8,12,28,.95)")}>
     <div style={{display:"flex",alignItems:"center",cursor:"pointer"}} onClick={()=>setShowSum(s=>!s)}>
-      {lbl(`📋 Resumen (${anns.filter(a=>a.value!=null).length} medidas)`,  "#ffbb00")}
-      <span style={{padding:"5px 10px",color:"#ffbb00",fontSize:"11px"}}>{showSum?"▲":"▼"}</span>
+      {lbl(`📋 Resumen (${anns.filter(a=>a.value!=null).length} medidas)`,  "#00b4ff")}
+      <span style={{padding:"5px 10px",color:"#00b4ff",fontSize:"11px"}}>{showSum?"▲":"▼"}</span>
     </div>
     {showSum&&(<>
-      {anns.filter(a=>a.value!=null).length===0&&anns.filter(a=>a.isAI).length>0&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#5577aa"}}>
+      {anns.filter(a=>a.value!=null).length===0&&anns.filter(a=>a.isAI).length>0&&<div style={{padding:"8px 12px",fontSize:"8px",color:"#445577"}}>
         {anns.filter(a=>a.isAI).length} puntos IA — tócalos para añadir valor
       </div>}
-      {anns.filter(a=>a.value!=null).length===0&&anns.filter(a=>a.isAI).length===0&&<div style={{padding:"12px",fontSize:"8px",color:"#5577aa",textAlign:"center",lineHeight:1.8}}>
+      {anns.filter(a=>a.value!=null).length===0&&anns.filter(a=>a.isAI).length===0&&<div style={{padding:"12px",fontSize:"8px",color:"#445577",textAlign:"center",lineHeight:1.8}}>
         Selecciona herramienta → dibuja → confirma medida
       </div>}
       {/* Quick fill for AI points without value */}
       {anns.filter(a=>a.value==null&&a.isAI).slice(0,4).map(a=>(
-        <div key={a.id} style={{display:"flex",alignItems:"center",gap:"7px",padding:"6px 12px",background:"rgba(0,229,196,.03)",borderBottom:"1px solid rgba(255,255,255,.04)"}}>
+        <div key={a.id} style={{display:"flex",alignItems:"center",gap:"7px",padding:"6px 12px",background:"rgba(0,150,255,.03)",borderBottom:"1px solid rgba(255,255,255,.04)"}}>
           <div style={{width:"9px",height:"9px",borderRadius:"50%",background:a.color,flexShrink:0}}/>
           <span style={{flex:1,fontSize:"8px",color:"#7aaabb"}}>{a.title||a.type}</span>
           <input type="number" min="0" placeholder="0" value={a.value!=null?a.value:""}
             onChange={e=>{const v=e.target.value===""?null:parseFloat(e.target.value);updAnn(a.id,{value:v});}}
-            style={{width:"55px",padding:"3px 6px",background:"rgba(0,12,22,.8)",border:"1px solid rgba(0,229,196,.3)",borderRadius:"4px",color:ACC,fontSize:"11px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
+            style={{width:"55px",padding:"3px 6px",background:"rgba(0,12,22,.8)",border:"1px solid rgba(0,150,255,.3)",borderRadius:"4px",color:ACC,fontSize:"11px",fontFamily:"'Inter',sans-serif",outline:"none",textAlign:"right"}}/>
           <span style={{fontSize:"7px",color:"#3a5070"}}>{a.unit}</span>
         </div>
       ))}
@@ -1071,12 +1071,12 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
           <div style={{width:"9px",height:"9px",borderRadius:"50%",background:a.color,flexShrink:0,boxShadow:`0 0 5px ${a.color}`}}/>
           <div style={{flex:1,minWidth:0}}>
             <span style={{fontSize:"8px",color:"#d0e8f8",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.title||a.type}</span>
-            {a.axis&&<span style={{fontSize:"7px",color:"#4477aa"}}>({a.axis==="width"?"Ancho":a.axis==="height"?"Alto":a.axis==="depth"?"Prof.":a.axis})</span>}
+            {a.axis&&<span style={{fontSize:"7px",color:"#3355aa"}}>({a.axis==="width"?"Ancho":a.axis==="height"?"Alto":a.axis==="depth"?"Prof.":a.axis})</span>}
           </div>
           <input type="number" min="0" value={a.value} onClick={e=>e.stopPropagation()}
             onChange={e=>{e.stopPropagation();updAnn(a.id,{value:e.target.value===""?null:parseFloat(e.target.value)});}}
-            style={{width:"58px",padding:"3px 6px",background:"rgba(0,12,22,.8)",border:`1px solid ${selId===a.id?"rgba(255,187,0,.5)":"rgba(0,229,196,.25)"}`,borderRadius:"4px",color:selId===a.id?"#ffbb00":a.color,fontSize:"12px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
-          <select value={a.unit} onClick={e=>e.stopPropagation()} onChange={e=>{e.stopPropagation();updAnn(a.id,{unit:e.target.value});}} style={{padding:"3px 4px",background:"rgba(0,12,22,.8)",border:"1px solid rgba(0,229,196,.2)",borderRadius:"4px",color:"#7aaabb",fontSize:"8px",fontFamily:"'Space Mono',monospace",outline:"none"}}>
+            style={{width:"58px",padding:"3px 6px",background:"rgba(0,12,22,.8)",border:`1px solid ${selId===a.id?"rgba(255,187,0,.5)":"rgba(0,150,255,.25)"}`,borderRadius:"4px",color:selId===a.id?"#00b4ff":a.color,fontSize:"12px",fontFamily:"'Inter',sans-serif",outline:"none",textAlign:"right"}}/>
+          <select value={a.unit} onClick={e=>e.stopPropagation()} onChange={e=>{e.stopPropagation();updAnn(a.id,{unit:e.target.value});}} style={{padding:"3px 4px",background:"rgba(0,12,22,.8)",border:"1px solid rgba(0,150,255,.2)",borderRadius:"4px",color:"#7aaabb",fontSize:"8px",fontFamily:"'Inter',sans-serif",outline:"none"}}>
             {["mm","cm","m","in","ft"].map(u=><option key={u} value={u}>{u}</option>)}
           </select>
           <span style={{fontSize:"7px",color:"#3a5070",flexShrink:0,minWidth:"40px"}}>{fv(toMM(a.value,a.unit),"mm")}</span>
@@ -1089,13 +1089,13 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
   <RoomMetrics anns={anns}/>
 
   {/* EXPORT */}
-  <div style={card("rgba(68,170,255,.28)","rgba(0,20,50,.88)")}>{lbl("📤 Exportar · Compartir · Sincronizar","#44aaff")}
+  <div style={card("rgba(0,80,180,.2)","rgba(8,12,28,.95)")}>{lbl("📤 Exportar · Compartir · Sincronizar","#44aaff")}
     <div style={{padding:"8px",display:"flex",gap:"4px",flexWrap:"wrap"}}>
-      <button onClick={exportPNG} style={{flex:1,padding:"9px 4px",background:"rgba(0,229,196,.12)",border:"1px solid rgba(0,229,196,.35)",color:ACC,borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"55px"}}>📥 PNG</button>
-      <button onClick={exportPDF} style={{flex:1,padding:"9px 4px",background:"rgba(255,80,80,.09)",border:"1px solid rgba(255,80,80,.3)",color:"#ff7788",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"55px"}}>📄 PDF</button>
-      <button onClick={shareWA} style={{flex:1,padding:"9px 4px",background:"rgba(37,211,102,.09)",border:"1px solid rgba(37,211,102,.35)",color:"#25d366",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"55px",fontWeight:700}}>💬 WA</button>
-      <button onClick={shareEmail} style={{flex:1,padding:"9px 4px",background:"rgba(100,150,255,.08)",border:"1px solid rgba(100,150,255,.28)",color:"#88aaff",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"55px"}}>📧 Email</button>
-      <button onClick={genLink} style={{flex:2,padding:"9px 4px",background:"linear-gradient(135deg,rgba(0,150,255,.14),rgba(100,50,255,.11))",border:"1px solid rgba(0,150,255,.38)",color:"#44aaff",borderRadius:"7px",fontSize:"8px",fontFamily:"'Space Mono',monospace",cursor:"pointer",minWidth:"100px",fontWeight:700}}>☁ Enlace p/móvil</button>
+      <button onClick={exportPNG} style={{flex:1,padding:"9px 4px",background:"rgba(0,150,255,.12)",border:"1px solid rgba(0,150,255,.35)",color:ACC,borderRadius:"7px",fontSize:"8px",fontFamily:"'Inter',sans-serif",cursor:"pointer",minWidth:"55px"}}>📥 PNG</button>
+      <button onClick={exportPDF} style={{flex:1,padding:"9px 4px",background:"rgba(255,80,80,.09)",border:"1px solid rgba(255,80,80,.3)",color:"#ff7788",borderRadius:"7px",fontSize:"8px",fontFamily:"'Inter',sans-serif",cursor:"pointer",minWidth:"55px"}}>📄 PDF</button>
+      <button onClick={shareWA} style={{flex:1,padding:"9px 4px",background:"rgba(37,211,102,.09)",border:"1px solid rgba(37,211,102,.35)",color:"#25d366",borderRadius:"7px",fontSize:"8px",fontFamily:"'Inter',sans-serif",cursor:"pointer",minWidth:"55px",fontWeight:700}}>💬 WA</button>
+      <button onClick={shareEmail} style={{flex:1,padding:"9px 4px",background:"rgba(100,150,255,.08)",border:"1px solid rgba(100,150,255,.28)",color:"#88aaff",borderRadius:"7px",fontSize:"8px",fontFamily:"'Inter',sans-serif",cursor:"pointer",minWidth:"55px"}}>📧 Email</button>
+      <button onClick={genLink} style={{flex:2,padding:"9px 4px",background:"linear-gradient(135deg,rgba(0,150,255,.14),rgba(100,50,255,.11))",border:"1px solid rgba(0,150,255,.38)",color:"#44aaff",borderRadius:"7px",fontSize:"8px",fontFamily:"'Inter',sans-serif",cursor:"pointer",minWidth:"100px",fontWeight:700}}>☁ Enlace p/móvil</button>
     </div>
   </div>
 
@@ -1105,19 +1105,19 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
 <canvas ref={canvasRef} style={{display:"none"}}/>
 
 {/* MEASURE MODAL */}
-{measuring&&(<div data-modal="measure" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(0,229,196,.45)",borderRadius:"16px 16px 0 0",padding:"18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(22px)",boxShadow:"0 -4px 30px rgba(0,0,0,.7)"}}>
+{measuring&&(<div data-modal="measure" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(0,150,255,.45)",borderRadius:"16px 16px 0 0",padding:"18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(22px)",boxShadow:"0 -4px 30px rgba(0,0,0,.7)"}}>
   {closeX(()=>setMeasuring(null))}
   <div style={{marginBottom:"13px",paddingRight:"34px"}}>
     <div style={{fontSize:"10px",color:ACC,letterSpacing:".12em",fontWeight:700}}>PASO 3 — AÑADIR MEDIDA</div>
-    <div style={{fontSize:"8px",color:"#5577aa",marginTop:"3px"}}>{measuring.icon} {TOOLS.find(t=>t.id===measuring.type)?.label||measuring.type} — rellena y confirma</div>
+    <div style={{fontSize:"8px",color:"#445577",marginTop:"3px"}}>{measuring.icon} {TOOLS.find(t=>t.id===measuring.type)?.label||measuring.type} — rellena y confirma</div>
   </div>
   <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-    <input placeholder="Título (ej: Longitud total, Diámetro...)" value={mIn.title} onChange={e=>setMIn(s=>({...s,title:e.target.value}))} style={{width:"100%",padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(0,229,196,.25)",borderRadius:"8px",color:"#d0e8f8",fontSize:"10px",fontFamily:"'Space Mono',monospace",outline:"none"}}/>
+    <input placeholder="Título (ej: Longitud total, Diámetro...)" value={mIn.title} onChange={e=>setMIn(s=>({...s,title:e.target.value}))} style={{width:"100%",padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(0,150,255,.25)",borderRadius:"8px",color:"#d0e8f8",fontSize:"10px",fontFamily:"'Inter',sans-serif",outline:"none"}}/>
     <div style={{display:"flex",gap:"7px",alignItems:"center"}}>
-      <input type="number" min="0" step=".01" placeholder="Valor numérico" value={mIn.value} onChange={e=>setMIn(s=>({...s,value:e.target.value}))} style={{flex:1,padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(0,229,196,.5)",borderRadius:"8px",color:ACC,fontSize:"18px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
+      <input type="number" min="0" step=".01" placeholder="Valor numérico" value={mIn.value} onChange={e=>setMIn(s=>({...s,value:e.target.value}))} style={{flex:1,padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(0,150,255,.5)",borderRadius:"8px",color:ACC,fontSize:"18px",fontFamily:"'Inter',sans-serif",outline:"none",textAlign:"right"}}/>
       <div style={{display:"flex",gap:"3px",flexWrap:"wrap"}}>{["mm","cm","m","in","ft"].map(u=><button key={u} style={uBt(mIn.unit===u)} onClick={()=>setMIn(s=>({...s,unit:u}))}>{u}</button>)}</div>
     </div>
-    <select value={mIn.axis} onChange={e=>setMIn(s=>({...s,axis:e.target.value}))} style={{padding:"8px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(68,170,255,.3)",borderRadius:"8px",color:"#44aaff",fontSize:"9px",fontFamily:"'Space Mono',monospace",outline:"none"}}>
+    <select value={mIn.axis} onChange={e=>setMIn(s=>({...s,axis:e.target.value}))} style={{padding:"8px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(68,170,255,.3)",borderRadius:"8px",color:"#44aaff",fontSize:"9px",fontFamily:"'Inter',sans-serif",outline:"none"}}>
       <option value="">Tipo de medida (activa 2D y 3D si asignas eje)</option>
       <option value="width">Ancho (X) → activa vistas 2D y 3D</option>
       <option value="height">Alto (Y) → activa vistas 2D y 3D</option>
@@ -1125,8 +1125,8 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
       <option value="other">Otra medida</option>
     </select>
     <div style={{display:"flex",gap:"7px"}}>
-      <button onClick={()=>{addAnn(measuring);setMeasuring(null);}} style={{flex:1,padding:"10px",background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",color:"#5577aa",borderRadius:"8px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>Sin medida</button>
-      <button onClick={confirmMeasure} style={{flex:2,padding:"10px",background:"linear-gradient(135deg,#00e5c4,#0099ff)",color:"#07101e",border:"none",borderRadius:"8px",fontSize:"10px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer",boxShadow:"0 2px 14px rgba(0,229,196,.35)"}}>✓ CONFIRMAR MEDIDA</button>
+      <button onClick={()=>{addAnn(measuring);setMeasuring(null);}} style={{flex:1,padding:"10px",background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",color:"#445577",borderRadius:"8px",fontSize:"9px",fontFamily:"'Inter',sans-serif",cursor:"pointer"}}>Sin medida</button>
+      <button onClick={confirmMeasure} style={{flex:2,padding:"10px",background:"linear-gradient(135deg,#0055ff,#00aaff)",color:"#07101e",border:"none",borderRadius:"8px",fontSize:"10px",fontFamily:"'Inter',sans-serif",fontWeight:700,cursor:"pointer",boxShadow:"0 2px 14px rgba(0,150,255,.35)"}}>✓ CONFIRMAR MEDIDA</button>
     </div>
   </div>
 </div>)}
@@ -1134,26 +1134,26 @@ JSON: {"segments":[{"id":"1","name":"Cuerpo","x1":0.1,"y1":0.1,"x2":0.9,"y2":0.8
 {/* CALIB MODAL */}
 {calibAnn&&(<div data-modal="calib" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(255,187,0,.45)",borderRadius:"16px 16px 0 0",padding:"18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(22px)"}}>
   {closeX(()=>setCalibAnn(null))}
-  <div style={{fontSize:"9px",color:"#ffbb00",letterSpacing:".18em",marginBottom:"10px"}}>⚖ CALIBRAR ESCALA REAL</div>
+  <div style={{fontSize:"9px",color:"#00b4ff",letterSpacing:".18em",marginBottom:"10px"}}>⚖ CALIBRAR ESCALA REAL</div>
   <div style={{fontSize:"8px",color:"#7aaabb",marginBottom:"10px"}}>¿Cuánto mide la línea trazada?</div>
   <div style={{display:"flex",gap:"7px",alignItems:"center",marginBottom:"10px"}}>
-    <input type="number" min="0" step=".01" placeholder="Valor real" value={mIn.value} onChange={e=>setMIn(s=>({...s,value:e.target.value}))} style={{flex:1,padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(255,187,0,.5)",borderRadius:"8px",color:"#ffbb00",fontSize:"16px",fontFamily:"'Space Mono',monospace",outline:"none",textAlign:"right"}}/>
-    <div style={{display:"flex",gap:"3px"}}>{["mm","cm","m","in","ft"].map(u=><button key={u} onClick={()=>setMIn(s=>({...s,unit:u}))} style={{padding:"5px 7px",background:mIn.unit===u?"rgba(255,187,0,.2)":"transparent",color:mIn.unit===u?"#ffbb00":"#3a6878",border:`1px solid ${mIn.unit===u?"rgba(255,187,0,.5)":"rgba(255,187,0,.15)"}`,borderRadius:"5px",fontSize:"9px",cursor:"pointer",fontFamily:"'Space Mono',monospace"}}>{u}</button>)}</div>
+    <input type="number" min="0" step=".01" placeholder="Valor real" value={mIn.value} onChange={e=>setMIn(s=>({...s,value:e.target.value}))} style={{flex:1,padding:"9px 12px",background:"rgba(0,15,35,.8)",border:"1px solid rgba(255,187,0,.5)",borderRadius:"8px",color:"#00b4ff",fontSize:"16px",fontFamily:"'Inter',sans-serif",outline:"none",textAlign:"right"}}/>
+    <div style={{display:"flex",gap:"3px"}}>{["mm","cm","m","in","ft"].map(u=><button key={u} onClick={()=>setMIn(s=>({...s,unit:u}))} style={{padding:"5px 7px",background:mIn.unit===u?"rgba(255,187,0,.2)":"transparent",color:mIn.unit===u?"#00b4ff":"#3a6878",border:`1px solid ${mIn.unit===u?"rgba(255,187,0,.5)":"rgba(255,187,0,.15)"}`,borderRadius:"5px",fontSize:"9px",cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>{u}</button>)}</div>
   </div>
   <div style={{display:"flex",gap:"7px"}}>
-    <button onClick={()=>setCalibAnn(null)} style={{flex:1,padding:"10px",background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",color:"#5577aa",borderRadius:"8px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>✕ Cancelar</button>
-    <button onClick={confirmCalib} style={{flex:2,padding:"10px",background:"linear-gradient(135deg,#ffbb00,#ff8800)",color:"#07101e",border:"none",borderRadius:"8px",fontSize:"10px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer"}}>⚖ CALIBRAR ESCALA</button>
+    <button onClick={()=>setCalibAnn(null)} style={{flex:1,padding:"10px",background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",color:"#445577",borderRadius:"8px",fontSize:"9px",fontFamily:"'Inter',sans-serif",cursor:"pointer"}}>✕ Cancelar</button>
+    <button onClick={confirmCalib} style={{flex:2,padding:"10px",background:"linear-gradient(135deg,#ff7700,#ffaa00)",color:"#07101e",border:"none",borderRadius:"8px",fontSize:"10px",fontFamily:"'Inter',sans-serif",fontWeight:700,cursor:"pointer"}}>⚖ CALIBRAR ESCALA</button>
   </div>
 </div>)}
 
 {/* CROP MODAL */}
 {cropDlg&&(<div data-modal="crop" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"500px",background:"rgba(4,10,25,.97)",border:"1px solid rgba(255,187,0,.45)",borderRadius:"16px 16px 0 0",padding:"18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(22px)"}}>
   {closeX(()=>setCropDlg(null))}
-  <div style={{fontSize:"9px",color:"#ffbb00",letterSpacing:".18em",marginBottom:"10px"}}>✂ ZONA SELECCIONADA</div>
+  <div style={{fontSize:"9px",color:"#00b4ff",letterSpacing:".18em",marginBottom:"10px"}}>✂ ZONA SELECCIONADA</div>
   <div style={{fontSize:"8px",color:"#8899aa",lineHeight:1.8,marginBottom:"12px"}}>¿Medir solo esta zona o el objeto completo?</div>
   <div style={{display:"flex",gap:"7px"}}>
-    <button onClick={()=>setCropDlg(null)} style={{flex:1,padding:"10px",background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",color:"#5577aa",borderRadius:"8px",fontSize:"9px",fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>📷 Todo completo</button>
-    <button onClick={applyCrop} style={{flex:2,padding:"10px",background:"linear-gradient(135deg,#ffbb00,#ff8800)",color:"#07101e",border:"none",borderRadius:"8px",fontSize:"10px",fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer"}}>✂ RECORTAR Y MEDIR ZONA</button>
+    <button onClick={()=>setCropDlg(null)} style={{flex:1,padding:"10px",background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",color:"#445577",borderRadius:"8px",fontSize:"9px",fontFamily:"'Inter',sans-serif",cursor:"pointer"}}>📷 Todo completo</button>
+    <button onClick={applyCrop} style={{flex:2,padding:"10px",background:"linear-gradient(135deg,#ff7700,#ffaa00)",color:"#07101e",border:"none",borderRadius:"8px",fontSize:"10px",fontFamily:"'Inter',sans-serif",fontWeight:700,cursor:"pointer"}}>✂ RECORTAR Y MEDIR ZONA</button>
   </div>
 </div>)}
 
