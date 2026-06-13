@@ -169,7 +169,7 @@ function V3D({anns,shape}){
     scene.add(new THREE.GridHelper(14,14,0x1a2540,0x121c30));
     scene.add(new THREE.AmbientLight(0x405060,.8));
     const kl=new THREE.DirectionalLight(0xfff5ee,2.4);kl.position.set(7,13,5);kl.castShadow=true;kl.shadow.mapSize.set(1024,1024);kl.shadow.bias=-.001;scene.add(kl);
-    scene.add(Object.assign(new THREE.DirectionalLight(0x5588cc,.6),{position:new THREE.Vector3(-6,4,-9)}));
+    const fl1=new THREE.DirectionalLight(0x5588cc,.6);fl1.position.set(-6,4,-9);scene.add(fl1);
     let drag=false,lx=0,ly=0,ry=.5,rx=.18;
     const px=e=>e.clientX??e.touches?.[0]?.clientX??0,py=e=>e.clientY??e.touches?.[0]?.clientY??0;
     const dn=e=>{drag=true;lx=px(e);ly=py(e);};const mv=e=>{if(!drag)return;ry+=(px(e)-lx)*.012;rx=clamp(rx+(py(e)-ly)*.012,-.8,.8);lx=px(e);ly=py(e);};const up=()=>drag=false;
@@ -199,7 +199,7 @@ function V3DPipe({components,dn}){
     const mV=new THREE.MeshStandardMaterial({color:0x223344,metalness:.82,roughness:.22});
     const mH=new THREE.MeshStandardMaterial({color:0xff2200,metalness:.35,roughness:.5});
     scene.add(new THREE.AmbientLight(0x304050,.9));const kl=new THREE.DirectionalLight(0xfff8f0,2.6);kl.position.set(8,14,6);kl.castShadow=true;kl.shadow.mapSize.set(1024,1024);scene.add(kl);
-    scene.add(Object.assign(new THREE.DirectionalLight(0x6088bb,.7),{position:new THREE.Vector3(-8,4,-10)}));
+    const fl2=new THREE.DirectionalLight(0x6088bb,.7);fl2.position.set(-8,4,-10);scene.add(fl2);
     scene.add(new THREE.HemisphereLight(0x3355aa,0x221a11,.5));
     const fl=new THREE.Mesh(new THREE.PlaneGeometry(20,20),new THREE.MeshStandardMaterial({color:0x0a0e18,roughness:.95}));fl.rotation.x=-Math.PI/2;fl.position.y=-.05;fl.receiveShadow=true;scene.add(fl);
     scene.add(new THREE.GridHelper(20,20,0x1a2035,0x141828));
@@ -839,7 +839,7 @@ En 3-4 frases: ¿qué medidas adicionales son importantes? ¿observaciones técn
       </div>
       {/* IMAGE CANVAS */}
       <div ref={captureRef} style={{position:"relative",background:"#000",overflow:"hidden"}}>
-        <div ref={imgRef} style={{position:"relative",lineHeight:0,transform:`rotate(${rotation}deg)`,cursor:tool==="sel"?"default":measuring||calibAnn?"not-allowed":"crosshair",userSelect:"none"}}>
+        <div ref={imgRef} style={{position:"relative",lineHeight:0,transform:`rotate(${rotation}deg)`,cursor:tool==="sel"?"default":!!measuring||!!calibAnn?"not-allowed":"crosshair",userSelect:"none"}}>
           <img src={image} alt="" draggable="false" style={{width:"100%",display:"block",opacity:1,pointerEvents:"none"}}/>
           <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",overflow:"visible",pointerEvents:"all"}}>
             <SegOverlay/>
