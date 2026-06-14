@@ -534,7 +534,10 @@ function App(){
 
   /* bottom sheet: null | meas | 2d | 3d | chat | export */
   const [sheet,setSheet]=useState(null);
-  const [viewPrompt,setViewPrompt]=useState(null); /* {title,value,unit} after each measure */
+  const [viewPrompt,setViewPrompt]=useState(null);
+  const [addPartDlg,setAddPartDlg]=useState(false); /* manual add part dialog */
+  const [newPartName,setNewPartName]=useState("");
+  const [activePart,setActivePart]=useState(null); /* {id,name,color} current part being measured */ /* {title,value,unit} after each measure */
 
   /* AI chat */
   const [chatMsgs,setChatMsgs]=useState([]);
@@ -647,8 +650,8 @@ function App(){
   const confirmM=()=>{
     if(!measM)return;
     if(measM._existing){
-      /* Marker already on image - just update its values */
-      setAnns(prev=>prev.map(a=>a.id===measM.id?{...a,title:mIn.t,value:mIn.v===""?null:parseFloat(mIn.v),unit:mIn.u,axis:mIn.ax}:a));
+      /* Marker already on image - just update its values + tag with activePart */
+      setAnns(prev=>prev.map(a=>a.id===measM.id?{...a,title:mIn.t,value:mIn.v===""?null:parseFloat(mIn.v),unit:mIn.u,axis:mIn.ax,partId:activePart?.id,partName:activePart?.name}:a));
     }else{
       const a={...measM,title:mIn.t,value:mIn.v===""?null:parseFloat(mIn.v),unit:mIn.u,axis:mIn.ax};
       addA(a);setSelId(a.id);
@@ -906,15 +909,22 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
 <div style={{maxWidth:"480px",margin:"0 auto",background:"#0c0c0c",height:"100vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
 
 {/* HEADER */}
-<div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:"10px",background:"#111",borderBottom:"2px solid #ff9500",position:"sticky",top:0,zIndex:300,boxShadow:"0 2px 20px rgba(0,0,0,.8)"}}>
-  <div style={{width:"36px",height:"36px",borderRadius:"10px",background:"linear-gradient(135deg,#ff7700,#ffaa00)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"18px",flexShrink:0,boxShadow:"0 0 16px rgba(255,150,0,.4)"}}>📐</div>
+<div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:"8px",background:"#111",borderBottom:"2px solid #ff9500",position:"sticky",top:0,zIndex:300,boxShadow:"0 2px 20px rgba(0,0,0,.8)"}}>
+  <div style={{width:"34px",height:"34px",borderRadius:"10px",background:"linear-gradient(135deg,#ff7700,#ffaa00)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"16px",flexShrink:0}}>📐</div>
   <div style={{flex:1,minWidth:0}}>
-    <div style={{fontSize:"15px",fontWeight:800,color:"#fff",letterSpacing:"-.3px"}}>MediScan 3D Pro</div>
-    <a href="https://franyamelie.github.io/timerpro/mediscan.html" target="_blank" rel="noreferrer" style={{fontSize:"8px",color:"#ff9500",textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:.8}}>franyamelie.github.io/timerpro/mediscan.html</a>
+    <div style={{fontSize:"13px",fontWeight:800,color:"#fff",letterSpacing:"-.3px"}}>MediScan 3D Pro</div>
+    <a href="https://franyamelie.github.io/timerpro/mediscan.html" target="_blank" rel="noreferrer" style={{fontSize:"7px",color:"#ff9500",textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:.7}}>franyamelie.github.io/timerpro/mediscan.html</a>
   </div>
-  {scr==="annotate"&&<button onClick={save} style={{background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.4)",color:"#ff9500",borderRadius:"8px",padding:"6px 10px",fontSize:"11px",fontWeight:700}}>{sync||"💾"}</button>}
-  {scr==="annotate"&&<button onClick={()=>setScr("camera")} style={{background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.12)",color:"#888",borderRadius:"8px",padding:"6px 10px",fontSize:"12px"}}>📷</button>}
-  <button onClick={()=>setScr("setup")} style={{background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.12)",color:"#888",borderRadius:"8px",padding:"6px 10px",fontSize:"12px"}}>⚙</button>
+  {scr==="annotate"&&<>
+    <button onClick={()=>setScr("home")} title="Volver al inicio"
+      style={{padding:"6px 10px",background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.4)",color:"#ff9500",borderRadius:"8px",fontSize:"13px",fontWeight:700}}>🏠</button>
+    <button onClick={save} title="Guardar proyecto"
+      style={{padding:"6px 10px",background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.12)",color:"#888",borderRadius:"8px",fontSize:"11px",fontWeight:700}}>{sync||"💾"}</button>
+    <button onClick={()=>setScr("camera")} title="Nueva foto"
+      style={{padding:"6px 10px",background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.12)",color:"#888",borderRadius:"8px",fontSize:"12px"}}>📷</button>
+  </>}
+  <button onClick={()=>setScr("setup")} title="Configurar API"
+    style={{padding:"6px 10px",background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.12)",color:"#888",borderRadius:"8px",fontSize:"12px"}}>⚙</button>
 </div>
 
 <div className="app-scroll" style={{flex:1,display:"flex",flexDirection:"column",padding:"8px",gap:"8px",overflowY:"scroll",height:0}}>
@@ -1011,6 +1021,14 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
     </div>
   </div>
 
+  {/* ACTIVE PART INDICATOR */}
+  {activePart&&<div style={{display:"flex",alignItems:"center",gap:"8px",padding:"7px 12px",background:`${activePart.color}18`,border:`1.5px solid ${activePart.color}`,borderRadius:"10px",marginBottom:"5px"}}>
+    <div style={{width:"10px",height:"10px",borderRadius:"2px",background:activePart.color,flexShrink:0}}/>
+    <span style={{fontSize:"9px",fontWeight:700,color:activePart.color,flex:1}}>📍 Midiendo: <b>{activePart.name}</b></span>
+    <span style={{fontSize:"8px",color:"#555"}}>Todas las anotaciones se asignarán a esta parte</span>
+    <button onClick={()=>setActivePart(null)} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"20px",height:"20px",fontSize:"11px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+  </div>}
+
   {/* ACTIVE TOOL STATUS + UNDO */}
   <div style={{display:"flex",alignItems:"center",gap:"7px",padding:"6px 10px",background:tool!=="sel"?"rgba(255,100,0,.1)":"rgba(255,255,255,.02)",border:"1px solid rgba(0,100,200,.12)",borderRadius:"10px",marginBottom:"7px",minHeight:"36px"}}>
     {tool!=="sel"?<><div style={{display:"flex",alignItems:"center",gap:"5px",padding:"3px 11px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",borderRadius:"20px",flexShrink:0}}>
@@ -1076,7 +1094,8 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
     <button onClick={segAI} disabled={segLoad||!GK()} style={{flex:2,padding:"7px 8px",background:segLoad?"rgba(255,150,0,.05)":"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.3)",color:segLoad?"#444":C,borderRadius:"8px",fontSize:"9px",fontWeight:700}}>{segLoad?"⏳ Detectando...":"🔍 Detectar partes"}</button>
     {segs.length>0&&<button onClick={()=>setShowSegs(s=>!s)} style={{flex:1,padding:"7px 4px",background:showSegs?"rgba(0,150,255,.15)":"rgba(0,100,255,.05)",border:`1px solid rgba(0,150,255,${showSegs?.3:.12})`,color:showSegs?C:"#2a3a5a",borderRadius:"8px",fontSize:"9px"}}>👁{showSegs?"ON":"OFF"}</button>}
     {selId&&<button onClick={()=>delA(selId)} style={{flex:1,padding:"7px 4px",background:"rgba(255,50,50,.08)",border:"1px solid rgba(255,50,50,.2)",color:"#ff3366",borderRadius:"8px",fontSize:"9px"}}>🗑</button>}
-    {origImg&&origImg!==img&&<button onClick={resetToOriginal} title="Volver a imagen original" style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.12)",border:"1px solid rgba(255,150,0,.3)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>🔄 Inicio</button>}
+    {origImg&&origImg!==img&&<button onClick={resetToOriginal} title="Volver a imagen original" style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.12)",border:"1px solid rgba(255,150,0,.3)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>🔄 Orig.</button>}
+    <button onClick={()=>setAddPartDlg(true)} title="Añadir parte nueva para medir" style={{flex:2,padding:"7px 6px",background:"rgba(0,200,100,.1)",border:"1px solid rgba(0,200,100,.25)",color:"#00dd77",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>＋ Añadir Parte</button>
     {scale&&<span style={{fontSize:"8px",color:C,padding:"7px 7px",background:"rgba(0,150,255,.08)",borderRadius:"8px",border:"1px solid rgba(0,150,255,.18)"}}>⚖{scale.ppu.toFixed(0)}px</span>}
   </div>
 
@@ -1107,7 +1126,14 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
       <select value={a.unit} onChange={e=>updA(a.id,{unit:e.target.value})} style={{padding:"4px",background:"rgba(0,10,25,.8)",border:"1px solid rgba(0,150,255,.15)",borderRadius:"5px",color:"#334455",fontSize:"8px"}}>{["mm","cm","m","in","ft"].map(u=><option key={u}>{u}</option>)}</select>
     </div>)}
     {/* Confirmed measurements */}
-    {anns.filter(a=>a.value!=null).length===0&&anns.filter(a=>a.isAI).length===0&&<div style={{padding:"18px",fontSize:"9px",color:"#1e2535",textAlign:"center",lineHeight:2.2}}>1️⃣ Selecciona herramienta arriba<br/>2️⃣ Toca/arrastra en la imagen<br/>3️⃣ Confirma la medida<br/>→ Los datos aparecen aquí y en la imagen</div>}
+    {anns.filter(a=>a.value!=null).length===0&&anns.filter(a=>a.isAI).length===0&&<div style={{padding:"18px",fontSize:"9px",color:"#444",textAlign:"center",lineHeight:2.4}}>
+      <div style={{fontSize:"13px",marginBottom:"8px"}}>📐</div>
+      <b style={{color:"#ff9500"}}>1️⃣ Selecciona herramienta</b><br/>
+      <b style={{color:"#ff9500"}}>2️⃣ Toca/arrastra en la imagen</b><br/>
+      <b style={{color:"#ff9500"}}>3️⃣ Confirma la medida</b><br/>
+      <div style={{marginTop:"8px",fontSize:"8px",color:"#333"}}>Los datos aparecen aquí y en la imagen</div>
+      <div style={{marginTop:"6px",fontSize:"8px",color:"#333"}}>Usa <b style={{color:"#00dd77"}}>＋ Añadir Parte</b> para medir piezas por separado</div>
+    </div>}
     {anns.filter(a=>a.value!=null).map(a=><div key={a.id} onClick={()=>setSelId(a.id)} style={{display:"flex",alignItems:"center",gap:"6px",padding:"8px 13px",background:selId===a.id?"rgba(0,150,255,.07)":"transparent",borderBottom:"1px solid rgba(255,255,255,.04)",cursor:"pointer"}}>
       <div style={{width:"9px",height:"9px",borderRadius:"50%",background:a.color,flexShrink:0,boxShadow:`0 0 5px ${a.color}`}}/>
       <div style={{flex:1,minWidth:0}}><span style={{fontSize:"9px",color:"#d0e8f8",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:500}}>{a.title||a.type}</span>{a.axis&&<span style={{fontSize:"8px",color:"#2a3a5a"}}>{a.axis==="width"?"X·Ancho":a.axis==="height"?"Y·Alto":a.axis==="depth"?"Z·Prof":a.axis}</span>}</div>
@@ -1278,6 +1304,41 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
     <button onClick={()=>{setViewPrompt(null);setSheet("2d");}} style={{flex:1,padding:"10px",background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.35)",color:"#ff9500",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>📐 Ver en 2D</button>
     <button onClick={()=>{setViewPrompt(null);setSheet("3d");}} style={{flex:1,padding:"10px",background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.35)",color:"#ff9500",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>🎮 Ver en 3D</button>
     <button onClick={()=>setViewPrompt(null)} style={{flex:1,padding:"10px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.09)",color:"#2a3a5a",borderRadius:"9px",fontSize:"10px"}}>Seguir midiendo</button>
+  </div>
+</div>}
+
+{addPartDlg&&<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"#111",border:"2px solid #00dd77",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:600,animation:"slideUp .22s ease",backdropFilter:"blur(24px)"}}>
+  <button onClick={()=>setAddPartDlg(false)} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+  <div style={{fontSize:"13px",fontWeight:800,color:"#00dd77",marginBottom:"6px"}}>＋ AÑADIR NUEVA PARTE</div>
+  <div style={{fontSize:"9px",color:"#555",marginBottom:"14px",lineHeight:1.8}}>
+    Define el nombre de la parte que vas a medir. Luego usa las herramientas para dibujar sobre esa parte en la imagen y añadir sus medidas. Puedes añadir tantas partes como necesites.
+  </div>
+  <input value={newPartName} onChange={e=>setNewPartName(e.target.value)}
+    placeholder="Nombre de la parte (ej: Brida izquierda, Cuerpo principal, Válvula...)"
+    style={{width:"100%",padding:"11px 13px",background:"rgba(0,10,10,.8)",border:"1px solid rgba(0,220,120,.3)",borderRadius:"9px",color:"#d0e8f8",fontSize:"11px",marginBottom:"10px"}}/>
+  <div style={{fontSize:"9px",color:"#444",marginBottom:"8px"}}>Color de la parte:</div>
+  <div style={{display:"flex",gap:"6px",marginBottom:"14px",flexWrap:"wrap"}}>
+    {["#00dd77","#ff9500","#00b4ff","#ff3366","#cc44ff","#ffdd00","#ff6622","#44ffbb"].map(col=>(
+      <div key={col} onClick={()=>setNewPartName(p=>p)} data-col={col}
+        style={{width:"28px",height:"28px",borderRadius:"6px",background:col,cursor:"pointer"}}
+        onClick={e=>{document.querySelectorAll("[data-col]").forEach(el=>el.style.outline="none");e.currentTarget.style.outline="3px solid #fff";e.currentTarget.style.outlineOffset="2px";}}/>
+    ))}
+  </div>
+  <div style={{display:"flex",gap:"8px"}}>
+    <button onClick={()=>setAddPartDlg(false)} style={{flex:1,padding:"12px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.09)",color:"#555",borderRadius:"9px",fontSize:"10px"}}>Cancelar</button>
+    <button onClick={()=>{
+      if(!newPartName.trim()){alert("Escribe el nombre de la parte");return;}
+      const selectedEl=document.querySelector("[data-col][style*='outline: 3px']");
+      const col=selectedEl?.getAttribute("data-col")||"#00dd77";
+      const part={id:uid(),name:newPartName.trim(),color:col};
+      setActivePart(part);
+      /* Add to segs so it appears on image */
+      setSegs(s=>[...s,{id:String(s.length+1),name:part.name,x1:.1,y1:.1,x2:.9,y2:.9,color:part.color,hint:"Dibuja sobre esta parte para medirla"}]);
+      setNewPartName("");setAddPartDlg(false);setSheet(null);
+      setAiMsg(`Parte "${part.name}" añadida. Ahora selecciona herramientas y dibuja sobre esa zona en la imagen.`);
+    }} style={{flex:2,padding:"12px",background:"linear-gradient(135deg,#008844,#00dd77)",color:"#000",border:"none",borderRadius:"9px",fontSize:"12px",fontWeight:800}}>
+      ＋ CREAR PARTE Y MEDIR
+    </button>
   </div>
 </div>}
 
