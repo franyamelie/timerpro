@@ -1461,87 +1461,245 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
   </div>
 </div>}
 
-{editZone&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.93)",zIndex:700,display:"flex",flexDirection:"column",padding:"10px",gap:"8px",overflowY:"auto"}}>
-  {/* FLOATING CROP EDITOR */}
-  <div style={{background:"#111",borderRadius:"14px",overflow:"hidden",border:"2px solid #ff9500",maxWidth:"480px",width:"100%",margin:"0 auto"}}>
-    {/* Header */}
-    <div style={{padding:"10px 14px",background:"#1a1a1a",borderBottom:"1px solid #2a2a2a",display:"flex",alignItems:"center",gap:"8px"}}>
-      <div style={{width:"12px",height:"12px",borderRadius:"2px",background:editZone.seg.color||"#ff9500"}}/>
-      <div style={{flex:1}}>
-        <div style={{fontSize:"12px",fontWeight:800,color:"#ff9500"}}>✏ {editZone.seg.name} — Zona extraída</div>
-        <div style={{fontSize:"8px",color:"#555"}}>Añade medidas · Guarda → pasa a 2D y 3D</div>
+{editZone&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.96)",zIndex:700,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+  {/* ══ FULL FLOATING CROP EDITOR ══ */}
+  <div style={{background:"#111",borderBottom:"2px solid #ff9500",padding:"8px 12px",display:"flex",alignItems:"center",gap:"8px",flexShrink:0}}>
+    <div style={{width:"12px",height:"12px",borderRadius:"2px",background:editZone.seg.color||"#ff9500"}}/>
+    <div style={{flex:1}}>
+      <div style={{fontSize:"11px",fontWeight:800,color:"#ff9500"}}>{editZone.seg.name} — Zona extraída</div>
+      <div style={{fontSize:"8px",color:"#555"}}>Selecciona herramienta → toca la imagen → añade medida</div>
+    </div>
+    <button onClick={()=>setEditZone(null)} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.35)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
+  </div>
+
+  <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:"0"}}>
+    {/* TOOL SELECTOR - same as main */}
+    <div style={{background:"#141414",borderBottom:"1px solid #222",padding:"7px 10px"}}>
+      {/* Categories */}
+      <div style={{display:"flex",gap:"3px",marginBottom:"6px",overflowX:"auto"}}>
+        {Object.keys(tbyCat).map(cat=><button key={cat} onClick={()=>setTCat(cat)}
+          style={{padding:"3px 8px",borderRadius:"5px",whiteSpace:"nowrap",
+            background:tCat===cat?"rgba(255,150,0,.25)":"rgba(255,255,255,.04)",
+            color:tCat===cat?"#ff9500":"#444",
+            border:`1px solid ${tCat===cat?"rgba(255,150,0,.5)":"rgba(255,255,255,.06)"}`,
+            fontSize:"8px",fontWeight:tCat===cat?700:400}}>{CATS[cat]}</button>)}
       </div>
-      <button onClick={()=>setEditZone(null)} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"26px",height:"26px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-    </div>
-    {/* Quick tool bar */}
-    <div style={{display:"flex",gap:"5px",padding:"8px 10px",background:"#161616",borderBottom:"1px solid #222",flexWrap:"wrap"}}>
-      {[{id:"dot",icon:"⬤"},{id:"line",icon:"━"},{id:"dim",icon:"⟺"},{id:"dist",icon:"↔"},{id:"arr1",icon:"→"},{id:"rect",icon:"▭"}].map(t=>(
-        <button key={t.id} onClick={()=>setFcTool(t.id)}
-          style={{padding:"6px 10px",borderRadius:"8px",background:fcTool===t.id?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,255,255,.06)",color:fcTool===t.id?"#000":"#888",border:"none",fontSize:"14px",fontWeight:700}}>
-          {t.icon}
+      {/* Tool buttons */}
+      <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
+        {(tbyCat[tCat]||[]).map(t=><button key={t.id}
+          title={t.label}
+          onClick={()=>{setTool(t.id);setPend([]);setPrev(null);setDragSt(null);}}
+          style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"2px",
+            padding:"7px 6px",borderRadius:"9px",minWidth:"44px",
+            background:tool===t.id?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,255,255,.04)",
+            color:tool===t.id?"#000":"#666",
+            border:`1.5px solid ${tool===t.id?"#ff9500":"rgba(255,255,255,.07)"}`,
+            boxShadow:tool===t.id?"0 0 14px rgba(255,150,0,.4)":"none"}}>
+          <span style={{fontSize:"17px",lineHeight:1}}>{t.icon}</span>
+          <span style={{fontSize:"6px",fontWeight:600}}>{t.label}</span>
+        </button>)}
+        <button onClick={()=>{setTool("sel");setPend([]);setPrev(null);setDragSt(null);}}
+          style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"2px",
+            padding:"7px 6px",borderRadius:"9px",minWidth:"44px",
+            background:tool==="sel"?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,255,255,.04)",
+            color:tool==="sel"?"#000":"#666",
+            border:`1.5px solid ${tool==="sel"?"#ff9500":"rgba(255,255,255,.07)"}`,
+            boxShadow:tool==="sel"?"0 0 14px rgba(255,150,0,.4)":"none"}}>
+          <span style={{fontSize:"17px",lineHeight:1}}>↖</span>
+          <span style={{fontSize:"6px",fontWeight:600}}>Mover</span>
         </button>
-      ))}
-      <button onClick={()=>{setFcHist(h=>[...h.slice(-20),JSON.parse(JSON.stringify(fcAnns))]);setFcAnns(a=>a.slice(0,-1));}}
-        style={{padding:"6px 10px",borderRadius:"8px",background:"rgba(255,150,0,.1)",color:"#ff9500",border:"1px solid rgba(255,150,0,.2)",fontSize:"11px",marginLeft:"auto"}}>↩</button>
+      </div>
+      {/* Color + undo */}
+      <div style={{display:"flex",gap:"5px",alignItems:"center",marginTop:"6px",flexWrap:"wrap"}}>
+        <span style={{fontSize:"8px",color:"#333"}}>Color:</span>
+        {COLS.slice(0,8).map((c,i)=><div key={c} onClick={()=>setColI(i)}
+          style={{width:"16px",height:"16px",borderRadius:"50%",background:c,cursor:"pointer",
+            border:colI===i?"3px solid #fff":"2px solid transparent",
+            boxShadow:colI===i?`0 0 7px ${c}`:"none"}}/>)}
+        <button onClick={()=>{setFcHist(h=>{if(!h.length)return h;setFcAnns(h[h.length-1]);return h.slice(0,-1);});}}
+          disabled={fcHist.length===0}
+          style={{marginLeft:"auto",padding:"4px 10px",background:fcHist.length?"rgba(255,150,0,.15)":"transparent",
+            border:`1px solid ${fcHist.length?"rgba(255,150,0,.35)":"transparent"}`,
+            color:fcHist.length?"#ff9500":"#333",borderRadius:"6px",fontSize:"9px",fontWeight:700}}>↩ {fcHist.length}</button>
+      </div>
     </div>
-    {/* Cropped image with annotations */}
-    <div id="fc-canvas" style={{position:"relative",background:"#000",cursor:"crosshair"}}
+
+    {/* Active tool instruction */}
+    <div style={{padding:"5px 10px",background:tool!=="sel"?"rgba(255,100,0,.08)":"rgba(255,255,255,.01)",
+      borderBottom:"1px solid #1a1a1a",display:"flex",alignItems:"center",gap:"7px",minHeight:"32px"}}>
+      {tool!=="sel"?<>
+        <div style={{padding:"3px 10px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",borderRadius:"14px",fontSize:"9px",fontWeight:700,color:"#000",flexShrink:0}}>
+          {TOOLS.find(t=>t.id===tool)?.icon} {TOOLS.find(t=>t.id===tool)?.label}
+        </div>
+        <span style={{fontSize:"8px",color:"#555"}}>
+          {DRAG.includes(tool)?"Mantén y arrastra":pend.length===1?"Toca el 2° punto":"Toca la imagen"}
+        </span>
+      </>:<span style={{fontSize:"8px",color:"#333"}}>← Selecciona herramienta arriba</span>}
+      {pend.length>0&&<button onClick={()=>{setPend([]);setPrev(null);}} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",fontSize:"8px",padding:"3px 8px",borderRadius:"5px",marginLeft:"auto"}}>✕</button>}
+    </div>
+
+    {/* CROPPED IMAGE with full drawing support */}
+    <div style={{position:"relative",background:"#000",flexShrink:0}}
+      id="fc-img-container"
       onClick={e=>{
+        if(tool==="sel"||DRAG.includes(tool))return;
+        const td=TOOLS.find(t=>t.id===tool);if(!td||td.npts===0)return;
         const r=e.currentTarget.getBoundingClientRect();
         const p={x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height};
-        const col=COLS[fcAnns.length%COLS.length];
-        const a={id:uid(),type:fcTool,color:col,points:[p],value:null,unit:"cm",title:"",axis:""};
+        if(MRK.includes(tool)||td.npts===1){
+          const col=COLS[colI%COLS.length];
+          const a={id:uid(),type:tool,icon:td.icon,color:col,points:[p],value:null,unit:"cm",title:"",axis:"",_fc:true};
+          setFcHist(h=>[...h.slice(-20),JSON.parse(JSON.stringify(fcAnns))]);
+          setFcAnns(prev=>[...prev,a]);
+          setMeasM({...a,_existing:true,_fc:true});setMIn({t:"",v:"",u:"cm",ax:""});
+          return;
+        }
+        const pts=[...pend,p];
+        if(pts.length>=td.npts){
+          const col=COLS[colI%COLS.length];
+          const a={id:uid(),type:tool,icon:td.icon,color:col,points:pts,value:null,unit:"cm",title:"",axis:"",_fc:true};
+          setFcHist(h=>[...h.slice(-20),JSON.parse(JSON.stringify(fcAnns))]);
+          setFcAnns(prev=>[...prev,a]);setPend([]);setPrev(null);
+          setMeasM({...a,_existing:true,_fc:true});setMIn({t:"",v:"",u:"cm",ax:""});
+        }else{setPend(pts);setPrev({type:tool,points:[pts[0],p]});}
+      }}
+      onMouseDown={e=>{
+        if(!DRAG.includes(tool))return;
+        const r=e.currentTarget.getBoundingClientRect();
+        setDragSt({x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height});
+      }}
+      onMouseMove={e=>{
+        const r=e.currentTarget.getBoundingClientRect();
+        const p={x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height};
+        if(pend.length>=1)setPrev({type:tool,points:[pend[0],p]});
+        if(dragSt)setPrev({type:tool,points:[dragSt,p]});
+      }}
+      onMouseUp={e=>{
+        if(!dragSt)return;
+        const r=e.currentTarget.getBoundingClientRect();
+        const p={x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height};
+        const ds=dragSt;setDragSt(null);setPrev(null);
+        if(Math.abs(p.x-ds.x)<.01&&Math.abs(p.y-ds.y)<.01)return;
+        const col=COLS[colI%COLS.length];
+        const a={id:uid(),type:tool,color:col,points:[ds,p],value:null,unit:"cm",title:"",axis:"",_fc:true};
         setFcHist(h=>[...h.slice(-20),JSON.parse(JSON.stringify(fcAnns))]);
         setFcAnns(prev=>[...prev,a]);
-        /* Open measure immediately for markers */
-        const fcAnnCopy={...a,_fc:true};
-        setMeasM(fcAnnCopy);setMIn({t:"",v:"",u:"cm",ax:""});
+        setMeasM({...a,_existing:true,_fc:true});setMIn({t:"",v:"",u:"cm",ax:""});
       }}>
-      <img src={editZone.croppedImg} style={{width:"100%",display:"block"}}/>
-      {/* Show annotations */}
+      <img src={editZone.croppedImg} style={{width:"100%",display:"block",cursor:tool==="sel"?"default":"crosshair",userSelect:"none",WebkitUserSelect:"none",touchAction:"none"}} draggable="false"/>
+      {/* SVG overlay for annotations */}
       <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",overflow:"visible",pointerEvents:"none"}}>
-        {fcAnns.filter(a=>a.value!=null).map(a=>(
-          <g key={a.id}>
-            <circle cx={`${a.points[0].x*100}%`} cy={`${a.points[0].y*100}%`} r="8" fill={a.color} stroke="#fff" strokeWidth="1.5"/>
-            <text x={`${a.points[0].x*100}%`} y={`${a.points[0].y*100+5}%`} fill="#fff" fontSize="2.8%" fontFamily="Inter,sans-serif" fontWeight="800" textAnchor="middle">
-              {a.value}{a.unit}
-            </text>
-          </g>
-        ))}
+        {fcAnns.filter(a=>!MRK.includes(a.type)).map(a=>{
+          if(!a.points||a.points.length<2)return null;
+          const[p1,p2]=a.points,col=a.color||"#ff9500";
+          const badge=a.title?(a.value?`${a.title}: ${a.value}${a.unit}`:a.title):(a.value?`${a.value}${a.unit}`:"");
+          return<g key={a.id}>
+            <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth="2"/>
+            <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="4" fill={col} opacity=".9"/>
+            <circle cx={`${p2.x*100}%`} cy={`${p2.y*100}%`} r="4" fill={col} opacity=".9"/>
+            {badge&&<>
+              <rect x={`${(p1.x+p2.x)*50-5}%`} y={`${(p1.y+p2.y)*50-5.5}%`} width={`${badge.length*.8+2}%`} height="5%" rx="2.5%" fill="rgba(255,255,255,.96)" style={{filter:"drop-shadow(0 1px 4px rgba(0,0,0,.5))"}}/>
+              <text x={`${(p1.x+p2.x)*50+(badge.length*.4)}%`} y={`${(p1.y+p2.y)*50-2.5}%`} fill="#111" fontSize="2.8%" fontFamily="Inter,sans-serif" fontWeight="800" textAnchor="middle" dominantBaseline="middle">{badge}</text>
+            </>}
+          </g>;})}
+        {/* Preview line */}
+        {prev&&prev.points?.length>=2&&<line x1={`${prev.points[0].x*100}%`} y1={`${prev.points[0].y*100}%`} x2={`${prev.points[1].x*100}%`} y2={`${prev.points[1].y*100}%`} stroke="rgba(255,150,0,.7)" strokeWidth="1.5" strokeDasharray="5,3"/>}
+        {pend.length===1&&<circle cx={`${pend[0].x*100}%`} cy={`${pend[0].y*100}%`} r="5" fill={COLS[colI%COLS.length]} opacity=".9"/>}
       </svg>
-    </div>
-    {/* Measurements list in this zone */}
-    {fcAnns.filter(a=>a.value!=null).length>0&&<div style={{padding:"6px 10px",borderTop:"1px solid #222"}}>
-      {fcAnns.filter(a=>a.value!=null).map(a=>(
-        <div key={a.id} style={{display:"flex",gap:"6px",alignItems:"center",padding:"4px 0",borderBottom:"1px solid #1a1a1a"}}>
-          <div style={{width:"8px",height:"8px",borderRadius:"50%",background:a.color,flexShrink:0}}/>
-          <span style={{fontSize:"9px",color:"#bbb",flex:1}}>{a.title||"Medida"}</span>
-          <span style={{fontSize:"10px",fontWeight:700,color:a.color}}>{a.value} {a.unit}</span>
-          <button onClick={()=>setFcAnns(p=>p.filter(x=>x.id!==a.id))} style={{background:"transparent",border:"none",color:"#ff3366",fontSize:"12px"}}>✕</button>
+      {/* Marker dots */}
+      {fcAnns.filter(a=>MRK.includes(a.type)).map((a,i)=>(
+        <div key={a.id} style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",
+          width:"26px",height:"26px",borderRadius:"50%",background:"rgba(0,0,0,.9)",
+          border:`2.5px solid ${a.color}`,color:a.color,display:"flex",alignItems:"center",
+          justifyContent:"center",fontSize:"10px",fontWeight:700,cursor:"pointer",zIndex:10,
+          boxShadow:`0 0 8px ${a.color}`}}
+          onClick={e=>{e.stopPropagation();setMeasM({...a,_existing:true,_fc:true});setMIn({t:a.title||"",v:a.value!=null?String(a.value):"",u:a.unit||"cm",ax:a.axis||""});}}>
+          {i+1}
+          {a.value!=null&&<div style={{position:"absolute",top:"-28px",left:"50%",transform:"translateX(-50%)",
+            background:"rgba(255,255,255,.97)",color:"#111",fontSize:"8px",fontWeight:800,
+            padding:"2px 8px",borderRadius:"12px",whiteSpace:"nowrap",
+            border:`1.5px solid ${a.color}`,pointerEvents:"none"}}>
+            {a.title?a.title+": ":""}{a.value} {a.unit}
+          </div>}
         </div>
       ))}
+    </div>
+
+    {/* MEASUREMENTS LIST for this zone */}
+    {fcAnns.filter(a=>a.value!=null).length>0&&<div style={{borderTop:"1px solid #1a1a1a",background:"#0d0d0d",padding:"6px 10px"}}>
+      <div style={{fontSize:"8px",color:"#ff9500",fontWeight:700,marginBottom:"5px",letterSpacing:".06em"}}>MEDIDAS EN ESTA ZONA</div>
+      {fcAnns.filter(a=>a.value!=null).map(a=><div key={a.id} style={{display:"flex",gap:"6px",alignItems:"center",padding:"4px 0",borderBottom:"1px solid #1a1a1a"}}>
+        <div style={{width:"8px",height:"8px",borderRadius:"50%",background:a.color,flexShrink:0}}/>
+        <span style={{fontSize:"9px",color:"#bbb",flex:1}}>{a.title||a.type}</span>
+        <span style={{fontSize:"11px",fontWeight:700,color:a.color}}>{a.value} {a.unit}</span>
+        <button onClick={()=>setFcAnns(p=>p.filter(x=>x.id!==a.id))} style={{background:"transparent",border:"none",color:"#ff3366",fontSize:"12px",opacity:.6}}>✕</button>
+      </div>)}
     </div>}
-    {/* Actions */}
-    <div style={{padding:"10px",display:"flex",gap:"6px",borderTop:"1px solid #222"}}>
+
+    {/* ACTION BUTTONS */}
+    <div style={{padding:"10px",borderTop:"1px solid #222",background:"#111",display:"flex",flexDirection:"column",gap:"7px",flexShrink:0}}>
+      {/* Save to 2D and 3D */}
       <button onClick={()=>{
-        /* Save: add fcAnns to main anns tagged with this part */
         const seg=editZone.seg;
         const newAnns=fcAnns.filter(a=>a.value!=null).map(a=>({
-          ...a,id:uid(),partId:seg.id,partName:seg.name,
-          points:[{x:seg.x1+(a.points[0].x)*(seg.x2-seg.x1),y:seg.y1+(a.points[0].y)*(seg.y2-seg.y1)}]
+          ...a,id:uid(),_fc:false,partId:seg.id,partName:seg.name,
+          points:a.points.map(p=>({x:seg.x1+(p.x)*(seg.x2-seg.x1),y:seg.y1+(p.y)*(seg.y2-seg.y1)}))
         }));
-        newAnns.forEach(a=>addA(a));
-        setEditZone(null);setFcAnns([]);
+        newAnns.forEach(na=>addA(na));
+        setEditZone(null);setFcAnns([]);setFcHist([]);
         setSheet("2d");
-      }} style={{flex:2,padding:"11px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"9px",fontSize:"11px",fontWeight:800}}>
-        ✓ GUARDAR → Ver en 2D y 3D
+        setAiMsg(`Zona "${seg.name}" guardada con ${newAnns.length} medidas. Visible en 2D y 3D.`);
+      }} style={{width:"100%",padding:"12px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"9px",fontSize:"12px",fontWeight:800}}>
+        ✓ GUARDAR → 2D y 3D automáticamente
       </button>
-      <button onClick={()=>setEditZone(null)} style={{flex:1,padding:"11px",background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",color:"#555",borderRadius:"9px",fontSize:"10px"}}>
-        Cancelar
-      </button>
+      {/* Export options from this zone */}
+      <div style={{display:"flex",gap:"5px"}}>
+        <button onClick={async()=>{
+          const el=document.getElementById("fc-img-container");if(!el)return;
+          try{const cv=await html2canvas(el,{scale:2,useCORS:true,allowTaint:true,logging:false});
+            const url=cv.toDataURL("image/png");
+            if(navigator.share&&navigator.canShare){try{const b=await(await fetch(url)).blob();const f=new File([b],`${editZone.seg.name}.png`,{type:"image/png"});if(navigator.canShare({files:[f]})){await navigator.share({title:editZone.seg.name,files:[f]});return;}}catch{}}
+            const a=document.createElement("a");a.href=url;a.download=`${editZone.seg.name}.png`;document.body.appendChild(a);a.click();document.body.removeChild(a);
+          }catch(e){alert("Error: "+e.message);}
+        }} style={{flex:1,padding:"9px 4px",background:"rgba(0,150,255,.12)",border:"1px solid rgba(0,150,255,.25)",color:"#00b4ff",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>📥 PNG</button>
+        <button onClick={async()=>{
+          const el=document.getElementById("fc-img-container");if(!el||!window.jspdf)return;
+          try{const cv=await html2canvas(el,{scale:2,useCORS:true,allowTaint:true,logging:false});
+            const{jsPDF}=window.jspdf;const pdf=new jsPDF({orientation:cv.width>cv.height?"landscape":"portrait",unit:"mm",format:"a4"});
+            const W=pdf.internal.pageSize.getWidth(),H=Math.min((cv.height/cv.width)*W,pdf.internal.pageSize.getHeight()-25);
+            pdf.setFillColor(255,255,255);pdf.rect(0,0,W+10,H+30,"F");
+            pdf.addImage(cv.toDataURL("image/jpeg",.95),"JPEG",5,20,W-10,H-10);
+            pdf.setFontSize(10);pdf.setTextColor(80,80,80);pdf.text(editZone.seg.name,5,12);
+            const ms=fcAnns.filter(a=>a.value!=null).map(a=>`• ${a.title||a.type}: ${a.value} ${a.unit}`);
+            if(ms.length){pdf.setFontSize(8);ms.forEach((m,i)=>pdf.text(m,5,H+25+i*5));}
+            pdf.save(`${editZone.seg.name}.pdf`);
+          }catch(e){alert("PDF error: "+e.message);}
+        }} style={{flex:1,padding:"9px 4px",background:"rgba(255,50,50,.09)",border:"1px solid rgba(255,50,50,.2)",color:"#ff3366",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>📄 PDF</button>
+        <button onClick={async()=>{
+          const el=document.getElementById("fc-img-container");if(!el)return;
+          try{const cv=await html2canvas(el,{scale:2,useCORS:true,allowTaint:true,logging:false});
+            const url=cv.toDataURL("image/png");
+            if(navigator.share&&navigator.canShare){try{const b=await(await fetch(url)).blob();const f=new File([b],`${editZone.seg.name}.png`,{type:"image/png"});if(navigator.canShare({files:[f]})){await navigator.share({title:editZone.seg.name,files:[f]});return;}}catch{}}
+            const a=document.createElement("a");a.href=url;a.download=`${editZone.seg.name}.png`;document.body.appendChild(a);a.click();document.body.removeChild(a);
+            setTimeout(()=>window.open(`https://wa.me/?text=${encodeURIComponent("MediScan 3D: "+editZone.seg.name)}`,"_blank"),700);
+          }catch(e){alert("Error: "+e.message);}
+        }} style={{flex:1,padding:"9px 4px",background:"rgba(37,211,102,.09)",border:"1px solid rgba(37,211,102,.25)",color:"#25d366",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>💬 WA</button>
+        <button onClick={async()=>{
+          const el=document.getElementById("fc-img-container");if(!el)return;
+          try{const cv=await html2canvas(el,{scale:1.5,useCORS:true,allowTaint:true,logging:false});
+            const url=cv.toDataURL("image/png");
+            const a=document.createElement("a");a.href=url;a.download=`${editZone.seg.name}.png`;document.body.appendChild(a);a.click();document.body.removeChild(a);
+            const body=`Zona: ${editZone.seg.name}\nMedidas:\n${fcAnns.filter(a=>a.value!=null).map(a=>`• ${a.title}: ${a.value} ${a.unit}`).join("\n")}\n\n-- MediScan 3D Pro`;
+            setTimeout(()=>{const ma=document.createElement("a");ma.href=`mailto:?subject=${encodeURIComponent("MediScan: "+editZone.seg.name)}&body=${encodeURIComponent(body)}`;ma.target="_blank";document.body.appendChild(ma);ma.click();document.body.removeChild(ma);},800);
+          }catch(e){alert("Error: "+e.message);}
+        }} style={{flex:1,padding:"9px 4px",background:"rgba(100,150,255,.08)",border:"1px solid rgba(100,150,255,.2)",color:"#88aaff",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>📧 Email</button>
+      </div>
+      <button onClick={()=>{setEditZone(null);setFcAnns([]);setFcHist([]);}} style={{width:"100%",padding:"8px",background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.08)",color:"#444",borderRadius:"8px",fontSize:"9px"}}>Cancelar — volver sin guardar</button>
     </div>
   </div>
 </div>}
+
+
 
 {calibM&&<div data-modal="calib" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"rgba(6,8,16,.98)",border:"1px solid rgba(255,150,0,.4)",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(24px)"}}>
   <button onClick={()=>setCalibM(null)} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
