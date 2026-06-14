@@ -98,126 +98,115 @@ function View2D({anns,objName,sc,segs}){
     const cv=ref.current;if(!cv)return;
     const ctx=cv.getContext("2d"),W=cv.width,H=cv.height;
     ctx.clearRect(0,0,W,H);
-    /* Background */
     ctx.fillStyle="#f0f4f8";ctx.fillRect(0,0,W,H);
     /* Grid */
     ctx.strokeStyle="#dde4ee";ctx.lineWidth=.5;
     for(let x=0;x<W;x+=20){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
     for(let y=0;y<H;y+=20){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
 
-    const mg=40,gap=10,objW=W-mg*2,objH=H-mg*2-60;
+    const mg=38,objW=W-mg*2,objH=H-mg*2-55;
 
-    /* Helper: draw dim line */
-    const dimLine=(x1,y1,x2,y2,label,offset=18)=>{
-      const ang=Math.atan2(y2-y1,x2-x1);
-      const nx=Math.cos(ang+Math.PI/2)*offset,ny=Math.sin(ang+Math.PI/2)*offset;
-      ctx.strokeStyle="#cc0000";ctx.lineWidth=.8;ctx.setLineDash([]);
-      ctx.beginPath();ctx.moveTo(x1+nx,y1+ny);ctx.lineTo(x2+nx,y2+ny);ctx.stroke();
-      ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x1+nx,y1+ny);ctx.stroke();
-      ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2+nx,y2+ny);ctx.stroke();
-      /* arrows */
-      const mx2=(x1+x2)/2+nx,my2=(y1+y2)/2+ny;
-      ctx.fillStyle="#cc0000";ctx.font="bold 8px 'Space Mono',monospace";ctx.textAlign="center";
-      ctx.fillText(label,mx2,my2-3);
-    };
-
-    /* ── CASE 1: Have axis measurements - draw to scale ── */
     const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?{mm:(parseFloat(a.value)||0)*({"mm":1,"cm":10,"m":1000,"in":25.4,"ft":304.8}[a.unit]||10),lbl:`${a.value}${a.unit}`}:null;};
     const wd=gd("width"),hd=gd("height"),dd=gd("depth");
 
-    if(wd||hd||dd){
+    if(wd||hd){
+      /* ── CASE 1: Axis measurements - draw 3 views to scale ── */
       const vW=wd?.mm||100,vH=hd?.mm||100,vD=dd?.mm||100;
       const sc2=Math.min(objW*.5/vW,objH*.55/vH)*.8;
-      const rW=vW*sc2,rH=vH*sc2,rX=mg+(objW*.5-rW)/2,rY=mg+20;
+      const rW=vW*sc2,rH=vH*sc2,rX=mg+(objW*.5-rW)/2,rY=mg+15;
 
-      /* FRONTAL view */
+      ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";
+      ctx.fillText("FRONTAL",rX+2,rY-5);
       ctx.strokeStyle="#1a3a8a";ctx.lineWidth=2;ctx.fillStyle="rgba(26,58,138,.06)";
       ctx.fillRect(rX,rY,rW,rH);ctx.strokeRect(rX,rY,rW,rH);
-      ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Space Mono',monospace";ctx.textAlign="left";
-      ctx.fillText("FRONTAL",rX+2,rY-4);
-      if(wd)dimLine(rX,rY+rH,rX+rW,rY+rH,wd.lbl,16);
-      if(hd)dimLine(rX,rY,rX,rY+rH,hd.lbl,-22);
 
-      /* LATERAL view */
+      /* Draw measured parts inside frontal view */
+      if(segs?.length){
+        segs.forEach(seg=>{
+          const sx=rX+seg.x1*rW,sy=rY+seg.y1*rH,sw=(seg.x2-seg.x1)*rW,sh=(seg.y2-seg.y1)*rH;
+          const col=seg.color||"#0055cc";
+          ctx.fillStyle=col+"22";ctx.fillRect(sx,sy,sw,sh);
+          ctx.strokeStyle=col;ctx.lineWidth=1;ctx.setLineDash([4,2]);ctx.strokeRect(sx,sy,sw,sh);ctx.setLineDash([]);
+          ctx.fillStyle=col;ctx.font="bold 6px 'Inter',sans-serif";ctx.textAlign="center";
+          ctx.fillText(seg.name?.slice(0,12)||"",sx+sw/2,sy+sh/2+3);
+          const ra=anns.filter(a=>a.value!=null&&a.partName&&seg.name&&a.partName===seg.name);
+          if(ra.length){ctx.fillStyle="#111";ctx.font="5px 'Inter',sans-serif";
+            ra.slice(0,2).forEach((a,i)=>ctx.fillText(`${a.value}${a.unit}`,sx+sw/2,sy+sh/2+10+i*8));}
+        });
+      }
+      /* Dim lines */
+      const dl=(x1,y1,x2,y2,label,off=14)=>{const ang=Math.atan2(y2-y1,x2-x1),nx=Math.cos(ang+Math.PI/2)*off,ny=Math.sin(ang+Math.PI/2)*off;
+        ctx.strokeStyle="#cc0000";ctx.lineWidth=.8;ctx.setLineDash([]);
+        ctx.beginPath();ctx.moveTo(x1+nx,y1+ny);ctx.lineTo(x2+nx,y2+ny);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x1+nx,y1+ny);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2+nx,y2+ny);ctx.stroke();
+        ctx.fillStyle="#cc0000";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="center";
+        ctx.fillText(label,(x1+x2)/2+nx,(y1+y2)/2+ny-3);};
+      if(wd)dl(rX,rY+rH,rX+rW,rY+rH,wd.lbl,16);
+      if(hd)dl(rX,rY,rX,rY+rH,hd.lbl,-22);
+
+      /* Lateral */
       if(dd){
-        const sX=mg+objW*.5+gap,sW=vD*sc2,sH=vH*sc2;
+        const sX=mg+objW*.52+8,sW=vD*sc2,sH=vH*sc2;
+        ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";ctx.fillText("LATERAL",sX+2,rY-5);
         ctx.fillStyle="rgba(26,58,138,.04)";ctx.fillRect(sX,rY,sW,sH);ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.5;ctx.strokeRect(sX,rY,sW,sH);
-        ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Space Mono',monospace";ctx.textAlign="left";ctx.fillText("LATERAL",sX+2,rY-4);
-        dimLine(sX,rY+sH,sX+sW,rY+sH,dd.lbl,16);
-      }
+        dl(sX,rY+sH,sX+sW,rY+sH,dd.lbl,14);}
 
-      /* PLANTA view */
+      /* Planta */
       if(wd&&dd){
-        const pY=rY+rH+gap+30,pW=vW*sc2,pD=vD*sc2;
-        ctx.fillStyle="rgba(26,58,138,.05)";ctx.fillRect(rX,pY,pW,pD);ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.5;ctx.strokeRect(rX,pY,pW,pD);
-        ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Space Mono',monospace";ctx.textAlign="left";ctx.fillText("PLANTA",rX+2,pY-4);
-        dimLine(rX,pY+pD,rX+pW,pY+pD,wd.lbl,14);
-        dimLine(rX,pY,rX,pY+pD,dd.lbl,-20);
-      }
+        const pY=rY+rH+30,pW=vW*sc2,pD=vD*sc2;
+        ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";ctx.fillText("PLANTA",rX+2,pY-5);
+        ctx.fillStyle="rgba(26,58,138,.04)";ctx.fillRect(rX,pY,pW,pD);ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.5;ctx.strokeRect(rX,pY,pW,pD);
+        dl(rX,pY+pD,rX+pW,rY+pD+14,wd.lbl,14);dl(rX,pY,rX,pY+pD,dd.lbl,-20);}
 
     } else if(segs&&segs.length>0){
-      /* ── CASE 2: No axis data but have AI segments - draw auto-2D ── */
-      ctx.fillStyle="#7788aa";ctx.font="bold 8px 'Space Mono',monospace";ctx.textAlign="center";
-      ctx.fillText("VISTA AUTOMÁTICA — "+(objName||"OBJETO").toUpperCase().slice(0,20),W/2,mg-10);
-
-      const colors=["#0055cc","#cc3300","#007722","#884400","#550088","#006688"];
-      const nSegs=Math.min(segs.length,6);
-      /* Draw each part as a zone in 2D canvas */
-      segs.slice(0,6).forEach((seg,i)=>{
-        const col=seg.color||colors[i%colors.length];
+      /* ── CASE 2: AI parts - draw each part in its position ── */
+      ctx.fillStyle="#556677";ctx.font="bold 8px 'Inter',sans-serif";ctx.textAlign="center";
+      ctx.fillText("VISTA AUTOMÁTICA — "+(objName||"OBJETO").toUpperCase().slice(0,22),W/2,mg-12);
+      segs.forEach(seg=>{
+        const col=seg.color||"#0055cc";
         const sx=mg+seg.x1*objW,sy=mg+seg.y1*objH,sw=(seg.x2-seg.x1)*objW,sh=(seg.y2-seg.y1)*objH;
-        /* Fill */
-        ctx.fillStyle=col+"22";ctx.fillRect(sx,sy,sw,sh);
-        /* Border */
-        ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.setLineDash([6,3]);ctx.strokeRect(sx,sy,sw,sh);ctx.setLineDash([]);
-        /* Label */
+        ctx.fillStyle=col+"28";ctx.fillRect(sx,sy,sw,sh);
+        ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.setLineDash([5,3]);ctx.strokeRect(sx,sy,sw,sh);ctx.setLineDash([]);
+        /* Part label */
         ctx.fillStyle=col;ctx.fillRect(sx,sy,Math.min(sw,90),14);
         ctx.fillStyle="#fff";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";
-        ctx.fillText(`${seg.id}. ${(seg.name||"Parte").slice(0,14)}`,sx+3,sy+10);
-        /* Measurement labels from anns */
-        const relatedAnn=anns.find(a=>a.title&&seg.name&&a.title.toLowerCase().includes(seg.name.toLowerCase().split(" ")[0]));
-        if(relatedAnn?.value){
-          ctx.fillStyle=col;ctx.font="bold 8px 'Inter',sans-serif";ctx.textAlign="center";
-          ctx.fillText(`${relatedAnn.value} ${relatedAnn.unit}`,sx+sw/2,sy+sh/2+4);
+        ctx.fillText(`${seg.id}. ${(seg.name||"").slice(0,14)}`,sx+3,sy+10);
+        /* Measurements for this part */
+        const ra=anns.filter(a=>a.value!=null&&(a.partName===seg.name||(a.points&&Math.abs(a.points[0].x-(seg.x1+seg.x2)/2)<.3&&Math.abs(a.points[0].y-(seg.y1+seg.y2)/2)<.3)));
+        if(ra.length){
+          ctx.fillStyle="rgba(255,255,255,.9)";ctx.fillRect(sx+2,sy+sh-ra.length*10-4,sw-4,ra.length*10+4);
+          ra.forEach((a,i)=>{ctx.fillStyle=a.color||col;ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";
+            ctx.fillText(`${a.title||a.type}: ${a.value}${a.unit}`,sx+5,sy+sh-ra.length*10+i*10+2);});
         }
-        /* Hint */
-        if(seg.hint){ctx.fillStyle=col+"aa";ctx.font="6px 'Inter',sans-serif";ctx.textAlign="center";ctx.fillText(seg.hint.slice(0,30),sx+sw/2,sy+sh-4);}
-      });
-      /* Draw all measurement annotations */
-      anns.filter(a=>a.value!=null).forEach((a,i)=>{
-        if(a.points&&a.points.length>=2){
-          const[p1,p2]=a.points;
-          const ax1=mg+p1.x*objW,ay1=mg+p1.y*objH,ax2=mg+p2.x*objW,ay2=mg+p2.y*objH;
-          ctx.strokeStyle=a.color||"#0055cc";ctx.lineWidth=1.5;ctx.setLineDash([]);
-          ctx.beginPath();ctx.moveTo(ax1,ay1);ctx.lineTo(ax2,ay2);ctx.stroke();
-          const mx2=(ax1+ax2)/2,my2=(ay1+ay2)/2;
-          ctx.fillStyle="rgba(255,255,255,.9)";ctx.fillRect(mx2-24,my2-8,48,14);
-          ctx.strokeStyle=a.color||"#0055cc";ctx.lineWidth=.5;ctx.strokeRect(mx2-24,my2-8,48,14);
-          ctx.fillStyle=a.color||"#0055cc";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="center";
-          ctx.fillText(`${a.value}${a.unit}`,mx2,my2+4);
-        }
+        /* All standalone line annotations */
+        if(!ra.length){const sa=anns.filter(a=>a.value!=null&&a.points?.length>=2);
+          sa.forEach(a=>{const[p1,p2]=a.points;const ax1=mg+p1.x*objW,ay1=mg+p1.y*objH,ax2=mg+p2.x*objW,ay2=mg+p2.y*objH;
+            ctx.strokeStyle=a.color||"#0055cc";ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(ax1,ay1);ctx.lineTo(ax2,ay2);ctx.stroke();
+            const mx=(ax1+ax2)/2,my=(ay1+ay2)/2;
+            ctx.fillStyle="rgba(255,255,255,.95)";ctx.fillRect(mx-26,my-8,52,14);
+            ctx.strokeStyle=a.color||"#0055cc";ctx.lineWidth=.5;ctx.strokeRect(mx-26,my-8,52,14);
+            ctx.fillStyle=a.color||"#333";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="center";
+            ctx.fillText(`${a.value}${a.unit}`,mx,my+4);});}
       });
     } else {
-      /* ── CASE 3: Nothing - show empty plan with title block ── */
-      ctx.fillStyle="#aabbcc";ctx.font="9px 'Space Mono',monospace";ctx.textAlign="center";
-      ctx.fillText("Sube imagen → IA detectará partes automáticamente",W/2,H*.35);
-      ctx.fillStyle="#8899bb";ctx.font="8px 'Space Mono',monospace";
-      ctx.fillText("O: Herramienta → Dibuja → Asigna eje (Ancho/Alto/Prof.)",W/2,H*.35+16);
-    }
+      ctx.fillStyle="#aabbcc";ctx.font="9px 'Inter',sans-serif";ctx.textAlign="center";
+      ctx.fillText("Usa IA para detectar partes o añade medidas con ejes",W/2,H*.38);
+      ctx.fillStyle="#8899bb";ctx.font="8px 'Inter',sans-serif";
+      ctx.fillText("Las partes medidas aparecerán aquí automáticamente",W/2,H*.38+16);}
 
-    /* Title block - always */
-    const tbX=W-mg-130,tbY=H-60,tbW=130,tbH=52;
+    /* Title block */
+    const tbX=W-mg-130,tbY=H-56,tbW=130,tbH=50;
     ctx.fillStyle="#e8eef8";ctx.fillRect(tbX,tbY,tbW,tbH);
     ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.2;ctx.setLineDash([]);ctx.strokeRect(tbX,tbY,tbW,tbH);
-    ctx.strokeRect(tbX,tbY+18,tbW,0);ctx.strokeRect(tbX,tbY+34,tbW,0);
-    ctx.fillStyle="#1a3a8a";ctx.font="bold 8px 'Space Mono',monospace";ctx.textAlign="center";
-    ctx.fillText((objName||"OBJETO").toUpperCase().slice(0,18),tbX+tbW/2,tbY+13);
-    ctx.fillStyle="#334455";ctx.font="7px 'Space Mono',monospace";
-    ctx.fillText(new Date().toLocaleDateString("es-ES"),tbX+tbW/2,tbY+27);
-    ctx.fillText("MEDISCAN 3D PRO",tbX+tbW/2,tbY+44);
-    if(sc){ctx.fillStyle="#4477aa";ctx.font="6px 'Space Mono',monospace";ctx.fillText(`Cal: 1${sc.unit}=${sc.ppu.toFixed(0)}px`,tbX+4,tbY+56);}
+    ctx.strokeRect(tbX,tbY+16,tbW,0);ctx.strokeRect(tbX,tbY+32,tbW,0);
+    ctx.fillStyle="#1a3a8a";ctx.font="bold 8px 'Inter',sans-serif";ctx.textAlign="center";
+    ctx.fillText((objName||"OBJETO").toUpperCase().slice(0,18),tbX+tbW/2,tbY+12);
+    ctx.fillStyle="#334455";ctx.font="7px 'Inter',sans-serif";
+    ctx.fillText(new Date().toLocaleDateString("es-ES"),tbX+tbW/2,tbY+25);
+    ctx.fillText("MEDISCAN 3D PRO",tbX+tbW/2,tbY+42);
   },[anns,objName,sc,segs]);
-  return <canvas ref={ref} width={440} height={380} style={{width:"100%",display:"block"}}/>;
+  return <canvas ref={ref} width={440} height={380} style={{width:"100%",display:"block",background:"#f0f4f8"}}/>;
 }
 
 /* ══ V3D ══ */
@@ -340,8 +329,10 @@ function MultiPart3D({anns,segs,objShape}){
     return[{id:"1",name:"Objeto completo",color:"#ff9500",anns:withVal}];
   },[anns,segs]);
 
-  if(!parts.length)return<div style={{padding:"16px",fontSize:"9px",color:"#2a3a5a",textAlign:"center",lineHeight:2}}>
-    Sube imagen → IA detectará partes → toca partes para medir → el 3D aparece aquí
+  if(!parts.length)return<div style={{padding:"16px",fontSize:"9px",color:"#444",textAlign:"center",lineHeight:2.2}}>
+    <div style={{fontSize:"12px",marginBottom:"6px"}}>🎮</div>
+    Detecta partes con IA o añade partes manualmente<br/>
+    Cada parte medida aparecerá como un modelo 3D aquí
   </div>;
 
   return<div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
@@ -535,7 +526,9 @@ function App(){
   /* bottom sheet: null | meas | 2d | 3d | chat | export */
   const [sheet,setSheet]=useState(null);
   const [viewPrompt,setViewPrompt]=useState(null);
-  const [addPartDlg,setAddPartDlg]=useState(false); /* manual add part dialog */
+  const [addPartDlg,setAddPartDlg]=useState(false);
+  const [selSeg,setSelSeg]=useState(null); /* selected segment id */
+  const [editZone,setEditZone]=useState(null); /* {seg, croppedImg} for zone edit */ /* manual add part dialog */
   const [newPartName,setNewPartName]=useState("");
   const [activePart,setActivePart]=useState(null); /* {id,name,color} current part being measured */ /* {title,value,unit} after each measure */
 
@@ -597,16 +590,16 @@ function App(){
     const td=TOOLS.find(t=>t.id===tool);if(!td||td.npts===0)return;
     const p=getP(e,e.currentTarget);
     if(MRK.includes(tool)||td.npts===1){
-      /* Place marker IMMEDIATELY visible on image, THEN open measure modal */
+      /* Place marker IMMEDIATELY visible - NO modal. Tap marker to add value */
       const col=COLS[colI%COLS.length];
-      const a={id:uid(),type:tool,icon:td?.icon||"●",title:"",value:null,unit:"cm",axis:"",color:col,points:[p],lineStyle:lSt,arrowHead:aHd};
+      const a={id:uid(),type:tool,icon:td?.icon||"●",title:"",value:null,unit:"cm",axis:"",color:col,
+               points:[p],lineStyle:lSt,arrowHead:aHd,
+               partId:activePart?.id,partName:activePart?.name};
       setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);
       setAnns(prev=>[...prev,a]);
       setSelId(a.id);
       setColI(c=>c+1);
-      /* Ask for measurement */
-      setMIn({t:"",v:"",u:"cm",ax:""});
-      setMeasM({...a,_existing:true}); /* flag: already added to anns */
+      /* marker is on image - user taps it to open modal */
       return;
     }
     const pts=[...pend,p];
@@ -808,15 +801,28 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
   const save=()=>{const p={id:uid(),name:pName,date:new Date().toLocaleDateString("es-ES"),img,origImg,rot,anns,scale,objInfo,pip,segs};const all=[p,...projs.filter(x=>x.name!==pName)].slice(0,20);localStorage.setItem("ms3_pj",JSON.stringify(all));setProjs(all);setSync("✓");setTimeout(()=>setSync(""),2000);};
   const loadP=p=>{setImg(p.img||p.origImg);setOrigImg(p.origImg||p.img);setRot(p.rot||0);setAnns(p.anns||[]);setHist([]);setScale(p.scale||null);setObjInfo(p.objInfo);setPip(p.pip||null);setPName(p.name);setSelId(null);setPend([]);setTool("sel");setSegs(p.segs||[]);setScr("annotate");setSheet(null);};
   const delP=(id,e)=>{e.stopPropagation();const all=projs.filter(p=>p.id!==id);localStorage.setItem("ms3_pj",JSON.stringify(all));setProjs(all);};
-  const genLink=()=>{const d={name:pName,anns,scale,objName:objInfo?.name,shape:objInfo?.shape,pip,segs};const enc=btoa(unescape(encodeURIComponent(JSON.stringify(d))));const url=`${location.href.split("?")[0].split("#")[0]}?s=${enc}`;navigator.clipboard?.writeText(url).then(()=>{setSync("☁");setTimeout(()=>setSync(""),4000);}).catch(()=>prompt("URL:",url));};
+  const genLink=()=>{
+    try{
+      const d={name:pName,anns:anns.map(a=>({id:a.id,type:a.type,title:a.title,value:a.value,unit:a.unit,axis:a.axis,color:a.color,points:a.points,partId:a.partId,partName:a.partName})),
+        scale,objName:objInfo?.name,shape:objInfo?.shape,
+        segs:segs.map(s=>({id:s.id,name:s.name,x1:s.x1,y1:s.y1,x2:s.x2,y2:s.y2,color:s.color,hint:s.hint}))};
+      const json=JSON.stringify(d);
+      const enc=btoa(String.fromCharCode(...new TextEncoder().encode(json).slice(0,20000)));
+      const base=location.href.split("?")[0].split("#")[0];
+      const url=`${base}?s=${encodeURIComponent(enc)}`;
+      if(navigator.clipboard){
+        navigator.clipboard.writeText(url).then(()=>{setSync("☁ Enlace copiado");setTimeout(()=>setSync(""),4000);}).catch(()=>prompt("Copia este enlace:",url));
+      }else{prompt("Copia este enlace:",url);}
+    }catch(e){alert("Error generando enlace: "+e.message);}
+  };
   useEffect(()=>{const p=new URLSearchParams(location.search);const s=p.get("s");if(!s)return;try{const d=JSON.parse(decodeURIComponent(escape(atob(s))));setAnns(d.anns||[]);setScale(d.scale||null);setPName(d.name||"Proyecto");setObjInfo({name:d.objName||"Obj",shape:d.shape||"default",category:""});setPip(d.pip||null);setSegs(d.segs||[]);setScr("camera");history.replaceState({},"",location.pathname);}catch{};},[]);
 
   /* export */
   const cap=async()=>{if(!capRef.current)return null;return html2canvas(capRef.current,{scale:2,useCORS:true,allowTaint:true,backgroundColor:"#080a10"});};
-  const xPNG=async()=>{try{const cv=await cap();const url=cv.toDataURL("image/png");if(navigator.share&&navigator.canShare){try{const b=await(await fetch(url)).blob();const f=new File([b],"mediscan.png",{type:"image/png"});if(navigator.canShare({files:[f]})){await navigator.share({title:pName,files:[f]});return;}}catch{}}const a=document.createElement("a");a.href=url;a.download=`${pName}.png`;a.click();}catch{}};
-  const xPDF=async()=>{try{const cv=await cap();const{jsPDF}=window.jspdf;const pdf=new jsPDF({orientation:"landscape"});const W=pdf.internal.pageSize.getWidth(),H=cv.height*(W/cv.width);pdf.addImage(cv.toDataURL("image/jpeg",.92),"JPEG",0,0,W,H);pdf.setFontSize(8);pdf.setTextColor(0,180,255);pdf.text(`${pName} · ${new Date().toLocaleDateString("es-ES")}`,3,H+8);pdf.save(`${pName}.pdf`);}catch{alert("Error PDF");}};
-  const xWA=async()=>{try{const cv=await cap();const url=cv.toDataURL("image/png");if(navigator.share&&navigator.canShare){try{const b=await(await fetch(url)).blob();const f=new File([b],"mediscan.png",{type:"image/png"});if(navigator.canShare({files:[f]})){await navigator.share({title:pName,files:[f]});return;}}catch{}}const a=document.createElement("a");a.href=url;a.download=`${pName}.png`;a.click();setTimeout(()=>{if(confirm("¿Abrir WhatsApp?"))window.open("whatsapp://","_blank");},600);}catch{}};
-  const xEmail=async()=>{try{const cv=await cap();const a=document.createElement("a");a.href=cv.toDataURL("image/png");a.download=`${pName}.png`;a.click();setTimeout(()=>alert("Imagen descargada. Adjúntala al email."),400);}catch{}};
+  const xPNG=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataURL("image/png");if(navigator.share&&navigator.canShare){try{const b=await(await fetch(url)).blob();const f=new File([b],`${pName}.png`,{type:"image/png"});if(navigator.canShare({files:[f]})){await navigator.share({title:pName,files:[f]});return;}}catch{}}const a=document.createElement("a");a.href=url;a.download=`${pName}.png`;document.body.appendChild(a);a.click();document.body.removeChild(a);}catch(e){alert("Error PNG: "+e.message);}};
+  const xPDF=async()=>{try{if(!window.jspdf){alert("PDF no disponible");return;}const cv=await cap();if(!cv)return;const{jsPDF}=window.jspdf;const pdf=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"});const W=297,AR=cv.height/cv.width,H=Math.min(W*AR,170);pdf.setFillColor(12,12,12);pdf.rect(0,0,297,210,"F");pdf.addImage(cv.toDataURL("image/jpeg",.92),"JPEG",0,0,W,H);pdf.setFontSize(9);pdf.setTextColor(255,149,0);pdf.text(`${pName}  ·  ${new Date().toLocaleDateString("es-ES")}  ·  MediScan 3D Pro`,5,H+8);pdf.save(`${pName}.pdf`);}catch(e){alert("Error PDF: "+e.message);}};
+  const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataURL("image/png");const a=document.createElement("a");a.href=url;a.download=`${pName}.png`;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>window.open(`https://wa.me/?text=${encodeURIComponent("MediScan 3D Pro - "+pName)}`,"_blank"),800);}catch(e){alert("Error: "+e.message);}};
+  const xEmail=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataURL("image/png");const a=document.createElement("a");a.href=url;a.download=`${pName}.png`;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>window.open(`mailto:?subject=${encodeURIComponent("MediScan: "+pName)}&body=${encodeURIComponent("Adjunto medición de "+pName+" — MediScan 3D Pro")}`,"_blank"),700);}catch(e){alert("Error: "+e.message);}};
 
   /* SVG PILL BADGE - dark AR Meter style */
   const Pill=({mx,my,text,col,sm})=>{
@@ -1007,7 +1013,10 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
     </div>
     {/* Tool buttons */}
     <div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"flex-start"}}>
-      {(tbyCat[tCat]||[]).map(t=><button key={t.id} title={t.label} onClick={()=>{setTool(t.id);setPend([]);setPrev(null);setDragSt(null);}} className={`tb${tool===t.id?" act":""}`}><span>{t.icon}</span><span>{t.label}</span></button>)}
+      {(tbyCat[tCat]||[]).map(t=><button key={t.id} title={t.label} onClick={()=>{setTool(t.id);setPend([]);setPrev(null);setDragSt(null);}}
+              onContextMenu={e=>{e.preventDefault();setTool(t.id);setAddPartDlg(true);}}
+              title={`${t.label} (clic derecho = nueva parte)`}
+              className={`tb${tool===t.id?" act":""}`}><span>{t.icon}</span><span>{t.label}</span></button>)}
       <button title="Mover/Seleccionar" onClick={()=>{setTool("sel");setPend([]);setPrev(null);setDragSt(null);}} className={`tb${tool==="sel"?" act":""}`}><span>↖</span><span>Mover</span></button>
     </div>
     {/* Color + style */}
@@ -1051,18 +1060,33 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
       style={{position:"relative",lineHeight:0,transform:`rotate(${rot}deg)`,cursor:tool==="sel"?"default":"crosshair",userSelect:"none",WebkitUserSelect:"none",touchAction:"none"}}>
       <img src={img} alt="" draggable="false" style={{width:"100%",display:"block",pointerEvents:"none"}}/>
       <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",overflow:"visible",pointerEvents:"all"}}>
-        {/* AI PARTS - colored outlines, tappable */}
-        {showSegs&&segs.map(seg=><g key={seg.id} className="segpop" style={{cursor:"pointer"}}
-          onClick={e=>{e.stopPropagation();setMeasM({id:uid(),type:"dot",icon:"🔍",title:seg.name,value:null,unit:"cm",axis:"",color:seg.color||C,points:[{x:(seg.x1+seg.x2)/2,y:(seg.y1+seg.y2)/2}]});setMIn({t:seg.name,v:"",u:"cm",ax:"other"});}}>
-          {/* Colored fill */}
-          <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width={`${(seg.x2-seg.x1)*100}%`} height={`${(seg.y2-seg.y1)*100}%`}
-            stroke={seg.color||C} strokeWidth="2.5" strokeDasharray="6,3" fill={`${seg.color||"#ff9500"}25`} rx="4"/>
-          {/* Label badge */}
-          <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width="15%" height="5.5%" rx="2.75%" fill={`${seg.color||C}ee`}/>
-          <text x={`${seg.x1*100+.8}%`} y={`${seg.y1*100+3}%`} fill="#fff" fontSize="2.4%" fontFamily="Inter,sans-serif" fontWeight="800" dominantBaseline="middle">{seg.id}. {(seg.name||"").slice(0,13)}</text>
-          {/* Hint text */}
-          {seg.hint&&<text x={`${(seg.x1+seg.x2)*50}%`} y={`${seg.y2*100+3.5}%`} fill={seg.color||C} fontSize="2%" fontFamily="Inter,sans-serif" fontWeight="500" textAnchor="middle" opacity=".8">{seg.hint}</text>}
-        </g>)}
+        {/* AI PARTS - colored, selectable, deletable (P1) */}
+        {showSegs&&segs.map(seg=>{const isSel=selSeg===seg.id;const col=seg.color||C;return(
+          <g key={seg.id} className="segpop">
+            <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width={`${(seg.x2-seg.x1)*100}%`} height={`${(seg.y2-seg.y1)*100}%`}
+              stroke={col} strokeWidth={isSel?"3.5":"2"} strokeDasharray={isSel?"none":"6,3"}
+              fill={isSel?`${col}35`:`${col}18`} rx="4" style={{cursor:"pointer"}}
+              onClick={e=>{e.stopPropagation();setSelSeg(isSel?null:seg.id);}}/>
+            <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width="16%" height="6%" rx="3%" fill={`${col}ee`}
+              style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();setSelSeg(isSel?null:seg.id);}}/>
+            <text x={`${seg.x1*100+.9}%`} y={`${seg.y1*100+3.2}%`} fill="#000" fontSize="2.4%"
+              fontFamily="Inter,sans-serif" fontWeight="800" dominantBaseline="middle"
+              style={{pointerEvents:"none"}}>{seg.id}. {(seg.name||"").slice(0,11)}</text>
+            {isSel&&<>
+              <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();setSegs(s=>s.filter(x=>x.id!==seg.id));setSelSeg(null);}}>
+                <rect x={`${seg.x2*100-8}%`} y={`${seg.y1*100}%`} width="8%" height="6%" rx="2%" fill="#ff3366"/>
+                <text x={`${seg.x2*100-4}%`} y={`${seg.y1*100+3.2}%`} fill="#fff" fontSize="3.2%" fontWeight="800" textAnchor="middle" dominantBaseline="middle">✕</text>
+              </g>
+              <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();setMeasM({id:uid(),type:"dot",icon:"🔍",title:seg.name,value:null,unit:"cm",axis:"",color:col,points:[{x:(seg.x1+seg.x2)/2,y:(seg.y1+seg.y2)/2}]});setMIn({t:seg.name,v:"",u:"cm",ax:"other"});setSelSeg(null);}}>
+                <rect x={`${seg.x2*100-19}%`} y={`${seg.y1*100}%`} width="11%" height="6%" rx="2%" fill={col}/>
+                <text x={`${seg.x2*100-13.5}%`} y={`${seg.y1*100+3.2}%`} fill="#000" fontSize="2.3%" fontWeight="800" textAnchor="middle" dominantBaseline="middle">+ Medir</text>
+              </g>
+              <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");c2.width=Math.round(im.width*(seg.x2-seg.x1));c2.height=Math.round(im.height*(seg.y2-seg.y1));c2.getContext("2d").drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);setEditZone({seg,croppedImg:c2.toDataURL("image/jpeg",.92)});setSelSeg(null);};im.src=img;}}>
+                <rect x={`${seg.x2*100-30}%`} y={`${seg.y1*100}%`} width="11%" height="6%" rx="2%" fill="#222"/>
+                <text x={`${seg.x2*100-24.5}%`} y={`${seg.y1*100+3.2}%`} fill="#ff9500" fontSize="2.2%" fontWeight="800" textAnchor="middle" dominantBaseline="middle">✏ Ver</text>
+              </g>
+            </>}
+          </g>);})}
         {/* Shape annotations */}
         {shpA.map(a=><Shape key={a.id} a={a}/>)}
         {/* Drawing preview */}
@@ -1075,7 +1099,10 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
       {/* Marker dots (DOM) */}
       {mrkA.map((a,idx)=><div key={a.id} className="nc"
         onMouseDown={e=>onHandleDrag(e,a.id,0)} onTouchStart={e=>onHandleDrag(e,a.id,0)}
-        onClick={e=>{e.stopPropagation();setSelId(a.id);setTool("sel");}}
+        onClick={e=>{e.stopPropagation();setSelId(a.id);setTool("sel");
+  /* Single tap on existing marker -> open measurement modal */
+  setMIn({t:a.title||"",v:a.value!=null?String(a.value):"",u:a.unit||"cm",ax:a.axis||""});
+  setMeasM({...a,_existing:true});}}
         style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",width:"30px",height:"30px",borderRadius:"50%",background:selId===a.id?a.color:"rgba(6,8,16,.92)",border:`2.5px solid ${a.color}`,color:selId===a.id?"#000":a.color,display:"flex",alignItems:"center",justifyContent:"center",cursor:"grab",zIndex:15,boxShadow:`0 0 ${selId===a.id?18:8}px ${a.color}`,fontSize:a.type==="pin"?"18px":"11px",fontWeight:"700"}}>
         {a.type==="pin"?"📍":a.type==="star"?"★":a.type==="tgt"?"⊕":(idx+1)}
         <div style={{position:"absolute",top:"-36px",left:"50%",transform:"translateX(-50%)",background:"rgba(6,8,16,.93)",color:a.value!=null?a.color:"#3355aa",fontSize:"9px",fontWeight:"700",padding:"4px 11px",borderRadius:"20px",whiteSpace:"nowrap",border:`1.5px solid ${a.value!=null?a.color:"rgba(255,255,255,.1)"}`,pointerEvents:"none",minWidth:"60px",textAlign:"center",boxShadow:"0 2px 12px rgba(0,0,0,.6)"}}>
@@ -1339,6 +1366,34 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
     }} style={{flex:2,padding:"12px",background:"linear-gradient(135deg,#008844,#00dd77)",color:"#000",border:"none",borderRadius:"9px",fontSize:"12px",fontWeight:800}}>
       ＋ CREAR PARTE Y MEDIR
     </button>
+  </div>
+</div>}
+
+{editZone&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.9)",zIndex:700,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"16px"}}>
+  <div style={{width:"100%",maxWidth:"480px",background:"#111",borderRadius:"16px",overflow:"hidden",border:"2px solid #ff9500"}}>
+    <div style={{padding:"11px 14px",background:"#1a1a1a",borderBottom:"1px solid #2a2a2a",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <div>
+        <div style={{fontSize:"12px",fontWeight:800,color:"#ff9500"}}>✏ Editando: {editZone.seg.name}</div>
+        <div style={{fontSize:"8px",color:"#555",marginTop:"2px"}}>Trabaja en esta zona — cuando termines pulsa Guardar para aplicar cambios</div>
+      </div>
+      <button onClick={()=>setEditZone(null)} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+    </div>
+    <img src={editZone.croppedImg} alt={editZone.seg.name} style={{width:"100%",display:"block",maxHeight:"50vh",objectFit:"contain",background:"#000"}}/>
+    <div style={{padding:"10px 14px",display:"flex",gap:"8px"}}>
+      <button onClick={()=>{
+        /* Measure this specific part */
+        const seg=editZone.seg;
+        setMeasM({id:uid(),type:"dot",icon:"🔍",title:seg.name,value:null,unit:"cm",axis:"",
+          color:seg.color||C,points:[{x:(seg.x1+seg.x2)/2,y:(seg.y1+seg.y2)/2}]});
+        setMIn({t:seg.name,v:"",u:"cm",ax:"other"});
+        setEditZone(null);
+      }} style={{flex:2,padding:"10px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"8px",fontSize:"10px",fontWeight:800}}>
+        ＋ Añadir medida a esta parte
+      </button>
+      <button onClick={()=>setEditZone(null)} style={{flex:1,padding:"10px",background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",color:"#555",borderRadius:"8px",fontSize:"10px"}}>
+        Conservar y volver
+      </button>
+    </div>
   </div>
 </div>}
 
