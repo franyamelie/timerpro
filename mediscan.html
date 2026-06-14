@@ -14,34 +14,48 @@
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 *{box-sizing:border-box;margin:0;padding:0;}
-html,body{background:#080a10;height:100%;font-family:'Inter',sans-serif;-webkit-tap-highlight-color:transparent;overflow:hidden;}
+html,body{background:#0c0c0c;height:100%;font-family:'Inter',sans-serif;-webkit-tap-highlight-color:transparent;overflow:hidden;}
+
+/* SCROLLBAR */
+::-webkit-scrollbar{width:12px;height:12px}
+::-webkit-scrollbar-track{background:rgba(255,255,255,.05);border-radius:8px}
+::-webkit-scrollbar-thumb{background:#ff9500;border-radius:8px;border:2px solid #0c0c0c;min-height:40px}
+::-webkit-scrollbar-thumb:hover{background:#ffbb00}
+.app-scroll{overflow-y:scroll!important;scrollbar-width:thin;scrollbar-color:#ff9500 rgba(255,255,255,.05)}
+
+/* ANIMATIONS */
 @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 @keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(0,180,255,.4)}50%{box-shadow:0 0 0 8px rgba(0,180,255,0)}}
-@keyframes segpop{0%{opacity:0;transform:scale(.95)}100%{opacity:1;transform:scale(1)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes glow{0%,100%{box-shadow:0 0 8px #ff9500}50%{box-shadow:0 0 20px #ff9500}}
+@keyframes scan{0%{top:0}100%{top:100%}}
+@keyframes segpop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}
 .fade{animation:fadeIn .2s ease both}
 .spin{animation:spin .8s linear infinite}
 .pulse{animation:pulse 2s ease infinite}
 .segpop{animation:segpop .3s ease both}
-button{-webkit-appearance:none;cursor:pointer;font-family:'Inter',sans-serif;outline:none;border:none;transition:all .12s}
-button:active{transform:scale(.91)}
+
+/* BUTTONS */
+button{-webkit-appearance:none;cursor:pointer;font-family:'Inter',sans-serif;outline:none;border:none;transition:all .1s}
+button:active{transform:scale(.92)}
 input,select,textarea{font-family:'Inter',sans-serif;outline:none;-webkit-appearance:none}
 input[type=number]{-moz-appearance:textfield}
 input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
-::-webkit-scrollbar{width:12px;height:12px}
-::-webkit-scrollbar-track{background:rgba(0,20,60,.5);border-radius:8px}
-::-webkit-scrollbar-thumb{background:#2255aa;border-radius:8px;border:2px solid #080a10;min-height:40px}
-::-webkit-scrollbar-thumb:hover{background:#3377dd}
-/* Main app scrollable area */
-.app-scroll{overflow-y:scroll!important;scrollbar-width:thin;scrollbar-color:#2255aa rgba(0,20,60,.5)}
 .nc{touch-action:none;user-select:none;-webkit-user-select:none}
-/* Bottom sheet */
-.sheet{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#0d1018;border-top:1px solid rgba(0,150,255,.2);border-radius:18px 18px 0 0;z-index:400;animation:slideUp .25s ease;max-height:80vh;overflow-y:auto}
-/* Tool button */
-.tb{display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 8px;border-radius:12px;min-width:52px;background:rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.07);color:#4466aa;font-size:7px;font-weight:600}
-.tb.act{background:linear-gradient(135deg,#0044ff,#00b4ff);border-color:#0077ff;color:#fff;box-shadow:0 0 18px rgba(0,150,255,.5)}
+
+/* TOOL BUTTON */
+.tb{display:flex;flex-direction:column;align-items:center;gap:2px;padding:9px 7px;border-radius:12px;min-width:52px;background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.1);color:#666;font-size:7px;font-weight:600;cursor:pointer}
 .tb span:first-child{font-size:20px;line-height:1}
+.tb:active{transform:scale(.9)}
+.tb.act{background:linear-gradient(135deg,#ff7700,#ffaa00);border-color:#ff9500;color:#000;box-shadow:0 0 20px rgba(255,150,0,.5)}
+
+/* CARD */
+.card{background:#161616;border:1px solid #2a2a2a;border-radius:14px;overflow:hidden}
+.card-hdr{padding:9px 13px;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-bottom:1px solid #222;display:flex;align-items:center;justify-content:space-between}
+
+/* SHEET */
+.sheet{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#111;border-top:1px solid #ff9500;border-radius:18px 18px 0 0;z-index:400;animation:slideUp .22s ease;max-height:80vh;overflow-y:auto}
 </style>
 </head>
 <body><div id="root"></div>
@@ -52,7 +66,7 @@ const API="https://api.groq.com/openai/v1/chat/completions";
 const MDL="meta-llama/llama-4-scout-17b-16e-instruct";
 const cl=(v,a,b)=>Math.max(a,Math.min(b,v));
 const uid=()=>`_${Math.random().toString(36).slice(2,9)}`;
-const COLS=["#00b4ff","#ff3366","#00e676","#ff9500","#cc44ff","#ffdd00","#ff6622","#00ffcc","#ff44aa","#44ffbb","#ff8844","#44aaff"];
+const COLS=["#ff9500","#ff3366","#00e676","#ff9500","#cc44ff","#ffdd00","#ff6622","#00ffcc","#ff44aa","#44ffbb","#ff8844","#44aaff"];
 const UF={mm:1,cm:10,m:1000,"in":25.4,ft:304.8};
 const toMM=(v,u)=>(parseFloat(v)||0)*(UF[u]||10);
 const fmtV=(v,u)=>{if(v==null)return"—";const r={mm:[1,0],cm:[.1,1],m:[.001,3],"in":[.0394,2],ft:[.00328,3]}[u]||[.1,1];return`${(v*r[0]).toFixed(r[1])} ${u}`;};
@@ -323,7 +337,7 @@ function MultiPart3D({anns,segs,objShape}){
     /* Fallback: group anns by axis */
     const withVal=anns.filter(a=>a.value!=null);
     if(!withVal.length)return[];
-    return[{id:"1",name:"Objeto completo",color:"#00b4ff",anns:withVal}];
+    return[{id:"1",name:"Objeto completo",color:"#ff9500",anns:withVal}];
   },[anns,segs]);
 
   if(!parts.length)return<div style={{padding:"16px",fontSize:"9px",color:"#2a3a5a",textAlign:"center",lineHeight:2}}>
@@ -332,10 +346,10 @@ function MultiPart3D({anns,segs,objShape}){
 
   return<div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
     {parts.slice(0,6).map(part=>(
-      <div key={part.id} style={{borderRadius:"10px",overflow:"hidden",border:`1px solid ${part.color||"#00b4ff"}40`}}>
-        <div style={{padding:"6px 10px",background:`${part.color||"#00b4ff"}22`,display:"flex",alignItems:"center",gap:"7px",borderBottom:`1px solid ${part.color||"#00b4ff"}30`}}>
-          <div style={{width:"10px",height:"10px",borderRadius:"2px",background:part.color||"#00b4ff"}}/>
-          <span style={{fontSize:"9px",fontWeight:700,color:part.color||"#00b4ff"}}>{part.id}. {part.name}</span>
+      <div key={part.id} style={{borderRadius:"10px",overflow:"hidden",border:`1px solid ${part.color||"#ff9500"}40`}}>
+        <div style={{padding:"6px 10px",background:`${part.color||"#ff9500"}22`,display:"flex",alignItems:"center",gap:"7px",borderBottom:`1px solid ${part.color||"#ff9500"}30`}}>
+          <div style={{width:"10px",height:"10px",borderRadius:"2px",background:part.color||"#ff9500"}}/>
+          <span style={{fontSize:"9px",fontWeight:700,color:part.color||"#ff9500"}}>{part.id}. {part.name}</span>
           {part.anns.length>0&&<span style={{fontSize:"8px",color:"#334455",marginLeft:"auto"}}>{part.anns.map(a=>`${a.title||a.type}: ${a.value}${a.unit}`).join(" · ")}</span>}
         </div>
         <Part3D anns={part.anns} shape={objShape} color={part.color}/>
@@ -359,7 +373,7 @@ function Part3D({anns,shape,color}){
     rdr.shadowMap.enabled=true;rdr.outputEncoding=THREE.sRGBEncoding;rdr.toneMapping=THREE.ACESFilmicToneMapping;rdr.toneMappingExposure=1.1;
     E.appendChild(rdr.domElement);
     const piv=new THREE.Group();scene.add(piv);
-    const col=color||"#00b4ff";const c=parseInt(col.replace("#",""),16);
+    const col=color||"#ff9500";const c=parseInt(col.replace("#",""),16);
     const mat=new THREE.MeshStandardMaterial({color:c||0x0044ff,metalness:.5,roughness:.4,transparent:true,opacity:.85});
     const eMat=new THREE.LineBasicMaterial({color:c||0x00b4ff});
     const s=shape||"box";
@@ -804,19 +818,22 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
   /* SVG PILL BADGE - dark AR Meter style */
   const Pill=({mx,my,text,col,sm})=>{
     if(!text)return null;
-    const w=Math.max(text.length*.62,3)+3,x=parseFloat(mx),y=parseFloat(my);
-    const h=sm?3.8:4.6,ry=sm?1.9:2.3,fs=sm?"2.2%":"2.7%";
+    const w=Math.max(text.length*.65,3)+3.5,x=parseFloat(mx),y=parseFloat(my);
+    const h=sm?4:5,ry=sm?2:2.5,fs=sm?"2.3%":"2.9%";
     return(<>
-      <rect x={`${x-w/2}%`} y={`${y-ry}%`} width={`${w}%`} height={`${h}%`} rx={`${ry}%`} fill="rgba(6,8,16,.92)" style={{filter:"drop-shadow(0 1px 6px rgba(0,0,0,.8))"}}/>
-      <rect x={`${x-w/2}%`} y={`${y-ry}%`} width={`${w}%`} height={`${h}%`} rx={`${ry}%`} fill="none" stroke={col||"#00b4ff"} strokeWidth=".9"/>
-      <text x={`${x}%`} y={`${y+.3}%`} fill={col||"#00b4ff"} fontSize={fs} fontFamily="Inter,sans-serif" fontWeight="700" textAnchor="middle" dominantBaseline="middle">{text}</text>
+      <rect x={`${x-w/2}%`} y={`${y-ry}%`} width={`${w}%`} height={`${h}%`} rx={`${ry}%`}
+        fill="rgba(255,255,255,.96)" style={{filter:"drop-shadow(0 2px 8px rgba(0,0,0,.7))"}}/>
+      <rect x={`${x-w/2}%`} y={`${y-ry}%`} width="1.2%" height={`${h}%`} rx={`${ry/2}%`}
+        fill={col||"#ff9500"}/>
+      <text x={`${x+.4}%`} y={`${y+.4}%`} fill="#111" fontSize={fs}
+        fontFamily="Inter,sans-serif" fontWeight="800" textAnchor="middle" dominantBaseline="middle">{text}</text>
     </>);
   };
 
   /* SVG SHAPE RENDERER */
   const Shape=({a,ip=false})=>{
     if(!a?.points||a.points.length<2)return null;
-    const[p1,p2]=a.points,col=a.color||"#00b4ff";
+    const[p1,p2]=a.points,col=a.color||"#ff9500";
     const sw=ip?1.5:selId===a.id?3.5:2;
     const aid=`sv${a.id||"p"}`;
     const ld=a.lineStyle==="dashed"?"8,5":a.lineStyle==="dotted"?"2,5":"none";
@@ -863,13 +880,13 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
     const W=g("width"),H=g("height"),D=g("depth");if(!W&&!H&&!D)return null;
     const st=[W&&D&&`S=${(W*D).toFixed(1)}m²`,W&&H&&D&&`V=${(W*H*D).toFixed(2)}m³`,W&&D&&`P=${(2*(W+D)).toFixed(1)}m`].filter(Boolean);
     return<>{st.map((s,i)=><g key={i} pointerEvents="none">
-      <rect x="1%" y={`${84+i*7}%`} width={`${s.length*.72+2}%`} height="6%" rx="3%" fill="rgba(6,8,16,.9)" style={{filter:"drop-shadow(0 1px 4px rgba(0,0,0,.7))"}}/>
-      <text x={`${(s.length*.72+2)/2+1}%`} y={`${87+i*7}%`} fill="#00b4ff" fontSize="2.6%" fontFamily="Inter,sans-serif" fontWeight="700" textAnchor="middle" dominantBaseline="middle">{s}</text>
+      <rect x="1%" y={`${84+i*7}%`} width={`${s.length*.72+2}%`} height="6%" rx="3%" fill="rgba(255,255,255,.95)" style={{filter:"drop-shadow(0 2px 8px rgba(0,0,0,.6))"}}/>
+      <text x={`${(s.length*.72+2)/2+1}%`} y={`${87+i*7}%`} fill="#111" fontSize="2.6%" fontFamily="Inter,sans-serif" fontWeight="800" textAnchor="middle" dominantBaseline="middle">{s}</text>
     </g>)}</>;
   };
 
   /* ══ JSX ══ */
-  const C="#00b4ff";
+  const C="#ff9500";
 
   /* Import from industrial DB */
   const importFromDB=item=>{
@@ -886,28 +903,28 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
   };
 
   return(
-<div style={{maxWidth:"480px",margin:"0 auto",background:"#080a10",height:"100vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+<div style={{maxWidth:"480px",margin:"0 auto",background:"#0c0c0c",height:"100vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
 
 {/* HEADER */}
-<div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:"10px",background:"rgba(6,8,16,.98)",borderBottom:"1px solid rgba(0,100,200,.12)",position:"sticky",top:0,zIndex:300}}>
-  <div style={{width:"34px",height:"34px",borderRadius:"9px",background:"linear-gradient(135deg,#0044ff,#00b4ff)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"17px",flexShrink:0}}>📐</div>
+<div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:"10px",background:"#111",borderBottom:"2px solid #ff9500",position:"sticky",top:0,zIndex:300,boxShadow:"0 2px 20px rgba(0,0,0,.8)"}}>
+  <div style={{width:"36px",height:"36px",borderRadius:"10px",background:"linear-gradient(135deg,#ff7700,#ffaa00)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"18px",flexShrink:0,boxShadow:"0 0 16px rgba(255,150,0,.4)"}}>📐</div>
   <div style={{flex:1,minWidth:0}}>
-    <div style={{fontSize:"14px",fontWeight:800,color:"#fff",letterSpacing:"-.3px"}}>MediScan 3D Pro</div>
-    <a href="https://franyamelie.github.io/timerpro/mediscan.html" target="_blank" rel="noreferrer" style={{fontSize:"8px",color:"#3355aa",textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>franyamelie.github.io/timerpro/mediscan.html</a>
+    <div style={{fontSize:"15px",fontWeight:800,color:"#fff",letterSpacing:"-.3px"}}>MediScan 3D Pro</div>
+    <a href="https://franyamelie.github.io/timerpro/mediscan.html" target="_blank" rel="noreferrer" style={{fontSize:"8px",color:"#ff9500",textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:.8}}>franyamelie.github.io/timerpro/mediscan.html</a>
   </div>
-  {scr==="annotate"&&<button onClick={save} style={{background:"rgba(0,150,255,.12)",border:"1px solid rgba(0,150,255,.28)",color:C,borderRadius:"8px",padding:"6px 10px",fontSize:"11px",fontWeight:700}}>{sync||"💾"}</button>}
-  {scr==="annotate"&&<button onClick={()=>setScr("camera")} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",color:"#5577aa",borderRadius:"8px",padding:"6px 10px",fontSize:"12px"}}>📷</button>}
-  <button onClick={()=>setScr("setup")} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",color:"#5577aa",borderRadius:"8px",padding:"6px 10px",fontSize:"12px"}}>⚙</button>
+  {scr==="annotate"&&<button onClick={save} style={{background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.4)",color:"#ff9500",borderRadius:"8px",padding:"6px 10px",fontSize:"11px",fontWeight:700}}>{sync||"💾"}</button>}
+  {scr==="annotate"&&<button onClick={()=>setScr("camera")} style={{background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.12)",color:"#888",borderRadius:"8px",padding:"6px 10px",fontSize:"12px"}}>📷</button>}
+  <button onClick={()=>setScr("setup")} style={{background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.12)",color:"#888",borderRadius:"8px",padding:"6px 10px",fontSize:"12px"}}>⚙</button>
 </div>
 
 <div className="app-scroll" style={{flex:1,display:"flex",flexDirection:"column",padding:"8px",gap:"8px",overflowY:"scroll",height:0}}>
 
 {/* HOME */}
 {scr==="home"&&<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-  <button onClick={()=>setScr("camera")} style={{width:"100%",padding:"18px",background:"linear-gradient(135deg,#0033ff,#0077ff,#00b4ff)",color:"#fff",border:"none",borderRadius:"14px",fontSize:"15px",fontWeight:800,letterSpacing:"-.2px",boxShadow:"0 4px 24px rgba(0,100,255,.45)"}}>＋ NUEVO PROYECTO</button>
-  {!GK()&&<div style={{background:"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.3)",borderRadius:"10px",padding:"10px 14px",fontSize:"9px",color:"#ff9500"}}>⚠️ Sin clave API Groq — toca ⚙ para configurarla</div>}
-  {projs.length>0&&<div style={{background:"rgba(10,14,25,.95)",border:"1px solid rgba(0,100,200,.18)",borderRadius:"14px",overflow:"hidden"}}>
-    <div style={{padding:"8px 13px",fontSize:"9px",color:C,fontWeight:600,letterSpacing:".08em",textTransform:"uppercase",borderBottom:"1px solid rgba(255,255,255,.05)"}}>📁 Proyectos guardados</div>
+  <button onClick={()=>setScr("camera")} style={{width:"100%",padding:"18px",background:"linear-gradient(135deg,#ff6600,#ff9500,#ffcc00)",color:"#fff",border:"none",borderRadius:"14px",fontSize:"15px",fontWeight:800,letterSpacing:"-.2px",color:"#000",boxShadow:"0 4px 28px rgba(255,150,0,.45)"}}>＋ NUEVO PROYECTO</button>
+  {!GK()&&<div style={{background:"rgba(255,150,0,.12)",border:"1px solid rgba(255,150,0,.35)",borderRadius:"10px",padding:"10px 14px",fontSize:"9px",color:"#ff9500"}}>⚠️ Sin clave API Groq — toca ⚙ para configurarla</div>}
+  {projs.length>0&&<div style={{background:"#161616",border:"1px solid #2a2a2a",borderRadius:"14px",overflow:"hidden"}}>
+    <div style={{padding:"8px 13px",fontSize:"9px",color:"#ff9500",fontWeight:600,letterSpacing:".08em",textTransform:"uppercase",borderBottom:"1px solid #222"}}>📁 Proyectos guardados</div>
     {projs.map(p=><div key={p.id} onClick={()=>loadP(p)} style={{display:"flex",alignItems:"center",gap:"9px",padding:"9px 12px",borderBottom:"1px solid rgba(255,255,255,.04)",cursor:"pointer"}}>
       {p.img&&<img src={p.img} style={{width:"44px",height:"34px",objectFit:"cover",borderRadius:"6px",border:"1px solid rgba(0,150,255,.2)"}}/>}
       <div style={{flex:1}}><div style={{fontSize:"10px",color:"#d0e8f8",fontWeight:600}}>{p.name}</div><div style={{fontSize:"8px",color:"#2a3a5a"}}>{p.date} · {p.objInfo?.name||"?"} · {(p.anns||[]).length} medidas</div></div>
@@ -921,24 +938,24 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
   <div style={{textAlign:"center",padding:"16px 0 8px"}}><div style={{fontSize:"32px",marginBottom:"6px"}}>🔑</div><div style={{fontSize:"15px",fontWeight:700,color:"#fff"}}>Clave API de Groq</div><div style={{fontSize:"9px",color:"#3355aa",marginTop:"4px",lineHeight:1.7}}>Gratis en <span style={{color:C}}>console.groq.com</span> → API Keys</div></div>
   <div style={{background:"rgba(10,14,25,.95)",border:"1px solid rgba(0,100,200,.2)",borderRadius:"14px",padding:"14px",display:"flex",flexDirection:"column",gap:"9px"}}>
     <input type="text" placeholder="gsk_xxxxxxxxxxxxxxxx" value={keyIn} onChange={e=>setKeyIn(e.target.value.trim())} style={{width:"100%",padding:"10px 13px",background:"rgba(0,10,30,.8)",border:"1px solid rgba(0,150,255,.3)",borderRadius:"9px",color:"#d0e8f8",fontSize:"11px"}}/>
-    <button onClick={()=>{if(!keyIn.startsWith("gsk_")){alert("Debe empezar por gsk_");return;}localStorage.setItem("ms3_k",keyIn);setScr("home");}} style={{padding:"12px",background:"linear-gradient(135deg,#0044ff,#00b4ff)",color:"#fff",border:"none",borderRadius:"9px",fontSize:"11px",fontWeight:700}}>GUARDAR Y CONTINUAR</button>
+    <button onClick={()=>{if(!keyIn.startsWith("gsk_")){alert("Debe empezar por gsk_");return;}localStorage.setItem("ms3_k",keyIn);setScr("home");}} style={{padding:"12px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"9px",fontSize:"11px",fontWeight:700}}>GUARDAR Y CONTINUAR</button>
   </div>
   {GK()&&<button onClick={()=>setScr("home")} style={{padding:"9px",background:"transparent",border:"1px solid rgba(255,255,255,.1)",color:"#3355aa",borderRadius:"8px",fontSize:"9px"}}>← Volver</button>}
 </div>}
 
 {/* CAMERA */}
 {scr==="camera"&&<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-  <div style={{background:"rgba(10,14,25,.95)",border:"1px solid rgba(0,100,200,.18)",borderRadius:"14px",overflow:"hidden"}}>
+  <div style={{background:"#161616",border:"1px solid #2a2a2a",borderRadius:"14px",overflow:"hidden"}}>
     <div style={{padding:"8px 13px",fontSize:"9px",color:"#ff3366",fontWeight:600,letterSpacing:".08em",textTransform:"uppercase",borderBottom:"1px solid rgba(255,255,255,.05)",display:"flex",gap:"6px",alignItems:"center"}}><span style={{fontSize:"8px"}}>●</span> Cámara en vivo</div>
-    {cam==="off"&&<div style={{padding:"20px",textAlign:"center"}}><button onClick={startCam} style={{padding:"11px 26px",background:"linear-gradient(135deg,#0044ff,#00b4ff)",color:"#fff",border:"none",borderRadius:"10px",fontSize:"10px",fontWeight:700}}>📹 ACTIVAR CÁMARA</button></div>}
-    {cam==="starting"&&<div style={{padding:"22px",textAlign:"center"}}><div style={{width:"28px",height:"28px",borderRadius:"50%",border:"3px solid #1e2535",borderTop:"3px solid #00b4ff",margin:"0 auto"}} className="spin"/></div>}
-    {cam==="live"&&<><div style={{position:"relative",background:"#000",aspectRatio:"4/3"}}><video ref={vidRef} autoPlay playsInline muted style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/><div style={{position:"absolute",left:0,right:0,height:"2px",background:"linear-gradient(90deg,transparent,#00b4ff,transparent)",animation:"scan 2.5s linear infinite",opacity:.7,pointerEvents:"none"}}/></div><div style={{display:"flex",gap:"10px",padding:"12px",justifyContent:"center",alignItems:"center"}}><button onClick={stopCam} style={{padding:"8px 14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"8px",fontSize:"9px"}}>✕</button><button onClick={capCam} style={{width:"56px",height:"56px",borderRadius:"50%",border:"3.5px solid #00b4ff",background:"transparent",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 24px rgba(0,180,255,.5)"}}><div style={{width:"40px",height:"40px",borderRadius:"50%",background:"linear-gradient(135deg,#0044ff,#00b4ff)"}}/></button></div></>}
+    {cam==="off"&&<div style={{padding:"20px",textAlign:"center"}}><button onClick={startCam} style={{padding:"11px 26px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"10px",fontSize:"10px",fontWeight:700}}>📹 ACTIVAR CÁMARA</button></div>}
+    {cam==="starting"&&<div style={{padding:"22px",textAlign:"center"}}><div style={{width:"28px",height:"28px",borderRadius:"50%",border:"3px solid #1e2535",borderTop:"3px solid #ff9500",margin:"0 auto"}} className="spin"/></div>}
+    {cam==="live"&&<><div style={{position:"relative",background:"#000",aspectRatio:"4/3"}}><video ref={vidRef} autoPlay playsInline muted style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/><div style={{position:"absolute",left:0,right:0,height:"2px",background:"linear-gradient(90deg,transparent,#00b4ff,transparent)",animation:"scan 2.5s linear infinite",opacity:.7,pointerEvents:"none"}}/></div><div style={{display:"flex",gap:"10px",padding:"12px",justifyContent:"center",alignItems:"center"}}><button onClick={stopCam} style={{padding:"8px 14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"8px",fontSize:"9px"}}>✕</button><button onClick={capCam} style={{width:"56px",height:"56px",borderRadius:"50%",border:"3.5px solid #ff9500",background:"transparent",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 24px rgba(255,150,0,.5)"}}><div style={{width:"40px",height:"40px",borderRadius:"50%",background:"linear-gradient(135deg,#ff6600,#ffaa00)"}}/></button></div></>}
   </div>
-  <div style={{background:"rgba(10,14,25,.95)",border:"1px solid rgba(0,100,200,.18)",borderRadius:"14px",overflow:"hidden"}}>
+  <div style={{background:"#161616",border:"1px solid #2a2a2a",borderRadius:"14px",overflow:"hidden"}}>
     <div style={{padding:"8px 13px",fontSize:"9px",color:C,fontWeight:600,letterSpacing:".08em",textTransform:"uppercase",borderBottom:"1px solid rgba(255,255,255,.05)"}}>📷 Foto · Galería · Boceto · Plano · P&ID</div>
     <div style={{padding:"10px",display:"flex",flexDirection:"column",gap:"8px"}}>
-      <button onClick={()=>camRef.current?.click()} style={{display:"flex",alignItems:"center",gap:"13px",padding:"14px",background:"rgba(0,100,255,.08)",border:"1px solid rgba(0,150,255,.22)",borderRadius:"11px",width:"100%"}}>
-        <span style={{fontSize:"26px"}}>📷</span><div style={{textAlign:"left"}}><div style={{fontSize:"11px",fontWeight:700,color:C}}>TOMAR FOTO</div><div style={{fontSize:"8px",color:"#2a3a5a",marginTop:"2px"}}>Objeto · pieza · herramienta · equipo industrial...</div></div>
+      <button onClick={()=>camRef.current?.click()} style={{display:"flex",alignItems:"center",gap:"13px",padding:"14px",background:"rgba(255,150,0,.08)",border:"1px solid rgba(255,150,0,.2)",borderRadius:"11px",width:"100%"}}>
+        <span style={{fontSize:"26px"}}>📷</span><div style={{textAlign:"left"}}><div style={{fontSize:"11px",fontWeight:700,color:"#ff9500"}}>TOMAR FOTO</div><div style={{fontSize:"8px",color:"#2a3a5a",marginTop:"2px"}}>Objeto · pieza · herramienta · equipo industrial...</div></div>
       </button>
       <input ref={camRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={onFile}/>
       <button onClick={()=>upRef.current?.click()} style={{display:"flex",alignItems:"center",gap:"13px",padding:"14px",background:"rgba(0,100,255,.05)",border:"1px solid rgba(0,150,255,.15)",borderRadius:"11px",width:"100%"}}>
@@ -950,10 +967,10 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
 </div>}
 
 {/* LOADING */}
-{scr==="loading"&&<div style={{background:"rgba(10,14,25,.95)",border:"1px solid rgba(0,100,200,.18)",borderRadius:"14px",overflow:"hidden"}} className="fade">
+{scr==="loading"&&<div style={{background:"#161616",border:"1px solid #2a2a2a",borderRadius:"14px",overflow:"hidden"}} className="fade">
   {img&&<img src={img} alt="" style={{width:"100%",aspectRatio:"4/3",objectFit:"cover",opacity:.7}}/>}
   <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"12px",padding:"26px"}}>
-    <div style={{width:"38px",height:"38px",borderRadius:"50%",border:"3px solid #1e2535",borderTop:"3px solid #00b4ff"}} className="spin"/>
+    <div style={{width:"38px",height:"38px",borderRadius:"50%",border:"3px solid #1e2535",borderTop:"3px solid #ff9500"}} className="spin"/>
     <div style={{fontSize:"10px",color:C,fontWeight:600}}>IA analizando · identificando partes · preparando medidas...</div>
     <div style={{fontSize:"9px",color:"#2a3a5a",textAlign:"center",lineHeight:1.7}}>Se detectarán las partes automáticamente<br/>y se marcarán con colores en la imagen</div>
   </div>
@@ -973,10 +990,10 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
   {err&&<div style={{fontSize:"9px",color:"#ff3366",padding:"7px 11px",background:"rgba(255,50,50,.07)",borderRadius:"8px",border:"1px solid rgba(255,50,50,.2)",marginBottom:"7px",display:"flex",gap:"7px",alignItems:"center"}}>⚠️ <span style={{flex:1}}>{err}</span>{(err.includes("API")||err.includes("clave"))&&<button onClick={()=>setScr("setup")} style={{background:"rgba(255,150,0,.2)",border:"1px solid rgba(255,150,0,.3)",color:"#ff9500",borderRadius:"5px",padding:"2px 8px",fontSize:"8px"}}>⚙</button>}</div>}
 
   {/* TOOL SELECTOR - compact horizontal */}
-  <div style={{background:"rgba(10,14,25,.98)",border:"1px solid rgba(0,100,200,.15)",borderRadius:"12px",padding:"8px 10px",marginBottom:"7px"}}>
+  <div style={{background:"#141414",border:"1px solid #2a2a2a",borderRadius:"12px",padding:"8px 10px",marginBottom:"7px"}}>
     {/* Categories */}
     <div style={{display:"flex",gap:"4px",marginBottom:"7px",overflowX:"auto"}}>
-      {Object.keys(tbyCat).map(cat=><button key={cat} onClick={()=>setTCat(cat)} style={{padding:"4px 10px",borderRadius:"6px",whiteSpace:"nowrap",background:tCat===cat?"rgba(0,120,255,.3)":"rgba(255,255,255,.04)",color:tCat===cat?"#66ccff":"#334455",border:`1px solid ${tCat===cat?"rgba(0,150,255,.45)":"rgba(255,255,255,.06)"}`,fontSize:"8px",fontWeight:tCat===cat?700:400}}>{CATS[cat]}</button>)}
+      {Object.keys(tbyCat).map(cat=><button key={cat} onClick={()=>setTCat(cat)} style={{padding:"4px 10px",borderRadius:"6px",whiteSpace:"nowrap",background:tCat===cat?"rgba(255,150,0,.25)":"rgba(255,255,255,.04)",color:tCat===cat?"#ffaa00":"#334455",border:`1px solid ${tCat===cat?"rgba(255,150,0,.5)":"rgba(255,255,255,.06)"}`,fontSize:"8px",fontWeight:tCat===cat?700:400}}>{CATS[cat]}</button>)}
     </div>
     {/* Tool buttons */}
     <div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"flex-start"}}>
@@ -995,21 +1012,21 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
   </div>
 
   {/* ACTIVE TOOL STATUS + UNDO */}
-  <div style={{display:"flex",alignItems:"center",gap:"7px",padding:"6px 10px",background:tool!=="sel"?"rgba(0,60,180,.1)":"rgba(255,255,255,.02)",border:"1px solid rgba(0,100,200,.12)",borderRadius:"10px",marginBottom:"7px",minHeight:"36px"}}>
-    {tool!=="sel"?<><div style={{display:"flex",alignItems:"center",gap:"5px",padding:"3px 11px",background:"linear-gradient(135deg,#0044ff,#00b4ff)",borderRadius:"20px",flexShrink:0}}>
+  <div style={{display:"flex",alignItems:"center",gap:"7px",padding:"6px 10px",background:tool!=="sel"?"rgba(255,100,0,.1)":"rgba(255,255,255,.02)",border:"1px solid rgba(0,100,200,.12)",borderRadius:"10px",marginBottom:"7px",minHeight:"36px"}}>
+    {tool!=="sel"?<><div style={{display:"flex",alignItems:"center",gap:"5px",padding:"3px 11px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",borderRadius:"20px",flexShrink:0}}>
       <span style={{fontSize:"13px"}}>{TOOLS.find(t=>t.id===tool)?.icon}</span>
-      <span style={{fontSize:"9px",fontWeight:700,color:"#fff"}}>{TOOLS.find(t=>t.id===tool)?.label}</span>
+      <span style={{fontSize:"9px",fontWeight:700,color:"#000"}}>{TOOLS.find(t=>t.id===tool)?.label}</span>
     </div>
     <span style={{fontSize:"9px",color:"#3355aa",flex:1}}>
       {DRAG.includes(tool)?"→ Mantén y arrastra en la imagen":pend.length===1?"→ Toca el 2° punto":"→ Toca la imagen para empezar"}
     </span></>
     :<span style={{fontSize:"9px",color:"#2a3a5a",flex:1}}>← Selecciona herramienta arriba</span>}
     {pend.length>0&&<button onClick={()=>{setPend([]);setPrev(null);}} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",fontSize:"8px",padding:"3px 9px",borderRadius:"5px"}}>✕</button>}
-    <button onClick={undo} disabled={hist.length===0} style={{padding:"4px 11px",background:hist.length>0?"rgba(0,150,255,.15)":"transparent",border:`1px solid ${hist.length>0?"rgba(0,150,255,.35)":"transparent"}`,color:hist.length>0?C:"#2a3a5a",borderRadius:"7px",fontSize:"9px",fontWeight:700,flexShrink:0}}>↩ {hist.length}</button>
+    <button onClick={undo} disabled={hist.length===0} style={{padding:"4px 11px",background:hist.length>0?"rgba(255,150,0,.15)":"transparent",border:`1px solid ${hist.length>0?"rgba(255,150,0,.35)":"transparent"}`,color:hist.length>0?C:"#333",borderRadius:"7px",fontSize:"9px",fontWeight:700,flexShrink:0}}>↩ {hist.length}</button>
   </div>
 
   {/* ═══ IMAGE - HERO ═══ */}
-  <div ref={capRef} style={{position:"relative",background:"#000",borderRadius:"12px",overflow:"hidden",border:"1px solid rgba(0,100,200,.18)",marginBottom:"7px"}}>
+  <div ref={capRef} style={{position:"relative",background:"#000",borderRadius:"12px",overflow:"hidden",border:"2px solid #222",marginBottom:"7px"}}>
     <div ref={imgRef}
       onClick={onImgClick} onMouseDown={onImgDown} onMouseMove={onImgMove}
       onMouseUp={onImgUp} onTouchStart={onImgDown} onTouchMove={onImgMove} onTouchEnd={onImgUp}
@@ -1021,10 +1038,10 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
           onClick={e=>{e.stopPropagation();setMeasM({id:uid(),type:"dot",icon:"🔍",title:seg.name,value:null,unit:"cm",axis:"",color:seg.color||C,points:[{x:(seg.x1+seg.x2)/2,y:(seg.y1+seg.y2)/2}]});setMIn({t:seg.name,v:"",u:"cm",ax:"other"});}}>
           {/* Colored fill */}
           <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width={`${(seg.x2-seg.x1)*100}%`} height={`${(seg.y2-seg.y1)*100}%`}
-            stroke={seg.color||C} strokeWidth="2.5" strokeDasharray="6,3" fill={`${seg.color||C}18`} rx="4"/>
+            stroke={seg.color||C} strokeWidth="2.5" strokeDasharray="6,3" fill={`${seg.color||"#ff9500"}25`} rx="4"/>
           {/* Label badge */}
           <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width="15%" height="5.5%" rx="2.75%" fill={`${seg.color||C}ee`}/>
-          <text x={`${seg.x1*100+.8}%`} y={`${seg.y1*100+3}%`} fill="#000" fontSize="2.4%" fontFamily="Inter,sans-serif" fontWeight="800" dominantBaseline="middle">{seg.id}. {(seg.name||"").slice(0,13)}</text>
+          <text x={`${seg.x1*100+.8}%`} y={`${seg.y1*100+3}%`} fill="#fff" fontSize="2.4%" fontFamily="Inter,sans-serif" fontWeight="800" dominantBaseline="middle">{seg.id}. {(seg.name||"").slice(0,13)}</text>
           {/* Hint text */}
           {seg.hint&&<text x={`${(seg.x1+seg.x2)*50}%`} y={`${seg.y2*100+3.5}%`} fill={seg.color||C} fontSize="2%" fontFamily="Inter,sans-serif" fontWeight="500" textAnchor="middle" opacity=".8">{seg.hint}</text>}
         </g>)}
@@ -1054,9 +1071,9 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
 
   {/* QUICK ACTIONS under image */}
   <div style={{display:"flex",gap:"4px",marginBottom:"7px",flexWrap:"wrap"}}>
-    <button onClick={()=>setRot(r=>(r+90)%360)} style={{flex:1,padding:"7px 4px",background:"rgba(0,100,255,.08)",border:"1px solid rgba(0,100,255,.18)",color:"#4488ff",borderRadius:"8px",fontSize:"9px",fontWeight:500}}>↻+90°</button>
-    <button onClick={()=>setRot(r=>(r-90+360)%360)} style={{flex:1,padding:"7px 4px",background:"rgba(0,100,255,.08)",border:"1px solid rgba(0,100,255,.18)",color:"#4488ff",borderRadius:"8px",fontSize:"9px",fontWeight:500}}>↺-90°</button>
-    <button onClick={segAI} disabled={segLoad||!GK()} style={{flex:2,padding:"7px 8px",background:segLoad?"rgba(0,100,255,.05)":"rgba(0,150,255,.15)",border:"1px solid rgba(0,150,255,.3)",color:segLoad?"#2a3a5a":C,borderRadius:"8px",fontSize:"9px",fontWeight:700}}>{segLoad?"⏳ Detectando...":"🔍 Detectar partes"}</button>
+    <button onClick={()=>setRot(r=>(r+90)%360)} style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.2)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:500}}>↻+90°</button>
+    <button onClick={()=>setRot(r=>(r-90+360)%360)} style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.2)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:500}}>↺-90°</button>
+    <button onClick={segAI} disabled={segLoad||!GK()} style={{flex:2,padding:"7px 8px",background:segLoad?"rgba(255,150,0,.05)":"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.3)",color:segLoad?"#444":C,borderRadius:"8px",fontSize:"9px",fontWeight:700}}>{segLoad?"⏳ Detectando...":"🔍 Detectar partes"}</button>
     {segs.length>0&&<button onClick={()=>setShowSegs(s=>!s)} style={{flex:1,padding:"7px 4px",background:showSegs?"rgba(0,150,255,.15)":"rgba(0,100,255,.05)",border:`1px solid rgba(0,150,255,${showSegs?.3:.12})`,color:showSegs?C:"#2a3a5a",borderRadius:"8px",fontSize:"9px"}}>👁{showSegs?"ON":"OFF"}</button>}
     {selId&&<button onClick={()=>delA(selId)} style={{flex:1,padding:"7px 4px",background:"rgba(255,50,50,.08)",border:"1px solid rgba(255,50,50,.2)",color:"#ff3366",borderRadius:"8px",fontSize:"9px"}}>🗑</button>}
     {origImg&&origImg!==img&&<button onClick={resetToOriginal} title="Volver a imagen original" style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.12)",border:"1px solid rgba(255,150,0,.3)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>🔄 Inicio</button>}
@@ -1065,19 +1082,19 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
 
   {/* PANEL TABS */}
   {/* PANEL TABS - sticky */}
-  <div style={{display:"flex",gap:"3px",background:"rgba(8,10,18,.99)",border:"1px solid rgba(0,100,200,.2)",borderRadius:"11px",padding:"4px",marginBottom:"7px",flexWrap:"wrap",position:"sticky",top:0,zIndex:200,boxShadow:"0 2px 12px rgba(0,0,0,.5)"}}>
+  <div style={{display:"flex",gap:"3px",background:"#111",border:"1px solid #2a2a2a",borderRadius:"11px",padding:"4px",marginBottom:"7px",flexWrap:"wrap",position:"sticky",top:0,zIndex:200,boxShadow:"0 2px 12px rgba(0,0,0,.5)"}}>
     {[["meas","📋 Medidas"],["2d","📐 2D"],["3d","🎮 3D+Partes"],["db","🔩 Base Datos"],["chat","💬 Chat IA"],["exp","📤 Exportar"]].map(([k,lb])=>(
       <button key={k} onClick={()=>setSheet(sheet===k?null:k)}
         style={{flex:1,minWidth:"70px",padding:"6px 2px",borderRadius:"7px",
-          background:sheet===k?"linear-gradient(135deg,#0044ff,#00b4ff)":"transparent",
-          color:sheet===k?"#fff":"#334455",
-          border:`1px solid ${sheet===k?"#0077ff":"rgba(255,255,255,.06)"}`,
+          background:sheet===k?"linear-gradient(135deg,#ff6600,#ffaa00)":"transparent",
+          color:sheet===k?"#000":"#555",
+          border:`1px solid ${sheet===k?"#ff9500":"rgba(255,255,255,.06)"}`,
           fontSize:"8px",fontWeight:sheet===k?700:400}}>{lb}</button>
     ))}
   </div>
 
   {/* MEASUREMENTS PANEL */}
-  {sheet==="meas"&&<div className="fade" style={{background:"rgba(10,14,25,.98)",border:"1px solid rgba(0,100,200,.15)",borderRadius:"12px",overflow:"hidden",marginBottom:"7px"}}>
+  {sheet==="meas"&&<div className="fade" style={{background:"#141414",border:"1px solid #222",borderRadius:"12px",overflow:"hidden",marginBottom:"7px"}}>
     <div style={{padding:"8px 13px",fontSize:"9px",color:C,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",borderBottom:"1px solid rgba(255,255,255,.05)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
       <span>📋 MEDIDAS ({anns.filter(a=>a.value!=null).length})</span>
       <button onClick={()=>setSheet(null)} style={{background:"rgba(255,50,50,.18)",border:"1px solid rgba(255,50,50,.35)",color:"#ff5566",borderRadius:"50%",width:"22px",height:"22px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
@@ -1094,7 +1111,7 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
     {anns.filter(a=>a.value!=null).map(a=><div key={a.id} onClick={()=>setSelId(a.id)} style={{display:"flex",alignItems:"center",gap:"6px",padding:"8px 13px",background:selId===a.id?"rgba(0,150,255,.07)":"transparent",borderBottom:"1px solid rgba(255,255,255,.04)",cursor:"pointer"}}>
       <div style={{width:"9px",height:"9px",borderRadius:"50%",background:a.color,flexShrink:0,boxShadow:`0 0 5px ${a.color}`}}/>
       <div style={{flex:1,minWidth:0}}><span style={{fontSize:"9px",color:"#d0e8f8",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:500}}>{a.title||a.type}</span>{a.axis&&<span style={{fontSize:"8px",color:"#2a3a5a"}}>{a.axis==="width"?"X·Ancho":a.axis==="height"?"Y·Alto":a.axis==="depth"?"Z·Prof":a.axis}</span>}</div>
-      <input type="number" min="0" value={a.value} onClick={e=>e.stopPropagation()} onChange={e=>{e.stopPropagation();updA(a.id,{value:e.target.value===""?null:parseFloat(e.target.value)});}} style={{width:"65px",padding:"4px 7px",background:"rgba(0,10,25,.8)",border:`1px solid ${selId===a.id?"rgba(0,180,255,.45)":"rgba(0,150,255,.18)"}`,borderRadius:"5px",color:selId===a.id?"#66ccff":a.color,fontSize:"13px",textAlign:"right"}}/>
+      <input type="number" min="0" value={a.value} onClick={e=>e.stopPropagation()} onChange={e=>{e.stopPropagation();updA(a.id,{value:e.target.value===""?null:parseFloat(e.target.value)});}} style={{width:"65px",padding:"4px 7px",background:"rgba(0,10,25,.8)",border:`1px solid ${selId===a.id?"rgba(0,180,255,.45)":"rgba(0,150,255,.18)"}`,borderRadius:"5px",color:selId===a.id?"#ffaa00":a.color,fontSize:"13px",textAlign:"right"}}/>
       <select value={a.unit} onClick={e=>e.stopPropagation()} onChange={e=>{e.stopPropagation();updA(a.id,{unit:e.target.value});}} style={{padding:"4px",background:"rgba(0,10,25,.8)",border:"1px solid rgba(0,150,255,.12)",borderRadius:"5px",color:"#334455",fontSize:"8px"}}>{["mm","cm","m","in","ft"].map(u=><option key={u}>{u}</option>)}</select>
       <span style={{fontSize:"8px",color:"#1e2535",flexShrink:0,minWidth:"34px"}}>{fmtV(toMM(a.value,a.unit),"mm")}</span>
       <button onClick={e=>{e.stopPropagation();delA(a.id);}} style={{background:"transparent",border:"none",color:"#ff3366",fontSize:"13px",opacity:.6,flexShrink:0}}>✕</button>
@@ -1113,8 +1130,8 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
     </div>;})()}
     <ShareBar onPNG={xPNG} onPDF={xPDF} onWA={xWA} onEmail={xEmail} onLink={genLink}/>
     {/* Edit selected annotation */}
-    {selA&&<div style={{padding:"10px 13px",borderTop:"1px solid rgba(0,150,255,.15)",background:"rgba(0,50,150,.07)"}}>
-      <div style={{fontSize:"9px",color:"#44dd88",fontWeight:700,marginBottom:"7px"}}>✏ Editando: {selA.title||selA.type}</div>
+    {selA&&<div style={{padding:"10px 13px",borderTop:"1px solid rgba(255,150,0,.2)",background:"rgba(255,100,0,.05)"}}>
+      <div style={{fontSize:"9px",color:"#ff9500",fontWeight:700,marginBottom:"7px"}}>✏ Editando: {selA.title||selA.type}</div>
       <div style={{display:"flex",gap:"5px",marginBottom:"6px"}}>
         <input value={selA.title||""} placeholder="Título" onChange={e=>updA(selId,{title:e.target.value})} style={{flex:1,padding:"6px 9px",background:"rgba(0,10,25,.8)",border:"1px solid rgba(0,200,100,.2)",borderRadius:"7px",color:"#d0e8f8",fontSize:"10px"}}/>
         <select value={selA.axis||""} onChange={e=>updA(selId,{axis:e.target.value})} style={{padding:"6px",background:"rgba(0,10,25,.8)",border:"1px solid rgba(0,200,100,.2)",borderRadius:"7px",color:"#44dd88",fontSize:"9px"}}>
@@ -1123,14 +1140,14 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
       </div>
       <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
         <input type="number" min="0" value={selA.value!=null?selA.value:""} placeholder="Valor" onChange={e=>updA(selId,{value:e.target.value===""?null:parseFloat(e.target.value)})} style={{flex:1,padding:"7px 10px",background:"rgba(0,10,25,.8)",border:"1px solid rgba(0,150,255,.35)",borderRadius:"7px",color:C,fontSize:"16px",textAlign:"right"}}/>
-        <div style={{display:"flex",gap:"2px"}}>{["mm","cm","m","in","ft"].map(u=><button key={u} onClick={()=>updA(selId,{unit:u})} style={{padding:"5px 8px",background:(selA.unit||"cm")===u?"rgba(0,150,255,.22)":"rgba(255,255,255,.04)",color:(selA.unit||"cm")===u?C:"#334455",border:`1px solid ${(selA.unit||"cm")===u?"rgba(0,150,255,.45)":"rgba(255,255,255,.07)"}`,borderRadius:"5px",fontSize:"9px",fontWeight:(selA.unit||"cm")===u?700:400}}>{u}</button>)}</div>
+        <div style={{display:"flex",gap:"2px"}}>{["mm","cm","m","in","ft"].map(u=><button key={u} onClick={()=>updA(selId,{unit:u})} style={{padding:"5px 8px",background:(selA.unit||"cm")===u?"rgba(0,150,255,.22)":"rgba(255,255,255,.04)",color:(selA.unit||"cm")===u?C:"#334455",border:`1px solid ${(selA.unit||"cm")===u?"rgba(255,150,0,.5)":"rgba(255,255,255,.07)"}`,borderRadius:"5px",fontSize:"9px",fontWeight:(selA.unit||"cm")===u?700:400}}>{u}</button>)}</div>
         <button onClick={()=>delA(selId)} style={{padding:"5px 9px",background:"rgba(255,50,50,.1)",border:"1px solid rgba(255,50,50,.25)",color:"#ff3366",borderRadius:"6px",fontSize:"10px"}}>🗑</button>
       </div>
     </div>}
   </div>}
 
   {/* 2D PANEL */}
-  {sheet==="2d"&&<div className="fade" style={{background:"rgba(10,14,25,.98)",border:"1px solid rgba(0,100,200,.15)",borderRadius:"12px",overflow:"hidden",marginBottom:"7px"}}>
+  {sheet==="2d"&&<div className="fade" style={{background:"#141414",border:"1px solid #222",borderRadius:"12px",overflow:"hidden",marginBottom:"7px"}}>
     <div style={{padding:"8px 13px",fontSize:"9px",color:C,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",borderBottom:"1px solid rgba(255,255,255,.05)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
       <span>📐 PLANO 2D</span>
       <button onClick={()=>setSheet(null)} style={{background:"rgba(255,50,50,.18)",border:"1px solid rgba(255,50,50,.35)",color:"#ff5566",borderRadius:"50%",width:"22px",height:"22px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
@@ -1145,7 +1162,7 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
   </div>}
 
   {/* 3D PANEL - shows one card per measured part */}
-  {sheet==="3d"&&<div className="fade" style={{background:"rgba(10,14,25,.98)",border:"1px solid rgba(0,100,200,.15)",borderRadius:"12px",overflow:"hidden",marginBottom:"7px"}}>
+  {sheet==="3d"&&<div className="fade" style={{background:"#141414",border:"1px solid #222",borderRadius:"12px",overflow:"hidden",marginBottom:"7px"}}>
     <div style={{padding:"8px 13px",fontSize:"9px",color:C,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",borderBottom:"1px solid rgba(255,255,255,.05)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
       <span>🎮 3D POR PARTES</span>
       <button onClick={()=>setSheet(null)} style={{background:"rgba(255,50,50,.18)",border:"1px solid rgba(255,50,50,.35)",color:"#ff5566",borderRadius:"50%",width:"22px",height:"22px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
@@ -1160,7 +1177,7 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
   </div>}
 
   {/* INDUSTRIAL DB PANEL */}
-  {sheet==="db"&&<div className="fade" style={{background:"rgba(10,14,25,.98)",border:"1px solid rgba(0,100,200,.15)",borderRadius:"12px",overflow:"hidden",marginBottom:"7px"}}>
+  {sheet==="db"&&<div className="fade" style={{background:"#141414",border:"1px solid #222",borderRadius:"12px",overflow:"hidden",marginBottom:"7px"}}>
     <div style={{padding:"8px 13px",fontSize:"9px",color:"#ff9500",fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",borderBottom:"1px solid rgba(255,150,0,.12)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
       <span>🔩 BASE DATOS INDUSTRIAL</span>
       <button onClick={()=>setSheet(null)} style={{background:"rgba(255,50,50,.18)",border:"1px solid rgba(255,50,50,.35)",color:"#ff5566",borderRadius:"50%",width:"22px",height:"22px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
@@ -1184,13 +1201,13 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
     </div>
     <div style={{padding:"8px 13px",borderTop:"1px solid rgba(100,50,255,.12)",display:"flex",gap:"7px"}}>
       <input value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendChat()} placeholder="Pregunta algo... ej: ¿Qué material es? ¿Qué tolerancia ISO tiene?" style={{flex:1,padding:"8px 12px",background:"rgba(0,10,25,.8)",border:"1px solid rgba(100,50,255,.25)",borderRadius:"8px",color:"#d0e8f8",fontSize:"10px"}}/>
-      <button onClick={sendChat} disabled={chatLoad||!chatInput.trim()||!GK()} style={{padding:"8px 14px",background:"linear-gradient(135deg,#6600cc,#aa44ff)",color:"#fff",border:"none",borderRadius:"8px",fontSize:"10px",fontWeight:700,cursor:chatLoad?"not-allowed":"pointer"}}>▶</button>
+      <button onClick={sendChat} disabled={chatLoad||!chatInput.trim()||!GK()} style={{padding:"8px 14px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#fff",border:"none",borderRadius:"8px",fontSize:"10px",fontWeight:700,cursor:chatLoad?"not-allowed":"pointer"}}>▶</button>
     </div>
     {!GK()&&<div style={{padding:"6px 13px",fontSize:"8px",color:"#ff9500",borderTop:"1px solid rgba(100,50,255,.1)"}}>⚠️ Necesita clave API — configura en ⚙</div>}
   </div>}
 
   {/* EXPORT PANEL */}
-  {sheet==="exp"&&<div className="fade" style={{background:"rgba(10,14,25,.98)",border:"1px solid rgba(0,100,200,.15)",borderRadius:"12px",overflow:"hidden",marginBottom:"7px"}}>
+  {sheet==="exp"&&<div className="fade" style={{background:"#141414",border:"1px solid #222",borderRadius:"12px",overflow:"hidden",marginBottom:"7px"}}>
     <div style={{padding:"8px 13px",fontSize:"9px",color:C,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",borderBottom:"1px solid rgba(255,255,255,.05)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
       <span>📤 EXPORTAR · COMPARTIR</span>
       <button onClick={()=>setSheet(null)} style={{background:"rgba(255,50,50,.18)",border:"1px solid rgba(255,50,50,.35)",color:"#ff5566",borderRadius:"50%",width:"22px",height:"22px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
@@ -1218,22 +1235,22 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
   onClick={()=>window.scrollTo({top:0,behavior:"smooth"})}
   title="Ir al inicio"
   style={{position:"fixed",bottom:"80px",right:"16px",width:"44px",height:"44px",
-    borderRadius:"50%",background:"linear-gradient(135deg,#0044ff,#00b4ff)",
-    border:"none",color:"#fff",fontSize:"18px",zIndex:350,
+    borderRadius:"50%",background:"linear-gradient(135deg,#ff6600,#ffaa00)",
+    border:"none",color:"#000",fontSize:"18px",zIndex:350,
     boxShadow:"0 4px 16px rgba(0,100,255,.45)",display:"flex",alignItems:"center",justifyContent:"center"}}>⬆</button>}
 
 {/* ══ MEASURE MODAL ══ */}
-{measM&&<div data-modal="measure" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"rgba(6,8,16,.98)",border:"1px solid rgba(0,150,255,.4)",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(24px)",boxShadow:"0 -6px 40px rgba(0,0,0,.7)"}}>
+{measM&&<div data-modal="measure" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"#111",border:"2px solid #ff9500",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(24px)",boxShadow:"0 -6px 40px rgba(0,0,0,.7)"}}>
   <button onClick={()=>setMeasM(null)} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center",zIndex:20}}>✕</button>
   <div style={{marginBottom:"16px",paddingRight:"36px"}}>
-    <div style={{fontSize:"13px",fontWeight:800,color:C,letterSpacing:"-.2px"}}>AÑADIR MEDIDA</div>
+    <div style={{fontSize:"13px",fontWeight:800,color:"#ff9500",letterSpacing:"-.2px"}}>AÑADIR MEDIDA</div>
     <div style={{fontSize:"9px",color:"#2a3a5a",marginTop:"4px"}}>{measM.icon} {TOOLS.find(t=>t.id===measM.type)?.label} — escribe el valor y confirma</div>
   </div>
   <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
     <input placeholder="Título (ej: Longitud total, Diámetro exterior, Espesor de pared...)" value={mIn.t} onChange={e=>setMIn(s=>({...s,t:e.target.value}))} style={{width:"100%",padding:"10px 13px",background:"rgba(0,10,30,.8)",border:"1px solid rgba(0,150,255,.2)",borderRadius:"9px",color:"#d0e8f8",fontSize:"11px"}}/>
     <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
       <input type="number" min="0" step=".01" placeholder="Valor numérico" value={mIn.v} onChange={e=>setMIn(s=>({...s,v:e.target.value}))} style={{flex:1,padding:"11px 13px",background:"rgba(0,10,30,.8)",border:"1px solid rgba(0,180,255,.5)",borderRadius:"9px",color:C,fontSize:"24px",textAlign:"right"}}/>
-      <div style={{display:"flex",gap:"3px",flexWrap:"wrap"}}>{["mm","cm","m","in","ft"].map(u=><button key={u} onClick={()=>setMIn(s=>({...s,u:u}))} style={{padding:"6px 9px",background:mIn.u===u?"rgba(0,150,255,.22)":"rgba(255,255,255,.04)",color:mIn.u===u?C:"#334455",border:`1px solid ${mIn.u===u?"rgba(0,150,255,.45)":"rgba(255,255,255,.07)"}`,borderRadius:"6px",fontSize:"10px",fontWeight:mIn.u===u?700:400}}>{u}</button>)}</div>
+      <div style={{display:"flex",gap:"3px",flexWrap:"wrap"}}>{["mm","cm","m","in","ft"].map(u=><button key={u} onClick={()=>setMIn(s=>({...s,u:u}))} style={{padding:"6px 9px",background:mIn.u===u?"rgba(0,150,255,.22)":"rgba(255,255,255,.04)",color:mIn.u===u?C:"#334455",border:`1px solid ${mIn.u===u?"rgba(255,150,0,.5)":"rgba(255,255,255,.07)"}`,borderRadius:"6px",fontSize:"10px",fontWeight:mIn.u===u?700:400}}>{u}</button>)}</div>
     </div>
     <select value={mIn.ax} onChange={e=>setMIn(s=>({...s,ax:e.target.value}))} style={{padding:"10px 13px",background:"rgba(0,10,30,.8)",border:"1px solid rgba(0,150,255,.22)",borderRadius:"9px",color:C,fontSize:"10px"}}>
       <option value="">Tipo de medida — asigna eje para activar vistas 2D y 3D</option>
@@ -1244,22 +1261,22 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
     </select>
     <div style={{display:"flex",gap:"8px"}}>
       <button onClick={skipM} style={{flex:1,padding:"12px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.09)",color:"#2a3a5a",borderRadius:"9px",fontSize:"10px"}}>Sin valor</button>
-      <button onClick={confirmM} style={{flex:2,padding:"12px",background:"linear-gradient(135deg,#0033ff,#00b4ff)",color:"#fff",border:"none",borderRadius:"9px",fontSize:"13px",fontWeight:800,boxShadow:"0 2px 18px rgba(0,150,255,.45)"}}>✓ CONFIRMAR MEDIDA</button>
+      <button onClick={confirmM} style={{flex:2,padding:"12px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"9px",fontSize:"13px",fontWeight:800,boxShadow:"0 2px 18px rgba(255,150,0,.4)"}}>✓ CONFIRMAR MEDIDA</button>
     </div>
   </div>
 </div>}
 
 {/* CALIBRATE MODAL */}
-{viewPrompt&&<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"rgba(6,8,16,.98)",border:"1px solid rgba(0,150,255,.4)",borderRadius:"18px 18px 0 0",padding:"18px",zIndex:600,animation:"slideUp .2s ease",backdropFilter:"blur(24px)"}}>
+{viewPrompt&&<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"#111",border:"2px solid #ff9500",borderRadius:"18px 18px 0 0",padding:"18px",zIndex:600,animation:"slideUp .2s ease",backdropFilter:"blur(24px)"}}>
   <div style={{marginBottom:"12px"}}>
-    <div style={{fontSize:"12px",fontWeight:800,color:"#00b4ff"}}>✅ Medida guardada</div>
+    <div style={{fontSize:"12px",fontWeight:800,color:"#ff9500"}}>✅ Medida guardada</div>
     <div style={{fontSize:"10px",color:"#4466aa",marginTop:"4px"}}>"{viewPrompt.title}": {viewPrompt.value} {viewPrompt.unit}</div>
   </div>
   <div style={{fontSize:"9px",color:"#2a3a5a",marginBottom:"12px"}}>¿Dónde quieres verla reflejada ahora?</div>
   <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
-    <button onClick={()=>{setViewPrompt(null);setSheet("meas");}} style={{flex:1,padding:"10px",background:"rgba(0,150,255,.15)",border:"1px solid rgba(0,150,255,.35)",color:"#00b4ff",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>📋 Ver medidas</button>
-    <button onClick={()=>{setViewPrompt(null);setSheet("2d");}} style={{flex:1,padding:"10px",background:"rgba(0,150,255,.15)",border:"1px solid rgba(0,150,255,.35)",color:"#00b4ff",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>📐 Ver en 2D</button>
-    <button onClick={()=>{setViewPrompt(null);setSheet("3d");}} style={{flex:1,padding:"10px",background:"rgba(0,150,255,.15)",border:"1px solid rgba(0,150,255,.35)",color:"#00b4ff",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>🎮 Ver en 3D</button>
+    <button onClick={()=>{setViewPrompt(null);setSheet("meas");}} style={{flex:1,padding:"10px",background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.35)",color:"#ff9500",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>📋 Ver medidas</button>
+    <button onClick={()=>{setViewPrompt(null);setSheet("2d");}} style={{flex:1,padding:"10px",background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.35)",color:"#ff9500",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>📐 Ver en 2D</button>
+    <button onClick={()=>{setViewPrompt(null);setSheet("3d");}} style={{flex:1,padding:"10px",background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.35)",color:"#ff9500",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>🎮 Ver en 3D</button>
     <button onClick={()=>setViewPrompt(null)} style={{flex:1,padding:"10px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.09)",color:"#2a3a5a",borderRadius:"9px",fontSize:"10px"}}>Seguir midiendo</button>
   </div>
 </div>}
