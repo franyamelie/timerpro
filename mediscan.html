@@ -370,48 +370,62 @@ function MultiPart3D({anns,segs,objShape}){
   </div>;
 }
 
-/* ══ SINGLE PART 3D (mini version) ══ */
-function Part3D({anns,shape,color}){
+/* ══ SINGLE PART 3D - Wireframe + image texture (3ds Max style) ══ */
+function Part3D({anns,shape,color,segW,segH,texImg}){
   const ref=useRef(null);
   useEffect(()=>{
     if(!ref.current)return;
-    const E=ref.current,W=E.clientWidth||300,H=180;
-    const g=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?Math.max((parseFloat(a.value)||1)*({"mm":1,"cm":10,"m":1000,"in":25.4,"ft":304.8}[a.unit]||10),1):80;};
-    const rw=g("width"),rh=g("height"),rd=g("depth");
-    const mx=Math.max(rw,rh,rd,1),sc=1.6/mx,sw=rw*sc,sh=rh*sc,sd=rd*sc;
-    const scene=new THREE.Scene();scene.background=new THREE.Color(0x0d1018);
-    const cam=new THREE.PerspectiveCamera(42,W/H,.05,200);cam.position.set(sw*2.2,sh*1.6,sd*2.2);cam.lookAt(0,0,0);
-    const rdr=new THREE.WebGLRenderer({antialias:true});rdr.setSize(W,H);rdr.setPixelRatio(Math.min(devicePixelRatio,2));
-    rdr.shadowMap.enabled=true;rdr.outputEncoding=THREE.sRGBEncoding;rdr.toneMapping=THREE.ACESFilmicToneMapping;rdr.toneMappingExposure=1.1;
+    const E=ref.current,W=E.clientWidth||300,H=200;
+    const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?Math.max((parseFloat(a.value)||1)*({"mm":1,"cm":10,"m":1000,"in":25.4,"ft":304.8}[a.unit]||10),1):null;};
+    const annW=gd("width"),annH=gd("height"),annD=gd("depth");
+    const pixW=segW||200,pixH=segH||200,ratio=pixW/pixH;
+    let sw=annW?annW*0.002:2*Math.min(ratio,4);
+    let sh=annH?annH*0.002:2/Math.max(ratio,0.25);
+    let sd=annD?annD*0.002:Math.min(sw,sh)*0.2;
+    const mx=Math.max(sw,sh,sd,0.1),sc=2.2/mx;sw*=sc;sh*=sc;sd*=sc;
+    const scene=new THREE.Scene();scene.background=new THREE.Color(0x0a0a14);
+    const cam=new THREE.PerspectiveCamera(42,W/H,0.05,100);
+    cam.position.set(sw*1.4,sh*1.1,Math.max(sd*2.5,3));cam.lookAt(0,0,0);
+    const rdr=new THREE.WebGLRenderer({antialias:true});rdr.setSize(W,H);
+    rdr.setPixelRatio(Math.min(devicePixelRatio,2));rdr.outputEncoding=THREE.sRGBEncoding;
+    rdr.toneMapping=THREE.ACESFilmicToneMapping;rdr.toneMappingExposure=1.2;
     E.appendChild(rdr.domElement);
     const piv=new THREE.Group();scene.add(piv);
-    const col=color||"#ff9500";const c=parseInt(col.replace("#",""),16);
-    const mat=new THREE.MeshStandardMaterial({color:c||0x0044ff,metalness:.5,roughness:.4,transparent:true,opacity:.85});
-    const eMat=new THREE.LineBasicMaterial({color:c||0x00b4ff});
-    const s=shape||"box";
-    if(["cylinder","tube","pipe","sphere","bottle"].includes(s)){
-      const r=Math.min(sw,sd)/2;const g=new THREE.CylinderGeometry(r,r,sh,24);
-      const m=new THREE.Mesh(g,mat);m.castShadow=true;piv.add(m);
-      piv.add(new THREE.LineSegments(new THREE.EdgesGeometry(g),eMat));
+    const colNum=parseInt((color||"#00ccff").replace("#",""),16)||0x00ccff;
+    const isCyl=["cylinder","tube","pipe"].includes(shape);
+    const geo=isCyl?new THREE.CylinderGeometry(Math.min(sw,sd)/2,Math.min(sw,sd)/2,sh,32):
+      sd<0.25?new THREE.PlaneGeometry(sw,sh,12,12):new THREE.BoxGeometry(sw,sh,Math.max(sd,0.05),8,8,4);
+    const wireMat=new THREE.LineBasicMaterial({color:colNum,transparent:true,opacity:0.85});
+    const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geo),wireMat);
+    if(texImg){
+      const loader=new THREE.TextureLoader();
+      loader.load(texImg,(tex)=>{
+        tex.encoding=THREE.sRGBEncoding;
+        const mat=new THREE.MeshStandardMaterial({map:tex,transparent:false,metalness:0.1,roughness:0.7,side:THREE.DoubleSide});
+        piv.add(new THREE.Mesh(geo,mat));piv.add(edges);
+      });
     }else{
-      const g=new THREE.BoxGeometry(sw,sh,sd);const m=new THREE.Mesh(g,mat);m.castShadow=true;piv.add(m);
-      piv.add(new THREE.LineSegments(new THREE.EdgesGeometry(g),eMat));
+      const mat=new THREE.MeshStandardMaterial({color:colNum,transparent:true,opacity:0.12});
+      piv.add(new THREE.Mesh(geo,mat));piv.add(edges);
     }
-    scene.add(new THREE.AmbientLight(0x405060,.8));
-    const kl=new THREE.DirectionalLight(0xffffff,2.2);kl.position.set(6,12,5);kl.castShadow=true;scene.add(kl);
-    const fl=new THREE.DirectionalLight(0x4477cc,.6);fl.position.set(-5,4,-8);scene.add(fl);
-    scene.add(new THREE.GridHelper(8,8,0x1a2035,0x111828));
-    let ry=.5,drag=false,lx=0;
-    const dn=e=>{drag=true;lx=(e.touches?.[0]||e).clientX;};
-    const mv=e=>{if(!drag)return;ry+=(((e.touches?.[0]||e).clientX)-lx)*.012;lx=(e.touches?.[0]||e).clientX;};
-    const up=()=>drag=false;
+    scene.add(new THREE.AmbientLight(0xffffff,0.5));
+    const kl=new THREE.DirectionalLight(0x88ddff,1.8);kl.position.set(4,7,5);scene.add(kl);
+    const fl=new THREE.DirectionalLight(0xff8844,0.5);fl.position.set(-3,1,-4);scene.add(fl);
+    scene.add(new THREE.GridHelper(8,16,0x1a2a1a,0x0a140a));
+    const ax=new THREE.AxesHelper(0.4);ax.position.set(-3.5,-1.3,0);scene.add(ax);
+    let rx=0.15,ry=0.5,drag=false,lx=0,ly=0;
+    const dn=e=>{drag=true;const s=e.touches&&e.touches[0]||e;lx=s.clientX;ly=s.clientY;};
+    const mv=e=>{if(!drag)return;const s=e.touches&&e.touches[0]||e;
+      ry+=(s.clientX-lx)*0.012;rx+=(s.clientY-ly)*0.010;
+      rx=Math.max(-Math.PI/2,Math.min(Math.PI/2,rx));lx=s.clientX;ly=s.clientY;};
+    const up=()=>{drag=false;};
     rdr.domElement.addEventListener("mousedown",dn);rdr.domElement.addEventListener("touchstart",dn,{passive:true});
     window.addEventListener("mousemove",mv);window.addEventListener("touchmove",mv,{passive:true});
     window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
-    let id;const anim=()=>{id=requestAnimationFrame(anim);if(!drag)ry+=.006;piv.rotation.y=ry;rdr.render(scene,cam);};anim();
+    let id;const anim=()=>{id=requestAnimationFrame(anim);if(!drag)ry+=0.005;piv.rotation.y=ry;piv.rotation.x=rx;rdr.render(scene,cam);};anim();
     return()=>{cancelAnimationFrame(id);window.removeEventListener("mousemove",mv);window.removeEventListener("touchmove",mv);window.removeEventListener("mouseup",up);window.removeEventListener("touchend",up);rdr.dispose();if(E.contains(rdr.domElement))E.removeChild(rdr.domElement);};
-  },[anns,shape,color]);
-  return<div ref={ref} style={{width:"100%",height:"180px"}}/>;
+  },[anns,shape,color,segW,segH,texImg]);
+  return<div ref={ref} style={{width:"100%",height:"200px",cursor:"grab",background:"#0a0a14"}}/>;
 }
 
 /* ══ INDUSTRIAL DATABASE ══ */
@@ -891,7 +905,7 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
       document.body.appendChild(a);a.click();document.body.removeChild(a);
     }
     const body=`Proyecto: ${pName}\nMedidas:\n${anns.filter(a=>a.value!=null).map(a=>`• ${a.title||a.type}: ${a.value} ${a.unit}`).join("\n")}\n\nGenerado con MediScan 3D Pro`;
-    setTimeout(()=>{window.location.href=`mailto:?subject=${encodeURIComponent("MediScan 3D: "+pName)}&body=${encodeURIComponent(body)}`;},800);
+    setTimeout(()=>{const ml=`mailto:?subject=${encodeURIComponent("MediScan 3D: "+pName)}&body=${encodeURIComponent(body)}`;const a=document.createElement("a");a.href=ml;a.target="_blank";document.body.appendChild(a);a.click();document.body.removeChild(a);},800);
   }catch(e){alert("Error email: "+e.message);}
 };
 
@@ -1086,7 +1100,7 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
     <div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"flex-start"}}>
       {(tbyCat[tCat]||[]).map(t=><button key={t.id} title={t.label} onClick={()=>{setTool(t.id);setPend([]);setPrev(null);setDragSt(null);}}
               onContextMenu={e=>{e.preventDefault();setTool(t.id);setAddPartDlg(true);}}
-              title={`${t.label} (clic derecho = nueva parte)`}
+              title={`${t.label} — ${{"dot":"Coloca un punto de medida en la imagen","pin":"Clava un pin en la imagen","star":"Marca con estrella","tgt":"Marca con diana","line":"Dibuja una línea entre 2 puntos","dim":"Añade cota con ticks","dist":"Mide distancia A→B","arr1":"Dibuja flecha","arr2":"Flecha gruesa","arr3":"Flecha diagonal","arr4":"Doble flecha","rect":"Dibuja rectángulo","circ":"Dibuja círculo","tri":"Dibuja triángulo","calib":"Calibra escala real — traza línea de longitud conocida","crop":"Recorta zona → panel flotante para medir","sel":"Seleccionar y mover anotaciones"}[t.id]||t.label} (clic derecho = nueva parte)`}
               className={`tb${tool===t.id?" act":""}`}><span>{t.icon}</span><span>{t.label}</span></button>)}
       <button title="Mover/Seleccionar" onClick={()=>{setTool("sel");setPend([]);setPrev(null);setDragSt(null);}} className={`tb${tool==="sel"?" act":""}`}><span>↖</span><span>Mover</span></button>
     </div>
@@ -1137,8 +1151,13 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
             onDoubleClick={e=>{e.stopPropagation();if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");c2.width=Math.round(im.width*(seg.x2-seg.x1));c2.height=Math.round(im.height*(seg.y2-seg.y1));c2.getContext("2d").drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);setFcAnns([]);setEditZone({seg,croppedImg:c2.toDataURL("image/jpeg",.92)});setSelSeg(null);};im.src=img;}}>
             <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width={`${(seg.x2-seg.x1)*100}%`} height={`${(seg.y2-seg.y1)*100}%`}
               stroke={col} strokeWidth={isSel?"3.5":"2"} strokeDasharray={isSel?"none":"6,3"}
-              fill={isSel?`${col}20`:`${col}0a`} rx="4" style={{cursor:"pointer"}}
+              fill="none" rx="4" style={{cursor:"pointer"}}
               onClick={e=>{e.stopPropagation();setSelSeg(isSel?null:seg.id);}}/>
+            {/* Transparent clickable overlay over entire seg */}
+            <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width={`${(seg.x2-seg.x1)*100}%`} height={`${(seg.y2-seg.y1)*100}%`}
+              fill="transparent" rx="4" style={{cursor:"pointer"}}
+              onClick={e=>{e.stopPropagation();setSelSeg(isSel?null:seg.id);}}
+              onDoubleClick={e=>{e.stopPropagation();if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");const x1=Math.min(seg.x1,seg.x2),y1=Math.min(seg.y1,seg.y2),x2=Math.max(seg.x1,seg.x2),y2=Math.max(seg.y1,seg.y2);c2.width=Math.round(im.width*(x2-x1));c2.height=Math.round(im.height*(y2-y1));c2.getContext("2d").drawImage(im,im.width*x1,im.height*y1,c2.width,c2.height,0,0,c2.width,c2.height);setFcAnns([]);setEditZone({seg,croppedImg:c2.toDataURL("image/jpeg",.95)});setSelSeg(null);};im.src=img;}}/>
             <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width="16%" height="6%" rx="3%" fill={`${col}ee`}
               style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();setSelSeg(isSel?null:seg.id);}}/>
             <text x={`${seg.x1*100+.9}%`} y={`${seg.y1*100+3.2}%`} fill="#000" fontSize="2.4%"
@@ -1191,6 +1210,7 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
     <button onClick={()=>setRot(r=>(r+90)%360)} style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.2)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:500}}>↻+90°</button>
     <button onClick={()=>setRot(r=>(r-90+360)%360)} style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.2)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:500}}>↺-90°</button>
     <button onClick={segAI} disabled={segLoad||!GK()} style={{flex:2,padding:"7px 8px",background:segLoad?"rgba(255,150,0,.05)":"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.3)",color:segLoad?"#444":C,borderRadius:"8px",fontSize:"9px",fontWeight:700}}>{segLoad?"⏳ Detectando...":"🔍 Detectar partes"}</button>
+    <button onClick={()=>setTool("crop")} title="Recortar zona de la imagen → panel flotante para medir" style={{flex:2,padding:"7px 8px",background:tool==="crop"?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.3)",color:tool==="crop"?"#000":"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>✂ Recortar zona</button>
     {segs.length>0&&<button onClick={()=>setShowSegs(s=>!s)} style={{flex:1,padding:"7px 4px",background:showSegs?"rgba(0,150,255,.15)":"rgba(0,100,255,.05)",border:`1px solid rgba(0,150,255,${showSegs?.3:.12})`,color:showSegs?C:"#2a3a5a",borderRadius:"8px",fontSize:"9px"}}>👁{showSegs?"ON":"OFF"}</button>}
     {selId&&<button onClick={()=>delA(selId)} style={{flex:1,padding:"7px 4px",background:"rgba(255,50,50,.08)",border:"1px solid rgba(255,50,50,.2)",color:"#ff3366",borderRadius:"8px",fontSize:"9px"}}>🗑</button>}
     {origImg&&origImg!==img&&<button onClick={resetToOriginal} title="Volver a imagen original" style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.12)",border:"1px solid rgba(255,150,0,.3)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>🔄 Orig.</button>}
