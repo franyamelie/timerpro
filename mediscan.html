@@ -587,7 +587,7 @@ async function doExportPDF({img,anns,segs,objName,calibPx,unit}){
     doc.setTextColor(255,150,0);doc.setFontSize(9);doc.setFont('helvetica','bold');
     doc.text('TABLA DE MEDIDAS',mg,y);y+=4;
     const cols=[14,22,60,38,38,20];
-    const heads=['#','Tipo','Etiqueta','Valor','Calc. ('+( unit||'mm')+')','];
+    const heads=['#','Tipo','Etiqueta','Valor','Calc. ('+(unit||'mm')+')'];
     doc.setFillColor(15,18,40);doc.rect(mg,y,W-mg*2,6,'F');
     doc.setTextColor(80,110,190);doc.setFontSize(6.5);doc.setFont('helvetica','bold');
     let cx=mg+2; heads.forEach((h,i)=>{doc.text(h,cx,y+4.5);cx+=cols[i];});y+=6;
