@@ -311,6 +311,27 @@ function V3DPipe({components,dn}){
 
 
 /* ══ MULTI-PART 3D: shows one 3D card per measured part ══ */
+/* ══ Part3D with auto-crop from main image ══ */
+function Part3DWithCrop({anns,shape,color,seg}){
+  const[texImg,setTexImg]=React.useState(null);
+  React.useEffect(()=>{
+    if(!seg||!seg.x1&&seg.x1!==0)return;
+    /* Try to get the main image from the app */
+    const mainImg=document.querySelector(".app-scroll img, img[draggable='false']");
+    if(!mainImg||!mainImg.complete||!mainImg.naturalWidth)return;
+    try{
+      const c2=document.createElement("canvas");
+      c2.width=Math.max(Math.round(mainImg.naturalWidth*(seg.x2-seg.x1)),10);
+      c2.height=Math.max(Math.round(mainImg.naturalHeight*(seg.y2-seg.y1)),10);
+      const ctx=c2.getContext("2d");
+      ctx.drawImage(mainImg,mainImg.naturalWidth*seg.x1,mainImg.naturalHeight*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);
+      setTexImg(c2.toDataURL("image/jpeg",.9));
+    }catch(e){}
+  },[seg]);
+  const sw=(seg?.x2||1)-(seg?.x1||0);const sh=(seg?.y2||1)-(seg?.y1||0);
+  return<Part3D anns={anns} shape={shape} color={color} segW={sw*400} segH={sh*400} texImg={texImg}/>;
+}
+
 function MultiPart3D({anns,segs,objShape}){
   const parts=useMemo(()=>{
     /* Build parts from segs + anns */
@@ -350,7 +371,7 @@ function MultiPart3D({anns,segs,objShape}){
 }
 
 /* ══ SINGLE PART 3D - real shape from seg dimensions + 360° rotation ══ */
-function Part3D({anns,shape,color,segW,segH}){
+function Part3D({anns,shape,color,segW,segH,texImg}){
   const ref=useRef(null);
   useEffect(()=>{
     if(!ref.current)return;
@@ -374,7 +395,14 @@ function Part3D({anns,shape,color,segW,segH}){
     const col=color||"#ff9500";const colNum=parseInt(col.replace("#",""),16)||0xff9500;
     const isCyl=["cylinder","tube","pipe"].includes(shape);
     const geo=isCyl?new THREE.CylinderGeometry(Math.min(sw,sd)/2,Math.min(sw,sd)/2,sh,28):new THREE.BoxGeometry(sw,sh,Math.max(sd,0.08));
-    const mat=new THREE.MeshStandardMaterial({color:colNum,transparent:true,opacity:0.88,metalness:0.3,roughness:0.5});
+    /* Use cropped image as texture if available, else use color */
+    let mat;
+    if(texImg){
+      const tex=new THREE.TextureLoader().load(texImg,(t)=>{t.needsUpdate=true;});
+      mat=new THREE.MeshStandardMaterial({map:tex,transparent:true,opacity:0.95,metalness:0.1,roughness:0.7,side:THREE.DoubleSide});
+    }else{
+      mat=new THREE.MeshStandardMaterial({color:colNum,transparent:true,opacity:0.88,metalness:0.3,roughness:0.5});
+    }
     const eMat=new THREE.LineBasicMaterial({color:colNum,transparent:true,opacity:0.9});
     piv.add(new THREE.Mesh(geo,mat));
     piv.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),eMat));
@@ -394,7 +422,7 @@ function Part3D({anns,shape,color,segW,segH}){
     window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
     let id;const anim=()=>{id=requestAnimationFrame(anim);if(!drag)ry+=0.006;piv.rotation.y=ry;piv.rotation.x=rx;rdr.render(scene,cam);};anim();
     return()=>{cancelAnimationFrame(id);window.removeEventListener("mousemove",mv);window.removeEventListener("touchmove",mv);window.removeEventListener("mouseup",up);window.removeEventListener("touchend",up);rdr.dispose();if(E.contains(rdr.domElement))E.removeChild(rdr.domElement);};
-  },[anns,shape,color,segW,segH]);
+  },[anns,shape,color,segW,segH,texImg]);
   return<div ref={ref} style={{width:"100%",height:"200px",cursor:"grab"}}/>;
 }
 
@@ -602,7 +630,7 @@ function App(){
   /* modals */
   const [measM,setMeasM]=useState(null); /* measure modal */
   const [calibM,setCalibM]=useState(null);
-  const [cropM,setCropM]=useState(null);
+  const [cropM,setCropM]=useState(null); /* crop dialog */
   const [mIn,setMIn]=useState({t:"",v:"",u:"cm",ax:""});
 
   /* AI parts segmentation */
@@ -947,7 +975,19 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
     }catch(e){alert("Error PDF: "+e.message);}
   };
   const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataURL("image/png");const a=document.createElement("a");a.href=url;a.download=`${pName}.png`;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>window.open(`https://wa.me/?text=${encodeURIComponent("MediScan 3D Pro - "+pName)}`,"_blank"),800);}catch(e){alert("Error: "+e.message);}};
-  const xEmail=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataURL("image/png");const a=document.createElement("a");a.href=url;a.download=`${pName}.png`;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>window.open(`mailto:?subject=${encodeURIComponent("MediScan: "+pName)}&body=${encodeURIComponent("Adjunto medición de "+pName+" — MediScan 3D Pro")}`,"_blank"),700);}catch(e){alert("Error: "+e.message);}};
+  const xEmail=async()=>{
+  try{
+    const imgEl=imgRef.current;
+    if(imgEl){
+      const cv2=await html2canvas(imgEl,{scale:1.5,useCORS:true,allowTaint:true,logging:false});
+      const url=cv2.toDataURL("image/png");
+      const a=document.createElement("a");a.href=url;a.download=`${pName}.png`;
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+    }
+    const body=`Proyecto: ${pName}\nMedidas:\n${anns.filter(a=>a.value!=null).map(a=>`• ${a.title||a.type}: ${a.value} ${a.unit}`).join("\n")}\n\nGenerado con MediScan 3D Pro`;
+    setTimeout(()=>{window.location.href=`mailto:?subject=${encodeURIComponent("MediScan 3D: "+pName)}&body=${encodeURIComponent(body)}`;},800);
+  }catch(e){alert("Error email: "+e.message);}
+};
 
   /* SVG PILL BADGE - dark AR Meter style */
   const Pill=({mx,my,text,col,sm})=>{
@@ -1047,11 +1087,11 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
     <a href="https://franyamelie.github.io/timerpro/mediscan.html" target="_blank" rel="noreferrer" style={{fontSize:"7px",color:"#ff9500",textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:.7}}>franyamelie.github.io/timerpro/mediscan.html</a>
   </div>
   {scr==="annotate"&&<>
-    <button onClick={save} title="Guardar"
-      style={{padding:"5px 9px",background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.4)",color:"#ff9500",borderRadius:"7px",fontSize:"9px",fontWeight:700}}>{sync||"💾 Guardar"}</button>
-    <button onClick={()=>setScr("camera")} title="Nuevo proyecto"
-      style={{padding:"5px 9px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",border:"none",color:"#000",borderRadius:"7px",fontSize:"9px",fontWeight:800}}>＋ Nuevo</button>
-    <button onClick={()=>setScr("home")} title="Inicio"
+    <button onClick={save} title="Guardar proyecto actual"
+      style={{padding:"5px 10px",background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.4)",color:"#ff9500",borderRadius:"7px",fontSize:"9px",fontWeight:700}}>{sync||"💾 Editar proyecto"}</button>
+    <button onClick={()=>setScr("camera")} title="Nuevo proyecto desde cámara o galería"
+      style={{padding:"5px 10px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",border:"none",color:"#000",borderRadius:"7px",fontSize:"9px",fontWeight:800}}>＋ Nuevo proyecto</button>
+    <button onClick={()=>setScr("home")} title="Ir al inicio"
       style={{padding:"5px 9px",background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.12)",color:"#888",borderRadius:"7px",fontSize:"11px"}}>🏠</button>
   </>}
   <button onClick={()=>setScr("setup")} title="Configurar API"
@@ -1170,7 +1210,7 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
       <span style={{fontSize:"9px",fontWeight:700,color:"#000"}}>{TOOLS.find(t=>t.id===tool)?.label}</span>
     </div>
     <span style={{fontSize:"9px",color:"#3355aa",flex:1}}>
-      {DRAG.includes(tool)?"→ Mantén y arrastra en la imagen":pend.length===1?"→ Toca el 2° punto":"→ Toca la imagen para empezar"}
+      {DRAG.includes(tool)?"→ Mantén y arrastra en la imagen":pend.length===1?"▶ PASO 2 — Toca el 2° punto en la imagen":"▶ PASO 1 — Toca la imagen para dibujar"}
     </span></>
     :<span style={{fontSize:"9px",color:"#2a3a5a",flex:1}}>← Selecciona herramienta arriba</span>}
     {pend.length>0&&<button onClick={()=>{setPend([]);setPrev(null);}} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",fontSize:"8px",padding:"3px 9px",borderRadius:"5px"}}>✕</button>}
@@ -1187,7 +1227,8 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
       <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",overflow:"visible",pointerEvents:"all"}}>
         {/* AI PARTS - colored, selectable, deletable (P1) */}
         {showSegs&&segs.map(seg=>{const isSel=selSeg===seg.id;const col=seg.color||C;return(
-          <g key={seg.id} className="segpop">
+          <g key={seg.id} className="segpop"
+            onDoubleClick={e=>{e.stopPropagation();if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");c2.width=Math.round(im.width*(seg.x2-seg.x1));c2.height=Math.round(im.height*(seg.y2-seg.y1));c2.getContext("2d").drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);setFcAnns([]);setEditZone({seg,croppedImg:c2.toDataURL("image/jpeg",.92)});setSelSeg(null);};im.src=img;}}>
             <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width={`${(seg.x2-seg.x1)*100}%`} height={`${(seg.y2-seg.y1)*100}%`}
               stroke={col} strokeWidth={isSel?"3.5":"2"} strokeDasharray={isSel?"none":"6,3"}
               fill={isSel?`${col}20`:`${col}0a`} rx="4" style={{cursor:"pointer"}}
@@ -1591,16 +1632,33 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
 </div>}
 
 {/* CROP MODAL */}
-{cropM&&<div data-modal="crop" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"rgba(6,8,16,.98)",border:"1px solid rgba(255,150,0,.4)",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(24px)"}}>
+{cropM&&<div data-modal="crop" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"#111",border:"2px solid #ff9500",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(24px)"}}>
   <button onClick={()=>setCropM(null)} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-  <div style={{fontSize:"13px",fontWeight:800,color:"#ff9500",marginBottom:"5px"}}>✂ ZONA SELECCIONADA</div>
-  <div style={{fontSize:"9px",color:"#2a3a5a",marginBottom:"14px"}}>¿Recortar y trabajar solo con esta zona?</div>
-  <div style={{display:"flex",gap:"8px",flexDirection:"column"}}>
-    <div style={{display:"flex",gap:"8px"}}>
-      <button onClick={()=>setCropM(null)} style={{flex:1,padding:"11px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.09)",color:"#2a3a5a",borderRadius:"9px",fontSize:"10px"}}>Mantener completa</button>
-      <button onClick={applyCrop} style={{flex:2,padding:"11px",background:"linear-gradient(135deg,#cc5500,#ff9500)",color:"#fff",border:"none",borderRadius:"9px",fontSize:"12px",fontWeight:800}}>✂ RECORTAR Y MEDIR</button>
-    </div>
-    {origImg&&origImg!==img&&<button onClick={()=>{setCropM(null);resetToOriginal();}} style={{width:"100%",padding:"10px",background:"rgba(0,150,255,.1)",border:"1px solid rgba(0,150,255,.3)",color:"#00b4ff",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>🔄 Volver a imagen original completa</button>}
+  <div style={{fontSize:"13px",fontWeight:800,color:"#ff9500",marginBottom:"6px"}}>✂ ZONA SELECCIONADA</div>
+  <div style={{fontSize:"9px",color:"#666",marginBottom:"14px",lineHeight:1.8}}>Elige qué hacer con esta zona:</div>
+  <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+    <button onClick={()=>{
+      if(!cropM||!img)return;
+      const{p1,p2}=cropM;const im=new Image();im.crossOrigin="anonymous";
+      im.onload=()=>{
+        const x1=Math.min(p1.x,p2.x),y1=Math.min(p1.y,p2.y),x2=Math.max(p1.x,p2.x),y2=Math.max(p1.y,p2.y);
+        const c2=document.createElement("canvas");
+        c2.width=Math.round(im.width*(x2-x1));c2.height=Math.round(im.height*(y2-y1));
+        c2.getContext("2d").drawImage(im,im.width*x1,im.height*y1,c2.width,c2.height,0,0,c2.width,c2.height);
+        const fakeSeg={id:uid(),name:"Zona recortada "+new Date().toLocaleTimeString("es-ES"),x1,y1,x2,y2,color:"#ff9500",hint:"Zona seleccionada con herramienta recorte"};
+        setSegs(s=>[...s,fakeSeg]);
+        setFcAnns([]);
+        setEditZone({seg:fakeSeg,croppedImg:c2.toDataURL("image/jpeg",.95)});
+        setCropM(null);
+      };im.src=img;
+    }} style={{width:"100%",padding:"13px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"9px",fontSize:"12px",fontWeight:800,textAlign:"left"}}>
+      ✂ EXTRAER → Panel flotante con herramientas → 2D y 3D
+      <div style={{fontSize:"8px",marginTop:"3px",opacity:.7}}>Mide la zona extraída · Se guarda en 2D y 3D con su forma real</div>
+    </button>
+    <button onClick={applyCrop} style={{width:"100%",padding:"11px",background:"rgba(255,150,0,.08)",border:"1px solid rgba(255,150,0,.3)",color:"#ff9500",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>
+      ✂ Recortar imagen principal (elimina el resto)
+    </button>
+    <button onClick={()=>setCropM(null)} style={{width:"100%",padding:"10px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.08)",color:"#444",borderRadius:"9px",fontSize:"10px"}}>Cancelar</button>
   </div>
 </div>}
 
