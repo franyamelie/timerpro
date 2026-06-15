@@ -9483,7 +9483,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
 
     {/* CROPPED IMAGE with full drawing support */}
     <div style={{overflow:"auto",background:"#111",WebkitOverflowScrolling:"touch",position:"relative"}}
-      onWheel={e=>{e.preventDefault();const delta=e.deltaY<0?.15:-.15;setFcZoom(z=>Math.max(0.2,Math.min(5,z+delta)));}}
+      onWheel={e=>{e.preventDefault();const delta=e.deltaY>0?-.15:.15;setFcZoom(z=>Math.max(0.2,Math.min(5,z+delta)));}}
       onTouchStart={e=>{if(e.touches.length===2){e.preventDefault();const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;fcPinchRef.current=Math.sqrt(dx*dx+dy*dy);}}}
       onTouchMove={e=>{if(e.touches.length===2&&fcPinchRef.current){e.preventDefault();const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;const dist=Math.sqrt(dx*dx+dy*dy);const ratio=dist/fcPinchRef.current;setFcZoom(z=>Math.max(0.2,Math.min(5,z*ratio)));fcPinchRef.current=dist;}}}
       onTouchEnd={()=>{fcPinchRef.current=null;}}>
