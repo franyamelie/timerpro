@@ -4,30 +4,13 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="MediScan 3D">
 <meta name="theme-color" content="#0c0c0c">
-<meta name="description" content="Herramienta de medición industrial con IA - identifica piezas, genera vistas 2D/3D y exporta medidas">
-<link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22MediScan%203D%20Pro%22%2C%22short_name%22%3A%22MediScan%22%2C%22start_url%22%3A%22.%2Fmediscan.html%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230c0c0c%22%2C%22theme_color%22%3A%22%23ff9500%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20100%20100%27%3E%3Crect%20width%3D%27100%27%20height%3D%27100%27%20rx%3D%2720%27%20fill%3D%27%230c0c0c%27%2F%3E%3Ctext%20y%3D%27.9em%27%20x%3D%2750%25%27%20text-anchor%3D%27middle%27%20font-size%3D%2770%27%3E%F0%9F%94%AC%3C%2Ftext%3E%3C%2Fsvg%3E%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%5D%7D">
 <title>MediScan 3D Pro</title>
 <script>
-// PWA: Register service worker inline
 if('serviceWorker' in navigator){
-  const swCode=`
-const CACHE='ms3d-v1';
-const ASSETS=[
-  'https://unpkg.com/react@18/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
-];
-self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS).catch(()=>{})).then(()=>self.skipWaiting()));});
-self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
-self.addEventListener('fetch',e=>{if(!e.request.url.startsWith('http'))return;e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{if(res.ok&&e.request.method==='GET'){const cl=res.clone();caches.open(CACHE).then(c=>c.put(e.request,cl));}return res;}).catch(()=>new Response('',{status:503}))));});
-`;
+  const swCode=`const C='ms3d-v2';const A=['https://unpkg.com/react@18/umd/react.production.min.js','https://unpkg.com/react-dom@18/umd/react-dom.production.min.js','https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js','https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js','https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'];self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(A).catch(()=>{})).then(()=>self.skipWaiting()));});self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});self.addEventListener('fetch',e=>{if(!e.request.url.startsWith('http'))return;e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{if(res.ok&&e.request.method==='GET'){const cl=res.clone();caches.open(C).then(c=>c.put(e.request,cl));}return res;}).catch(()=>new Response('',{status:503}))));});`;
   const blob=new Blob([swCode],{type:'text/javascript'});
-  const swURL=URL.createObjectURL(blob);
-  navigator.serviceWorker.register(swURL,{scope:'./'}).catch(()=>{});
+  navigator.serviceWorker.register(URL.createObjectURL(blob),{scope:'./'}).catch(()=>{});
 }
 </script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -39,7 +22,7 @@ self.addEventListener('fetch',e=>{if(!e.request.url.startsWith('http'))return;e.
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 *{box-sizing:border-box;margin:0;padding:0;}
-html,body{background:#0c0c0c;min-height:100%;font-family:'Inter',sans-serif;-webkit-tap-highlight-color:transparent;overflow-x:hidden;overflow-y:auto;}
+html,body{background:#0c0c0c;min-height:100%;font-family:'Inter',sans-serif;-webkit-tap-highlight-color:transparent;overflow-x:hidden;}
 
 /* SCROLLBAR */
 ::-webkit-scrollbar{width:12px;height:12px}
@@ -3733,12 +3716,10 @@ function App() {
       maxWidth: "480px",
       margin: "0 auto",
       background: "#0c0c0c",
-      minHeight: "100dvh",
+      height: "100vh",
       display: "flex",
       flexDirection: "column",
-      overflowX: "hidden",
-      overflowY: "auto",
-      WebkitOverflowScrolling: "touch"
+      overflow: "hidden"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -4689,7 +4670,7 @@ function App() {
     style: {
       position: "relative",
       lineHeight: 0,
-      transform: `rotate(${rot}deg) scale(${imgZoom}) translate(${(imgPan&&imgPan.x)||0}px,${(imgPan&&imgPan.y)||0}px)`,
+      transform: "rotate(".concat(rot, "deg) scale(").concat(imgZoom, ")"),
       transformOrigin: "center center",
       cursor: tool === "sel" ? (imgZoom>1?"grab":"default") : "crosshair",
       userSelect: "none",
@@ -4748,7 +4729,7 @@ function App() {
       stroke: col,
       strokeWidth: isSel ? "3.5" : "2",
       strokeDasharray: isSel ? "none" : "6,3",
-      fill: "".concat(col, isSel ? "35" : "15"),
+      fill: "".concat(col, isSel ? "30" : "18"),
       rx: "4",
       style: {
         cursor: "pointer"
@@ -4800,30 +4781,26 @@ function App() {
       width: "16%",
       height: "6%",
       rx: "3%",
-      fill: "rgba(0,0,0,0.55)",
-      style: { cursor: "pointer" },
-      onClick: function onClick(e) { e.stopPropagation(); setSelSeg(isSel ? null : seg.id); }
-    }),
-    /*#__PURE__*/React.createElement("rect", {
-      x: "".concat(seg.x1 * 100, "%"),
-      y: "".concat(seg.y1 * 100, "%"),
-      width: "2.5%", height: "5.5%", rx: "2%",
-      fill: "".concat(col, "dd"),
-      style: { pointerEvents: "none" }
-    }),
-    /*#__PURE__*/React.createElement("text", {
-      x: "".concat(seg.x1 * 100 + 3.2, "%"),
-      y: "".concat(seg.y1 * 100 + 2.9, "%"),
-      fill: "#ffffff",
-      fontSize: "2.2%",
+      fill: "".concat(col, "ee"),
+      style: {
+        cursor: "pointer"
+      },
+      onClick: function onClick(e) {
+        e.stopPropagation();
+        setSelSeg(isSel ? null : seg.id);
+      }
+    }), /*#__PURE__*/React.createElement("text", {
+      x: "".concat(seg.x1 * 100 + .9, "%"),
+      y: "".concat(seg.y1 * 100 + 3.2, "%"),
+      fill: "#000",
+      fontSize: "2.4%",
       fontFamily: "Inter,sans-serif",
-      fontWeight: "900",
+      fontWeight: "800",
       dominantBaseline: "middle",
-      stroke: "rgba(0,0,0,0.7)",
-      strokeWidth: "0.25%",
-      paintOrder: "stroke fill",
-      style: { pointerEvents: "none" }
-    }, seg.id, ". ", (seg.name || "").slice(0, 14)), isSel && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("g", {
+      style: {
+        pointerEvents: "none"
+      }
+    }, seg.id, ". ", (seg.name || "").slice(0, 11)), isSel && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("g", {
       style: {
         cursor: "pointer"
       },
@@ -8758,19 +8735,7 @@ shape: box|cylinder|sphere|cone|torus|tube|pipe|L_shape|T_shape|table|chair|door
   };
 
   /* save/load */
-  const save=async()=>{
-  let thumb=null;
-  try{
-    const imgEl=new Image();imgEl.crossOrigin='anonymous';
-    await new Promise((res,rej)=>{imgEl.onload=res;imgEl.onerror=rej;imgEl.src=img||origImg;});
-    const tc=document.createElement('canvas');tc.width=120;tc.height=90;
-    tc.getContext('2d').drawImage(imgEl,0,0,120,90);
-    thumb=tc.toDataURL('image/jpeg',.7);
-  }catch{}
-  const p={id:uid(),name:pName,date:new Date().toLocaleDateString("es-ES"),img,origImg,rot,anns,scale,objInfo,pip,segs,thumb,measCount:anns.filter(a=>a.value!=null).length};
-  const all=[p,...projs.filter(x=>x.name!==pName)].slice(0,30);
-  localStorage.setItem("ms3_pj",JSON.stringify(all));setProjs(all);setSync("✓");setTimeout(()=>setSync(""),2000);
-};
+  const save=async()=>{let thumb=null;try{const imgEl=new Image();imgEl.crossOrigin="anonymous";await new Promise((res,rej)=>{imgEl.onload=res;imgEl.onerror=rej;imgEl.src=img||origImg;});const tc=document.createElement("canvas");tc.width=120;tc.height=90;tc.getContext("2d").drawImage(imgEl,0,0,120,90);thumb=tc.toDataURL("image/jpeg",.7);}catch{}const p={id:uid(),name:pName,date:new Date().toLocaleDateString("es-ES"),img,origImg,rot,anns,scale,objInfo,pip,segs,thumb,measCount:anns.filter(a=>a.value!=null).length};const all=[p,...projs.filter(x=>x.name!==pName)].slice(0,30);localStorage.setItem("ms3_pj",JSON.stringify(all));setProjs(all);setSync("✓");setTimeout(()=>setSync(""),2000);};
   const loadP=p=>{setImg(p.img||p.origImg);setOrigImg(p.origImg||p.img);setRot(p.rot||0);setAnns(p.anns||[]);setHist([]);setScale(p.scale||null);setObjInfo(p.objInfo);setPip(p.pip||null);setPName(p.name);setSelId(null);setPend([]);setTool("sel");setSegs(p.segs||[]);setScr("annotate");setSheet(null);};
   const delP=(id,e)=>{e.stopPropagation();const all=projs.filter(p=>p.id!==id);localStorage.setItem("ms3_pj",JSON.stringify(all));setProjs(all);};
   const genLink=()=>{
@@ -8856,32 +8821,8 @@ shape: box|cylinder|sphere|cone|torus|tube|pipe|L_shape|T_shape|table|chair|door
       pdf.save(`${pName}.pdf`);
     }catch(e){alert("Error PDF: "+e.message);}
   };
-  const xDXF=()=>{
-  const ms=anns.filter(a=>a.value!=null&&a.points?.length>=2);
-  if(!ms.length){alert("Sin medidas con valor para exportar");return;}
-  const sc=scale?.mmPx||1;
-  let dxf='0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n';
-  ms.forEach(a=>{
-    const[p1,p2]=a.points;
-    const x1=(p1.x*800).toFixed(2),y1=((1-p1.y)*600).toFixed(2);
-    const x2=(p2.x*800).toFixed(2),y2=((1-p2.y)*600).toFixed(2);
-    const vmm=((parseFloat(a.value)||0)*({mm:1,cm:10,m:1000,'in':25.4,ft:304.8}[a.unit]||10)).toFixed(2);
-    dxf+=`0\nLINE\n8\nMEDIDAS\n10\n${x1}\n20\n${y1}\n30\n0.0\n11\n${x2}\n21\n${y2}\n31\n0.0\n`;
-    const mx=((parseFloat(x1)+parseFloat(x2))/2).toFixed(2),my=((parseFloat(y1)+parseFloat(y2))/2).toFixed(2);
-    dxf+=`0\nTEXT\n8\nTEXTOS\n10\n${mx}\n20\n${my}\n30\n0.0\n40\n8\n1\n${a.title||a.type}: ${a.value}${a.unit} (${vmm}mm)\n`;
-  });
-  dxf+='0\nENDSEC\n0\nEOF\n';
-  const b=new Blob([dxf],{type:'application/dxf'});
-  const url=URL.createObjectURL(b);
-  const a=document.createElement('a');a.href=url;a.download=`${pName}.dxf`;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
-};
-const xCopy=()=>{
-  const ms=anns.filter(a=>a.value!=null);
-  if(!ms.length){alert('Sin medidas');return;}
-  const txt=`MediScan 3D Pro — ${pName}\n${new Date().toLocaleDateString('es-ES')}\n${'─'.repeat(40)}\n`+ms.map(a=>`• ${a.title||a.type}: ${a.value} ${a.unit}${a.axis?' ['+a.axis+']':''}`).join('\n')+`\n${'─'.repeat(40)}\n${objInfo?.name||''} · ${ms.length} medidas`;
-  if(navigator.clipboard){navigator.clipboard.writeText(txt).then(()=>{setSync('📋 Copiado');setTimeout(()=>setSync(''),2000);}).catch(()=>prompt('Copia:',txt));}
-  else prompt('Copia:',txt);
-};
+  const xDXF=()=>{const ms=anns.filter(a=>a.value!=null&&a.points?.length>=2);if(!ms.length){alert("Sin medidas con valor");return;}let dxf="0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n";ms.forEach(a=>{const[p1,p2]=a.points;const x1=(p1.x*800).toFixed(2),y1=((1-p1.y)*600).toFixed(2),x2=(p2.x*800).toFixed(2),y2=((1-p2.y)*600).toFixed(2);const vmm=((parseFloat(a.value)||0)*({mm:1,cm:10,m:1000,"in":25.4,ft:304.8}[a.unit]||10)).toFixed(2);dxf+=`0\nLINE\n8\nMEDIDAS\n10\n${x1}\n20\n${y1}\n30\n0.0\n11\n${x2}\n21\n${y2}\n31\n0.0\n`;const mx=((parseFloat(x1)+parseFloat(x2))/2).toFixed(2),my=((parseFloat(y1)+parseFloat(y2))/2).toFixed(2);dxf+=`0\nTEXT\n8\nTEXTOS\n10\n${mx}\n20\n${my}\n30\n0.0\n40\n8\n1\n${a.title||a.type}: ${a.value}${a.unit} (${vmm}mm)\n`;});dxf+="0\nENDSEC\n0\nEOF\n";const b=new Blob([dxf],{type:"application/dxf"});const url=URL.createObjectURL(b);const a=document.createElement("a");a.href=url;a.download=`${pName}.dxf`;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);};
+const xCopy=()=>{const ms=anns.filter(a=>a.value!=null);if(!ms.length){alert("Sin medidas");return;}const txt=`MediScan 3D Pro — ${pName}\n${new Date().toLocaleDateString("es-ES")}\n${"─".repeat(36)}\n`+ms.map(a=>`• ${a.title||a.type}: ${a.value} ${a.unit}${a.axis?" ["+a.axis+"]":""}`).join("\n")+`\n${"─".repeat(36)}\n${objInfo?.name||""} · ${ms.length} medidas`;if(navigator.clipboard)navigator.clipboard.writeText(txt).then(()=>{setSync("📋 Copiado");setTimeout(()=>setSync(""),2500);}).catch(()=>prompt("Copia:",txt));else prompt("Copia:",txt);};
 const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataURL("image/png");const a=document.createElement("a");a.href=url;a.download=`${pName}.png`;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>window.open(`https://wa.me/?text=${encodeURIComponent("MediScan 3D Pro - "+pName)}`,"_blank"),800);}catch(e){alert("Error: "+e.message);}};
   const xEmail=async()=>{
   try{
@@ -9011,21 +8952,10 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
 {/* HOME */}
 {scr==="home"&&<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
   <button onClick={()=>setScr("camera")} style={{width:"100%",padding:"18px",background:"linear-gradient(135deg,#ff6600,#ff9500,#ffcc00)",color:"#fff",border:"none",borderRadius:"14px",fontSize:"15px",fontWeight:800,letterSpacing:"-.2px",color:"#000",boxShadow:"0 4px 28px rgba(255,150,0,.45)"}}>＋ NUEVO PROYECTO</button>
-  {typeof window!=="undefined"&&"standalone" in window.navigator&&!window.navigator.standalone&&<div style={{padding:"8px 12px",background:"rgba(255,150,0,.07)",border:"1px solid rgba(255,150,0,.2)",borderRadius:"10px",display:"flex",alignItems:"center",gap:"9px"}}>
-    <span style={{fontSize:"18px"}}>📲</span>
-    <div style={{flex:1}}>
-      <div style={{fontSize:"9px",fontWeight:700,color:"#ff9500"}}>Instalar como app</div>
-      <div style={{fontSize:"8px",color:"#446"}}>Pulsa Compartir → "Añadir a inicio"</div>
-    </div>
-  </div>}
   {!GK()&&<div style={{background:"rgba(255,150,0,.12)",border:"1px solid rgba(255,150,0,.35)",borderRadius:"10px",padding:"10px 14px",fontSize:"9px",color:"#ff9500"}}>⚠️ Sin clave API Groq — toca ⚙ para configurarla</div>}
   {projs.length>0&&<div style={{background:"#161616",border:"1px solid #2a2a2a",borderRadius:"14px",overflow:"hidden"}}>
-    <div style={{padding:"8px 13px 8px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid #222"}}>
-      <span style={{fontSize:"9px",color:"#ff9500",fontWeight:700,letterSpacing:".08em",textTransform:"uppercase"}}>📁 Proyectos — {projs.length}</span>
-      <span style={{fontSize:"8px",color:"#334"}}>Toca para cargar · ✕ elimina</span>
-    </div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"1px",background:"#0a0a0a"}}>
-    {projs.map(p=><div key={p.id} onClick={()=>loadP(p)} style={{position:"relative",cursor:"pointer",aspectRatio:"4/3",overflow:"hidden",background:"#111"}}>
+    <div style={{padding:"8px 13px",fontSize:"9px",color:"#ff9500",fontWeight:700,letterSpacing:".08em",textTransform:"uppercase",borderBottom:"1px solid #222",display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>📁 Proyectos — {projs.length}</span><span style={{color:"#334",fontSize:"7px"}}>Toca · ✕ elimina</span></div>
+    {projs.map(p=><div key={p.id} onClick={()=>loadP(p)} style={{display:"flex",alignItems:"center",gap:"9px",padding:"9px 12px",borderBottom:"1px solid rgba(255,255,255,.04)",cursor:"pointer"}}>
       {p.img&&<img src={p.img} style={{width:"44px",height:"34px",objectFit:"cover",borderRadius:"6px",border:"1px solid rgba(0,150,255,.2)"}}/>}
       <div style={{flex:1}}><div style={{fontSize:"10px",color:"#d0e8f8",fontWeight:600}}>{p.name}</div><div style={{fontSize:"8px",color:"#2a3a5a"}}>{p.date} · {p.objInfo?.name||"?"} · {(p.anns||[]).length} medidas</div></div>
       <button onClick={e=>delP(p.id,e)} style={{background:"transparent",border:"none",color:"#ff3366",fontSize:"14px",opacity:.6}}>✕</button>
@@ -9141,36 +9071,31 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     <div ref={imgRef}
       onClick={onImgClick} onMouseDown={onImgDown} onMouseMove={onImgMove}
       onMouseUp={onImgUp}
-      onTouchStart={e=>{onImgDown(e);onTouchStartZoom(e);}}
+      onTouchStart={e=>{onImgDown(e);if(e.touches.length===2)onTouchStartZoom(e);}}
       onTouchMove={e=>{if(e.touches.length===2){e.preventDefault();onTouchMoveZoom(e);}else{onImgMove(e);}}}
       onTouchEnd={e=>{onImgUp(e);onTouchEndZoom(e);}}
-      style={{position:"relative",lineHeight:0,transform:`rotate(${rot}deg) scale(${imgZoom}) translate(${imgPan?.x||0}px,${imgPan?.y||0}px)`,transformOrigin:"center center",cursor:tool==="sel"?(imgZoom>1?"grab":"default"):"crosshair",userSelect:"none",WebkitUserSelect:"none",touchAction:"none"}}>
+      style={{position:"relative",lineHeight:0,transform:`rotate(${rot}deg) scale(${imgZoom})`,transformOrigin:"center",cursor:tool==="sel"?(imgZoom>1?"grab":"default"):"crosshair",userSelect:"none",WebkitUserSelect:"none",touchAction:"none"}}>
       <img src={img} alt="" draggable="false" style={{width:"100%",display:"block",pointerEvents:"none"}}/>
       <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",overflow:"visible",pointerEvents:"all"}}>
         {/* AI PARTS - colored, selectable, deletable (P1) */}
         {showSegs&&segs.map(seg=>{const isSel=selSeg===seg.id;const col=seg.color||C;return(
           <g key={seg.id} className="segpop"
             onDoubleClick={e=>{e.stopPropagation();if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");c2.width=Math.round(im.width*(seg.x2-seg.x1));c2.height=Math.round(im.height*(seg.y2-seg.y1));c2.getContext("2d").drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);setFcAnns([]);setEditZone({seg,croppedImg:c2.toDataURL("image/jpeg",.92)});setSelSeg(null);};im.src=img;}}>
-            {/* ─ Main overlay: muy translúcido, imagen visible ─ */}
             <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width={`${(seg.x2-seg.x1)*100}%`} height={`${(seg.y2-seg.y1)*100}%`}
-              stroke={col} strokeWidth={isSel?"2.5":"1.5"} strokeDasharray={isSel?"none":"7,3"}
-              fill={isSel?`${col}28`:`${col}12`} rx="3" style={{cursor:"pointer"}}
+              stroke={col} strokeWidth={isSel?"3.5":"2"} strokeDasharray={isSel?"none":"6,3"}
+              fill="none" rx="4" style={{cursor:"pointer"}}
               onClick={e=>{e.stopPropagation();setSelSeg(isSel?null:seg.id);}}/>
-            {/* ─ Clickable transparent overlay (double-tap = edit zone) ─ */}
+            {/* Transparent clickable overlay over entire seg */}
             <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width={`${(seg.x2-seg.x1)*100}%`} height={`${(seg.y2-seg.y1)*100}%`}
-              fill="transparent" rx="3" style={{cursor:"pointer"}}
+              fill="transparent" rx="4" style={{cursor:"pointer"}}
               onClick={e=>{e.stopPropagation();setSelSeg(isSel?null:seg.id);}}
               onDoubleClick={e=>{e.stopPropagation();if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");const x1=Math.min(seg.x1,seg.x2),y1=Math.min(seg.y1,seg.y2),x2=Math.max(seg.x1,seg.x2),y2=Math.max(seg.y1,seg.y2);c2.width=Math.round(im.width*(x2-x1));c2.height=Math.round(im.height*(y2-y1));c2.getContext("2d").drawImage(im,im.width*x1,im.height*y1,c2.width,c2.height,0,0,c2.width,c2.height);setFcAnns([]);setEditZone({seg,croppedImg:c2.toDataURL("image/jpeg",.95)});setSelSeg(null);};im.src=img;}}/>
-            {/* ─ Label: fondo oscuro translúcido + barra de color + texto blanco ─ */}
-            <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width="23%" height="5.5%" rx="2.5%"
-              fill="rgba(0,0,0,0.55)" style={{cursor:"pointer"}}
-              onClick={e=>{e.stopPropagation();setSelSeg(isSel?null:seg.id);}}/>
-            <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width="2.5%" height="5.5%" rx="2%"
-              fill={`${col}dd`} style={{pointerEvents:"none"}}/>
-            <text x={`${seg.x1*100+3.2}%`} y={`${seg.y1*100+2.9}%`} fill="#ffffff" fontSize="2.2%"
+            <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width="22%" height="5.5%" rx="2.5%" fill="rgba(0,0,0,0.6)"
+              style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();setSelSeg(isSel?null:seg.id);}}/>
+            <text x={`${seg.x1*100+1.2}%`} y={`${seg.y1*100+2.9}%`} fill="#ffffff" fontSize="2.1%"
               fontFamily="Inter,sans-serif" fontWeight="900" dominantBaseline="middle"
-              stroke="rgba(0,0,0,0.7)" strokeWidth="0.25%" paintOrder="stroke fill"
-              style={{pointerEvents:"none",letterSpacing:"-0.02em"}}>{seg.id}. {(seg.name||"").slice(0,14)}</text>
+              stroke="rgba(0,0,0,0.8)" strokeWidth="0.2%" paintOrder="stroke fill"
+              style={{pointerEvents:"none",letterSpacing:"-0.01em"}}>{seg.id}. {(seg.name||"").slice(0,15)}</text>
             {isSel&&<>
               <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();setSegs(s=>s.filter(x=>x.id!==seg.id));setSelSeg(null);}}>
                 <rect x={`${seg.x2*100-8}%`} y={`${seg.y1*100}%`} width="8%" height="6%" rx="2%" fill="#ff3366"/>
@@ -9780,4 +9705,4 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 
 
-<div style="position: fixed; border: 2px solid rgb(0, 102, 255); background-color: rgba(0, 102, 255, 0.1); pointer-events: none; display: none; z-index: 10000;"></div><div style="position: fixed; top: 10px; left: 50%; transform: translateX(-50%); background-color: rgba(0, 0, 0, 0.8); color: white; padding: 10px 20px; border-radius: 5px; z-index: 10001; display: none;">Haz clic y arrastra para seleccionar el área. Presiona ESC para cancelar.</div></body></html>
+</body></html>
