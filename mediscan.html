@@ -2329,7 +2329,8 @@ function App() {
       setColI(function (c) {
         return c + 1;
       });
-      /* marker is on image - user taps it to open modal */
+      /* Open measure modal immediately */
+      setMeasM({...a,_existing:true});setMIn({t:"",v:"",u:"cm",ax:""});
       return;
     }
     var pts = [].concat(_toConsumableArray(pend), [p]);
@@ -4654,14 +4655,16 @@ function App() {
     onMouseDown: onImgDown,
     onMouseMove: onImgMove,
     onMouseUp: onImgUp,
-    onTouchStart: onImgDown,
-    onTouchMove: onImgMove,
-    onTouchEnd: onImgUp,
+    onWheel: onWheel,
+    onTouchStart: function(e){onImgDown(e);onTouchStartZoom(e);},
+    onTouchMove: function(e){if(e.touches.length===2){onTouchMoveZoom(e);}else{onImgMove(e);}},
+    onTouchEnd: function(e){onImgUp(e);onTouchEndZoom(e);},
     style: {
       position: "relative",
       lineHeight: 0,
-      transform: "rotate(".concat(rot, "deg)"),
-      cursor: tool === "sel" ? "default" : "crosshair",
+      transform: "rotate(".concat(rot, "deg) scale(").concat(imgZoom, ")"),
+      transformOrigin: "center center",
+      cursor: tool === "sel" ? (imgZoom>1?"grab":"default") : "crosshair",
       userSelect: "none",
       WebkitUserSelect: "none",
       touchAction: "none"
@@ -4718,7 +4721,7 @@ function App() {
       stroke: col,
       strokeWidth: isSel ? "3.5" : "2",
       strokeDasharray: isSel ? "none" : "6,3",
-      fill: "none",
+      fill: "".concat(col, isSel ? "30" : "18"),
       rx: "4",
       style: {
         cursor: "pointer"
@@ -5125,7 +5128,19 @@ function App() {
       fontSize: "9px",
       fontWeight: 700
     }
-  }, "\uD83D\uDD04 Orig."), /*#__PURE__*/React.createElement("button", {
+  }, "\uD83D\uDD04 Orig."), imgZoom>1&&/*#__PURE__*/React.createElement("button", {
+    onClick: function onClick(){setImgZoom(1);setImgPan({x:0,y:0});},
+    title: "Zoom 1:1",
+    style:{padding:"7px 6px",background:"rgba(0,200,255,.1)",border:"1px solid rgba(0,200,255,.25)",color:"#00ccff",borderRadius:"8px",fontSize:"9px",fontWeight:700}
+  }, "1:1"), /*#__PURE__*/React.createElement("button", {
+    onClick: function onClick(){setImgZoom(z=>Math.min(5,z+0.3));},
+    title: "Zoom +",
+    style:{padding:"7px 8px",background:"rgba(0,200,100,.1)",border:"1px solid rgba(0,200,100,.25)",color:"#00dd66",borderRadius:"8px",fontSize:"12px",fontWeight:700}
+  }, "+"), /*#__PURE__*/React.createElement("button", {
+    onClick: function onClick(){setImgZoom(z=>Math.max(1,z-0.3));},
+    title: "Zoom -",
+    style:{padding:"7px 8px",background:"rgba(200,50,50,.1)",border:"1px solid rgba(200,50,50,.25)",color:"#ff4444",borderRadius:"8px",fontSize:"12px",fontWeight:700}
+  }, "\u2212"), /*#__PURE__*/React.createElement("button", {
     onClick: function onClick() {
       return setAddPartDlg(true);
     },
@@ -6978,18 +6993,33 @@ function App() {
         ax: ""
       });
     }
+  }, /*#__PURE__*/React.createElement("div", {
+    style:{position:"relative",overflow:"hidden",borderRadius:"6px",background:"#000"}
   }, /*#__PURE__*/React.createElement("img", {
     src: editZone.croppedImg,
     style: {
       width: "100%",
       display: "block",
+      transform:"scale(".concat(imgZoom,")"),
+      transformOrigin:"center center",
       cursor: tool === "sel" ? "default" : "crosshair",
       userSelect: "none",
       WebkitUserSelect: "none",
       touchAction: "none"
     },
     draggable: "false"
-  }), /*#__PURE__*/React.createElement("svg", {
+  }), /*#__PURE__*/React.createElement("div", {
+    style:{position:"absolute",bottom:"6px",right:"6px",display:"flex",gap:"4px",zIndex:10}
+  }, /*#__PURE__*/React.createElement("button",{
+    onClick:function(){setImgZoom(z=>Math.min(4,z+0.25));},
+    style:{padding:"4px 8px",background:"rgba(0,0,0,.7)",border:"1px solid #444",color:"#fff",borderRadius:"5px",fontSize:"14px"}
+  },"+"), /*#__PURE__*/React.createElement("button",{
+    onClick:function(){setImgZoom(z=>Math.max(1,z-0.25));},
+    style:{padding:"4px 8px",background:"rgba(0,0,0,.7)",border:"1px solid #444",color:"#fff",borderRadius:"5px",fontSize:"14px"}
+  },"−"), imgZoom>1&&/*#__PURE__*/React.createElement("button",{
+    onClick:function(){setImgZoom(1);},
+    style:{padding:"4px 7px",background:"rgba(0,0,0,.7)",border:"1px solid #444",color:"#aaa",borderRadius:"5px",fontSize:"9px"}
+  },"1:1"))), /*#__PURE__*/React.createElement("svg", {
     style: {
       position: "absolute",
       top: 0,
@@ -7973,6 +8003,43 @@ function View2D({anns,objName,sc,segs}){
       ctx.fillStyle="#8899bb";ctx.font="8px 'Inter',sans-serif";
       ctx.fillText("Las partes medidas aparecerán aquí automáticamente",W/2,H*.38+16);}
 
+    /* Isometric sketch - only when we have all 3 dims */
+    if(wd&&hd&&dd){
+      const iW=vW*sc2*.7,iH=vH*sc2*.7,iD=vD*sc2*.7;
+      const ix0=mg+objW*.52+iW*.3+10,iy0=rY+rH*.4;
+      ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";
+      ctx.fillText("ISOMÉTRICO",ix0-iW*.3,iy0-iD*.5-8);
+      /* ISO face top */
+      ctx.strokeStyle="#2244aa";ctx.lineWidth=1.4;ctx.fillStyle="rgba(30,60,160,.06)";
+      ctx.beginPath();ctx.moveTo(ix0,iy0-iD*.5);ctx.lineTo(ix0+iW*.5,iy0-iD*.5-iH*.3);
+      ctx.lineTo(ix0+iW,iy0-iD*.5);ctx.lineTo(ix0+iW*.5,iy0-iD*.5+iH*.3);ctx.closePath();
+      ctx.fill();ctx.stroke();
+      /* ISO face right */
+      ctx.fillStyle="rgba(20,50,140,.1)";ctx.beginPath();
+      ctx.moveTo(ix0+iW,iy0-iD*.5);ctx.lineTo(ix0+iW,iy0+iD*.5);
+      ctx.lineTo(ix0+iW*.5,iy0+iD*.5+iH*.3);ctx.lineTo(ix0+iW*.5,iy0-iD*.5+iH*.3);ctx.closePath();
+      ctx.fill();ctx.stroke();
+      /* ISO face left */
+      ctx.fillStyle="rgba(10,40,120,.07)";ctx.beginPath();
+      ctx.moveTo(ix0,iy0-iD*.5);ctx.lineTo(ix0,iy0+iD*.5);
+      ctx.lineTo(ix0+iW*.5,iy0+iD*.5+iH*.3);ctx.lineTo(ix0+iW*.5,iy0-iD*.5+iH*.3);ctx.closePath();
+      ctx.fill();ctx.stroke();
+    }
+    /* Cross-section circle (if cylinder shape detected) */
+    if(wd&&hd){
+      const cxPos=mg+8,cyPos=rY+rH+38,cRadius=Math.min(vH*sc2*.45,25);
+      ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";
+      ctx.fillText("SECCIÓN",cxPos,cyPos-cRadius-5);
+      ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.2;ctx.fillStyle="rgba(26,58,138,.06)";
+      ctx.beginPath();ctx.arc(cxPos+cRadius,cyPos,cRadius,0,Math.PI*2);ctx.fill();ctx.stroke();
+      if(dd){const ir=Math.min(cRadius*.7,cRadius-3);ctx.fillStyle="rgba(0,0,0,.04)";ctx.strokeStyle="#446688";ctx.lineWidth=.8;
+        ctx.setLineDash([2,2]);ctx.beginPath();ctx.arc(cxPos+cRadius,cyPos,ir,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.setLineDash([]);}
+      /* centerlines */
+      ctx.strokeStyle="#cc0000";ctx.lineWidth=.6;ctx.setLineDash([4,2]);
+      ctx.beginPath();ctx.moveTo(cxPos,cyPos);ctx.lineTo(cxPos+cRadius*2,cyPos);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(cxPos+cRadius,cyPos-cRadius);ctx.lineTo(cxPos+cRadius,cyPos+cRadius);ctx.stroke();
+      ctx.setLineDash([]);
+    }
     /* Title block */
     const tbX=W-mg-130,tbY=H-56,tbW=130,tbH=50;
     ctx.fillStyle="#e8eef8";ctx.fillRect(tbX,tbY,tbW,tbH);
@@ -7983,8 +8050,11 @@ function View2D({anns,objName,sc,segs}){
     ctx.fillStyle="#334455";ctx.font="7px 'Inter',sans-serif";
     ctx.fillText(new Date().toLocaleDateString("es-ES"),tbX+tbW/2,tbY+25);
     ctx.fillText("MEDISCAN 3D PRO",tbX+tbW/2,tbY+42);
+    /* Scale indicator */
+    if(sc){ctx.fillStyle="#556677";ctx.font="7px 'Inter',sans-serif";ctx.textAlign="left";
+      ctx.fillText(`Escala: 1px = ${(1/sc.ppu).toFixed(2)} ${sc.unit}`,mg,H-6);}
   },[anns,objName,sc,segs]);
-  return <canvas ref={ref} width={440} height={380} style={{width:"100%",display:"block",background:"#f0f4f8"}}/>;
+  return <canvas ref={ref} width={440} height={420} style={{width:"100%",display:"block",background:"#f0f4f8"}}/>;
 }
 
 /* ══ V3D ══ */
@@ -8013,6 +8083,10 @@ function V3D({anns,shape}){
     else if(["cylinder","bottle","vase","cup","glass","tube","pipe"].includes(s))cy(Math.min(sw,sd)/2,sh);
     else if(["sphere","ball"].includes(s)){const r=Math.min(sw,sh,sd)/2;const m=new THREE.Mesh(new THREE.SphereGeometry(r,28,28),fM());m.castShadow=true;piv.add(m);}
     else if(s==="cone"){const g=new THREE.ConeGeometry(Math.min(sw,sd)/2,sh,24);const m=new THREE.Mesh(g,fM());m.castShadow=true;piv.add(m);piv.add(new THREE.LineSegments(new THREE.EdgesGeometry(g),eM()));}
+    else if(s==="torus"){const r1=Math.min(sw,sd)/2*.7,r2=r1*.28;const g=new THREE.TorusGeometry(r1,r2,16,48);const m=new THREE.Mesh(g,fM());m.castShadow=true;piv.add(m);piv.add(new THREE.LineSegments(new THREE.EdgesGeometry(g),eM()));}
+    else if(s==="L_shape"){bx(sw,sh*.12,sd,0,-sh/2+sh*.06,0,0x1144cc);bx(sw*.12,sh,sd,(-sw/2+sw*.06),0,0,0x1144cc);}
+    else if(s==="T_shape"){bx(sw,sh*.12,sd,0,sh/2-sh*.06,0,0x1144cc);bx(sw*.12,sh,sd,0,0,0,0x1144cc);}
+    else if(s==="hemisphere"){const r=Math.min(sw,sh,sd)/2;const g=new THREE.SphereGeometry(r,24,24,0,Math.PI*2,0,Math.PI/2);const m=new THREE.Mesh(g,fM());m.castShadow=true;piv.add(m);}
     else bx(sw,sh,sd);
     const dg=new THREE.SphereGeometry(.035,8,8),dm=new THREE.MeshBasicMaterial({color:0x00e5c4});
     [[-1,-1,-1],[1,-1,-1],[-1,1,-1],[1,1,-1],[-1,-1,1],[1,-1,1],[-1,1,1],[1,1,1]].forEach(([a,b,c])=>{const dot=new THREE.Mesh(dg,dm);dot.position.set(a*sw/2,b*sh/2,c*sd/2);piv.add(dot);});
@@ -8360,6 +8434,9 @@ function App(){
   const [sync,setSync]=useState("");
   const [projs,setProjs]=useState(()=>{try{return JSON.parse(localStorage.getItem("ms3_pj")||"[]");}catch{return[];}});
   const [pName,setPName]=useState("Proyecto");
+  const [imgZoom,setImgZoom]=useState(1);
+  const [imgPan,setImgPan]=useState({x:0,y:0});
+  const pinchRef=useRef(null);
 
   /* derived */
   const modal=!!measM||!!calibM||!!cropM;
@@ -8445,6 +8522,34 @@ function App(){
     if(Math.abs(p.x-ds.x)<.01&&Math.abs(p.y-ds.y)<.01)return;
     mkAnn(tool,[ds,p]);
   },[dragSt,tool,getP,mkAnn]);
+
+  /* ZOOM: rueda ratón */
+  const onWheel=useCallback(e=>{
+    e.preventDefault();
+    const delta=e.deltaY>0?-0.15:0.15;
+    setImgZoom(z=>Math.max(1,Math.min(5,z+delta)));
+  },[]);
+
+  /* ZOOM: pinch touch */
+  const onTouchStartZoom=useCallback(e=>{
+    if(e.touches.length===2){
+      const dx=e.touches[0].clientX-e.touches[1].clientX;
+      const dy=e.touches[0].clientY-e.touches[1].clientY;
+      pinchRef.current=Math.sqrt(dx*dx+dy*dy);
+    }
+  },[]);
+  const onTouchMoveZoom=useCallback(e=>{
+    if(e.touches.length===2&&pinchRef.current){
+      e.preventDefault();
+      const dx=e.touches[0].clientX-e.touches[1].clientX;
+      const dy=e.touches[0].clientY-e.touches[1].clientY;
+      const dist=Math.sqrt(dx*dx+dy*dy);
+      const ratio=dist/pinchRef.current;
+      setImgZoom(z=>Math.max(1,Math.min(5,z*ratio)));
+      pinchRef.current=dist;
+    }
+  },[]);
+  const onTouchEndZoom=useCallback(()=>{pinchRef.current=null;},[]);
 
   const onHandleDrag=useCallback((e,id,pi)=>{
     e.preventDefault();e.stopPropagation();setSelId(id);
@@ -8553,9 +8658,9 @@ Si es plano P&ID/calderería/tuberías:
 Para cualquier objeto, pieza, equipo industrial:
 {"type":"object","name":"nombre","category":"categoría","shape":"cylinder","desc":"descripción breve","parts":[{"id":"1","name":"Cuerpo principal","x1":0.05,"y1":0.05,"x2":0.95,"y2":0.95,"color":"#00b4ff","hint":"Longitud total, diámetro exterior"},{"id":"2","name":"Extremo izquierdo","x1":0.02,"y1":0.2,"x2":0.2,"y2":0.8,"color":"#00e676","hint":"Diámetro, espesor de pared"},{"id":"3","name":"Extremo derecho","x1":0.8,"y1":0.2,"x2":0.98,"y2":0.8,"color":"#ff9500","hint":"Diámetro, bisel"}],"measurements":[{"name":"Longitud total","axis":"width","x":0.5,"y":0.3},{"name":"Diámetro exterior","axis":"height","x":0.85,"y":0.5},{"name":"Espesor de pared","axis":"depth","x":0.5,"y":0.7}]}
 
-shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1,y1,x2,y2 entre 0-1. SOLO JSON.`;
+shape: box|cylinder|sphere|cone|torus|tube|pipe|L_shape|T_shape|table|chair|door|default. Genera 3-6 partes REALISTAS con coordenadas basadas en lo visible. Si ves un obturador hidráulico nómbralo exactamente así. SOLO JSON, sin texto.`;
     try{
-      const res=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${GK()}`},body:JSON.stringify({model:MDL,max_tokens:800,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:pr}]}]})});
+      const res=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${GK()}`},body:JSON.stringify({model:MDL,max_tokens:1200,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:pr}]}]})});
       const data=await res.json();if(data.error)throw new Error(data.error.message);
       const txt=data.choices?.[0]?.message?.content||"{}";
       const info=JSON.parse(txt.replace(/```json|```/g,"").trim());
@@ -8609,10 +8714,11 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
     setChatLoad(true);
     const b64=img?.split(",")[1];
     const ctx=anns.filter(a=>a.value!=null).map(a=>`${a.title}: ${a.value}${a.unit}`).join(", ");
-    const sys=`${IND_KB}\n\nEres un experto en ingeniería industrial y mantenimiento. Responde siempre en español de forma concisa y técnica. Objeto actual: "${objInfo?.name||"desconocido"}". Medidas anotadas: ${ctx||"ninguna"}.`;
-    const msgs=[{role:"system",content:sys},...chatMsgs.slice(-6),{role:"user",content:b64?[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:userMsg}]:userMsg}];
+    const partsCtx=segs?.length?segs.map(s=>`${s.name}(${s.hint||""})`).join(", "):"ninguna";
+    const sys=`${IND_KB}\n\nEres un experto en ingeniería industrial, mantenimiento y metrología. Responde en español de forma técnica y concisa. Eres el asistente IA del taller de mantenimiento.\n\nPROYECTO ACTUAL: "${pName}"\nOBJETO: ${objInfo?.name||"desconocido"} (${objInfo?.category||""}) ${objInfo?.desc??""}\nPARTES DETECTADAS: ${partsCtx}\nMEDIDAS REGISTRADAS: ${ctx||"ninguna aún"}\nFecha: ${new Date().toLocaleDateString("es-ES")}\n\nSi preguntan qué puedes hacer: explica que puedes identificar piezas, estimar medidas, buscar repuestos, explicar procesos de mantenimiento, calcular tolerancias, identificar normas (DIN, ISO, EN), y ayudar a interpretar los datos anotados.`;
+    const msgs=[{role:"system",content:sys},...chatMsgs.slice(-12),{role:"user",content:b64?[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:userMsg}]:userMsg}];
     try{
-      const res=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${GK()}`},body:JSON.stringify({model:MDL,max_tokens:400,messages:msgs})});
+      const res=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${GK()}`},body:JSON.stringify({model:MDL,max_tokens:600,messages:msgs})});
       const data=await res.json();
       const reply=data.choices?.[0]?.message?.content||"Sin respuesta.";
       setChatMsgs(m=>[...m,{role:"assistant",content:reply}]);
@@ -8664,11 +8770,46 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
       pdf.addImage(cv2.toDataURL("image/jpeg",.95),"JPEG",10,24,imgW,imgH);
       /* Measurements list */
       const measList=anns.filter(a=>a.value!=null);
+      let curY=24+imgH+8;
+      /* Measurements table */
       if(measList.length){
-        let y=24+imgH+10;pdf.setFontSize(9);pdf.setTextColor(60,60,60);
-        pdf.text("MEDIDAS:",10,y);y+=6;
-        measList.forEach(a=>{pdf.setFontSize(8);pdf.text(`• ${a.title||a.type}: ${a.value} ${a.unit}`,14,y);y+=5;});
+        pdf.setFontSize(8);pdf.setTextColor(80,80,80);
+        pdf.text("MEDIDAS REGISTRADAS",10,curY);curY+=4;
+        pdf.setDrawColor(200,200,200);pdf.setLineWidth(0.3);pdf.line(10,curY,PW-10,curY);curY+=5;
+        const colW=[PW*0.35,PW*0.2,PW*0.2,PW*0.18];
+        ["Descripción","Valor","Unidad","Eje"].forEach((h,i)=>{pdf.setFontSize(7);pdf.setTextColor(120,120,120);pdf.text(h,10+colW.slice(0,i).reduce((a,b)=>a+b,0),curY);});
+        curY+=5;pdf.line(10,curY-3,PW-10,curY-3);
+        measList.slice(0,20).forEach((a,idx)=>{
+          if(curY>PH-20){pdf.addPage();curY=15;}
+          const bg=idx%2===0?[250,252,255]:[255,255,255];
+          pdf.setFillColor(...bg);pdf.rect(10,curY-4,PW-20,6,'F');
+          pdf.setFontSize(7);pdf.setTextColor(40,40,40);
+          pdf.text((a.title||a.type||"").slice(0,28),10,curY);
+          pdf.text(String(a.value||"-"),10+colW[0],curY);
+          pdf.text(a.unit||"-",10+colW[0]+colW[1],curY);
+          pdf.text(a.axis||"-",10+colW[0]+colW[1]+colW[2],curY);
+          curY+=6;
+        });
+        curY+=4;
       }
+      /* Parts table */
+      if(segs?.length&&curY<PH-30){
+        pdf.setFontSize(8);pdf.setTextColor(80,80,80);
+        pdf.text("PARTES IDENTIFICADAS POR IA",10,curY);curY+=5;
+        segs.slice(0,8).forEach((s,i)=>{
+          if(curY>PH-15)return;
+          const col=parseInt((s.color||"#ff9500").replace("#",""),16);
+          const r=(col>>16)&255,g=(col>>8)&255,b=col&255;
+          pdf.setFillColor(r,g,b);pdf.rect(10,curY-3,3,3,'F');
+          pdf.setFontSize(7);pdf.setTextColor(60,60,60);
+          pdf.text(`${s.id}. ${s.name||""}${s.hint?" — "+s.hint:""}`,15,curY);curY+=5;
+        });
+        curY+=3;
+      }
+      /* Footer */
+      pdf.setFontSize(6);pdf.setTextColor(180,180,180);
+      pdf.text("Generado con MediScan 3D Pro — franyamelie.github.io/timerpro/mediscan.html",10,PH-6);
+      pdf.text(new Date().toLocaleString("es-ES"),PW-10,PH-6,"right");
       pdf.save(`${pName}.pdf`);
     }catch(e){alert("Error PDF: "+e.message);}
   };
@@ -9471,6 +9612,24 @@ shape: box|cylinder|sphere|cone|tube|table|chair|door|default. 3-6 partes con x1
             setTimeout(()=>{const ma=document.createElement("a");ma.href=`mailto:?subject=${encodeURIComponent("MediScan: "+editZone.seg.name)}&body=${encodeURIComponent(body)}`;ma.target="_blank";document.body.appendChild(ma);ma.click();document.body.removeChild(ma);},800);
           }catch(e){alert("Error: "+e.message);}
         }} style={{flex:1,padding:"9px 4px",background:"rgba(100,150,255,.08)",border:"1px solid rgba(100,150,255,.2)",color:"#88aaff",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>📧 Email</button>
+      </div>
+      <div style={{display:"flex",gap:"5px",marginTop:"2px"}}>
+        <button onClick={async()=>{
+          /* Export 3D canvas screenshot */
+          const canvas3d=document.querySelector("#fc-3d-area canvas");
+          if(!canvas3d){alert("Activa la vista 3D primero");return;}
+          try{const url=canvas3d.toDataURL("image/png");
+            const a=document.createElement("a");a.href=url;a.download=`${editZone.seg.name}_3D.png`;document.body.appendChild(a);a.click();document.body.removeChild(a);
+          }catch(e){alert("Error 3D PNG: "+e.message);}
+        }} style={{flex:1,padding:"7px 4px",background:"rgba(100,50,255,.12)",border:"1px solid rgba(100,50,255,.3)",color:"#aa66ff",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>🎮 PNG 3D</button>
+        <button onClick={async()=>{
+          /* Export 2D drawing */
+          const canvas2d=document.querySelector("#fc-2d-area canvas");
+          if(!canvas2d){alert("Activa la vista 2D primero");return;}
+          try{const url=canvas2d.toDataURL("image/png");
+            const a=document.createElement("a");a.href=url;a.download=`${editZone.seg.name}_2D.png`;document.body.appendChild(a);a.click();document.body.removeChild(a);
+          }catch(e){alert("Error 2D PNG: "+e.message);}
+        }} style={{flex:1,padding:"7px 4px",background:"rgba(0,150,100,.12)",border:"1px solid rgba(0,150,100,.3)",color:"#00cc88",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>📐 PNG 2D</button>
       </div>
       <button onClick={()=>{setEditZone(null);setFcAnns([]);setFcHist([]);}} style={{width:"100%",padding:"8px",background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.08)",color:"#444",borderRadius:"8px",fontSize:"9px"}}>Cancelar — volver sin guardar</button>
     </div>
