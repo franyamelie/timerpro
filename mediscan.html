@@ -9321,7 +9321,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     boxShadow:"0 4px 16px rgba(0,100,255,.45)",display:"flex",alignItems:"center",justifyContent:"center"}}>⬆</button>}
 
 {/* ══ MEASURE MODAL ══ */}
-{measM&&<div data-modal="measure" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"#111",border:"2px solid #ff9500",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(24px)",boxShadow:"0 -6px 40px rgba(0,0,0,.7)"}}>
+{measM&&<div data-modal="measure" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"#111",border:"2px solid #ff9500",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:editZone?900:500,animation:"slideUp .22s ease",backdropFilter:"blur(24px)",boxShadow:"0 -6px 40px rgba(0,0,0,.7)"}}>
   <button onClick={()=>setMeasM(null)} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center",zIndex:20}}>✕</button>
   <div style={{marginBottom:"16px",paddingRight:"36px"}}>
     <div style={{fontSize:"13px",fontWeight:800,color:"#ff9500",letterSpacing:"-.2px"}}>AÑADIR MEDIDA</div>
@@ -9475,19 +9475,19 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           {TOOLS.find(t=>t.id===tool)?.icon} {TOOLS.find(t=>t.id===tool)?.label}
         </div>
         <span style={{fontSize:"8px",color:"#555"}}>
-          {DRAG.includes(tool)?"Mantén y arrastra":pend.length===1?"Toca el 2° punto":"Toca la imagen"}
+          {DRAG.includes(tool)?"Arrastra para dibujar → se pedirá la medida":pend.length===1?"Toca el 2° punto → se pedirá la medida":"Toca la imagen para colocar → se pedirá la medida"}
         </span>
       </>:<span style={{fontSize:"8px",color:"#333"}}>← Selecciona herramienta arriba</span>}
       {pend.length>0&&<button onClick={()=>{setPend([]);setPrev(null);}} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",fontSize:"8px",padding:"3px 8px",borderRadius:"5px",marginLeft:"auto"}}>✕</button>}
     </div>
 
     {/* CROPPED IMAGE with full drawing support */}
-    <div style={{overflow:"auto",background:"#111",WebkitOverflowScrolling:"touch",position:"relative"}}
+    <div style={{overflow:"auto",background:"#111",WebkitOverflowScrolling:"touch",position:"relative",display:"flex",justifyContent:"center",alignItems:"flex-start"}}
       onWheel={e=>{e.preventDefault();const delta=e.deltaY>0?-.15:.15;setFcZoom(z=>Math.max(0.2,Math.min(5,z+delta)));}}
       onTouchStart={e=>{if(e.touches.length===2){e.preventDefault();const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;fcPinchRef.current=Math.sqrt(dx*dx+dy*dy);}}}
       onTouchMove={e=>{if(e.touches.length===2&&fcPinchRef.current){e.preventDefault();const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;const dist=Math.sqrt(dx*dx+dy*dy);const ratio=dist/fcPinchRef.current;setFcZoom(z=>Math.max(0.2,Math.min(5,z*ratio)));fcPinchRef.current=dist;}}}
       onTouchEnd={()=>{fcPinchRef.current=null;}}>
-    <div style={{position:"relative",background:"#000",flexShrink:0,width:`${fcZoom*100}%`,minWidth:`${fcZoom*100}%`,transition:"width .1s"}}
+    <div style={{position:"relative",background:"#000",flexShrink:0,width:`${fcZoom*100}%`,minWidth:fcZoom>1?`${fcZoom*100}%`:"auto",maxWidth:`${fcZoom*100}%`,transition:"width .1s"}}
       id="fc-img-container"
       onClick={e=>{
         if(tool==="sel"||DRAG.includes(tool))return;
@@ -9576,8 +9576,11 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     </div>{/* /scrollable viewport */}
 
     {/* MEASUREMENTS LIST for this zone */}
-    {fcAnns.filter(a=>a.value!=null).length>0&&<div style={{borderTop:"1px solid #1a1a1a",background:"#0d0d0d",padding:"6px 10px"}}>
-      <div style={{fontSize:"8px",color:"#ff9500",fontWeight:700,marginBottom:"5px",letterSpacing:".06em"}}>MEDIDAS EN ESTA ZONA</div>
+    {fcAnns.filter(a=>a.value!=null).length>0&&<div style={{borderTop:"1px solid #ff9500",background:"#0a0a0a",padding:"8px 10px"}}>
+      <div style={{fontSize:"8px",color:"#ff9500",fontWeight:700,marginBottom:"6px",letterSpacing:".06em",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span>📐 MEDIDAS ({fcAnns.filter(a=>a.value!=null).length}) — se vincularán a 2D y 3D al guardar</span>
+        <button onClick={()=>{const txt=fcAnns.filter(a=>a.value!=null).map(a=>`${a.title||a.type}: ${a.value} ${a.unit}`).join(", ");if(navigator.clipboard)navigator.clipboard.writeText(txt);}} style={{background:"rgba(255,220,0,.1)",border:"1px solid rgba(255,220,0,.25)",color:"#ffdd00",borderRadius:"5px",padding:"2px 7px",fontSize:"7px",fontWeight:700}}>📋</button>
+      </div>
       {fcAnns.filter(a=>a.value!=null).map(a=><div key={a.id} style={{display:"flex",gap:"6px",alignItems:"center",padding:"4px 0",borderBottom:"1px solid #1a1a1a"}}>
         <div style={{width:"8px",height:"8px",borderRadius:"50%",background:a.color,flexShrink:0}}/>
         <span style={{fontSize:"9px",color:"#bbb",flex:1}}>{a.title||a.type}</span>
@@ -9600,7 +9603,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         setSheet("2d");
         setAiMsg(`Zona "${seg.name}" guardada con ${newAnns.length} medidas. Visible en 2D y 3D.`);
       }} style={{width:"100%",padding:"12px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"9px",fontSize:"12px",fontWeight:800}}>
-        ✓ GUARDAR → 2D y 3D automáticamente
+        ✓ GUARDAR {fcAnns.filter(a=>a.value!=null).length} medidas → 2D y 3D
       </button>
       {/* Export options from this zone */}
       <div style={{display:"flex",gap:"5px"}}>
@@ -9669,7 +9672,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
 
 
 
-{calibM&&<div data-modal="calib" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"rgba(6,8,16,.98)",border:"1px solid rgba(255,150,0,.4)",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(24px)"}}>
+{calibM&&<div data-modal="calib" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"rgba(6,8,16,.98)",border:"1px solid rgba(255,150,0,.4)",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:editZone?900:500,animation:"slideUp .22s ease",backdropFilter:"blur(24px)"}}>
   <button onClick={()=>setCalibM(null)} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
   <div style={{fontSize:"13px",fontWeight:800,color:"#ff9500",marginBottom:"5px"}}>⚖ CALIBRAR ESCALA REAL</div>
   <div style={{fontSize:"9px",color:"#2a3a5a",marginBottom:"14px"}}>¿Cuánto mide la línea que has trazado?</div>
