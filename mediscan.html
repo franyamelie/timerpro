@@ -8192,9 +8192,30 @@ function Part3DWithCrop({anns,shape,color,seg}){
   return<Part3D anns={anns} shape={shape} color={color} segW={sw*400} segH={sh*400} texImg={texImg}/>;
 }
 
-function MultiPart3D({anns,segs,objShape}){
-  const parts=useMemo(()=>{
-    /* Build parts from segs + anns */
+function MultiPart3D({anns,segs,objShape,img}){
+  const[crops,setCrops]=React.useState({});
+  React.useEffect(()=>{
+    if(!img||!segs?.length)return;
+    const el=new Image();el.crossOrigin="anonymous";
+    el.onload=()=>{
+      const nc={};
+      segs.forEach(seg=>{
+        try{
+          const x1=Math.min(seg.x1,seg.x2),y1=Math.min(seg.y1,seg.y2);
+          const x2=Math.max(seg.x1,seg.x2),y2=Math.max(seg.y1,seg.y2);
+          const w=Math.round(el.width*(x2-x1)),h=Math.round(el.height*(y2-y1));
+          if(w<4||h<4)return;
+          const c=document.createElement("canvas");c.width=w;c.height=h;
+          c.getContext("2d").drawImage(el,el.width*x1,el.height*y1,w,h,0,0,w,h);
+          nc[seg.id]={url:c.toDataURL("image/jpeg",.92),w,h};
+        }catch(e){}
+      });
+      setCrops(nc);
+    };
+    el.src=img;
+  },[img,segs]);
+
+  const parts=React.useMemo(()=>{
     if(segs&&segs.length>0){
       return segs.map(seg=>{
         const related=anns.filter(a=>a.value!=null&&(
@@ -8204,7 +8225,6 @@ function MultiPart3D({anns,segs,objShape}){
         return{...seg,anns:related};
       });
     }
-    /* Fallback: group anns by axis */
     const withVal=anns.filter(a=>a.value!=null);
     if(!withVal.length)return[];
     return[{id:"1",name:"Objeto completo",color:"#ff9500",anns:withVal}];
@@ -8217,16 +8237,18 @@ function MultiPart3D({anns,segs,objShape}){
   </div>;
 
   return<div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-    {parts.slice(0,6).map(part=>(
-      <div key={part.id} style={{borderRadius:"10px",overflow:"hidden",border:`1px solid ${part.color||"#ff9500"}40`}}>
+    {parts.slice(0,8).map(part=>{
+      const crop=crops[part.id];
+      return<div key={part.id} style={{borderRadius:"10px",overflow:"hidden",border:`1px solid ${part.color||"#ff9500"}40`}}>
         <div style={{padding:"6px 10px",background:`${part.color||"#ff9500"}22`,display:"flex",alignItems:"center",gap:"7px",borderBottom:`1px solid ${part.color||"#ff9500"}30`}}>
           <div style={{width:"10px",height:"10px",borderRadius:"2px",background:part.color||"#ff9500"}}/>
           <span style={{fontSize:"9px",fontWeight:700,color:part.color||"#ff9500"}}>{part.id}. {part.name}</span>
-          {part.anns.length>0&&<span style={{fontSize:"8px",color:"#334455",marginLeft:"auto"}}>{part.anns.map(a=>`${a.title||a.type}: ${a.value}${a.unit}`).join(" · ")}</span>}
+          {part.anns.length>0&&<span style={{fontSize:"8px",color:"#556677",marginLeft:"auto"}}>{part.anns.map(a=>`${a.title||a.type}: ${a.value}${a.unit}`).join(" · ")}</span>}
         </div>
-        <Part3D anns={part.anns} shape={objShape} color={part.color}/>
-      </div>
-    ))}
+        <Part3D anns={part.anns} shape={objShape} color={part.color}
+          segW={crop?.w} segH={crop?.h} texImg={crop?.url}/>
+      </div>;
+    })}
   </div>;
 }
 
@@ -8253,18 +8275,41 @@ function Part3D({anns,shape,color,segW,segH,texImg}){
     const piv=new THREE.Group();scene.add(piv);
     const colNum=parseInt((color||"#00ccff").replace("#",""),16)||0x00ccff;
     const isCyl=["cylinder","tube","pipe"].includes(shape);
-    const geo=isCyl?new THREE.CylinderGeometry(Math.min(sw,sd)/2,Math.min(sw,sd)/2,sh,32):
-      sd<0.25?new THREE.PlaneGeometry(sw,sh,12,12):new THREE.BoxGeometry(sw,sh,Math.max(sd,0.05),8,8,4);
-    const wireMat=new THREE.LineBasicMaterial({color:colNum,transparent:true,opacity:0.85});
-    const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geo),wireMat);
+    /* When we have a texture, use image proportions for geometry */
+    if(texImg&&segW&&segH){
+      const ratio=segW/segH;
+      sw=2.4*Math.min(ratio,3); sh=2.4/Math.max(ratio,0.33); sd=Math.min(sw,sh)*0.22;
+      const mx2=Math.max(sw,sh,0.1),sc2=2.5/mx2;sw*=sc2;sh*=sc2;sd*=sc2;
+    }
+    const depth=Math.max(sd,0.08);
+    /* Front face: PlaneGeometry with image texture */
+    const faceGeo=new THREE.PlaneGeometry(sw,sh,1,1);
+    /* Side box for depth */
+    const boxGeo=new THREE.BoxGeometry(sw,sh,depth,4,4,2);
+    const wireMat=new THREE.LineBasicMaterial({color:colNum,transparent:true,opacity:0.7});
+    const edges=new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo),wireMat);
     if(texImg){
       const loader=new THREE.TextureLoader();
       loader.load(texImg,(tex)=>{
         tex.encoding=THREE.sRGBEncoding;
-        const mat=new THREE.MeshStandardMaterial({map:tex,transparent:false,metalness:0.1,roughness:0.7,side:THREE.DoubleSide});
-        piv.add(new THREE.Mesh(geo,mat));piv.add(edges);
+        /* Front: image */
+        const faceMat=new THREE.MeshStandardMaterial({map:tex,metalness:0.05,roughness:0.6,side:THREE.FrontSide});
+        const face=new THREE.Mesh(faceGeo,faceMat);face.position.z=depth/2+0.001;
+        /* Back: dark */
+        const backMat=new THREE.MeshStandardMaterial({color:colNum,transparent:true,opacity:0.15});
+        const back=new THREE.Mesh(faceGeo,backMat);back.position.z=-depth/2;back.rotation.y=Math.PI;
+        /* Sides: subtle colored box */
+        const sideMat=new THREE.MeshStandardMaterial({color:colNum,transparent:true,opacity:0.25,metalness:0.3});
+        const box=new THREE.Mesh(boxGeo,sideMat);
+        piv.add(face);piv.add(back);piv.add(box);piv.add(edges);
       });
+    }else if(isCyl){
+      const geo=new THREE.CylinderGeometry(Math.min(sw,sd)/2,Math.min(sw,sd)/2,sh,32);
+      const mat=new THREE.MeshStandardMaterial({color:colNum,transparent:true,opacity:0.15});
+      piv.add(new THREE.Mesh(geo,mat));
+      piv.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),wireMat));
     }else{
+      const geo=new THREE.BoxGeometry(sw,sh,depth,6,6,3);
       const mat=new THREE.MeshStandardMaterial({color:colNum,transparent:true,opacity:0.12});
       piv.add(new THREE.Mesh(geo,mat));piv.add(edges);
     }
@@ -8927,6 +8972,93 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     setSync("✓ "+item.name+" importado");setTimeout(()=>setSync(""),3000);
   };
 
+
+  /* ══ FcShape: renderiza cada herramienta con su forma real en el panel flotante ══ */
+  const FcShape=({a,ip=false})=>{
+    if(!a?.points||a.points.length<2)return null;
+    const[p1,p2]=a.points,col=a.color||"#ff9500";
+    const sw=ip?1.5:2.5;
+    const aid=`fc${a.id||"p"}`;
+    const badge=ip?"":a.title?(a.value!=null?`${a.title}: ${a.value}${a.unit}`:a.title):(a.value!=null?`${a.value}${a.unit}`:"");
+    const mx=(p1.x+p2.x)*50, my=(p1.y+p2.y)*50;
+    const bw=badge?badge.length*1.3+2:0;
+    const openM=e=>{if(ip)return;e.stopPropagation();setMeasM({...a,_existing:true,_fc:true});setMIn({t:a.title||"",v:a.value!=null?String(a.value):"",u:a.unit||"cm",ax:a.axis||""});};
+    const BadgeEl=({bx,by})=>badge?<>
+      <rect x={`${bx-bw/2}%`} y={`${by-3}%`} width={`${bw}%`} height="6%" rx="3%" fill="rgba(0,0,0,0.88)" style={{filter:"drop-shadow(0 1px 6px rgba(0,0,0,.7))"}}/>
+      <text x={`${bx}%`} y={`${by}%`} fill="#fff" fontSize="2.8%" fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="middle" stroke="rgba(0,0,0,.5)" strokeWidth="0.2%" paintOrder="stroke fill">{badge}</text>
+    </>:null;
+
+    /* ── RECTÁNGULO ── */
+    if(a.type==="rect"){
+      const rx=Math.min(p1.x,p2.x)*100,ry=Math.min(p1.y,p2.y)*100;
+      const rw=Math.abs(p2.x-p1.x)*100,rh=Math.abs(p2.y-p1.y)*100;
+      return<g onClick={openM} style={{cursor:ip?"crosshair":"pointer"}}>
+        <rect x={`${rx}%`} y={`${ry}%`} width={`${rw}%`} height={`${rh}%`} stroke={col} strokeWidth={sw} fill={ip?`${col}14`:"rgba(255,150,0,.07)"}/>
+        {!ip&&<BadgeEl bx={mx} by={my}/>}
+      </g>;
+    }
+    /* ── CÍRCULO / ELIPSE ── */
+    if(a.type==="circ"){
+      const r=Math.sqrt(Math.pow((p2.x-p1.x)*100,2)+Math.pow((p2.y-p1.y)*100,2));
+      return<g onClick={openM} style={{cursor:ip?"crosshair":"pointer"}}>
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r={`${r}%`} stroke={col} strokeWidth={sw} fill={ip?`${col}14`:"rgba(255,150,0,.07)"}/>
+        {!ip&&<BadgeEl bx={p1.x*100} by={p1.y*100}/>}
+      </g>;
+    }
+    /* ── COTA (dim): línea con topes perpendiculares ── */
+    if(a.type==="dim"){
+      const dx=p2.x*100-p1.x*100, dy=p2.y*100-p1.y*100;
+      const len=Math.sqrt(dx*dx+dy*dy)||1;
+      const nx=(-dy/len)*3, ny=(dx/len)*3; // perpendicular
+      return<g onClick={openM} style={{cursor:ip?"crosshair":"pointer"}}>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw}/>
+        <line x1={`${p1.x*100-nx}%`} y1={`${p1.y*100-ny}%`} x2={`${p1.x*100+nx}%`} y2={`${p1.y*100+ny}%`} stroke={col} strokeWidth={sw+1}/>
+        <line x1={`${p2.x*100-nx}%`} y1={`${p2.y*100-ny}%`} x2={`${p2.x*100+nx}%`} y2={`${p2.y*100+ny}%`} stroke={col} strokeWidth={sw+1}/>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke="transparent" strokeWidth="14"/>
+        {!ip&&<BadgeEl bx={mx} by={my-5}/>}
+      </g>;
+    }
+    /* ── DISTANCIA (dist): flecha doble ← → ── */
+    if(a.type==="dist"){
+      return<g onClick={openM} style={{cursor:ip?"crosshair":"pointer"}}>
+        <defs>
+          <marker id={`${aid}e`} markerWidth="10" markerHeight="10" refX="7" refY="3.5" orient="auto"><path d="M0,0 L0,7 L10,3.5z" fill={col}/></marker>
+          <marker id={`${aid}s`} markerWidth="10" markerHeight="10" refX="3" refY="3.5" orient="auto-start-reverse"><path d="M0,0 L0,7 L10,3.5z" fill={col}/></marker>
+        </defs>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw} markerEnd={`url(#${aid}e)`} markerStart={`url(#${aid}s)`}/>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke="transparent" strokeWidth="14"/>
+        {!ip&&<BadgeEl bx={mx} by={my-5}/>}
+      </g>;
+    }
+    /* ── FLECHA SIMPLE (arr1) → ── */
+    if(a.type==="arr1"){
+      return<g onClick={openM} style={{cursor:ip?"crosshair":"pointer"}}>
+        <defs><marker id={`${aid}e`} markerWidth="10" markerHeight="10" refX="7" refY="3.5" orient="auto"><path d="M0,0 L0,7 L10,3.5z" fill={col}/></marker></defs>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw} markerEnd={`url(#${aid}e)`}/>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke="transparent" strokeWidth="14"/>
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1%" fill={col} opacity=".7"/>
+        {!ip&&<BadgeEl bx={mx} by={my-5}/>}
+      </g>;
+    }
+    /* ── FLECHA GRUESA (arr2) ⇒ ── */
+    if(a.type==="arr2"){
+      return<g onClick={openM} style={{cursor:ip?"crosshair":"pointer"}}>
+        <defs><marker id={`${aid}e`} markerWidth="10" markerHeight="10" refX="7" refY="3.5" orient="auto"><path d="M0,0 L0,7 L10,3.5z" fill={col}/></marker></defs>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw+3} markerEnd={`url(#${aid}e)`}/>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke="transparent" strokeWidth="16"/>
+        {!ip&&<BadgeEl bx={mx} by={my-6}/>}
+      </g>;
+    }
+    /* ── LÍNEA SIMPLE ── */
+    return<g onClick={openM} style={{cursor:ip?"crosshair":"pointer"}}>
+      <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw}/>
+      <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke="transparent" strokeWidth="14"/>
+      <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1%" fill={col} opacity=".7"/>
+      <circle cx={`${p2.x*100}%`} cy={`${p2.y*100}%`} r="1%" fill={col} opacity=".7"/>
+      {!ip&&<BadgeEl bx={mx} by={my-5}/>}
+    </g>;
+  };
+
   return(
 <div style={{maxWidth:"480px",margin:"0 auto",background:"#0c0c0c",height:"100vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
 
@@ -9250,7 +9382,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     <div ref={capRef} style={{padding:"8px"}}>
       {pip
         ?<><V3DPipe components={pip.components} dn={pip.dn}/><div style={{padding:"5px",fontSize:"8px",color:"#334455"}}>{pip.label}</div></>
-        :<MultiPart3D anns={anns} segs={segs} objShape={objInfo?.shape}/>
+        :<MultiPart3D anns={anns} segs={segs} objShape={objInfo?.shape} img={img||origImg}/>
       }
     </div>
     <ShareBar onPNG={xPNG} onPDF={xPDF} onWA={xWA} onEmail={xEmail} onLink={genLink} onDXF={xDXF} onCopy={xCopy}/>
@@ -9429,7 +9561,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       </div>
       {/* Tool buttons */}
       <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
-        {(tbyCat[tCat]||[]).map(t=><button key={t.id}
+        {(tbyCat[tCat]||[]).filter(t=>t.id!=="crop"&&t.id!=="calib").map(t=><button key={t.id}
           title={t.label}
           onClick={()=>{setTool(t.id);setPend([]);setPrev(null);setDragSt(null);}}
           style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"2px",
@@ -9482,12 +9614,12 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     </div>
 
     {/* CROPPED IMAGE with full drawing support */}
-    <div style={{overflow:"auto",background:"#111",WebkitOverflowScrolling:"touch",position:"relative",display:"flex",justifyContent:"center",alignItems:"flex-start"}}
+    <div style={{overflow:"auto",background:"#111",WebkitOverflowScrolling:"touch",position:"relative"}}
       onWheel={e=>{e.preventDefault();const delta=e.deltaY>0?-.15:.15;setFcZoom(z=>Math.max(0.2,Math.min(5,z+delta)));}}
       onTouchStart={e=>{if(e.touches.length===2){e.preventDefault();const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;fcPinchRef.current=Math.sqrt(dx*dx+dy*dy);}}}
       onTouchMove={e=>{if(e.touches.length===2&&fcPinchRef.current){e.preventDefault();const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;const dist=Math.sqrt(dx*dx+dy*dy);const ratio=dist/fcPinchRef.current;setFcZoom(z=>Math.max(0.2,Math.min(5,z*ratio)));fcPinchRef.current=dist;}}}
       onTouchEnd={()=>{fcPinchRef.current=null;}}>
-    <div style={{position:"relative",background:"#000",flexShrink:0,width:`${fcZoom*100}%`,minWidth:fcZoom>1?`${fcZoom*100}%`:"auto",maxWidth:`${fcZoom*100}%`,transition:"width .1s"}}
+    <div style={{position:"relative",background:"#000",width:`${fcZoom*100}%`,margin:fcZoom<1?"0 auto":"0",minWidth:fcZoom>1?`${fcZoom*100}%`:"auto",transition:"width .15s"}}
       id="fc-img-container"
       onClick={e=>{
         if(tool==="sel"||DRAG.includes(tool))return;
@@ -9537,21 +9669,10 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       <img src={editZone.croppedImg} style={{width:"100%",display:"block",cursor:tool==="sel"?"default":"crosshair",userSelect:"none",WebkitUserSelect:"none",touchAction:"none"}} draggable="false"/>
       {/* SVG overlay for annotations */}
       <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",overflow:"visible",pointerEvents:"none"}}>
-        {fcAnns.filter(a=>!MRK.includes(a.type)).map(a=>{
-          if(!a.points||a.points.length<2)return null;
-          const[p1,p2]=a.points,col=a.color||"#ff9500";
-          const badge=a.title?(a.value?`${a.title}: ${a.value}${a.unit}`:a.title):(a.value?`${a.value}${a.unit}`:"");
-          return<g key={a.id}>
-            <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth="2"/>
-            <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="4" fill={col} opacity=".9"/>
-            <circle cx={`${p2.x*100}%`} cy={`${p2.y*100}%`} r="4" fill={col} opacity=".9"/>
-            {badge&&<>
-              <rect x={`${(p1.x+p2.x)*50-5}%`} y={`${(p1.y+p2.y)*50-5.5}%`} width={`${badge.length*.8+2}%`} height="5%" rx="2.5%" fill="rgba(255,255,255,.96)" style={{filter:"drop-shadow(0 1px 4px rgba(0,0,0,.5))"}}/>
-              <text x={`${(p1.x+p2.x)*50+(badge.length*.4)}%`} y={`${(p1.y+p2.y)*50-2.5}%`} fill="#111" fontSize="2.8%" fontFamily="Inter,sans-serif" fontWeight="800" textAnchor="middle" dominantBaseline="middle">{badge}</text>
-            </>}
-          </g>;})}
-        {/* Preview line */}
-        {prev&&prev.points?.length>=2&&<line x1={`${prev.points[0].x*100}%`} y1={`${prev.points[0].y*100}%`} x2={`${prev.points[1].x*100}%`} y2={`${prev.points[1].y*100}%`} stroke="rgba(255,150,0,.7)" strokeWidth="1.5" strokeDasharray="5,3"/>}
+        {/* Formas con su tipo correcto: rect, circ, dim, dist, arr1, arr2, line */}
+        {fcAnns.filter(a=>!MRK.includes(a.type)).map(a=><FcShape key={a.id} a={a}/>)}
+        {/* Preview con forma correcta según herramienta activa */}
+        {prev&&prev.points?.length>=2&&<FcShape a={{...prev,id:"fcpv",color:"rgba(255,150,0,.75)"}} ip/>}
         {pend.length===1&&<circle cx={`${pend[0].x*100}%`} cy={`${pend[0].y*100}%`} r="5" fill={COLS[colI%COLS.length]} opacity=".9"/>}
       </svg>
       {/* Marker dots */}
