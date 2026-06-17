@@ -808,6 +808,8 @@ function App(){
       /* marker is on image - user taps it to open modal */
       return;
     }
+    /* Lasso: always add point, never auto-complete */
+    if(tool==="lasso"){setPend(prev=>[...prev,p]);setPrev(null);return;}
     const pts=[...pend,p];
     if(pts.length>=td.npts){setPend([]);setPrev(null);mkAnn(tool,pts);}
     else{setPend(pts);setPrev({type:tool,points:[pts[0],p]});}
@@ -1802,8 +1804,9 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   <div style={{display:"flex",gap:"4px",marginBottom:"7px",flexWrap:"wrap"}}>
     <button onClick={()=>setRot(r=>(r+90)%360)} style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.2)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:500}}>↻+90°</button>
     <button onClick={()=>setRot(r=>(r-90+360)%360)} style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.2)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:500}}>↺-90°</button>
-    <button onClick={segAI} disabled={segLoad||!GK()} style={{flex:2,padding:"7px 8px",background:segLoad?"rgba(255,150,0,.05)":"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.3)",color:segLoad?"#444":C,borderRadius:"8px",fontSize:"9px",fontWeight:700}}>{segLoad?"⏳ Detectando...":"🔍 Detectar partes"}</button>
-    <button onClick={()=>setTool("crop")} title="Recortar zona de la imagen → panel flotante para medir" style={{flex:2,padding:"7px 8px",background:tool==="crop"?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.3)",color:tool==="crop"?"#000":"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>✂ Recortar zona</button>
+    <button onClick={segAI} disabled={segLoad||!GK()} style={{flex:2,padding:"7px 8px",background:segLoad?"rgba(255,150,0,.05)":"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.3)",color:segLoad?"#444":C,borderRadius:"8px",fontSize:"9px",fontWeight:700}}>{segLoad?"⏳ Detectando...":"🔍 Detectar contornos"}</button>
+    <button onClick={()=>setTool("crop")} title="Recortar rectangular → zona flotante" style={{flex:2,padding:"7px 6px",background:tool==="crop"?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.3)",color:tool==="crop"?"#000":"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>✂ Recortar</button>
+    <button onClick={()=>{setTool("lasso");setPend([]);}} title="Lazo — dibuja el contorno punto a punto como Photoshop" style={{flex:2,padding:"7px 6px",background:tool==="lasso"?"linear-gradient(135deg,#aa00ff,#ff00aa)":"rgba(170,0,255,.1)",border:`1px solid ${tool==="lasso"?"#cc44ff":"rgba(170,0,255,.3)"}`,color:tool==="lasso"?"#fff":"#bb44ff",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>⬡ Lazo</button>
     {segs.length>0&&<button onClick={()=>setShowSegs(s=>!s)} style={{flex:1,padding:"7px 4px",background:showSegs?"rgba(0,150,255,.15)":"rgba(0,100,255,.05)",border:`1px solid rgba(0,150,255,${showSegs?.3:.12})`,color:showSegs?C:"#2a3a5a",borderRadius:"8px",fontSize:"9px"}}>👁{showSegs?"ON":"OFF"}</button>}
     {selId&&<button onClick={()=>delA(selId)} style={{flex:1,padding:"7px 4px",background:"rgba(255,50,50,.08)",border:"1px solid rgba(255,50,50,.2)",color:"#ff3366",borderRadius:"8px",fontSize:"9px"}}>🗑</button>}
     {origImg&&origImg!==img&&<button onClick={resetToOriginal} title="Volver a imagen original" style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.12)",border:"1px solid rgba(255,150,0,.3)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>🔄 Orig.</button>}
@@ -1811,6 +1814,16 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     {scale&&<span style={{fontSize:"8px",color:C,padding:"7px 7px",background:"rgba(0,150,255,.08)",borderRadius:"8px",border:"1px solid rgba(0,150,255,.18)"}}>⚖{scale.ppu.toFixed(0)}px</span>}
   </div>
 
+  {/* QUICK TOOL SHORTCUTS */}
+  <div style={{display:"flex",gap:"4px",padding:"5px 4px",background:"rgba(0,0,0,.3)",borderRadius:"10px",marginBottom:"5px",flexWrap:"wrap"}}>
+    <span style={{fontSize:"7px",color:"#446",alignSelf:"center",paddingLeft:"2px",whiteSpace:"nowrap"}}>Medición rápida:</span>
+    {[["incl","∢","Inclin.","#44aaff"],["ang","∠","Ángulo","#ffaa00"],["rad","⌀","Radio","#ff6644"],["dim","↹","Cota","#00dd77"],["wall","▦","Espesor","#ff44bb"],["area","▣","Área","#44ffaa"],["tol","±","Tol.","#ffdd44"],["coord","⊹","Coord.","#aa88ff"]].map(([id,ic,lb,clr])=>(
+      <button key={id} onClick={()=>setTool(id)} title={lb} style={{padding:"4px 7px",borderRadius:"7px",fontSize:"9px",fontWeight:700,border:`1px solid ${tool===id?clr:"rgba(255,255,255,.08)"}`,background:tool===id?`${clr}22`:"rgba(255,255,255,.03)",color:tool===id?clr:"#445",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:"1px",minWidth:"36px"}}>
+        <span style={{fontSize:"14px",lineHeight:1}}>{ic}</span>
+        <span style={{fontSize:"6px"}}>{lb}</span>
+      </button>
+    ))}
+  </div>
   {/* PANEL TABS */}
   {/* PANEL TABS - sticky */}
   <div style={{display:"flex",gap:"3px",background:"#111",border:"1px solid #2a2a2a",borderRadius:"11px",padding:"4px",marginBottom:"7px",flexWrap:"wrap",position:"sticky",top:0,zIndex:200,boxShadow:"0 2px 12px rgba(0,0,0,.5)"}}>
