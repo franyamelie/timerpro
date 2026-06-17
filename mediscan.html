@@ -63,6 +63,13 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 .card-hdr{padding:9px 13px;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-bottom:1px solid #222;display:flex;align-items:center;justify-content:space-between}
 
 /* SHEET */
+@keyframes marchAnts{to{stroke-dashoffset:-24px}}
+@keyframes segPulse{0%,100%{opacity:.9}50%{opacity:.6}}
+.seg-ant{stroke-dasharray:10 5;animation:marchAnts .7s linear infinite}
+.seg-sel{stroke-dasharray:none;filter:drop-shadow(0 0 4px currentColor)}
+.tool-btn{transition:all .15s;border-radius:8px !important}
+.tool-btn:hover{background:rgba(255,150,0,.18) !important;border-color:rgba(255,150,0,.5) !important;transform:scale(1.05)}
+.tool-btn.active{background:rgba(255,150,0,.3) !important;border-color:#ff9500 !important;box-shadow:0 0 8px rgba(255,150,0,.4)}
 .sheet{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#111;border-top:1px solid #ff9500;border-radius:18px 18px 0 0;z-index:400;animation:slideUp .22s ease;max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
 </style>
 <body><div id="root"></div>
@@ -78,26 +85,29 @@ const UF={mm:1,cm:10,m:1000,"in":25.4,ft:304.8};
 const toMM=(v,u)=>(parseFloat(v)||0)*(UF[u]||10);
 const fmtV=(v,u)=>{if(v==null)return"—";const r={mm:[1,0],cm:[.1,1],m:[.001,3],"in":[.0394,2],ft:[.00328,3]}[u]||[.1,1];return`${(v*r[0]).toFixed(r[1])} ${u}`;};
 const MRK=["pin","dot","star","tgt"];
-const DRAG=["rect","circ","crop"];
 /* Industrial knowledge base embedded in prompts */
 const IND_KB=`Base de conocimiento industrial: tuberías (DN15-DN600, acero carbono/inox/PVC), bridas (PN10-PN100), válvulas (compuerta/bola/mariposa/retención/globo), bombas centrífugas/alternativas, reductores (planetarios/tornillo sin fin/helicoidales), motores eléctricos (IE1-IE4), intercambiadores de calor (carcasa-tubos/placas), recipientes a presión, tornillería métrica (M3-M100), rodamientos (SKF/FAG), juntas y sellos, instrumentación (manómetros/caudalímetros/termómetros), estructuras metálicas (HEB/IPE/UPN), depósitos y tanques. Tolerancias ISO, normas DIN/EN/ASME.`;
 const TOOLS=[
   {id:"sel",icon:"↖",label:"Mover",npts:0,cat:"nav"},
-  {id:"dot",icon:"⬤",label:"Punto",npts:1,cat:"mrk"},
+  {id:"dot",icon:"●",label:"Punto",npts:1,cat:"mrk"},
   {id:"pin",icon:"📍",label:"Pin",npts:1,cat:"mrk"},
   {id:"star",icon:"★",label:"Estrella",npts:1,cat:"mrk"},
   {id:"tgt",icon:"⊕",label:"Diana",npts:1,cat:"mrk"},
   {id:"line",icon:"━",label:"Línea",npts:2,cat:"lin"},
   {id:"dim",icon:"⟺",label:"Cota",npts:2,cat:"lin"},
-  {id:"dist",icon:"↔",label:"A→B",npts:2,cat:"lin"},
+  {id:"dist",icon:"↔",label:"Distancia",npts:2,cat:"lin"},
+  {id:"incl",icon:"∡",label:"Inclinación",npts:2,cat:"med"},
+  {id:"ang",icon:"∠",label:"Ángulo",npts:3,cat:"med"},
+  {id:"rad",icon:"⌀",label:"Radio/Ø",npts:2,cat:"med"},
   {id:"arr1",icon:"→",label:"Flecha",npts:2,cat:"arr"},
   {id:"arr2",icon:"⇒",label:"Gruesa",npts:2,cat:"arr"},
-  {id:"rect",icon:"▭",label:"Rect.",npts:2,cat:"shp"},
+  {id:"rect",icon:"▭",label:"Rectángulo",npts:2,cat:"shp"},
   {id:"circ",icon:"◯",label:"Círculo",npts:2,cat:"shp"},
   {id:"calib",icon:"⚖",label:"Calibrar",npts:2,cat:"spc"},
   {id:"crop",icon:"✂",label:"Recortar",npts:2,cat:"spc"},
 ];
-const CATS={nav:"Nav",mrk:"Marcadores",lin:"Líneas",arr:"Flechas",shp:"Formas",spc:"Especial"};
+const CATS={nav:"Nav",mrk:"Marcadores",lin:"Líneas",med:"Medición",arr:"Flechas",shp:"Formas",spc:"Especial"};
+const DRAG=["rect","circ","crop"];
 /* ══ VIEW 2D ══ */
 function View2D({anns,objName,sc,segs}){
   const ref=useRef(null);
@@ -105,155 +115,126 @@ function View2D({anns,objName,sc,segs}){
     const cv=ref.current;if(!cv)return;
     const ctx=cv.getContext("2d"),W=cv.width,H=cv.height;
     ctx.clearRect(0,0,W,H);
-    ctx.fillStyle="#f0f4f8";ctx.fillRect(0,0,W,H);
-    /* Grid */
-    ctx.strokeStyle="#dde4ee";ctx.lineWidth=.5;
+    ctx.fillStyle="#f7f9ff";ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle="#dde6f5";ctx.lineWidth=.4;
     for(let x=0;x<W;x+=20){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
     for(let y=0;y<H;y+=20){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+    ctx.strokeStyle="#c8d8f0";ctx.lineWidth=.8;
+    for(let x=0;x<W;x+=100){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+    for(let y=0;y<H;y+=100){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+    const mg=44,bH=66;
+    const dW=W-mg*2,dH=H-mg-bH-8;
 
-    const mg=38,objW=W-mg*2,objH=H-mg*2-55;
+    const dimLine=(x1,y1,x2,y2,label,side,off)=>{
+      const s=side||1,o=off||18;
+      const dx=x2-x1,dy=y2-y1,len=Math.sqrt(dx*dx+dy*dy)||1;
+      const nx=(-dy/len)*s*o,ny=(dx/len)*s*o;
+      ctx.strokeStyle="#cc2200";ctx.lineWidth=.7;ctx.setLineDash([3,2]);
+      ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x1+nx,y1+ny);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2+nx,y2+ny);ctx.stroke();
+      ctx.setLineDash([]);ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(x1+nx,y1+ny);ctx.lineTo(x2+nx,y2+ny);ctx.stroke();
+      const ang=Math.atan2(y2-y1,x2-x1);
+      const arw=(ax,ay,a2)=>{ctx.save();ctx.translate(ax,ay);ctx.rotate(a2);ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(-7,2.5);ctx.lineTo(-7,-2.5);ctx.closePath();ctx.fillStyle="#cc2200";ctx.fill();ctx.restore();};
+      arw(x1+nx,y1+ny,ang+Math.PI);arw(x2+nx,y2+ny,ang);
+      ctx.save();ctx.translate((x1+x2)/2+nx,(y1+y2)/2+ny);
+      ctx.font="bold 8px 'Inter',sans-serif";
+      const tw=ctx.measureText(label).width+8;
+      ctx.fillStyle="rgba(247,249,255,.9)";ctx.fillRect(-tw/2,-7,tw,14);
+      ctx.fillStyle="#cc2200";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(label,0,0);
+      ctx.restore();
+    };
+    const balloon=(x,y,num,col)=>{
+      ctx.beginPath();ctx.arc(x,y,11,0,Math.PI*2);
+      ctx.fillStyle=col||"#1a3a8a";ctx.fill();
+      ctx.strokeStyle="#fff";ctx.lineWidth=1.5;ctx.stroke();
+      ctx.fillStyle="#fff";ctx.font="bold 9px 'Inter',sans-serif";
+      ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(num,x,y);
+    };
 
-    const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?{mm:(parseFloat(a.value)||0)*({"mm":1,"cm":10,"m":1000,"in":25.4,"ft":304.8}[a.unit]||10),lbl:`${a.value}${a.unit}`}:null;};
+    const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?{mm:(parseFloat(a.value)||0)*({mm:1,cm:10,m:1000,"in":25.4,ft:304.8}[a.unit]||10),lbl:`${a.value}${a.unit}`}:null;};
     const wd=gd("width"),hd=gd("height"),dd=gd("depth");
 
     if(wd||hd){
-      /* ── CASE 1: Axis measurements - draw 3 views to scale ── */
-      const vW=wd?.mm||100,vH=hd?.mm||100,vD=dd?.mm||100;
-      const sc2=Math.min(objW*.5/vW,objH*.55/vH)*.8;
-      const rW=vW*sc2,rH=vH*sc2,rX=mg+(objW*.5-rW)/2,rY=mg+15;
-
+      const vW=wd?wd.mm:100,vH=hd?hd.mm:100,vD=dd?dd.mm:100;
+      const sc2=Math.min(dW*.5/vW,(dH*.55)/vH)*.85;
+      const rW=vW*sc2,rH=vH*sc2,rX=mg,rY=mg+10;
       ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";
-      ctx.fillText("FRONTAL",rX+2,rY-5);
-      ctx.strokeStyle="#1a3a8a";ctx.lineWidth=2;ctx.fillStyle="rgba(26,58,138,.06)";
-      ctx.fillRect(rX,rY,rW,rH);ctx.strokeRect(rX,rY,rW,rH);
-
-      /* Draw measured parts inside frontal view */
-      if(segs?.length){
-        segs.forEach(seg=>{
-          const sx=rX+seg.x1*rW,sy=rY+seg.y1*rH,sw=(seg.x2-seg.x1)*rW,sh=(seg.y2-seg.y1)*rH;
-          const col=seg.color||"#0055cc";
-          ctx.fillStyle=col+"22";ctx.fillRect(sx,sy,sw,sh);
-          ctx.strokeStyle=col;ctx.lineWidth=1;ctx.setLineDash([4,2]);ctx.strokeRect(sx,sy,sw,sh);ctx.setLineDash([]);
-          ctx.fillStyle=col;ctx.font="bold 6px 'Inter',sans-serif";ctx.textAlign="center";
-          ctx.fillText(seg.name?.slice(0,12)||"",sx+sw/2,sy+sh/2+3);
-          const ra=anns.filter(a=>a.value!=null&&a.partName&&seg.name&&a.partName===seg.name);
-          if(ra.length){ctx.fillStyle="#111";ctx.font="5px 'Inter',sans-serif";
-            ra.slice(0,2).forEach((a,i)=>ctx.fillText(`${a.value}${a.unit}`,sx+sw/2,sy+sh/2+10+i*8));}
-        });
-      }
-      /* Dim lines */
-      const dl=(x1,y1,x2,y2,label,off=14)=>{const ang=Math.atan2(y2-y1,x2-x1),nx=Math.cos(ang+Math.PI/2)*off,ny=Math.sin(ang+Math.PI/2)*off;
-        ctx.strokeStyle="#cc0000";ctx.lineWidth=.8;ctx.setLineDash([]);
-        ctx.beginPath();ctx.moveTo(x1+nx,y1+ny);ctx.lineTo(x2+nx,y2+ny);ctx.stroke();
-        ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x1+nx,y1+ny);ctx.stroke();
-        ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2+nx,y2+ny);ctx.stroke();
-        ctx.fillStyle="#cc0000";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="center";
-        ctx.fillText(label,(x1+x2)/2+nx,(y1+y2)/2+ny-3);};
-      if(wd)dl(rX,rY+rH,rX+rW,rY+rH,wd.lbl,16);
-      if(hd)dl(rX,rY,rX,rY+rH,hd.lbl,-22);
-
-      /* Lateral */
-      if(dd){
-        const sX=mg+objW*.52+8,sW=vD*sc2,sH=vH*sc2;
-        ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";ctx.fillText("LATERAL",sX+2,rY-5);
-        ctx.fillStyle="rgba(26,58,138,.04)";ctx.fillRect(sX,rY,sW,sH);ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.5;ctx.strokeRect(sX,rY,sW,sH);
-        dl(sX,rY+sH,sX+sW,rY+sH,dd.lbl,14);}
-
-      /* Planta */
-      if(wd&&dd){
-        const pY=rY+rH+30,pW=vW*sc2,pD=vD*sc2;
-        ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";ctx.fillText("PLANTA",rX+2,pY-5);
-        ctx.fillStyle="rgba(26,58,138,.04)";ctx.fillRect(rX,pY,pW,pD);ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.5;ctx.strokeRect(rX,pY,pW,pD);
-        dl(rX,pY+pD,rX+pW,rY+pD+14,wd.lbl,14);dl(rX,pY,rX,pY+pD,dd.lbl,-20);}
-
-    } else if(segs&&segs.length>0){
-      /* ── CASE 2: AI parts - draw each part in its position ── */
-      ctx.fillStyle="#556677";ctx.font="bold 8px 'Inter',sans-serif";ctx.textAlign="center";
-      ctx.fillText("VISTA AUTOMÁTICA — "+(objName||"OBJETO").toUpperCase().slice(0,22),W/2,mg-12);
-      segs.forEach(seg=>{
-        const col=seg.color||"#0055cc";
-        const sx=mg+seg.x1*objW,sy=mg+seg.y1*objH,sw=(seg.x2-seg.x1)*objW,sh=(seg.y2-seg.y1)*objH;
-        ctx.fillStyle=col+"28";ctx.fillRect(sx,sy,sw,sh);
-        ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.setLineDash([5,3]);ctx.strokeRect(sx,sy,sw,sh);ctx.setLineDash([]);
-        /* Part label */
-        ctx.fillStyle=col;ctx.fillRect(sx,sy,Math.min(sw,90),14);
-        ctx.fillStyle="#fff";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";
-        ctx.fillText(`${seg.id}. ${(seg.name||"").slice(0,14)}`,sx+3,sy+10);
-        /* Measurements for this part */
-        const ra=anns.filter(a=>a.value!=null&&(a.partName===seg.name||(a.points&&Math.abs(a.points[0].x-(seg.x1+seg.x2)/2)<.3&&Math.abs(a.points[0].y-(seg.y1+seg.y2)/2)<.3)));
-        if(ra.length){
-          ctx.fillStyle="rgba(255,255,255,.9)";ctx.fillRect(sx+2,sy+sh-ra.length*10-4,sw-4,ra.length*10+4);
-          ra.forEach((a,i)=>{ctx.fillStyle=a.color||col;ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";
-            ctx.fillText(`${a.title||a.type}: ${a.value}${a.unit}`,sx+5,sy+sh-ra.length*10+i*10+2);});
-        }
-        /* All standalone line annotations */
-        if(!ra.length){const sa=anns.filter(a=>a.value!=null&&a.points?.length>=2);
-          sa.forEach(a=>{const[p1,p2]=a.points;const ax1=mg+p1.x*objW,ay1=mg+p1.y*objH,ax2=mg+p2.x*objW,ay2=mg+p2.y*objH;
-            ctx.strokeStyle=a.color||"#0055cc";ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(ax1,ay1);ctx.lineTo(ax2,ay2);ctx.stroke();
-            const mx=(ax1+ax2)/2,my=(ay1+ay2)/2;
-            ctx.fillStyle="rgba(255,255,255,.95)";ctx.fillRect(mx-26,my-8,52,14);
-            ctx.strokeStyle=a.color||"#0055cc";ctx.lineWidth=.5;ctx.strokeRect(mx-26,my-8,52,14);
-            ctx.fillStyle=a.color||"#333";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="center";
-            ctx.fillText(`${a.value}${a.unit}`,mx,my+4);});}
-      });
-    } else {
-      ctx.fillStyle="#aabbcc";ctx.font="9px 'Inter',sans-serif";ctx.textAlign="center";
-      ctx.fillText("Usa IA para detectar partes o añade medidas con ejes",W/2,H*.38);
-      ctx.fillStyle="#8899bb";ctx.font="8px 'Inter',sans-serif";
-      ctx.fillText("Las partes medidas aparecerán aquí automáticamente",W/2,H*.38+16);}
-
-    /* Isometric sketch - only when we have all 3 dims */
-    if(wd&&hd&&dd){
-      const iW=vW*sc2*.7,iH=vH*sc2*.7,iD=vD*sc2*.7;
-      const ix0=mg+objW*.52+iW*.3+10,iy0=rY+rH*.4;
-      ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";
-      ctx.fillText("ISOMÉTRICO",ix0-iW*.3,iy0-iD*.5-8);
-      /* ISO face top */
-      ctx.strokeStyle="#2244aa";ctx.lineWidth=1.4;ctx.fillStyle="rgba(30,60,160,.06)";
-      ctx.beginPath();ctx.moveTo(ix0,iy0-iD*.5);ctx.lineTo(ix0+iW*.5,iy0-iD*.5-iH*.3);
-      ctx.lineTo(ix0+iW,iy0-iD*.5);ctx.lineTo(ix0+iW*.5,iy0-iD*.5+iH*.3);ctx.closePath();
-      ctx.fill();ctx.stroke();
-      /* ISO face right */
-      ctx.fillStyle="rgba(20,50,140,.1)";ctx.beginPath();
-      ctx.moveTo(ix0+iW,iy0-iD*.5);ctx.lineTo(ix0+iW,iy0+iD*.5);
-      ctx.lineTo(ix0+iW*.5,iy0+iD*.5+iH*.3);ctx.lineTo(ix0+iW*.5,iy0-iD*.5+iH*.3);ctx.closePath();
-      ctx.fill();ctx.stroke();
-      /* ISO face left */
-      ctx.fillStyle="rgba(10,40,120,.07)";ctx.beginPath();
-      ctx.moveTo(ix0,iy0-iD*.5);ctx.lineTo(ix0,iy0+iD*.5);
-      ctx.lineTo(ix0+iW*.5,iy0+iD*.5+iH*.3);ctx.lineTo(ix0+iW*.5,iy0-iD*.5+iH*.3);ctx.closePath();
-      ctx.fill();ctx.stroke();
-    }
-    /* Cross-section circle (if cylinder shape detected) */
-    if(wd&&hd){
-      const cxPos=mg+8,cyPos=rY+rH+38,cRadius=Math.min(vH*sc2*.45,25);
-      ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";
-      ctx.fillText("SECCIÓN",cxPos,cyPos-cRadius-5);
-      ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.2;ctx.fillStyle="rgba(26,58,138,.06)";
-      ctx.beginPath();ctx.arc(cxPos+cRadius,cyPos,cRadius,0,Math.PI*2);ctx.fill();ctx.stroke();
-      if(dd){const ir=Math.min(cRadius*.7,cRadius-3);ctx.fillStyle="rgba(0,0,0,.04)";ctx.strokeStyle="#446688";ctx.lineWidth=.8;
-        ctx.setLineDash([2,2]);ctx.beginPath();ctx.arc(cxPos+cRadius,cyPos,ir,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.setLineDash([]);}
-      /* centerlines */
-      ctx.strokeStyle="#cc0000";ctx.lineWidth=.6;ctx.setLineDash([4,2]);
-      ctx.beginPath();ctx.moveTo(cxPos,cyPos);ctx.lineTo(cxPos+cRadius*2,cyPos);ctx.stroke();
-      ctx.beginPath();ctx.moveTo(cxPos+cRadius,cyPos-cRadius);ctx.lineTo(cxPos+cRadius,cyPos+cRadius);ctx.stroke();
+      ctx.fillText("VISTA FRONTAL",rX,rY-8);
+      ctx.fillStyle="rgba(210,228,255,.55)";ctx.fillRect(rX,rY,rW,rH);
+      ctx.strokeStyle="#1a3a8a";ctx.lineWidth=2;ctx.setLineDash([]);ctx.strokeRect(rX,rY,rW,rH);
+      ctx.strokeStyle="#0088cc";ctx.lineWidth=.6;ctx.setLineDash([8,4]);
+      ctx.beginPath();ctx.moveTo(rX+rW/2,rY-5);ctx.lineTo(rX+rW/2,rY+rH+5);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(rX-5,rY+rH/2);ctx.lineTo(rX+rW+5,rY+rH/2);ctx.stroke();
       ctx.setLineDash([]);
+      if(segs&&segs.length){segs.forEach((seg,i)=>{
+        const sx=rX+seg.x1*rW,sy=rY+seg.y1*rH,sw=(seg.x2-seg.x1)*rW,sh2=(seg.y2-seg.y1)*rH;
+        const c=seg.color||"#0055cc";
+        ctx.fillStyle=c+"28";ctx.fillRect(sx,sy,sw,sh2);
+        ctx.strokeStyle=c;ctx.lineWidth=1.2;ctx.setLineDash([5,3]);ctx.strokeRect(sx,sy,sw,sh2);ctx.setLineDash([]);
+        balloon(sx+sw-11,sy+11,i+1,c);
+      });}
+      if(wd)dimLine(rX,rY+rH,rX+rW,rY+rH,wd.lbl,1,20);
+      if(hd)dimLine(rX,rY,rX,rY+rH,hd.lbl,-1,24);
+      if(dd){
+        const lX=rX+rW+34,lW=vD*sc2;
+        ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";ctx.fillText("LATERAL",lX,rY-8);
+        ctx.fillStyle="rgba(210,228,255,.35)";ctx.fillRect(lX,rY,lW,rH);
+        ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.5;ctx.strokeRect(lX,rY,lW,rH);
+        dimLine(lX,rY+rH,lX+lW,rY+rH,dd.lbl,1,20);
+      }
+      if(wd&&dd){
+        const pY=rY+rH+38,pW=vW*sc2,pD=vD*sc2;
+        ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";ctx.fillText("PLANTA",rX,pY-8);
+        ctx.fillStyle="rgba(210,228,255,.35)";ctx.fillRect(rX,pY,pW,pD);
+        ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.5;ctx.strokeRect(rX,pY,pW,pD);
+        dimLine(rX,pY+pD,rX+pW,rY+pD,wd.lbl,1,16);
+        dimLine(rX,pY,rX,pY+pD,dd.lbl,-1,20);
+      }
+    } else if(segs&&segs.length){
+      const cols=2,rows=Math.ceil(segs.length/cols);
+      const cW=Math.floor(dW/cols)-10,cH=Math.min(Math.floor(dH/Math.max(rows,1))-12,110);
+      segs.forEach((seg,i)=>{
+        const c=Math.floor(i/rows),r=i%rows;
+        const bx=mg+c*(cW+10),by=mg+r*(cH+12);
+        const col2=seg.color||"#1a5a9a";
+        ctx.fillStyle=col2+"18";ctx.fillRect(bx,by,cW,cH);
+        ctx.strokeStyle=col2;ctx.lineWidth=1.5;ctx.setLineDash([6,3]);ctx.strokeRect(bx,by,cW,cH);ctx.setLineDash([]);
+        const px=bx+seg.x1*cW,py=by+seg.y1*cH,pw=(seg.x2-seg.x1)*cW,ph=(seg.y2-seg.y1)*cH;
+        ctx.fillStyle=col2+"44";ctx.fillRect(px,py,pw,ph);
+        ctx.strokeStyle=col2;ctx.lineWidth=1;ctx.strokeRect(px,py,pw,ph);
+        if(pw>20)dimLine(px,py+ph,px+pw,py+ph,"~"+Math.round((seg.x2-seg.x1)*100)+"%",1,10);
+        if(ph>20)dimLine(px,py,px,py+ph,"~"+Math.round((seg.y2-seg.y1)*100)+"%",-1,10);
+        balloon(bx+12,by+12,i+1,col2);
+        ctx.fillStyle="#1a3a8a";ctx.font="bold 7.5px 'Inter',sans-serif";ctx.textAlign="center";
+        ctx.fillText((seg.name||"Parte "+(i+1)).slice(0,18),bx+cW/2,by+cH-5);
+      });
     }
+
+    /* Parts legend table */
+    const tY=H-bH+2;
+    ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1;ctx.setLineDash([]);ctx.strokeRect(mg,tY,W-mg*2,bH-4);
+    ctx.fillStyle="rgba(210,228,255,.5)";ctx.fillRect(mg,tY,W-mg*2,14);
+    ctx.fillStyle="#1a3a8a";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";
+    ctx.fillText("LISTA DE PARTES",mg+4,tY+9);
+    (segs||[]).slice(0,7).forEach((seg,i)=>{
+      if(i%2===0){ctx.fillStyle="rgba(210,228,255,.2)";ctx.fillRect(mg,tY+14+i*7,W-mg*2,7);}
+      ctx.fillStyle=seg.color||"#1a3a8a";ctx.font="6px 'Inter',sans-serif";ctx.textAlign="left";
+      ctx.fillText(`${i+1}. ${seg.name||"Parte "+(i+1)}`,mg+4,tY+19+i*7);
+      const ra=anns.filter(a=>a.value!=null&&a.axis).slice(0,1);
+      if(ra.length){ctx.fillStyle="#555";ctx.textAlign="right";ctx.fillText(`${ra[0].value}${ra[0].unit}`,W-mg-4,tY+19+i*7);}
+      ctx.textAlign="left";
+    });
+
     /* Title block */
-    const tbX=W-mg-130,tbY=H-56,tbW=130,tbH=50;
-    ctx.fillStyle="#e8eef8";ctx.fillRect(tbX,tbY,tbW,tbH);
-    ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.2;ctx.setLineDash([]);ctx.strokeRect(tbX,tbY,tbW,tbH);
-    ctx.strokeRect(tbX,tbY+16,tbW,0);ctx.strokeRect(tbX,tbY+32,tbW,0);
+    ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.2;ctx.strokeRect(mg,2,W-mg*2,12);
     ctx.fillStyle="#1a3a8a";ctx.font="bold 8px 'Inter',sans-serif";ctx.textAlign="center";
-    ctx.fillText((objName||"OBJETO").toUpperCase().slice(0,18),tbX+tbW/2,tbY+12);
-    ctx.fillStyle="#334455";ctx.font="7px 'Inter',sans-serif";
-    ctx.fillText(new Date().toLocaleDateString("es-ES"),tbX+tbW/2,tbY+25);
-    ctx.fillText("MEDISCAN 3D PRO",tbX+tbW/2,tbY+42);
-    /* Scale indicator */
-    if(sc){ctx.fillStyle="#556677";ctx.font="7px 'Inter',sans-serif";ctx.textAlign="left";
-      ctx.fillText(`Escala: 1px = ${(1/sc.ppu).toFixed(2)} ${sc.unit}`,mg,H-6);}
+    ctx.fillText("CROQUIS TÉCNICO  —  "+(objName||"Objeto"),W/2,10);
+    ctx.fillStyle="#8899aa";ctx.font="6px 'Inter',sans-serif";ctx.textAlign="right";
+    ctx.fillText("MediScan 3D Pro · Esc. aprox.",W-mg-2,10);
+
   },[anns,objName,sc,segs]);
-  return <canvas ref={ref} width={440} height={420} style={{width:"100%",display:"block",background:"#f0f4f8"}}/>;
+  return <canvas ref={ref} width={440} height={420} style={{width:"100%",display:"block",background:"#f7f9ff"}}/>;
 }
 
 /* ══ V3D ══ */
@@ -508,11 +489,16 @@ function Part3D({anns,shape,color,segW,segH,texImg}){
       const mat=new THREE.MeshStandardMaterial({color:colNum,transparent:true,opacity:0.12});
       piv.add(new THREE.Mesh(geo,mat));piv.add(edges);
     }
-    scene.add(new THREE.AmbientLight(0xffffff,0.5));
-    const kl=new THREE.DirectionalLight(0x88ddff,1.8);kl.position.set(4,7,5);scene.add(kl);
-    const fl=new THREE.DirectionalLight(0xff8844,0.5);fl.position.set(-3,1,-4);scene.add(fl);
-    scene.add(new THREE.GridHelper(8,16,0x1a2a1a,0x0a140a));
-    const ax=new THREE.AxesHelper(0.4);ax.position.set(-3.5,-1.3,0);scene.add(ax);
+    /* Professional 3-point lighting */
+    scene.add(new THREE.AmbientLight(0x334455,0.8));
+    const kl=new THREE.DirectionalLight(0xffffff,2.2);kl.position.set(5,8,6);scene.add(kl);
+    const fl=new THREE.DirectionalLight(0x8899ff,0.8);fl.position.set(-4,2,-3);scene.add(fl);
+    const bl=new THREE.DirectionalLight(0xff9944,0.5);bl.position.set(0,-3,4);scene.add(bl);
+    const hl=new THREE.HemisphereLight(0x334466,0x111122,0.6);scene.add(hl);
+    /* Ground grid */
+    const grid=new THREE.GridHelper(10,20,0x1a3a2a,0x0d1d0d);grid.position.y=-sh/2-0.02;scene.add(grid);
+    /* Axis indicator */
+    const ax=new THREE.AxesHelper(0.5);ax.position.set(-3.8,-1.5,0);scene.add(ax);
     let rx=texImg?0.05:0.15,ry=texImg?0:0.5,drag=false,lx=0,ly=0;
     const dn=e=>{drag=true;const s=e.touches&&e.touches[0]||e;lx=s.clientX;ly=s.clientY;};
     const mv=e=>{if(!drag)return;const s=e.touches&&e.touches[0]||e;
@@ -1245,6 +1231,43 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw+3} markerEnd={`url(#${aid}e)`}/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke="transparent" strokeWidth="16"/>
         {!ip&&<BadgeEl bx={mx} by={my-6}/>}
+      </g>;
+    }
+    /* ── INCLINACIÓN ── */
+    if(a.type==="incl"){
+      const dx=p2.x-p1.x,dy=p2.y-p1.y;
+      const autoVal=`${Math.round(Math.abs(Math.atan2(dy,dx)*180/Math.PI))}°`;
+      const dispBadge=ip?"":(badge||autoVal);
+      return<g onClick={openM} style={{cursor:ip?"crosshair":"pointer"}}>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw}/>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+10}%`} y2={`${p1.y*100}%`} stroke={col} strokeWidth="1" strokeDasharray="3,2" opacity=".6"/>
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1.2%" fill={col}/>
+        {!ip&&dispBadge&&<><rect x={`${mx-dispBadge.length*0.7}%`} y={`${my-8}%`} width={`${dispBadge.length*1.4+2}%`} height="6%" rx="3%" fill="rgba(0,0,0,.8)"/><text x={`${mx}%`} y={`${my-5}%`} fill="#fff" fontSize="2.5%" fontFamily="Inter" fontWeight="900" textAnchor="middle" dominantBaseline="middle">{dispBadge}</text></>}
+      </g>;
+    }
+    /* ── ÁNGULO 3 puntos ── */
+    if(a.type==="ang"&&a.points?.length>=3){
+      const p3=a.points[2];
+      const a1=Math.atan2(p1.y-p2.y,p1.x-p2.x),a2=Math.atan2(p3.y-p2.y,p3.x-p2.x);
+      let angDeg=Math.abs((a2-a1)*180/Math.PI);if(angDeg>180)angDeg=360-angDeg;
+      const autoVal=`${Math.round(angDeg)}°`;
+      const dispBadge=ip?"":(badge||autoVal);
+      return<g onClick={openM} style={{cursor:ip?"crosshair":"pointer"}}>
+        <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p1.x*100}%`} y2={`${p1.y*100}%`} stroke={col} strokeWidth={sw}/>
+        <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth={sw}/>
+        <circle cx={`${p2.x*100}%`} cy={`${p2.y*100}%`} r="1.5%" fill={col}/>
+        {!ip&&dispBadge&&<><rect x={`${p2.x*100-dispBadge.length*.7}%`} y={`${p2.y*100-8}%`} width={`${dispBadge.length*1.4+2}%`} height="6%" rx="3%" fill="rgba(0,0,0,.8)"/><text x={`${p2.x*100}%`} y={`${p2.y*100-5}%`} fill="#fff" fontSize="2.5%" fontFamily="Inter" fontWeight="900" textAnchor="middle" dominantBaseline="middle">{dispBadge}</text></>}
+      </g>;
+    }
+    /* ── RADIO/Ø ── */
+    if(a.type==="rad"){
+      const r=Math.sqrt(Math.pow((p2.x-p1.x)*100,2)+Math.pow((p2.y-p1.y)*100,2));
+      const dispBadge=ip?"":(badge||`Ø~${Math.round(r*2)}%`);
+      return<g onClick={openM} style={{cursor:ip?"crosshair":"pointer"}}>
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r={`${r}%`} stroke={col} strokeWidth={sw} fill={ip?`${col}14`:"rgba(255,150,0,.08)"}/>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth="1" strokeDasharray="4,3"/>
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1.2%" fill={col}/>
+        {!ip&&<BadgeEl bx={(p1.x+p2.x)*50} by={(p1.y+p2.y)*50-5}/>}
       </g>;
     }
     /* ── LÍNEA SIMPLE ── */
