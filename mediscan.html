@@ -90,30 +90,31 @@ const MRK=["pin","dot","star","tgt"];
 const IND_KB=`Base de conocimiento industrial: tuberías (DN15-DN600, acero carbono/inox/PVC), bridas (PN10-PN100), válvulas (compuerta/bola/mariposa/retención/globo), bombas centrífugas/alternativas, reductores (planetarios/tornillo sin fin/helicoidales), motores eléctricos (IE1-IE4), intercambiadores de calor (carcasa-tubos/placas), recipientes a presión, tornillería métrica (M3-M100), rodamientos (SKF/FAG), juntas y sellos, instrumentación (manómetros/caudalímetros/termómetros), estructuras metálicas (HEB/IPE/UPN), depósitos y tanques. Tolerancias ISO, normas DIN/EN/ASME.`;
 const TOOLS=[
   {id:"sel",icon:"✥",label:"Mover",npts:0,cat:"nav"},
-  {id:"dot",icon:"●",label:"Punto",npts:1,cat:"mrk"},
+  {id:"dot",icon:"⬤",label:"Punto",npts:1,cat:"mrk"},
   {id:"pin",icon:"📍",label:"Pin",npts:1,cat:"mrk"},
-  {id:"star",icon:"★",label:"Estrella",npts:1,cat:"mrk"},
+  {id:"star",icon:"✦",label:"Estrella",npts:1,cat:"mrk"},
   {id:"tgt",icon:"⊕",label:"Diana",npts:1,cat:"mrk"},
-  {id:"line",icon:"━",label:"Línea",npts:2,cat:"lin"},
-  {id:"dim",icon:"⟺",label:"Cota",npts:2,cat:"lin"},
-  {id:"dist",icon:"↔",label:"Distancia",npts:2,cat:"lin"},
-  {id:"incl",icon:"∡",label:"Inclinación",npts:2,cat:"med"},
+  {id:"line",icon:"─",label:"Línea",npts:2,cat:"lin"},
+  {id:"dim",icon:"↹",label:"Cota",npts:2,cat:"lin"},
+  {id:"dist",icon:"⟷",label:"Distancia",npts:2,cat:"lin"},
+  {id:"incl",icon:"∢",label:"Inclinación",npts:2,cat:"med"},
   {id:"ang",icon:"∠",label:"Ángulo",npts:3,cat:"med"},
   {id:"rad",icon:"⌀",label:"Radio/Ø",npts:2,cat:"med"},
-  {id:"arr1",icon:"→",label:"Flecha",npts:2,cat:"arr"},
-  {id:"arr2",icon:"⇒",label:"Gruesa",npts:2,cat:"arr"},
-  {id:"rect",icon:"▭",label:"Rectángulo",npts:2,cat:"shp"},
-  {id:"circ",icon:"◯",label:"Círculo",npts:2,cat:"shp"},
+  {id:"arr1",icon:"➜",label:"Flecha",npts:2,cat:"arr"},
+  {id:"arr2",icon:"⇛",label:"Gruesa",npts:2,cat:"arr"},
+  {id:"rect",icon:"▬",label:"Rectángulo",npts:2,cat:"shp"},
+  {id:"circ",icon:"◉",label:"Círculo",npts:2,cat:"shp"},
   {id:"calib",icon:"⚖",label:"Calibrar",npts:2,cat:"spc"},
   {id:"crop",icon:"✂",label:"Recortar",npts:2,cat:"spc"},
-  {id:"poly",icon:"⤵",label:"Polilínea",npts:99,cat:"med"},
-  {id:"wall",icon:"⊞",label:"Espesor",npts:3,cat:"med"},
+  {id:"poly",icon:"↬",label:"Polilínea",npts:99,cat:"med"},
+  {id:"wall",icon:"▦",label:"Espesor",npts:3,cat:"med"},
   {id:"tol",icon:"±",label:"Tolerancia",npts:1,cat:"med"},
   {id:"cham",icon:"⌐",label:"Chaflán",npts:3,cat:"med"},
   {id:"area",icon:"▣",label:"Área",npts:4,cat:"med"},
   {id:"arc",icon:"⌒",label:"Arco",npts:3,cat:"med"},
   {id:"coord",icon:"⊹",label:"Coordenada",npts:1,cat:"med"},
-  {id:"note",icon:"✎",label:"Nota",npts:1,cat:"spc"},
+  {id:"note",icon:"✏",label:"Nota",npts:1,cat:"spc"},
+  {id:"lasso",icon:"⬡",label:"Lazo",npts:99,cat:"spc"},
   {id:"defl",icon:"⌇",label:"Deflexión",npts:3,cat:"med"},
   {id:"rough",icon:"Ra",label:"Rugosidad",npts:1,cat:"spc"},
 ];
@@ -1008,15 +1009,15 @@ shape: box|cylinder|sphere|cone|torus|tube|pipe|L_shape|T_shape|table|chair|door
   const segAI=async()=>{
     if(!img||segLoad||!GK())return;setSegLoad(true);
     const b64=img.split(",")[1];
-    const pr=`Analiza esta imagen industrialmente. Identifica TODAS las partes/componentes distintos visibles (máx 8). Para cada parte proporciona:
-- nombre en español descriptivo
-- caja bounding box (x1,y1,x2,y2 entre 0 y 1, esquina sup-izq a inf-der)  
-- POLÍGONO de contorno real: 8-12 puntos [x,y] entre 0-1 que sigan el contorno REAL de esa parte (NO el rectángulo, sino la forma del objeto)
-- hint: qué medidas tomar
-- color hex único y distinto para cada parte
+    const pr=`Analiza esta imagen y detecta TODOS los objetos, figuras y zonas distintas visibles (árboles, montañas, agua, edificios, personas, vehículos, sombras, cualquier elemento). Máximo 10. Para cada uno:
+- nombre en español muy descriptivo del objeto/zona
+- x1,y1,x2,y2: bounding box normalizado 0-1
+- polygon: array de 10-16 puntos [[x,y],...] entre 0-1 siguiendo el CONTORNO EXACTO del objeto (NO el rectángulo bbox, sino la silueta real del objeto. Por ejemplo para un árbol: la copa triangular, el tronco estrecho, etc.)
+- hint: principales medidas a tomar
+- color: color hex único y vivo diferente para cada objeto
 
-SOLO JSON SIN TEXTO EXTRA:
-{"segments":[{"id":"1","name":"nombre parte","x1":0.1,"y1":0.1,"x2":0.5,"y2":0.8,"polygon":[[0.1,0.3],[0.15,0.1],[0.4,0.1],[0.5,0.3],[0.5,0.7],[0.4,0.8],[0.15,0.8],[0.1,0.6]],"hint":"medir ancho y alto","color":"#00b4ff"}]}`;
+RESPONDE ÚNICAMENTE CON JSON VÁLIDO, SIN TEXTO NI MARKDOWN:
+{"segments":[{"id":"1","name":"Árbol grande derecha","x1":0.6,"y1":0.1,"x2":0.9,"y2":0.9,"polygon":[[0.75,0.1],[0.85,0.2],[0.9,0.35],[0.85,0.5],[0.9,0.65],[0.8,0.8],[0.7,0.8],[0.65,0.65],[0.6,0.5],[0.65,0.35],[0.6,0.2]],"hint":"altura y anchura copa","color":"#00cc44"}]}`;
     try{
       const res=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${GK()}`},body:JSON.stringify({model:MDL,max_tokens:500,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:pr}]}]})});
       const data=await res.json();const txt=data.choices?.[0]?.message?.content||"{}";
@@ -1715,35 +1716,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         {showSegs&&segs.map(seg=>{const isSel=selSeg===seg.id;const col=seg.color||C;return(
           <g key={seg.id} className="segpop"
             onDoubleClick={e=>{e.stopPropagation();if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");c2.width=Math.round(im.width*(seg.x2-seg.x1));c2.height=Math.round(im.height*(seg.y2-seg.y1));c2.getContext("2d").drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);setFcAnns([]);setFcZoom(1);setEditZone({seg,croppedImg:c2.toDataURL("image/jpeg",.92)});setSelSeg(null);};im.src=img;}}>
-            {(()=>{
-              /* Generate polygon: use AI polygon if available, else synthesize from bbox */
-              const poly=seg.polygon?.length>=4?seg.polygon:
-                [[seg.x1,seg.y1+.08],[seg.x1+.05,seg.y1],[seg.x2-.05,seg.y1],[seg.x2,seg.y1+.08],
-                 [seg.x2,seg.y2-.08],[seg.x2-.05,seg.y2],[seg.x1+.05,seg.y2],[seg.x1,seg.y2-.08]];
-              const pts=poly.map(([x,y])=>`${x*100}% ${y*100}%`).join(",");
-              const ctr={x:(seg.x1+seg.x2)/2*100,y:(seg.y1+seg.y2)/2*100};
-              const openZ=e=>{e.stopPropagation();if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");const x1=Math.min(seg.x1,seg.x2),y1=Math.min(seg.y1,seg.y2),x2=Math.max(seg.x1,seg.x2),y2=Math.max(seg.y1,seg.y2);c2.width=Math.round(im.width*(x2-x1));c2.height=Math.round(im.height*(y2-y1));c2.getContext("2d").drawImage(im,im.width*x1,im.height*y1,c2.width,c2.height,0,0,c2.width,c2.height);setFcAnns([]);setFcZoom(1);setEditZone({seg,croppedImg:c2.toDataURL("image/jpeg",.95)});setSelSeg(null);};im.src=img;};
-              return<>
-                {/* Darkening mask when selected */}
-                {isSel&&<rect x="0" y="0" width="100%" height="100%" fill="rgba(0,0,0,0.5)" style={{pointerEvents:"none"}}/>}
-                {/* Filled polygon with translucent color */}
-                <polygon points={pts} fill={isSel?`${col}30`:`${col}18`}
-                  style={{pointerEvents:"none"}}/>
-                {/* Animated contour border (marching ants) */}
-                <polygon points={pts}
-                  stroke={col} strokeWidth={isSel?"3":"2"}
-                  fill="none"
-                  strokeDasharray={isSel?"none":"10 5"}
-className={isSel?"":"seg-march"} style={{cursor:"pointer"}}
-                  onClick={e=>{e.stopPropagation();setSelSeg(isSel?null:seg.id);}}
-                  onDoubleClick={openZ}/>
-                {/* Invisible hit area */}
-                <polygon points={pts} fill="transparent"
-                  style={{cursor:"pointer"}}
-                  onClick={e=>{e.stopPropagation();setSelSeg(isSel?null:seg.id);}}
-                  onDoubleClick={openZ}/>
-              </>;
-            })()}
+            {/* Polygon drawn in overlay SVG below */}
             <rect x={`${seg.x1*100}%`} y={`${seg.y1*100-.5}%`} width="22%" height="5.8%" rx="2.5%" fill="rgba(0,0,0,0.8)"
               style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();setSelSeg(isSel?null:seg.id);}}/>
             <text x={`${seg.x1*100+1.2}%`} y={`${seg.y1*100+2.4}%`} fill="#ffffff" fontSize="2.1%"
@@ -1770,7 +1743,17 @@ className={isSel?"":"seg-march"} style={{cursor:"pointer"}}
         {/* Drawing preview */}
         {prev&&<Shape a={{...prev,id:"pv",color:"rgba(0,180,255,.7)",lineStyle:"solid",arrowHead:aHd}} ip/>}
         {/* First point indicator */}
-        {pend.length===1&&<><circle cx={`${pend[0].x*100}%`} cy={`${pend[0].y*100}%`} r="5" fill={COLS[colI%COLS.length]} opacity=".9" pointerEvents="none"/><circle cx={`${pend[0].x*100}%`} cy={`${pend[0].y*100}%`} r="10" fill="none" stroke={COLS[colI%COLS.length]} strokeWidth="1.5" opacity=".5" pointerEvents="none"/></>}
+        {pend.length===1&&tool!=="lasso"&&<><circle cx={`${pend[0].x*100}%`} cy={`${pend[0].y*100}%`} r="5" fill={COLS[colI%COLS.length]} opacity=".9" pointerEvents="none"/><circle cx={`${pend[0].x*100}%`} cy={`${pend[0].y*100}%`} r="10" fill="none" stroke={COLS[colI%COLS.length]} strokeWidth="1.5" opacity=".5" pointerEvents="none"/></>}
+        {/* LASSO: show growing polygon + confirm button */}
+        {tool==="lasso"&&pend.length>=2&&(()=>{
+          const lc=COLS[colI%COLS.length];
+          const d="M "+pend.map(p=>`${p.x*100}% ${p.y*100}%`).join(" L ");
+          return<>
+            <path d={d} stroke={lc} strokeWidth="2" fill={`${lc}15`} strokeDasharray="8 4" style={{pointerEvents:"none"}}/>
+            {pend.length>=1&&<path d={`${d} Z`} stroke={lc} strokeWidth="1" fill="none" strokeDasharray="4 4" opacity=".5" style={{pointerEvents:"none"}}/>}
+            {pend.map((p,i)=><circle key={i} cx={`${p.x*100}%`} cy={`${p.y*100}%`} r={i===0?"6":"3.5"} fill={lc} style={{pointerEvents:"none"}}/>)}
+          </>;
+        })()}
         {/* V/S/P stats */}
         <Stats/>
       </svg>
@@ -2150,7 +2133,7 @@ className={isSel?"":"seg-march"} style={{cursor:"pointer"}}
           {TOOLS.find(t=>t.id===tool)?.icon} {TOOLS.find(t=>t.id===tool)?.label}
         </div>
         <span style={{fontSize:"8px",color:"#555"}}>
-          {DRAG.includes(tool)?"Arrastra para dibujar → se pedirá la medida":pend.length===1?"Toca el 2° punto → se pedirá la medida":"Toca la imagen para colocar → se pedirá la medida"}
+          {tool==="lasso"?(pend.length===0?"Toca para añadir puntos del contorno":pend.length<3?"Añade al menos 3 puntos ("+pend.length+"/3)":`${pend.length} puntos — pulsa SELECCIONAR para confirmar`):DRAG.includes(tool)?"Arrastra para dibujar → se pedirá la medida":pend.length===1?"Toca el 2° punto → se pedirá la medida":"Toca la imagen para colocar → se pedirá la medida"}
         </span>
       </>:<span style={{fontSize:"8px",color:"#333"}}>← Selecciona herramienta arriba</span>}
       {pend.length>0&&<button onClick={()=>{setPend([]);setPrev(null);}} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",fontSize:"8px",padding:"3px 8px",borderRadius:"5px",marginLeft:"auto"}}>✕</button>}
