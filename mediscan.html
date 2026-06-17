@@ -1778,13 +1778,20 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           const raw=seg.polygon?.length>=4?seg.polygon:
             [[seg.x1,seg.y1+.08],[seg.x1+.05,seg.y1],[seg.x2-.05,seg.y1],[seg.x2,seg.y1+.08],
              [seg.x2,seg.y2-.08],[seg.x2-.05,seg.y2],[seg.x1+.05,seg.y2],[seg.x1,seg.y2-.08]];
-          /* Convert 0-1 coords → 0-1000 plain numbers for SVG polygon points */
+          /* Convert 0-1 coords → 0-1000 plain numbers (NO %) */
           const pts=raw.map(pt=>Array.isArray(pt)?`${(pt[0]*1000).toFixed(1)},${(pt[1]*1000).toFixed(1)}`:
             `${((pt.x||0)*1000).toFixed(1)},${((pt.y||0)*1000).toFixed(1)}`).join(" ");
           return<g key={seg.id} style={{pointerEvents:"none"}}>
-            <polygon points={pts} fill={isSel?`${col}30`:`${col}15`}/>
-            <polygon points={pts} stroke={col} strokeWidth={isSel?3:2}
-              fill="none" className={isSel?"":"sp"}/>
+            {/* Very light translucent fill - image always visible */}
+            <polygon points={pts} fill={isSel?`${col}25`:`${col}10`}/>
+            {/* Animated dashed border */}
+            <polygon points={pts} stroke={col} strokeWidth={isSel?3.5:2}
+              fill="none" strokeDasharray={isSel?"8 3":"10 5"}
+              style={{animation:isSel?"none":"marchPoly .7s linear infinite"}}
+              className={isSel?"":"sp"}/>
+            {/* Glow on selected */}
+            {isSel&&<polygon points={pts} stroke={col} strokeWidth="6"
+              fill="none" opacity="0.2"/>}
           </g>;
         })}
       </svg>}
