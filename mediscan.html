@@ -797,6 +797,16 @@ function App(){
   },[colI,lSt,aHd,addA]);
 
   /* DRAWING - React synthetic events on image div */
+  /* Double-click anywhere when lasso active → close polygon */
+  const onImgDblClick=useCallback(e=>{
+    if(tool!=="lasso"||pend.length<3)return;
+    e.stopPropagation();e.preventDefault();
+    const x1=Math.min(...pend.map(q=>q.x)),y1=Math.min(...pend.map(q=>q.y));
+    const x2=Math.max(...pend.map(q=>q.x)),y2=Math.max(...pend.map(q=>q.y));
+    setCropM({id:uid(),type:"lasso",isLasso:true,points:[...pend],polygon:pend.map(q=>[q.x,q.y]),x1,y1,x2,y2});
+    setPend([]);setPrev(null);setTool("sel");
+  },[tool,pend]);
+
   const onImgClick=useCallback(e=>{
     if(modal||tool==="sel"||DRAG.includes(tool))return;
     const td=TOOLS.find(t=>t.id===tool);if(!td||td.npts===0)return;
@@ -814,8 +824,24 @@ function App(){
       /* marker is on image - user taps it to open modal */
       return;
     }
-    /* Lasso: always add point, never auto-complete */
-    if(tool==="lasso"){setPend(prev=>[...prev,p]);setPrev(null);return;}
+    /* LASSO: click adds point. Double-click or click near first point closes selection */
+    if(tool==="lasso"){
+      if(pend.length>=3){
+        /* Check if clicking near the first point (within 3% radius) to auto-close */
+        const fp=pend[0];
+        const dist=Math.sqrt(Math.pow((p.x-fp.x)*100,2)+Math.pow((p.y-fp.y)*100,2));
+        if(dist<4){
+          /* Close polygon → open ZONA dialog */
+          const x1=Math.min(...pend.map(q=>q.x)),y1=Math.min(...pend.map(q=>q.y));
+          const x2=Math.max(...pend.map(q=>q.x)),y2=Math.max(...pend.map(q=>q.y));
+          setCropM({id:uid(),type:"lasso",isLasso:true,points:[...pend],polygon:pend.map(q=>[q.x,q.y]),x1,y1,x2,y2});
+          setPend([]);setPrev(null);setTool("sel");
+          return;
+        }
+      }
+      setPend(prev=>[...prev,p]);
+      return;
+    }
     const pts=[...pend,p];
     if(pts.length>=td.npts){setPend([]);setPrev(null);mkAnn(tool,pts);}
     else{setPend(pts);setPrev({type:tool,points:[pts[0],p]});}
@@ -824,7 +850,12 @@ function App(){
   const onImgMove=useCallback(e=>{
     if(!imgRef.current)return;
     const p=getP(e,e.currentTarget);
-    if(pend.length>=1)setPrev({type:tool,points:[pend[0],p]});
+    if(tool==="lasso"&&pend.length>=1){
+      /* Lasso: preview line from LAST point to cursor */
+      setPrev({type:"lasso",points:[pend[pend.length-1],p],lassoChain:pend});
+    } else if(pend.length>=1){
+      setPrev({type:tool,points:[pend[0],p]});
+    }
     if(dragSt)setPrev({type:tool,points:[dragSt,p]});
   },[pend,tool,dragSt,getP]);
 
@@ -1702,7 +1733,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       <span style={{fontSize:"9px",fontWeight:700,color:"#000"}}>{TOOLS.find(t=>t.id===tool)?.label}</span>
     </div>
     <span style={{fontSize:"9px",color:"#3355aa",flex:1}}>
-      {DRAG.includes(tool)?"→ Mantén y arrastra en la imagen":pend.length===1?"▶ PASO 2 — Toca el 2° punto en la imagen":"▶ PASO 1 — Toca la imagen para dibujar"}
+      {tool==="crop"?"✂ Mantén y arrastra para seleccionar zona rectangular":tool==="lasso"?"":DRAG.includes(tool)?"→ Arrastra en la imagen":pend.length===1?"▶ PASO 2 — 2° punto":"▶ PASO 1 — Toca la imagen"}
     </span></>
     :<span style={{fontSize:"9px",color:"#2a3a5a",flex:1}}>← Selecciona herramienta arriba</span>}
     {pend.length>0&&<button onClick={()=>{setPend([]);setPrev(null);}} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",fontSize:"8px",padding:"3px 9px",borderRadius:"5px"}}>✕</button>}
@@ -1712,7 +1743,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   {/* ═══ IMAGE - HERO ═══ */}
   <div ref={capRef} style={{position:"relative",background:"#000",borderRadius:"12px",overflow:"hidden",border:"2px solid #222",marginBottom:"7px"}}>
     <div ref={imgRef}
-      onClick={onImgClick} onMouseDown={onImgDown} onMouseMove={onImgMove}
+      onClick={onImgClick} onDoubleClick={onImgDblClick} onMouseDown={onImgDown} onMouseMove={onImgMove}
       onMouseUp={onImgUp}
       onTouchStart={e=>{onImgDown(e);if(e.touches.length===2)onTouchStartZoom(e);}}
       onTouchMove={e=>{if(e.touches.length===2){e.preventDefault();onTouchMoveZoom(e);}else{onImgMove(e);}}}
@@ -1752,15 +1783,24 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         {prev&&<Shape a={{...prev,id:"pv",color:"rgba(0,180,255,.7)",lineStyle:"solid",arrowHead:aHd}} ip/>}
         {/* First point indicator */}
         {pend.length===1&&tool!=="lasso"&&<><circle cx={`${pend[0].x*100}%`} cy={`${pend[0].y*100}%`} r="5" fill={COLS[colI%COLS.length]} opacity=".9" pointerEvents="none"/><circle cx={`${pend[0].x*100}%`} cy={`${pend[0].y*100}%`} r="10" fill="none" stroke={COLS[colI%COLS.length]} strokeWidth="1.5" opacity=".5" pointerEvents="none"/></>}
-        {/* LASSO: show growing polygon + confirm button */}
-        {tool==="lasso"&&pend.length>=2&&(()=>{
+        {/* LASSO: polygon chain + preview line to cursor (Photoshop style) */}
+        {tool==="lasso"&&pend.length>=1&&(()=>{
           const lc=COLS[colI%COLS.length];
-          const d="M "+pend.map(p=>`${p.x*100}% ${p.y*100}%`).join(" L ");
-          return<>
-            <path d={d} stroke={lc} strokeWidth="2" fill={`${lc}15`} strokeDasharray="8 4" style={{pointerEvents:"none"}}/>
-            {pend.length>=1&&<path d={`${d} Z`} stroke={lc} strokeWidth="1" fill="none" strokeDasharray="4 4" opacity=".5" style={{pointerEvents:"none"}}/>}
-            {pend.map((p,i)=><circle key={i} cx={`${p.x*100}%`} cy={`${p.y*100}%`} r={i===0?"6":"3.5"} fill={lc} style={{pointerEvents:"none"}}/>)}
-          </>;
+          const chainD="M "+pend.map(p=>`${p.x*100}% ${p.y*100}%`).join(" L ");
+          const cursorPt=prev?.points?.[1];
+          return<g style={{pointerEvents:"none"}}>
+            {/* Completed chain - solid dashed line */}
+            <path d={chainD} stroke={lc} strokeWidth="2" fill={`${lc}12`} strokeDasharray="8 4"/>
+            {/* Close line back to start (ghost) */}
+            {pend.length>=3&&cursorPt&&<line x1={`${pend[0].x*100}%`} y1={`${pend[0].y*100}%`} x2={`${cursorPt.x*100}%`} y2={`${cursorPt.y*100}%`} stroke={lc} strokeWidth="1" strokeDasharray="3 4" opacity=".35"/>}
+            {/* Preview line: last point → cursor */}
+            {cursorPt&&<line x1={`${pend[pend.length-1].x*100}%`} y1={`${pend[pend.length-1].y*100}%`} x2={`${cursorPt.x*100}%`} y2={`${cursorPt.y*100}%`} stroke={lc} strokeWidth="2" strokeDasharray="6 4"/>}
+            {/* Anchor points */}
+            {pend.map((p,i)=><g key={i}>
+              <circle cx={`${p.x*100}%`} cy={`${p.y*100}%`} r={i===0?"7":"4"} fill={i===0?"#fff":lc} stroke={lc} strokeWidth="1.5"/>
+              {i===0&&pend.length>=3&&<circle cx={`${p.x*100}%`} cy={`${p.y*100}%`} r="3" fill={lc}/>}
+            </g>)}
+          </g>;
         })()}
         {/* V/S/P stats */}
         <Stats/>
