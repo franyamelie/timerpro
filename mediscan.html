@@ -89,7 +89,7 @@ const MRK=["pin","dot","star","tgt"];
 /* Industrial knowledge base embedded in prompts */
 const IND_KB=`Base de conocimiento industrial: tuberías (DN15-DN600, acero carbono/inox/PVC), bridas (PN10-PN100), válvulas (compuerta/bola/mariposa/retención/globo), bombas centrífugas/alternativas, reductores (planetarios/tornillo sin fin/helicoidales), motores eléctricos (IE1-IE4), intercambiadores de calor (carcasa-tubos/placas), recipientes a presión, tornillería métrica (M3-M100), rodamientos (SKF/FAG), juntas y sellos, instrumentación (manómetros/caudalímetros/termómetros), estructuras metálicas (HEB/IPE/UPN), depósitos y tanques. Tolerancias ISO, normas DIN/EN/ASME.`;
 const TOOLS=[
-  {id:"sel",icon:"↖",label:"Mover",npts:0,cat:"nav"},
+  {id:"sel",icon:"✥",label:"Mover",npts:0,cat:"nav"},
   {id:"dot",icon:"●",label:"Punto",npts:1,cat:"mrk"},
   {id:"pin",icon:"📍",label:"Pin",npts:1,cat:"mrk"},
   {id:"star",icon:"★",label:"Estrella",npts:1,cat:"mrk"},
@@ -109,10 +109,17 @@ const TOOLS=[
   {id:"poly",icon:"⤵",label:"Polilínea",npts:99,cat:"med"},
   {id:"wall",icon:"⊞",label:"Espesor",npts:3,cat:"med"},
   {id:"tol",icon:"±",label:"Tolerancia",npts:1,cat:"med"},
+  {id:"cham",icon:"⌐",label:"Chaflán",npts:3,cat:"med"},
+  {id:"area",icon:"▣",label:"Área",npts:4,cat:"med"},
+  {id:"arc",icon:"⌒",label:"Arco",npts:3,cat:"med"},
+  {id:"coord",icon:"⊹",label:"Coordenada",npts:1,cat:"med"},
+  {id:"note",icon:"✎",label:"Nota",npts:1,cat:"spc"},
+  {id:"defl",icon:"⌇",label:"Deflexión",npts:3,cat:"med"},
+  {id:"rough",icon:"Ra",label:"Rugosidad",npts:1,cat:"spc"},
 ];
 const CATS={nav:"Nav",mrk:"Marcadores",lin:"Líneas",med:"Medición",arr:"Flechas",shp:"Formas",spc:"Especial"};
 const DRAG=["rect","circ","crop"];
-const MULTI_PTS=["poly"];
+const MULTI_PTS=["poly","area","defl"];
 /* ══ VIEW 2D ══ */
 function View2D({anns,objName,sc,segs,img}){
   const ref=useRef(null);
@@ -1372,6 +1379,87 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       </g>;
     }
     /* ── RADIO/Ø ── */
+    /* ── CHAFLÁN / FASEO: 3 puntos formando bisel ── */
+    if(a.type==="cham"&&pts.length>=3){
+      const[p1,p2,p3]=pts;
+      const badge=a.value!=null?`C${a.value}×${a.value}${a.unit}`:"Chaflán";
+      return<g key={a.id} onClick={onC} style={{cursor:"pointer"}}>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={sc} strokeWidth="2"/>
+        <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={sc} strokeWidth="2"/>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={sc} strokeWidth="1.5" strokeDasharray="5,3"/>
+        <circle cx={`${p2.x*100}%`} cy={`${p2.y*100}%`} r="1.3%" fill={sc}/>
+        <Pill mx={`${p2.x*100}`} my={`${p2.y*100-5}`} text={badge} col={sc}/>
+      </g>;
+    }
+    /* ── ÁREA POLÍGONO: 4+ puntos cerrados ── */
+    if(a.type==="area"&&pts.length>=3){
+      const d="M "+pts.map(p=>`${p.x*100}% ${p.y*100}%`).join(" L ")+" Z";
+      const cx=pts.reduce((s,p)=>s+p.x,0)/pts.length*100;
+      const cy=pts.reduce((s,p)=>s+p.y,0)/pts.length*100;
+      const badge=a.value!=null?`A: ${a.value}${a.unit}`:`${pts.length}pts`;
+      return<g key={a.id} onClick={onC} style={{cursor:"pointer"}}>
+        <path d={d} stroke={sc} strokeWidth="2" fill={`${sc}18`}/>
+        <path d={d} stroke="transparent" strokeWidth="12" fill="transparent"/>
+        {pts.map((p,i)=><circle key={i} cx={`${p.x*100}%`} cy={`${p.y*100}%`} r="1%" fill={sc}/>)}
+        <Pill mx={`${cx}`} my={`${cy}`} text={badge} col={sc}/>
+      </g>;
+    }
+    /* ── ARCO: 3 puntos (inicio, paso, fin) ── */
+    if(a.type==="arc"&&pts.length>=3){
+      const[p1,p2,p3]=pts;
+      const badge=a.value!=null?`L: ${a.value}${a.unit}`:"Arco";
+      return<g key={a.id} onClick={onC} style={{cursor:"pointer"}}>
+        <path d={`M ${p1.x*100}% ${p1.y*100}% Q ${p2.x*100}% ${p2.y*100}% ${p3.x*100}% ${p3.y*100}%`}
+          stroke={sc} strokeWidth="2" fill="none"/>
+        {[p1,p3].map((p,i)=><circle key={i} cx={`${p.x*100}%`} cy={`${p.y*100}%`} r="1%" fill={sc}/>)}
+        <Pill mx={`${p2.x*100}`} my={`${p2.y*100-5}`} text={badge} col={sc}/>
+      </g>;
+    }
+    /* ── COORDENADA XY: punto con coordenadas ── */
+    if(a.type==="coord"&&pts.length>=1){
+      const p1=pts[0];
+      const scObj=sc||null;
+      const xPx=Math.round(p1.x*1000)/10,yPx=Math.round(p1.y*1000)/10;
+      const badge=a.value!=null?a.value:`X:${xPx} Y:${yPx}`;
+      return<g key={a.id} onClick={onC} style={{cursor:"pointer"}}>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+6}%`} y2={`${p1.y*100}%`} stroke={sc} strokeWidth="1.5"/>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100}%`} y2={`${p1.y*100-6}%`} stroke={sc} strokeWidth="1.5"/>
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1.2%" fill={sc}/>
+        <Pill mx={`${p1.x*100+9}`} my={`${p1.y*100-5}`} text={badge} col={sc}/>
+      </g>;
+    }
+    /* ── DEFLEXIÓN / FLECHA DE PANDEO: 3 puntos ── */
+    if(a.type==="defl"&&pts.length>=3){
+      const[p1,p2,p3]=pts;
+      const badge=a.value!=null?`f: ${a.value}${a.unit}`:"Deflexión";
+      return<g key={a.id} onClick={onC} style={{cursor:"pointer"}}>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={sc} strokeWidth="1.5" strokeDasharray="4,3"/>
+        <path d={`M ${p1.x*100}% ${p1.y*100}% Q ${p2.x*100}% ${p2.y*100}% ${p3.x*100}% ${p3.y*100}%`} stroke={sc} strokeWidth="2" fill="none"/>
+        <line x1={`${(p1.x+p3.x)*50}%`} y1={`${(p1.y+p3.y)*50}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={sc} strokeWidth="1" strokeDasharray="3,2" opacity=".7"/>
+        <Pill mx={`${p2.x*100}`} my={`${p2.y*100-5}`} text={badge} col={sc}/>
+      </g>;
+    }
+    /* ── NOTA DE TEXTO: punto con texto libre ── */
+    if(a.type==="note"&&pts.length>=1){
+      const p1=pts[0];
+      const badge=a.value!=null?`${a.value}`:a.title||"Nota";
+      return<g key={a.id} onClick={onC} style={{cursor:"pointer"}}>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+5}%`} y2={`${(p1.y-.04)*100}%`} stroke={sc} strokeWidth="1.5"/>
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r=".8%" fill={sc}/>
+        <Pill mx={`${p1.x*100+8}`} my={`${(p1.y-.04)*100}`} text={badge} col={sc}/>
+      </g>;
+    }
+    /* ── RUGOSIDAD Ra: símbolo de acabado superficial ── */
+    if(a.type==="rough"&&pts.length>=1){
+      const p1=pts[0];
+      const badge=a.value!=null?`Ra ${a.value}${a.unit}`:"Ra";
+      return<g key={a.id} onClick={onC} style={{cursor:"pointer"}}>
+        <path d={`M ${p1.x*100-1.5}% ${p1.y*100+2}% L ${p1.x*100}% ${p1.y*100}% L ${p1.x*100+1.5}% ${p1.y*100+2}%`} stroke={sc} strokeWidth="2" fill="none"/>
+        <path d={`M ${p1.x*100}% ${p1.y*100}% L ${p1.x*100+3}% ${p1.y*100}%`} stroke={sc} strokeWidth="1.5" fill="none"/>
+        <Pill mx={`${p1.x*100+6}`} my={`${p1.y*100-1}`} text={badge} col={sc}/>
+      </g>;
+    }
+    /* ── RADIO/Ø ── */
     if(a.type==="rad"){
       const r=Math.sqrt(Math.pow((p2.x-p1.x)*100,2)+Math.pow((p2.y-p1.y)*100,2));
       const dispBadge=ip?"":(badge||`Ø~${Math.round(r*2)}%`);
@@ -1380,6 +1468,65 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth="1" strokeDasharray="4,3"/>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1.2%" fill={col}/>
         {!ip&&<BadgeEl bx={(p1.x+p2.x)*50} by={(p1.y+p2.y)*50-5}/>}
+      </g>;
+    }
+    /* ── CHAFLÁN ── */
+    if(a.type==="cham"&&a.points?.length>=2){
+      const dx=p2.x-p1.x,dy=p2.y-p1.y;
+      const dispBadge=ip?"":(badge||"Chaflán");
+      return<g onClick={openM} style={{cursor:ip?"crosshair":"pointer"}}>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw}/>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw-1} strokeDasharray="5,3"/>
+        <circle cx={`${(p1.x+p2.x)*50}%`} cy={`${(p1.y+p2.y)*50}%`} r="1.2%" fill={col}/>
+        {!ip&&<BadgeEl bx={mx} by={my-5}/>}
+      </g>;
+    }
+    /* ── ÁREA ── */
+    if(a.type==="area"&&a.points?.length>=3){
+      const d="M "+a.points.map(p=>`${p.x*100}% ${p.y*100}%`).join(" L ")+" Z";
+      const cx=a.points.reduce((s,p)=>s+p.x,0)/a.points.length*100;
+      const cy=a.points.reduce((s,p)=>s+p.y,0)/a.points.length*100;
+      return<g onClick={openM} style={{cursor:ip?"crosshair":"pointer"}}>
+        <path d={d} stroke={col} strokeWidth={sw} fill={ip?`${col}20`:`${col}15`}/>
+        {a.points.map((p,i)=><circle key={i} cx={`${p.x*100}%`} cy={`${p.y*100}%`} r="1%" fill={col}/>)}
+        {!ip&&<BadgeEl bx={cx} by={cy}/>}
+      </g>;
+    }
+    /* ── ARCO ── */
+    if(a.type==="arc"&&a.points?.length>=3){
+      const p3=a.points[2];
+      return<g onClick={openM} style={{cursor:ip?"crosshair":"pointer"}}>
+        <path d={`M ${p1.x*100}% ${p1.y*100}% Q ${p2.x*100}% ${p2.y*100}% ${p3.x*100}% ${p3.y*100}%`} stroke={col} strokeWidth={sw} fill="none"/>
+        {!ip&&<BadgeEl bx={p2.x*100} by={p2.y*100-5}/>}
+      </g>;
+    }
+    /* ── COORDENADA ── */
+    if(a.type==="coord"&&a.points?.length>=1){
+      const xv=Math.round(p1.x*1000)/10,yv=Math.round(p1.y*1000)/10;
+      const dispBadge=ip?"":(badge||`X:${xv} Y:${yv}`);
+      return<g onClick={openM} style={{cursor:ip?"crosshair":"pointer"}}>
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1.5%" fill={col}/>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+5}%`} y2={`${p1.y*100}%`} stroke={col} strokeWidth="1.5"/>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100}%`} y2={`${p1.y*100-5}%`} stroke={col} strokeWidth="1.5"/>
+        {!ip&&dispBadge&&<><rect x={`${p1.x*100+4}%`} y={`${p1.y*100-8}%`} width={`${dispBadge.length*1.4+2}%`} height="6%" rx="3%" fill="rgba(0,0,0,.8)"/><text x={`${p1.x*100+4+dispBadge.length*.7}%`} y={`${p1.y*100-5}%`} fill="#fff" fontSize="2.4%" fontFamily="Inter" fontWeight="900" textAnchor="middle" dominantBaseline="middle">{dispBadge}</text></>}
+      </g>;
+    }
+    /* ── NOTA ── */
+    if(a.type==="note"&&a.points?.length>=1){
+      const dispBadge=ip?"":(badge||"Nota");
+      return<g onClick={openM} style={{cursor:ip?"crosshair":"pointer"}}>
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1%" fill={col}/>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+5}%`} y2={`${(p1.y-.04)*100}%`} stroke={col} strokeWidth="1.5"/>
+        {!ip&&dispBadge&&<><rect x={`${p1.x*100+4}%`} y={`${(p1.y-.04)*100-4}%`} width={`${Math.min(dispBadge.length*1.3+4,35)}%`} height="6%" rx="3%" fill="rgba(0,0,0,.85)"/><text x={`${p1.x*100+4+Math.min(dispBadge.length*.65,17.5)}%`} y={`${(p1.y-.04)*100-1}%`} fill="#fff" fontSize="2.3%" fontFamily="Inter" fontWeight="800" textAnchor="middle" dominantBaseline="middle">{dispBadge}</text></>}
+      </g>;
+    }
+    /* ── RUGOSIDAD Ra ── */
+    if(a.type==="rough"&&a.points?.length>=1){
+      const dispBadge=ip?"":(badge||"Ra");
+      return<g onClick={openM} style={{cursor:ip?"crosshair":"pointer"}}>
+        <path d={`M ${p1.x*100-2}% ${p1.y*100+2}% L ${p1.x*100}% ${p1.y*100}% L ${p1.x*100+2}% ${p1.y*100+2}%`} stroke={col} strokeWidth="2" fill="none"/>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+4}%`} y2={`${p1.y*100}%`} stroke={col} strokeWidth="1.5"/>
+        {!ip&&dispBadge&&<><rect x={`${p1.x*100+3}%`} y={`${p1.y*100-4}%`} width={`${dispBadge.length*1.4+2}%`} height="6%" rx="3%" fill="rgba(0,0,0,.8)"/><text x={`${p1.x*100+3+dispBadge.length*.7}%`} y={`${p1.y*100-1}%`} fill="#fff" fontSize="2.3%" fontFamily="Inter" fontWeight="900" textAnchor="middle" dominantBaseline="middle">{dispBadge}</text></>}
       </g>;
     }
     /* ── ESPESOR PARED ── */
