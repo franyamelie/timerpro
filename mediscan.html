@@ -711,6 +711,7 @@ function App(){
   const [measM,setMeasM]=useState(null); /* measure modal */
   const [calibM,setCalibM]=useState(null);
   const [cropM,setCropM]=useState(null); /* crop dialog */
+  const [viewConfirm,setViewConfirm]=useState(null); /* "2d"|"3d"|null - confirm before leaving measure mode */
   const [mIn,setMIn]=useState({t:"",v:"",u:"cm",ax:""});
 
   /* AI parts segmentation */
@@ -939,6 +940,31 @@ function App(){
     window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
   },[]);
 
+  /* Drag ENTIRE shape (all points together) - for "Mover" tool whole-body translation */
+  const onShapeDrag=useCallback((e,id)=>{
+    if(tool!=="sel")return;
+    e.preventDefault();e.stopPropagation();
+    setSelId(id);
+    const r=imgRef.current?.getBoundingClientRect();if(!r)return;
+    const s0=e.touches?.[0]||e;
+    const start={x:(s0.clientX-r.left)/r.width,y:(s0.clientY-r.top)/r.height};
+    let moved=false;
+    const mv=ev=>{
+      ev.preventDefault();
+      const s=ev.touches?.[0]||ev;
+      const now={x:(s.clientX-r.left)/r.width,y:(s.clientY-r.top)/r.height};
+      const dx=now.x-start.x,dy=now.y-start.y;
+      if(Math.abs(dx)>.003||Math.abs(dy)>.003)moved=true;
+      if(moved){
+        setAnns(p=>p.map(a=>a.id!==id?a:{...a,points:a.points.map(pt=>({x:cl(pt.x+dx,.01,.99),y:cl(pt.y+dy,.01,.99)}))}));
+        start.x=now.x;start.y=now.y;
+      }
+    };
+    const up=()=>{window.removeEventListener("mousemove",mv);window.removeEventListener("touchmove",mv);window.removeEventListener("mouseup",up);window.removeEventListener("touchend",up);};
+    window.addEventListener("mousemove",mv,{passive:false});window.addEventListener("touchmove",mv,{passive:false});
+    window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
+  },[tool]);
+
   /* confirm measurement */
   const confirmM=()=>{
     if(!measM)return;
@@ -1108,11 +1134,29 @@ shape: box|cylinder|sphere|cone|torus|tube|pipe|L_shape|T_shape|table|chair|door
 RESPONDE ÚNICAMENTE CON JSON VÁLIDO, SIN TEXTO NI MARKDOWN:
 {"segments":[{"id":"1","name":"Árbol grande derecha","x1":0.6,"y1":0.1,"x2":0.9,"y2":0.9,"polygon":[[0.75,0.1],[0.85,0.2],[0.9,0.35],[0.85,0.5],[0.9,0.65],[0.8,0.8],[0.7,0.8],[0.65,0.65],[0.6,0.5],[0.65,0.35],[0.6,0.2]],"hint":"altura y anchura copa","color":"#00cc44"}]}`;
     try{
-      const res=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${GK()}`},body:JSON.stringify({model:MDL,max_tokens:500,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:pr}]}]})});
+      const res=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${GK()}`},body:JSON.stringify({model:MDL,max_tokens:3000,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:pr}]}]})});
       const data=await res.json();const txt=data.choices?.[0]?.message?.content||"{}";
-      const info=JSON.parse(txt.replace(/```json|```/g,"").trim());
-      if(info.segments?.length){setSegs(info.segments);setShowSegs(true);setAiMsg(`🔍 ${info.segments.length} partes detectadas. Toca una zona para medirla.`);}
-    }catch{}finally{setSegLoad(false);}
+      let info;
+      try{info=JSON.parse(txt.replace(/```json|```/g,"").trim());}
+      catch(parseErr){
+        /* Try to salvage truncated JSON by closing open brackets */
+        let fixed=txt.replace(/```json|```/g,"").trim();
+        const lastComplete=fixed.lastIndexOf("}");
+        if(lastComplete>0){
+          fixed=fixed.slice(0,lastComplete+1);
+          const openBrackets=(fixed.match(/\[/g)||[]).length-(fixed.match(/\]/g)||[]).length;
+          const openBraces=(fixed.match(/\{/g)||[]).length-(fixed.match(/\}/g)||[]).length;
+          fixed+="]".repeat(Math.max(0,openBrackets))+"}".repeat(Math.max(0,openBraces));
+          try{info=JSON.parse(fixed);}catch(e2){info=null;}
+        }
+      }
+      if(info?.segments?.length){
+        setSegs(info.segments);setShowSegs(true);
+        setAiMsg(`🔍 ${info.segments.length} partes detectadas. Toca una zona para medirla.`);
+      }else{
+        setAiMsg("⚠️ La IA no pudo detectar contornos esta vez. Pulsa Detectar contornos de nuevo.");
+      }
+    }catch(err){setAiMsg("⚠️ Error de conexión con la IA.");}finally{setSegLoad(false);}
   };
 
   /* AI CHAT */
@@ -1270,20 +1314,20 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     if(a.type==="rect"||a.type==="crop"){
       const rx=Math.min(p1.x,p2.x)*100,ry2=Math.min(p1.y,p2.y)*100,rw=Math.abs(p2.x-p1.x)*100,rh=Math.abs(p2.y-p1.y)*100;
       const sc=a.type==="crop"?"#ff9500":col;const area=!ip?getArea(a):null;
-      return<g onClick={e=>{e.stopPropagation();if(a.type!=="crop")sel();}} style={{cursor:a.type==="crop"?"default":"pointer"}}>
+      return<g onClick={e=>{e.stopPropagation();if(a.type!=="crop")sel();}} onMouseDown={e=>{if(a.type!=="crop"&&tool==="sel")onShapeDrag(e,a.id);}} onTouchStart={e=>{if(a.type!=="crop"&&tool==="sel")onShapeDrag(e,a.id);}} style={{cursor:a.type==="crop"?"default":tool==="sel"?"grab":"pointer"}}>
         <rect x={`${rx}%`} y={`${ry2}%`} width={`${rw}%`} height={`${rh}%`} stroke={sc} strokeWidth={sw} fill={ip?`${sc}10`:"rgba(0,100,255,.1)"} strokeDasharray={a.type==="crop"?"8,4":ld}/>
         {!ip&&badge&&<Pill mx={`${mx}`} my={`${my}`} text={badge} col={col}/>}
         {!ip&&area&&<Pill mx={`${mx}`} my={`${my+5.5}`} text={`A:${area}`} col={col} sm/>}
       </g>;}
     if(a.type==="circ"){const r=Math.sqrt(Math.pow((p2.x-p1.x)*100,2)+Math.pow((p2.y-p1.y)*100,2));
-      return<g onClick={e=>{e.stopPropagation();sel();}} style={{cursor:"pointer"}}>
+      return<g onClick={e=>{e.stopPropagation();sel();}} onMouseDown={e=>{if(tool==="sel")onShapeDrag(e,a.id);}} onTouchStart={e=>{if(tool==="sel")onShapeDrag(e,a.id);}} style={{cursor:tool==="sel"?"grab":"pointer"}}>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r={`${r}%`} stroke={col} strokeWidth={sw} fill={ip?`${col}10`:"rgba(0,100,255,.1)"} strokeDasharray={ld}/>
         {!ip&&badge&&<Pill mx={`${p1.x*100}`} my={`${p1.y*100}`} text={badge} col={col}/>}
       </g>;}
     const isDim=["dim","dist"].includes(a.type);
     const dbl=a.type==="dist"||a.arrowHead==="both";
     const noArr=a.arrowHead==="none";
-    return<g onClick={e=>{e.stopPropagation();sel();}} style={{cursor:ip?"crosshair":"pointer"}}>
+    return<g onClick={e=>{e.stopPropagation();sel();}} onMouseDown={e=>{if(tool==="sel"&&!ip)onShapeDrag(e,a.id);}} onTouchStart={e=>{if(tool==="sel"&&!ip)onShapeDrag(e,a.id);}} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
       <defs>
         <marker id={aid+"e"} markerWidth="10" markerHeight="10" refX="7" refY="3.5" orient="auto"><path d="M0,0 L0,7 L10,3.5z" fill={col}/></marker>
         {dbl&&<marker id={aid+"s"} markerWidth="10" markerHeight="10" refX="3" refY="3.5" orient="auto-start-reverse"><path d="M0,0 L0,7 L10,3.5z" fill={col}/></marker>}
@@ -1939,7 +1983,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   <div style={{display:"flex",gap:"4px",marginBottom:"7px",flexWrap:"wrap"}}>
     <button onClick={()=>setRot(r=>(r+90)%360)} style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.2)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:500}}>↻+90°</button>
     <button onClick={()=>setRot(r=>(r-90+360)%360)} style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.2)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:500}}>↺-90°</button>
-    <button onClick={segAI} disabled={segLoad||!GK()} style={{flex:2,padding:"7px 8px",background:segLoad?"rgba(255,150,0,.05)":"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.3)",color:segLoad?"#444":C,borderRadius:"8px",fontSize:"9px",fontWeight:700}}>{segLoad?"⏳ Detectando...":"🔍 Detectar contornos"}</button>
+    <button onClick={()=>{setSegs([]);segAI();}} disabled={segLoad||!GK()} style={{flex:2,padding:"7px 8px",background:segLoad?"rgba(255,150,0,.05)":"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.3)",color:segLoad?"#444":C,borderRadius:"8px",fontSize:"9px",fontWeight:700}}>{segLoad?"⏳ Detectando...":"🔍 Detectar contornos"}</button>
     <button onClick={()=>setTool("crop")} title="Recortar rectangular → zona flotante" style={{flex:2,padding:"7px 6px",background:tool==="crop"?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.3)",color:tool==="crop"?"#000":"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>✂ Recortar</button>
     <button onClick={()=>{if(tool==="lasso"){setPend([]);setTool("sel");}else{setTool("lasso");setPend([]);}}} title="Lazo poligonal: clic por clic para seleccionar área de forma libre" style={{flex:2,padding:"7px 6px",background:tool==="lasso"?"linear-gradient(135deg,#aa00ff,#ff00aa)":"rgba(170,0,255,.1)",border:`1px solid ${tool==="lasso"?"#cc44ff":"rgba(170,0,255,.3)"}`,color:tool==="lasso"?"#fff":"#bb44ff",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>{tool==="lasso"&&pend.length>0?`⬡ ${pend.length} pts`:"⬡ Lazo"}</button>
     {segs.length>0&&<button onClick={()=>setShowSegs(s=>!s)} style={{flex:1,padding:"7px 4px",background:showSegs?"rgba(0,150,255,.15)":"rgba(0,100,255,.05)",border:`1px solid rgba(0,150,255,${showSegs?.3:.12})`,color:showSegs?C:"#2a3a5a",borderRadius:"8px",fontSize:"9px"}}>👁{showSegs?"ON":"OFF"}</button>}
@@ -1963,7 +2007,12 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   {/* PANEL TABS - sticky */}
   <div style={{display:"flex",gap:"3px",background:"#111",border:"1px solid #2a2a2a",borderRadius:"11px",padding:"4px",marginBottom:"7px",flexWrap:"wrap",position:"sticky",top:0,zIndex:200,boxShadow:"0 2px 12px rgba(0,0,0,.5)"}}>
     {[["meas","📋 Medidas"],["2d","📐 2D"],["3d","🎮 3D+Partes"],["db","🔩 Base Datos"],["chat","💬 Chat IA"],["exp","📤 Exportar"]].map(([k,lb])=>(
-      <button key={k} onClick={()=>setSheet(sheet===k?null:k)}
+      <button key={k} onClick={()=>{
+        const switching=(k==="2d"||k==="3d")&&sheet!==k;
+        const hasPendingWork=tool!=="sel"||pend.length>0||anns.some(a=>a.value==null&&!MRK.includes(a.type));
+        if(switching&&hasPendingWork){setViewConfirm(k);return;}
+        setSheet(sheet===k?null:k);
+      }}
         style={{flex:1,minWidth:"70px",padding:"6px 2px",borderRadius:"7px",
           background:sheet===k?"linear-gradient(135deg,#ff6600,#ffaa00)":"transparent",
           color:sheet===k?"#000":"#555",
@@ -2488,6 +2537,23 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   <div style={{display:"flex",gap:"8px"}}>
     <button onClick={()=>setCalibM(null)} style={{flex:1,padding:"12px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.09)",color:"#2a3a5a",borderRadius:"9px",fontSize:"10px"}}>Cancelar</button>
     <button onClick={confirmC} style={{flex:2,padding:"12px",background:"linear-gradient(135deg,#cc5500,#ff9500)",color:"#fff",border:"none",borderRadius:"9px",fontSize:"13px",fontWeight:800}}>⚖ CALIBRAR ESCALA</button>
+  </div>
+</div>}
+
+{/* VIEW CONFIRM: "more measurements or go to 2D/3D?" */}
+{viewConfirm&&<div data-modal="viewconfirm" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"#111",border:"2px solid #00bbff",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:600,animation:"slideUp .22s ease",backdropFilter:"blur(24px)"}}>
+  <button onClick={()=>setViewConfirm(null)} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+  <div style={{fontSize:"13px",fontWeight:800,color:"#00bbff",marginBottom:"6px"}}>📐 ¿Continuar midiendo?</div>
+  <div style={{fontSize:"9px",color:"#666",marginBottom:"14px",lineHeight:1.8}}>Tienes anotaciones sin valor o una herramienta activa. ¿Qué quieres hacer?</div>
+  <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+    <button onClick={()=>setViewConfirm(null)} style={{width:"100%",padding:"13px",background:"rgba(0,187,255,.1)",border:"1px solid rgba(0,187,255,.3)",color:"#00bbff",borderRadius:"9px",fontSize:"12px",fontWeight:800,textAlign:"left"}}>
+      ↩ Seguir midiendo
+      <div style={{fontSize:"8px",marginTop:"3px",opacity:.7}}>Vuelve a la imagen para añadir más medidas o recortes</div>
+    </button>
+    <button onClick={()=>{setSheet(viewConfirm);setViewConfirm(null);setTool("sel");setPend([]);setPrev(null);}} style={{width:"100%",padding:"13px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"9px",fontSize:"12px",fontWeight:800,textAlign:"left"}}>
+      ✓ Ir a {viewConfirm==="2d"?"Vista 2D":"Vista 3D"}
+      <div style={{fontSize:"8px",marginTop:"3px",opacity:.7}}>Las medidas ya guardadas se usarán para generar el croquis</div>
+    </button>
   </div>
 </div>}
 
