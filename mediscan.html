@@ -780,6 +780,59 @@ function App(){
     return{x:cl((s.clientX-r.left)/r.width,.01,.99),y:cl((s.clientY-r.top)/r.height,.01,.99)};
   },[]);
 
+  /* ═══ LASSO: bulletproof native listener (bypasses React synthetic event edge cases) ═══ */
+  const lassoPendRef=useRef([]);
+  useEffect(()=>{lassoPendRef.current=pend;},[pend]);
+  useEffect(()=>{
+    if(tool!=="lasso")return;
+    const el=imgRef.current;if(!el)return;
+    const closeLasso=(pts)=>{
+      if(pts.length<3)return;
+      const x1=Math.min(...pts.map(q=>q.x)),y1=Math.min(...pts.map(q=>q.y));
+      const x2=Math.max(...pts.map(q=>q.x)),y2=Math.max(...pts.map(q=>q.y));
+      setCropM({id:uid(),type:"lasso",isLasso:true,points:[...pts],polygon:pts.map(q=>[q.x,q.y]),x1,y1,x2,y2});
+      setPend([]);setPrev(null);setTool("sel");
+    };
+    const handleClick=(ev)=>{
+      ev.preventDefault();ev.stopPropagation();
+      const r=el.getBoundingClientRect();
+      const cx=ev.clientX??ev.changedTouches?.[0]?.clientX;
+      const cy=ev.clientY??ev.changedTouches?.[0]?.clientY;
+      if(cx==null||cy==null)return;
+      const p={x:cl((cx-r.left)/r.width,.01,.99),y:cl((cy-r.top)/r.height,.01,.99)};
+      const cur=lassoPendRef.current;
+      if(cur.length>=3){
+        const fp=cur[0];
+        const dist=Math.sqrt(Math.pow((p.x-fp.x)*100,2)+Math.pow((p.y-fp.y)*100,2));
+        if(dist<5){closeLasso(cur);return;}
+      }
+      const next=[...cur,p];
+      lassoPendRef.current=next;
+      setPend(next);
+    };
+    const handleDblClick=(ev)=>{
+      ev.preventDefault();ev.stopPropagation();
+      closeLasso(lassoPendRef.current);
+    };
+    const handleMove=(ev)=>{
+      const cur=lassoPendRef.current;if(!cur.length)return;
+      const r=el.getBoundingClientRect();
+      const cx=ev.clientX??ev.touches?.[0]?.clientX;
+      const cy=ev.clientY??ev.touches?.[0]?.clientY;
+      if(cx==null||cy==null)return;
+      const p={x:cl((cx-r.left)/r.width,.01,.99),y:cl((cy-r.top)/r.height,.01,.99)};
+      setPrev({type:"lasso",points:[cur[cur.length-1],p]});
+    };
+    el.addEventListener("click",handleClick,true);
+    el.addEventListener("dblclick",handleDblClick,true);
+    el.addEventListener("mousemove",handleMove);
+    return()=>{
+      el.removeEventListener("click",handleClick,true);
+      el.removeEventListener("dblclick",handleDblClick,true);
+      el.removeEventListener("mousemove",handleMove);
+    };
+  },[tool]);
+
   /* create annotation after drawing */
   const mkAnn=useCallback((type,pts)=>{
     const td=TOOLS.find(t=>t.id===type),col=COLS[colI%COLS.length];
@@ -798,15 +851,6 @@ function App(){
 
   /* DRAWING - React synthetic events on image div */
   /* Double-click anywhere when lasso active → close polygon */
-  const onImgDblClick=useCallback(e=>{
-    if(tool!=="lasso"||pend.length<3)return;
-    e.stopPropagation();e.preventDefault();
-    const x1=Math.min(...pend.map(q=>q.x)),y1=Math.min(...pend.map(q=>q.y));
-    const x2=Math.max(...pend.map(q=>q.x)),y2=Math.max(...pend.map(q=>q.y));
-    setCropM({id:uid(),type:"lasso",isLasso:true,points:[...pend],polygon:pend.map(q=>[q.x,q.y]),x1,y1,x2,y2});
-    setPend([]);setPrev(null);setTool("sel");
-  },[tool,pend]);
-
   const onImgClick=useCallback(e=>{
     if(modal||tool==="sel"||DRAG.includes(tool))return;
     const td=TOOLS.find(t=>t.id===tool);if(!td||td.npts===0)return;
@@ -824,24 +868,7 @@ function App(){
       /* marker is on image - user taps it to open modal */
       return;
     }
-    /* LASSO: click adds point. Double-click or click near first point closes selection */
-    if(tool==="lasso"){
-      if(pend.length>=3){
-        /* Check if clicking near the first point (within 3% radius) to auto-close */
-        const fp=pend[0];
-        const dist=Math.sqrt(Math.pow((p.x-fp.x)*100,2)+Math.pow((p.y-fp.y)*100,2));
-        if(dist<4){
-          /* Close polygon → open ZONA dialog */
-          const x1=Math.min(...pend.map(q=>q.x)),y1=Math.min(...pend.map(q=>q.y));
-          const x2=Math.max(...pend.map(q=>q.x)),y2=Math.max(...pend.map(q=>q.y));
-          setCropM({id:uid(),type:"lasso",isLasso:true,points:[...pend],polygon:pend.map(q=>[q.x,q.y]),x1,y1,x2,y2});
-          setPend([]);setPrev(null);setTool("sel");
-          return;
-        }
-      }
-      setPend(prev=>[...prev,p]);
-      return;
-    }
+    if(tool==="lasso")return; /* lasso handled by dedicated native listener below */
     const pts=[...pend,p];
     if(pts.length>=td.npts){setPend([]);setPrev(null);mkAnn(tool,pts);}
     else{setPend(pts);setPrev({type:tool,points:[pts[0],p]});}
@@ -947,10 +974,25 @@ function App(){
     updA(calibM.id,{title:`⚖${v}${mIn.u}`,value:v,unit:mIn.u});setCalibM(null);
   };
   const applyCrop=()=>{
-    if(!cropM||!img)return;const{p1,p2}=cropM;const im=new Image();
-    im.onload=()=>{const c2=document.createElement("canvas");
-      c2.width=Math.round(im.width*Math.abs(p2.x-p1.x));c2.height=Math.round(im.height*Math.abs(p2.y-p1.y));
-      c2.getContext("2d").drawImage(im,im.width*Math.min(p1.x,p2.x),im.height*Math.min(p1.y,p2.y),c2.width,c2.height,0,0,c2.width,c2.height);
+    if(!cropM||!img)return;
+    const x1=cropM.p1?Math.min(cropM.p1.x,cropM.p2.x):cropM.x1;
+    const y1=cropM.p1?Math.min(cropM.p1.y,cropM.p2.y):cropM.y1;
+    const x2=cropM.p1?Math.max(cropM.p1.x,cropM.p2.x):cropM.x2;
+    const y2=cropM.p1?Math.max(cropM.p1.y,cropM.p2.y):cropM.y2;
+    const im=new Image();
+    im.onload=()=>{
+      const cW=Math.round(im.width*(x2-x1)),cH=Math.round(im.height*(y2-y1));
+      const c2=document.createElement("canvas");c2.width=cW;c2.height=cH;
+      const ctx2=c2.getContext("2d");
+      if(cropM.polygon&&cropM.polygon.length>=3){
+        ctx2.beginPath();
+        cropM.polygon.forEach(([px,py],i)=>{
+          const rx=(px-x1)/(x2-x1)*cW,ry=(py-y1)/(y2-y1)*cH;
+          i===0?ctx2.moveTo(rx,ry):ctx2.lineTo(rx,ry);
+        });
+        ctx2.closePath();ctx2.clip();
+      }
+      ctx2.drawImage(im,im.width*x1,im.height*y1,cW,cH,0,0,cW,cH);
       setImg(c2.toDataURL("image/jpeg",.9));setAnns([]);setHist([]);setSelId(null);setScale(null);setCropM(null);setTool("sel");
     };im.src=img;
   };
@@ -1045,6 +1087,14 @@ shape: box|cylinder|sphere|cone|torus|tube|pipe|L_shape|T_shape|table|chair|door
   };
 
   /* AI SEGMENT (manual trigger) */
+  /* Auto-detect contours when new image loads (if no segs yet and API key set) */
+  useEffect(()=>{
+    if(img&&segs.length===0&&GK()&&!segLoad){
+      const t=setTimeout(()=>segAIRef.current&&segAIRef.current(),1200);
+      return()=>clearTimeout(t);
+    }
+  },[img]);
+  const segAIRef=useRef(null);
   const segAI=async()=>{
     if(!img||segLoad||!GK())return;setSegLoad(true);
     const b64=img.split(",")[1];
@@ -1066,6 +1116,7 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO, SIN TEXTO NI MARKDOWN:
   };
 
   /* AI CHAT */
+  useEffect(()=>{segAIRef.current=segAI;});
   const sendChat=async()=>{
     if(!chatInput.trim()||chatLoad||!GK())return;
     const userMsg=chatInput.trim();setChatInput("");
@@ -1736,14 +1787,30 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       {tool==="crop"?"✂ Mantén y arrastra para seleccionar zona rectangular":tool==="lasso"?"":DRAG.includes(tool)?"→ Arrastra en la imagen":pend.length===1?"▶ PASO 2 — 2° punto":"▶ PASO 1 — Toca la imagen"}
     </span></>
     :<span style={{fontSize:"9px",color:"#2a3a5a",flex:1}}>← Selecciona herramienta arriba</span>}
-    {pend.length>0&&<button onClick={()=>{setPend([]);setPrev(null);}} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",fontSize:"8px",padding:"3px 9px",borderRadius:"5px"}}>✕</button>}
+    {pend.length>0&&tool!=="lasso"&&<button onClick={()=>{setPend([]);setPrev(null);}} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",fontSize:"8px",padding:"3px 9px",borderRadius:"5px"}}>✕</button>}
     <button onClick={undo} disabled={hist.length===0} style={{padding:"4px 11px",background:hist.length>0?"rgba(255,150,0,.15)":"transparent",border:`1px solid ${hist.length>0?"rgba(255,150,0,.35)":"transparent"}`,color:hist.length>0?C:"#333",borderRadius:"7px",fontSize:"9px",fontWeight:700,flexShrink:0}}>↩ {hist.length}</button>
   </div>
+
+  {/* LASSO dedicated status bar */}
+  {tool==="lasso"&&<div style={{padding:"6px 10px",background:"rgba(170,0,255,.12)",border:"1.5px solid #cc44ff",borderRadius:"10px",marginBottom:"7px",display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap"}}>
+    <span style={{fontSize:"15px"}}>⬡</span>
+    <span style={{fontSize:"9px",color:"#dd88ff",fontWeight:700,flex:1}}>
+      {pend.length===0?"Clic en la imagen para empezar el contorno":pend.length<3?`${pend.length} punto${pend.length>1?"s":""} — añade al menos 3`:`${pend.length} puntos — clic en ⚪ inicio o doble-clic para cerrar`}
+    </span>
+    {pend.length>=3&&<button onClick={()=>{
+      const x1=Math.min(...pend.map(q=>q.x)),y1=Math.min(...pend.map(q=>q.y));
+      const x2=Math.max(...pend.map(q=>q.x)),y2=Math.max(...pend.map(q=>q.y));
+      setCropM({id:uid(),type:"lasso",isLasso:true,points:[...pend],polygon:pend.map(q=>[q.x,q.y]),x1,y1,x2,y2});
+      setPend([]);setPrev(null);setTool("sel");
+    }} style={{background:"#aa00ff",color:"#fff",border:"none",borderRadius:"7px",padding:"4px 12px",fontSize:"9px",fontWeight:800}}>✓ Cerrar</button>}
+    {pend.length>0&&<button onClick={()=>setPend(p=>p.slice(0,-1))} style={{background:"rgba(255,255,255,.08)",color:"#aaa",border:"1px solid rgba(255,255,255,.12)",borderRadius:"6px",padding:"4px 9px",fontSize:"9px"}}>↩</button>}
+    {pend.length>0&&<button onClick={()=>{setPend([]);setPrev(null);}} style={{background:"rgba(255,50,50,.15)",color:"#ff5577",border:"1px solid rgba(255,50,50,.3)",borderRadius:"6px",padding:"4px 9px",fontSize:"9px"}}>✕</button>}
+  </div>}
 
   {/* ═══ IMAGE - HERO ═══ */}
   <div ref={capRef} style={{position:"relative",background:"#000",borderRadius:"12px",overflow:"hidden",border:"2px solid #222",marginBottom:"7px"}}>
     <div ref={imgRef}
-      onClick={onImgClick} onDoubleClick={onImgDblClick} onMouseDown={onImgDown} onMouseMove={onImgMove}
+      onClick={onImgClick} onMouseDown={onImgDown} onMouseMove={onImgMove}
       onMouseUp={onImgUp}
       onTouchStart={e=>{onImgDown(e);if(e.touches.length===2)onTouchStartZoom(e);}}
       onTouchMove={e=>{if(e.touches.length===2){e.preventDefault();onTouchMoveZoom(e);}else{onImgMove(e);}}}
@@ -2427,26 +2494,40 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
 {/* CROP MODAL */}
 {cropM&&<div data-modal="crop" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"#111",border:"2px solid #ff9500",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:500,animation:"slideUp .22s ease",backdropFilter:"blur(24px)"}}>
   <button onClick={()=>setCropM(null)} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-  <div style={{fontSize:"13px",fontWeight:800,color:"#ff9500",marginBottom:"6px"}}>✂ ZONA SELECCIONADA</div>
+  <div style={{fontSize:"13px",fontWeight:800,color:cropM?.isLasso?"#cc44ff":"#ff9500",marginBottom:"6px"}}>{cropM?.isLasso?"⬡ LAZO POLIGONAL CERRADO":"✂ ZONA SELECCIONADA"}</div>
   <div style={{fontSize:"9px",color:"#666",marginBottom:"14px",lineHeight:1.8}}>Elige qué hacer con esta zona:</div>
   <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
     <button onClick={()=>{
       if(!cropM||!img)return;
-      const{p1,p2}=cropM;const im=new Image();im.crossOrigin="anonymous";
+      /* Support BOTH formats: rectangular crop (p1/p2) AND lasso (x1,y1,x2,y2,polygon) */
+      const x1=cropM.p1?Math.min(cropM.p1.x,cropM.p2.x):cropM.x1;
+      const y1=cropM.p1?Math.min(cropM.p1.y,cropM.p2.y):cropM.y1;
+      const x2=cropM.p1?Math.max(cropM.p1.x,cropM.p2.x):cropM.x2;
+      const y2=cropM.p1?Math.max(cropM.p1.y,cropM.p2.y):cropM.y2;
+      const im=new Image();im.crossOrigin="anonymous";
       im.onload=()=>{
-        const x1=Math.min(p1.x,p2.x),y1=Math.min(p1.y,p2.y),x2=Math.max(p1.x,p2.x),y2=Math.max(p1.y,p2.y);
-        const c2=document.createElement("canvas");
-        c2.width=Math.round(im.width*(x2-x1));c2.height=Math.round(im.height*(y2-y1));
-        c2.getContext("2d").drawImage(im,im.width*x1,im.height*y1,c2.width,c2.height,0,0,c2.width,c2.height);
-        const fakeSeg={id:uid(),name:"Zona recortada "+new Date().toLocaleTimeString("es-ES"),x1,y1,x2,y2,color:"#ff9500",hint:"Zona seleccionada con herramienta recorte"};
+        const cW=Math.round(im.width*(x2-x1)),cH=Math.round(im.height*(y2-y1));
+        const c2=document.createElement("canvas");c2.width=cW;c2.height=cH;
+        const ctx2=c2.getContext("2d");
+        if(cropM.polygon&&cropM.polygon.length>=3){
+          /* Clip to the exact lasso polygon shape */
+          ctx2.beginPath();
+          cropM.polygon.forEach(([px,py],i)=>{
+            const rx=(px-x1)/(x2-x1)*cW,ry=(py-y1)/(y2-y1)*cH;
+            i===0?ctx2.moveTo(rx,ry):ctx2.lineTo(rx,ry);
+          });
+          ctx2.closePath();ctx2.clip();
+        }
+        ctx2.drawImage(im,im.width*x1,im.height*y1,cW,cH,0,0,cW,cH);
+        const fakeSeg={id:uid(),name:(cropM.isLasso?"Lazo ":"Zona ")+new Date().toLocaleTimeString("es-ES"),x1,y1,x2,y2,color:cropM.isLasso?"#cc44ff":"#ff9500",polygon:cropM.polygon};
         setSegs(s=>[...s,fakeSeg]);
-        setFcAnns([]);
+        setFcAnns([]);setFcZoom(1);
         setEditZone({seg:fakeSeg,croppedImg:c2.toDataURL("image/jpeg",.95)});
         setCropM(null);
       };im.src=img;
-    }} style={{width:"100%",padding:"13px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"9px",fontSize:"12px",fontWeight:800,textAlign:"left"}}>
-      ✂ EXTRAER → Panel flotante con herramientas → 2D y 3D
-      <div style={{fontSize:"8px",marginTop:"3px",opacity:.7}}>Mide la zona extraída · Se guarda en 2D y 3D con su forma real</div>
+    }} style={{width:"100%",padding:"13px",background:cropM?.isLasso?"linear-gradient(135deg,#aa00ff,#ff00aa)":"linear-gradient(135deg,#ff6600,#ffaa00)",color:cropM?.isLasso?"#fff":"#000",border:"none",borderRadius:"9px",fontSize:"12px",fontWeight:800,textAlign:"left"}}>
+      {cropM?.isLasso?"⬡ EXTRAER FORMA":"✂ EXTRAER"} → Panel flotante con herramientas → 2D y 3D
+      <div style={{fontSize:"8px",marginTop:"3px",opacity:.7}}>{cropM?.isLasso?"Recorta siguiendo exactamente el contorno dibujado":"Mide la zona extraída"} · Se guarda en 2D y 3D</div>
     </button>
     <button onClick={applyCrop} style={{width:"100%",padding:"11px",background:"rgba(255,150,0,.08)",border:"1px solid rgba(255,150,0,.3)",color:"#ff9500",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>
       ✂ Recortar imagen principal (elimina el resto)
