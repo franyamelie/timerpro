@@ -1786,18 +1786,33 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         {/* LASSO: polygon chain + preview line to cursor (Photoshop style) */}
         {tool==="lasso"&&pend.length>=1&&(()=>{
           const lc=COLS[colI%COLS.length];
-          const chainD="M "+pend.map(p=>`${p.x*100}% ${p.y*100}%`).join(" L ");
           const cursorPt=prev?.points?.[1];
           return<g style={{pointerEvents:"none"}}>
-            {/* Completed chain - solid dashed line */}
-            <path d={chainD} stroke={lc} strokeWidth="2" fill={`${lc}12`} strokeDasharray="8 4"/>
-            {/* Close line back to start (ghost) */}
-            {pend.length>=3&&cursorPt&&<line x1={`${pend[0].x*100}%`} y1={`${pend[0].y*100}%`} x2={`${cursorPt.x*100}%`} y2={`${cursorPt.y*100}%`} stroke={lc} strokeWidth="1" strokeDasharray="3 4" opacity=".35"/>}
-            {/* Preview line: last point → cursor */}
-            {cursorPt&&<line x1={`${pend[pend.length-1].x*100}%`} y1={`${pend[pend.length-1].y*100}%`} x2={`${cursorPt.x*100}%`} y2={`${cursorPt.y*100}%`} stroke={lc} strokeWidth="2" strokeDasharray="6 4"/>}
-            {/* Anchor points */}
-            {pend.map((p,i)=><g key={i}>
-              <circle cx={`${p.x*100}%`} cy={`${p.y*100}%`} r={i===0?"7":"4"} fill={i===0?"#fff":lc} stroke={lc} strokeWidth="1.5"/>
+            {/* Chain: individual <line> segments (% works in line x1/y1/x2/y2) */}
+            {pend.slice(0,-1).map((p,i)=><line key={i}
+              x1={`${p.x*100}%`} y1={`${p.y*100}%`}
+              x2={`${pend[i+1].x*100}%`} y2={`${pend[i+1].y*100}%`}
+              stroke={lc} strokeWidth="2" strokeDasharray="8 4"/>)}
+            {/* Fill polygon area (use last-to-first lines) */}
+            {pend.length>=3&&pend.map((p,i)=>i>0&&<line key={`f${i}`}
+              x1={`${pend[i-1].x*100}%`} y1={`${pend[i-1].y*100}%`}
+              x2={`${p.x*100}%`} y2={`${p.y*100}%`}
+              stroke={`${lc}30`} strokeWidth="12"/>)}
+            {/* Preview: last point → cursor */}
+            {cursorPt&&<line
+              x1={`${pend[pend.length-1].x*100}%`} y1={`${pend[pend.length-1].y*100}%`}
+              x2={`${cursorPt.x*100}%`} y2={`${cursorPt.y*100}%`}
+              stroke={lc} strokeWidth="2" strokeDasharray="6 4"/>}
+            {/* Ghost close line: cursor → first point */}
+            {pend.length>=3&&cursorPt&&<line
+              x1={`${cursorPt.x*100}%`} y1={`${cursorPt.y*100}%`}
+              x2={`${pend[0].x*100}%`} y2={`${pend[0].y*100}%`}
+              stroke={lc} strokeWidth="1" strokeDasharray="3 4" opacity=".4"/>}
+            {/* Anchor dots */}
+            {pend.map((p,i)=><g key={`a${i}`}>
+              <circle cx={`${p.x*100}%`} cy={`${p.y*100}%`}
+                r={i===0?"7":"4"}
+                fill={i===0?"#fff":lc} stroke={lc} strokeWidth="1.5"/>
               {i===0&&pend.length>=3&&<circle cx={`${p.x*100}%`} cy={`${p.y*100}%`} r="3" fill={lc}/>}
             </g>)}
           </g>;
