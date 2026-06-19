@@ -1013,6 +1013,57 @@ function App(){
     window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
   },[tool]);
 
+  /* Drag a SINGLE point of an AI-detected segment polygon (reshape contour) */
+  const onSegPtDrag=useCallback((e,segId,ptIdx)=>{
+    e.preventDefault();e.stopPropagation();
+    const r=imgRef.current?.getBoundingClientRect();if(!r)return;
+    const mv=ev=>{
+      ev.preventDefault();
+      const s=ev.touches?.[0]||ev;
+      const nx=cl((s.clientX-r.left)/r.width,.005,.995),ny=cl((s.clientY-r.top)/r.height,.005,.995);
+      setSegs(prev=>prev.map(sg=>{
+        if(sg.id!==segId)return sg;
+        const poly=[...(sg.polygon||[])];
+        poly[ptIdx]=[nx,ny];
+        return{...sg,polygon:poly};
+      }));
+    };
+    const up=()=>{window.removeEventListener("mousemove",mv);window.removeEventListener("touchmove",mv);window.removeEventListener("mouseup",up);window.removeEventListener("touchend",up);};
+    window.addEventListener("mousemove",mv,{passive:false});window.addEventListener("touchmove",mv,{passive:false});
+    window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
+  },[]);
+
+  /* Drag the WHOLE segment (extracted/AI part) to reposition it anywhere in the image */
+  const onSegMove=useCallback((e,segId)=>{
+    if(tool!=="sel")return;
+    e.preventDefault();e.stopPropagation();
+    setSelSeg(segId);
+    const r=imgRef.current?.getBoundingClientRect();if(!r)return;
+    const s0=e.touches?.[0]||e;
+    const start={x:(s0.clientX-r.left)/r.width,y:(s0.clientY-r.top)/r.height};
+    let moved=false;
+    const mv=ev=>{
+      ev.preventDefault();
+      const s=ev.touches?.[0]||ev;
+      const now={x:(s.clientX-r.left)/r.width,y:(s.clientY-r.top)/r.height};
+      const dx=now.x-start.x,dy=now.y-start.y;
+      if(Math.abs(dx)>.003||Math.abs(dy)>.003)moved=true;
+      if(moved){
+        setSegs(prev=>prev.map(sg=>{
+          if(sg.id!==segId)return sg;
+          return{...sg,
+            x1:cl(sg.x1+dx,0,1),y1:cl(sg.y1+dy,0,1),x2:cl(sg.x2+dx,0,1),y2:cl(sg.y2+dy,0,1),
+            polygon:(sg.polygon||[]).map(([px,py])=>[cl(px+dx,0,1),cl(py+dy,0,1)])
+          };
+        }));
+        start.x=now.x;start.y=now.y;
+      }
+    };
+    const up=()=>{window.removeEventListener("mousemove",mv);window.removeEventListener("touchmove",mv);window.removeEventListener("mouseup",up);window.removeEventListener("touchend",up);};
+    window.addEventListener("mousemove",mv,{passive:false});window.addEventListener("touchmove",mv,{passive:false});
+    window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
+  },[tool]);
+
   /* confirm measurement */
   const confirmM=()=>{
     if(!measM)return;
@@ -2100,9 +2151,22 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
             {/* Glow on selected */}
             {isSel&&<polygon points={pts} stroke={col} strokeWidth="6"
               fill="none" opacity="0.2"/>}
+            {/* Drag-to-move hit area: whole piece, only when selected + Mover active */}
+            {isSel&&tool==="sel"&&<polygon points={pts} fill="transparent"
+              style={{pointerEvents:"all",cursor:"grab"}}
+              onMouseDown={e=>onSegMove(e,seg.id)} onTouchStart={e=>onSegMove(e,seg.id)}/>}
           </g>;
         })}
       </svg>}
+      {/* Polygon vertex handles - draggable points to RESHAPE AI-detected contour */}
+      {showSegs&&segs.map(seg=>selSeg===seg.id&&seg.polygon?.length>=3&&seg.polygon.map((pt,i)=>(
+        <div key={`${seg.id}-pt${i}`}
+          onMouseDown={e=>onSegPtDrag(e,seg.id,i)} onTouchStart={e=>onSegPtDrag(e,seg.id,i)}
+          style={{position:"absolute",left:`${pt[0]*100}%`,top:`${pt[1]*100}%`,
+            transform:"translate(-50%,-50%)",width:"13px",height:"13px",borderRadius:"50%",
+            background:seg.color||C,border:"2px solid #fff",cursor:"grab",zIndex:30,
+            boxShadow:`0 0 7px ${seg.color||C}`}}/>
+      )))}
       {/* Marker dots (DOM) */}
       {mrkA.map((a,idx)=><div key={a.id} className="nc"
         onMouseDown={e=>onHandleDrag(e,a.id,0)} onTouchStart={e=>onHandleDrag(e,a.id,0)}
