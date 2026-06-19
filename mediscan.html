@@ -741,6 +741,7 @@ function App(){
 
   /* AI chat */
   const [chatMsgs,setChatMsgs]=useState([]);
+  const [chatUnread,setChatUnread]=useState(false);
   const [chatInput,setChatInput]=useState("");
   const [isListening,setIsListening]=useState(false);
   const recogRef=useRef(null);
@@ -1258,6 +1259,7 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO, SIN TEXTO NI MARKDOWN:
         setAiMsg(`✅ ${info.segments.length} objetos: ${names}${info.segments.length>5?"...":""} (${withPoly} con contorno real, ${info.segments.length-withPoly} aproximados)`);
         /* Proactive interaction: AI speaks in the chat about what it found */
         setChatMsgs(m=>[...m,{role:"assistant",content:`He encontrado ${info.segments.length} objetos en la imagen: **${names}**${info.segments.length>5?"...":""}. Toca cualquiera de los contornos para verlo de cerca, o dime cuál quieres medir primero y te ayudo.`}]);
+        setChatUnread(true);
       }else{
         setAiMsg("⚠️ La IA no pudo detectar contornos esta vez. Pulsa Detectar contornos de nuevo.");
       }
@@ -2207,6 +2209,13 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     <span>{aiMsg}</span>
     <button onClick={()=>setAiMsg("")} style={{background:"none",border:"none",color:"inherit",opacity:.6,fontSize:"11px",cursor:"pointer",flexShrink:0}}>✕</button>
   </div>}
+  {/* Explicit "add another selection beyond AI defaults" entry point */}
+  {segs.length>0&&<button onClick={()=>{setMeasM(null);setCalibM(null);setCropM(null);setTool("lasso");setPend([]);}}
+    style={{width:"100%",padding:"9px",marginBottom:"7px",background:"rgba(170,0,255,.1)",
+      border:"1.5px dashed rgba(170,0,255,.4)",color:"#cc66ff",borderRadius:"9px",
+      fontSize:"10px",fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:"6px"}}>
+    ＋ Nueva selección manual <span style={{fontSize:"8px",opacity:.7,fontWeight:400}}>(además de las {segs.length} detectadas)</span>
+  </button>}
   {/* QUICK ACTIONS under image */}
   <div style={{display:"flex",gap:"4px",marginBottom:"7px",flexWrap:"wrap"}}>
     <button onClick={()=>setRot(r=>(r+90)%360)} style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.2)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:500}}>↻+90°</button>
@@ -2239,13 +2248,16 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         const switching=(k==="2d"||k==="3d")&&sheet!==k;
         const hasPendingWork=tool!=="sel"||pend.length>0||anns.some(a=>a.value==null&&!MRK.includes(a.type));
         if(switching&&hasPendingWork){setViewConfirm(k);return;}
+        if(k==="chat")setChatUnread(false);
         setSheet(sheet===k?null:k);
       }}
-        style={{flex:1,minWidth:"70px",padding:"6px 2px",borderRadius:"7px",
+        style={{flex:1,minWidth:"70px",padding:"6px 2px",borderRadius:"7px",position:"relative",
           background:sheet===k?"linear-gradient(135deg,#ff6600,#ffaa00)":"transparent",
           color:sheet===k?"#000":"#555",
-          border:`1px solid ${sheet===k?"#ff9500":"rgba(255,255,255,.06)"}`,
-          fontSize:"8px",fontWeight:sheet===k?700:400}}>{lb}</button>
+          border:`1px solid ${sheet===k?"#ff9500":k==="chat"&&chatUnread?"#ff3366":"rgba(255,255,255,.06)"}`,
+          fontSize:"8px",fontWeight:sheet===k?700:400}}>{lb}
+        {k==="chat"&&chatUnread&&<span style={{position:"absolute",top:"-3px",right:"-3px",width:"9px",height:"9px",borderRadius:"50%",background:"#ff3366",border:"1.5px solid #0c0c0c",animation:"pulse 1.2s infinite"}}/>}
+      </button>
     ))}
   </div>
 
@@ -2502,6 +2514,15 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     }} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.35)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
   </div>
 
+  {/* Floating toast: AI proactive message arrived (impossible to miss) */}
+  {chatUnread&&sheet!=="chat"&&<div onClick={()=>{setChatUnread(false);setSheet("chat");}}
+    style={{position:"fixed",bottom:"90px",left:"50%",transform:"translateX(-50%)",zIndex:850,
+      background:"linear-gradient(135deg,#7700ff,#aa00ff)",color:"#fff",padding:"11px 16px",
+      borderRadius:"14px",boxShadow:"0 6px 24px rgba(170,0,255,.5)",cursor:"pointer",
+      display:"flex",alignItems:"center",gap:"9px",maxWidth:"90%",animation:"slideUp .3s ease"}}>
+    <span style={{fontSize:"18px"}}>🤖</span>
+    <span style={{fontSize:"10px",fontWeight:700,lineHeight:1.4}}>La IA encontró algo y quiere hablar contigo<br/><span style={{opacity:.8,fontWeight:400}}>Toca para abrir el Chat IA</span></span>
+  </div>}
   {/* Exit confirmation: save / discard / stay */}
   {exitConfirm&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:950,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}} onClick={()=>setExitConfirm(false)}>
     <div onClick={e=>e.stopPropagation()} style={{background:"#161616",border:"2px solid #ff9500",borderRadius:"14px",padding:"18px",maxWidth:"360px",width:"100%"}}>
