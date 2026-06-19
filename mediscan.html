@@ -1223,12 +1223,12 @@ shape: box|cylinder|sphere|cone|torus|tube|pipe|L_shape|T_shape|table|chair|door
   const segAI=async()=>{
     if(!img||segLoad||!GK())return;setSegLoad(true);
     const b64=img.split(",")[1];
-    const pr=`Eres un sistema de segmentación de imágenes tipo SAM (Segment Anything). Identifica cada OBJETO INDIVIDUAL separado y diferenciable en la imagen — no zonas amplias ni agrupaciones. Por ejemplo, si hay 3 árboles, identifica los 3 árboles por separado (no "vegetación" como un solo bloque). Otros ejemplos de objetos individuales: una montaña concreta, una roca concreta, el cuerpo de agua (lago/río), un edificio, una persona, un vehículo, una nube grande, el cielo. Hasta 14 objetos, priorizando los más grandes y reconocibles.
+    const pr=`Eres un sistema de segmentación de imágenes tipo SAM (Segment Anything). Identifica cada OBJETO INDIVIDUAL separado y diferenciable en la imagen — no zonas amplias ni agrupaciones. Por ejemplo, si hay 3 árboles, identifica los 3 árboles por separado (no "vegetación" como un solo bloque). Otros ejemplos de objetos individuales: una montaña concreta, una roca concreta, el cuerpo de agua (lago/río), un edificio, una persona, un vehículo, una nube grande, el cielo. Hasta 8 objetos máximo, priorizando los más grandes y reconocibles. MENOS objetos pero con contornos PRECISOS es mejor que muchos objetos imprecisos.
 
 Para cada objeto:
 - nombre muy específico en español (ej: "Pino izquierda", "Pico nevado central", "Roca junto al agua", NO "árboles" en plural ni "paisaje")
 - x1,y1,x2,y2: bounding box normalizado 0-1 ajustado MUY ajustado al objeto, sin margen sobrante
-- polygon: 12-20 puntos [[x,y],...] entre 0-1 seguidos EXACTAMENTE el contorno real y orgánico del objeto (un árbol tiene copa irregular y tronco fino, una montaña tiene picos y valles, una roca tiene bordes angulares — NO un rectángulo ni un octágono genérico)
+- polygon: 8-14 puntos [[x,y],...] entre 0-1 siguiendo el contorno real y orgánico del objeto, pegado a su silueta exacta como un lazo poligonal de Photoshop dibujado a mano alrededor del borde. Ejemplo: para una jirafa, los puntos siguen el cuello, la cabeza, las patas — no un óvalo ni una caja. Para un árbol: la copa irregular, el tronco estrecho. PROHIBIDO usar formas regulares simétricas (octágono, rombo, rectángulo) — el polígono debe verse irregular y orgánico, igual que el objeto real. Es OBLIGATORIO incluir polygon en CADA objeto, nunca lo omitas.
 - hint: qué medir en este objeto
 - color: hex único y vivo, diferente para cada objeto
 
@@ -1253,7 +1253,11 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO, SIN TEXTO NI MARKDOWN:
       }
       if(info?.segments?.length){
         setSegs(info.segments);setShowSegs(true);
-        setAiMsg(`🔍 ${info.segments.length} partes detectadas. Toca una zona para medirla.`);
+        const withPoly=info.segments.filter(s=>s.polygon?.length>=4).length;
+        const names=info.segments.map(s=>s.name).slice(0,5).join(", ");
+        setAiMsg(`✅ ${info.segments.length} objetos: ${names}${info.segments.length>5?"...":""} (${withPoly} con contorno real, ${info.segments.length-withPoly} aproximados)`);
+        /* Proactive interaction: AI speaks in the chat about what it found */
+        setChatMsgs(m=>[...m,{role:"assistant",content:`He encontrado ${info.segments.length} objetos en la imagen: **${names}**${info.segments.length>5?"...":""}. Toca cualquiera de los contornos para verlo de cerca, o dime cuál quieres medir primero y te ayudo.`}]);
       }else{
         setAiMsg("⚠️ La IA no pudo detectar contornos esta vez. Pulsa Detectar contornos de nuevo.");
       }
@@ -2134,9 +2138,9 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         {segs.map(seg=>{
           const isSel=selSeg===seg.id;
           const col=seg.color||C;
-          const raw=seg.polygon?.length>=4?seg.polygon:
-            [[seg.x1,seg.y1+.08],[seg.x1+.05,seg.y1],[seg.x2-.05,seg.y1],[seg.x2,seg.y1+.08],
-             [seg.x2,seg.y2-.08],[seg.x2-.05,seg.y2],[seg.x1+.05,seg.y2],[seg.x1,seg.y2-.08]];
+          const hasReal=seg.polygon?.length>=4;
+          if(!hasReal)return null; /* NO synthetic octagon fallback - never show a fake contour */
+          const raw=seg.polygon;
           /* Convert 0-1 coords → 0-1000 plain numbers (NO %) */
           const pts=raw.map(pt=>Array.isArray(pt)?`${(pt[0]*1000).toFixed(1)},${(pt[1]*1000).toFixed(1)}`:
             `${((pt.x||0)*1000).toFixed(1)},${((pt.y||0)*1000).toFixed(1)}`).join(" ");
@@ -2158,6 +2162,16 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           </g>;
         })}
       </svg>}
+      {/* Segments WITHOUT a real polygon: small warning pin, NEVER a fake contour shape */}
+      {showSegs&&segs.filter(s=>!(s.polygon?.length>=4)).map(seg=>(
+        <div key={`noply-${seg.id}`} onClick={e=>{e.stopPropagation();setSelSeg(seg.id);}}
+          style={{position:"absolute",left:`${(seg.x1+seg.x2)*50}%`,top:`${(seg.y1+seg.y2)*50}%`,
+            transform:"translate(-50%,-50%)",background:"rgba(255,150,0,.85)",color:"#000",
+            fontSize:"8px",fontWeight:800,padding:"3px 7px",borderRadius:"6px",
+            border:"1px solid #fff",cursor:"pointer",whiteSpace:"nowrap",zIndex:25}}>
+          ⚠ {seg.name} (sin contorno preciso)
+        </div>
+      ))}
       {/* Polygon vertex handles - draggable points to RESHAPE AI-detected contour */}
       {showSegs&&segs.map(seg=>selSeg===seg.id&&seg.polygon?.length>=3&&seg.polygon.map((pt,i)=>(
         <div key={`${seg.id}-pt${i}`}
@@ -2185,6 +2199,14 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     </div>
   </div>
 
+  {/* AI detection status - VISIBLE feedback (was being set but never shown) */}
+  {aiMsg&&<div style={{padding:"7px 10px",marginBottom:"7px",borderRadius:"9px",fontSize:"9px",fontWeight:700,
+    background:aiMsg.startsWith("⚠️")?"rgba(255,50,50,.12)":"rgba(0,200,100,.12)",
+    border:`1px solid ${aiMsg.startsWith("⚠️")?"rgba(255,50,50,.3)":"rgba(0,200,100,.3)"}`,
+    color:aiMsg.startsWith("⚠️")?"#ff5577":"#00dd77",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px"}}>
+    <span>{aiMsg}</span>
+    <button onClick={()=>setAiMsg("")} style={{background:"none",border:"none",color:"inherit",opacity:.6,fontSize:"11px",cursor:"pointer",flexShrink:0}}>✕</button>
+  </div>}
   {/* QUICK ACTIONS under image */}
   <div style={{display:"flex",gap:"4px",marginBottom:"7px",flexWrap:"wrap"}}>
     <button onClick={()=>setRot(r=>(r+90)%360)} style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.2)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:500}}>↻+90°</button>
@@ -2829,6 +2851,14 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     <button onClick={applyCrop} style={{width:"100%",padding:"11px",background:"rgba(255,150,0,.08)",border:"1px solid rgba(255,150,0,.3)",color:"#ff9500",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>
       ✂ Recortar imagen principal (elimina el resto)
     </button>
+    <div style={{display:"flex",gap:"7px"}}>
+      <button onClick={()=>{setCropM(null);setTool(cropM?.isLasso?"lasso":"crop");}} style={{flex:1,padding:"11px",background:"rgba(0,180,255,.08)",border:"1px solid rgba(0,180,255,.3)",color:"#00bbff",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>
+        ↩ Seguir seleccionando
+      </button>
+      <button onClick={()=>{setCropM(null);setTool("sel");setSheet("2d");}} style={{flex:1,padding:"11px",background:"rgba(0,200,100,.08)",border:"1px solid rgba(0,200,100,.3)",color:"#00dd77",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>
+        📐 Ir a 2D/3D
+      </button>
+    </div>
     <button onClick={()=>setCropM(null)} style={{width:"100%",padding:"10px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.08)",color:"#444",borderRadius:"9px",fontSize:"10px"}}>Cancelar</button>
   </div>
 </div>}
