@@ -190,7 +190,7 @@ const TOOL_DESC={
 const DRAG=["rect","circ","crop"];
 const MULTI_PTS=["poly","area","defl"];
 /* Tools using universal click-to-add-point + double-click-to-finish workflow */
-const OPEN_ENDED=["line","dim","dist","arr1","arr2","incl","ang","rad","wall","poly","tol","cham","area","arc","defl"];
+const OPEN_ENDED=["line","dim","dist","arr1","arr2","incl","ang","rad","wall","poly","cham","area","arc","defl"];
 /* ══ VIEW 2D ══ */
 function View2D({anns,objName,sc,segs,img,segSel}){
   const ref=useRef(null);
@@ -791,6 +791,7 @@ function App(){
   const [segLoad,setSegLoad]=useState(false);
   const [showSegs,setShowSegs]=useState(true);
   const [postActM,setPostActM]=useState(null); // pieza recién creada (SAM) esperando elección rápida
+  const [needMoreWarn,setNeedMoreWarn]=useState(""); // aviso visible cuando el doble-toque llega sin puntos suficientes
   const [selModeChoice,setSelModeChoice]=useState(false); // menú ¿cómo quieres seleccionar?
   const [part3DSel,setPart3DSel]=useState(null); // null = "todas" (con tope de seguridad); Set de ids = selección explícita
 
@@ -957,7 +958,14 @@ function App(){
     const el=imgRef.current;if(!el)return;
     const td=TOOLS.find(t=>t.id===tool);
     const finish=(pts)=>{
-      if(!td||pts.length<td.npts)return; /* need at least the minimum points */
+      if(!td||pts.length<td.npts){
+        /* Antes fallaba en silencio — ahora avisa exactamente cuántos puntos faltan, BIEN visible */
+        if(td&&pts.length>0){
+          setNeedMoreWarn(`⚠ "${td.label}" necesita ${td.npts} puntos mínimo — llevas ${pts.length}. Añade ${td.npts-pts.length} más, o pulsa ✕ para cancelar.`);
+          setTimeout(()=>setNeedMoreWarn(""),3500);
+        }
+        return;
+      }
       const col=COLS[colI%COLS.length];
       const a={id:uid(),type:tool,icon:td?.icon||"●",title:"",value:null,unit:"cm",axis:"",
                color:col,points:[...pts],lineStyle:lSt,arrowHead:aHd};
@@ -1650,7 +1658,8 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     const ld=a.lineStyle==="dashed"?"8,5":a.lineStyle==="dotted"?"2,5":"none";
     const lm=ip?"":getMeas(a);
     const badge=a.title?(lm?`${a.title}: ${lm}`:a.title):lm;
-    const mx=(p1.x+p2.x)*50,my=(p1.y+p2.y)*50;
+    /* p2 puede no existir en herramientas de 1 solo punto (tol/coord/note/rough) — sin esto, toda la app crashea */
+    const mx=p2?(p1.x+p2.x)*50:p1.x*100,my=p2?(p1.y+p2.y)*50:p1.y*100;
     const sel=()=>{if(!ip){setSelId(a.id);setTool("sel");}};
 
     if(a.type==="rect"||a.type==="crop"){
@@ -2253,17 +2262,17 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       setCropM({id:newSeg.id,type:"lasso",isLasso:true,points:[...pend],polygon:pend.map(q=>[q.x,q.y]),x1,y1,x2,y2,fromSeg:newSeg.id});
       setPend([]);setPrev(null);setTool("sel");
     }} style={{background:"#aa00ff",color:"#fff",border:"none",borderRadius:"7px",padding:"4px 12px",fontSize:"9px",fontWeight:800}}>✓ Cerrar</button>}
-    {pend.length>0&&<button onClick={()=>setPend(p=>p.slice(0,-1))} style={{background:"rgba(255,255,255,.08)",color:"#aaa",border:"1px solid rgba(255,255,255,.12)",borderRadius:"6px",padding:"4px 9px",fontSize:"9px"}}>↩</button>}
+    {pend.length>0&&<button onClick={()=>setPend(p=>p.slice(0,-1))} title="Quita solo el último punto que tocaste, sin cancelar todo" style={{background:"rgba(255,255,255,.08)",color:"#aaa",border:"1px solid rgba(255,255,255,.12)",borderRadius:"6px",padding:"4px 9px",fontSize:"9px",fontWeight:700}}>↩ Quitar último punto</button>}
     {pend.length>0&&<button onClick={()=>{setPend([]);setPrev(null);}} style={{background:"rgba(255,50,50,.15)",color:"#ff5577",border:"1px solid rgba(255,50,50,.3)",borderRadius:"6px",padding:"4px 9px",fontSize:"9px"}}>✕</button>}
   </div>}
 
   {/* OPEN_ENDED tools dedicated status bar (line, dim, ang, area, etc.) */}
-  {OPEN_ENDED.includes(tool)&&<div style={{padding:"6px 10px",background:"rgba(0,180,255,.1)",border:"1.5px solid #00bbff",borderRadius:"10px",marginBottom:"7px",display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap"}}>
-    <span style={{fontSize:"15px"}}>{TOOLS.find(t=>t.id===tool)?.icon}</span>
-    <span style={{fontSize:"9px",color:"#66ccff",fontWeight:700,flex:1}}>
-      {(()=>{const td=TOOLS.find(t=>t.id===tool);const need=td?.npts||2;
+  {OPEN_ENDED.includes(tool)&&<div style={{padding:"6px 10px",background:needMoreWarn?"rgba(255,50,50,.18)":"rgba(0,180,255,.1)",border:needMoreWarn?"1.5px solid #ff5577":"1.5px solid #00bbff",borderRadius:"10px",marginBottom:"7px",display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap"}}>
+    <span style={{fontSize:"15px"}}>{needMoreWarn?"⚠️":TOOLS.find(t=>t.id===tool)?.icon}</span>
+    <span style={{fontSize:"9px",color:needMoreWarn?"#ff8899":"#66ccff",fontWeight:700,flex:1}}>
+      {needMoreWarn||(()=>{const td=TOOLS.find(t=>t.id===tool);const need=td?.npts||2;
         return pend.length===0?"Toca para añadir el 1er punto":
-          pend.length<need?`${pend.length}/${need} puntos mínimos`:
+          pend.length<need?`${pend.length}/${need} puntos mínimos — sigue tocando, el doble-toque no hará nada todavía`:
           `${pend.length} puntos — doble clic/toque para terminar`;})()}
     </span>
     {pend.length>=(TOOLS.find(t=>t.id===tool)?.npts||2)&&<button onClick={()=>{
@@ -2273,7 +2282,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
                color:col,points:[...pend],lineStyle:lSt,arrowHead:aHd};
       setPend([]);setPrev(null);setMeasM(a);setMIn({t:"",v:"",u:"cm",ax:""});
     }} style={{background:"#00bbff",color:"#000",border:"none",borderRadius:"7px",padding:"4px 12px",fontSize:"9px",fontWeight:800}}>✓ Terminar</button>}
-    {pend.length>0&&<button onClick={()=>setPend(p=>p.slice(0,-1))} style={{background:"rgba(255,255,255,.08)",color:"#aaa",border:"1px solid rgba(255,255,255,.12)",borderRadius:"6px",padding:"4px 9px",fontSize:"9px"}}>↩</button>}
+    {pend.length>0&&<button onClick={()=>setPend(p=>p.slice(0,-1))} title="Quita solo el último punto que tocaste, sin cancelar todo" style={{background:"rgba(255,255,255,.08)",color:"#aaa",border:"1px solid rgba(255,255,255,.12)",borderRadius:"6px",padding:"4px 9px",fontSize:"9px",fontWeight:700}}>↩ Quitar último punto</button>}
     {pend.length>0&&<button onClick={()=>{setPend([]);setPrev(null);}} style={{background:"rgba(255,50,50,.15)",color:"#ff5577",border:"1px solid rgba(255,50,50,.3)",borderRadius:"6px",padding:"4px 9px",fontSize:"9px"}}>✕</button>}
   </div>}
 
@@ -2502,7 +2511,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       style={{flex:2,padding:"7px 6px",background:samActive?"linear-gradient(135deg,#00cc88,#00ffaa)":"rgba(0,200,130,.12)",border:`1px solid ${samActive?"#00ffaa":"rgba(0,200,130,.3)"}`,color:samActive?"#000":"#00dd99",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>
       {samStatus==="loading-models"?"⏳ Cargando IA...":samStatus==="encoding"?"⏳ Procesando...":samActive?"🎯 Toca un objeto":"🎯 IA Precisa"}
     </button>
-    <button onClick={()=>{setTool("crop");setMeasM(null);setCalibM(null);setCropM(null);}} title="Recortar rectangular → zona flotante" style={{flex:2,padding:"7px 6px",background:tool==="crop"?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.3)",color:tool==="crop"?"#000":"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>✂ Recortar</button>
+    <button onClick={()=>setSelModeChoice(true)} title="Elige cómo recortar: punto a punto, rectángulo o círculo" style={{flex:2,padding:"7px 6px",background:tool==="crop"?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.3)",color:tool==="crop"?"#000":"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>✂ Recortar</button>
     <button onClick={()=>{setMeasM(null);setCalibM(null);setCropM(null);if(tool==="lasso"){setPend([]);setTool("sel");}else{setTool("lasso");setPend([]);}}} title="Lazo poligonal: clic por clic para seleccionar área de forma libre" style={{flex:2,padding:"7px 6px",background:tool==="lasso"?"linear-gradient(135deg,#aa00ff,#ff00aa)":"rgba(170,0,255,.1)",border:`1px solid ${tool==="lasso"?"#cc44ff":"rgba(170,0,255,.3)"}`,color:tool==="lasso"?"#fff":"#bb44ff",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>{tool==="lasso"&&pend.length>0?`⬡ ${pend.length} pts`:"⬡ Lazo"}</button>
     {segs.length>0&&<button onClick={()=>setShowSegs(s=>!s)} style={{flex:1,padding:"7px 4px",background:showSegs?"rgba(0,150,255,.15)":"rgba(0,100,255,.05)",border:`1px solid rgba(0,150,255,${showSegs?.3:.12})`,color:showSegs?C:"#2a3a5a",borderRadius:"8px",fontSize:"9px"}}>👁{showSegs?"ON":"OFF"}</button>}
     {selId&&<button onClick={()=>delA(selId)} style={{flex:1,padding:"7px 4px",background:"rgba(255,50,50,.08)",border:"1px solid rgba(255,50,50,.2)",color:"#ff3366",borderRadius:"8px",fontSize:"9px"}}>🗑</button>}
@@ -2739,6 +2748,17 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     borderRadius:"50%",background:"linear-gradient(135deg,#ff6600,#ffaa00)",
     border:"none",color:"#000",fontSize:"18px",zIndex:350,
     boxShadow:"0 4px 16px rgba(0,100,255,.45)",display:"flex",alignItems:"center",justifyContent:"center"}}>⬆</button>}
+
+{/* Botón flotante FIJO para resetear vista (zoom/rotación) — siempre alcanzable
+    aunque el scroll o el zoom hayan dejado los botones normales fuera de pantalla */}
+{scr==="annotate"&&(imgZoom!==1||rot!==0)&&<button
+  onClick={()=>{setImgZoom(1);setRot(0);}}
+  title="Restablecer zoom y rotación — no borra tu trabajo"
+  style={{position:"fixed",bottom:"132px",right:"16px",width:"44px",height:"44px",
+    borderRadius:"50%",background:"linear-gradient(135deg,#ffcc00,#ff9500)",
+    border:"none",color:"#000",fontSize:"17px",fontWeight:900,zIndex:351,
+    boxShadow:"0 4px 16px rgba(255,180,0,.5)",display:"flex",alignItems:"center",justifyContent:"center",
+    animation:"pulse 1.5s infinite"}}>↺</button>}
 
 {/* ══ MEASURE MODAL ══ */}
 {measM&&<div data-modal="measure" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"#111",border:"2px solid #ff9500",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:editZone?900:500,animation:"slideUp .22s ease",backdropFilter:"blur(24px)",boxShadow:"0 -6px 40px rgba(0,0,0,.7)"}}>
