@@ -1266,6 +1266,24 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO, SIN TEXTO NI MARKDOWN:
     }catch(err){setAiMsg("⚠️ Error de conexión con la IA.");}finally{setSegLoad(false);}
   };
 
+  /* Proactive AI: when a piece is just extracted, identify it and suggest what to measure.
+     This is the realistic equivalent of "AI interjects while you draw" given the API is request/response,
+     not a live stream - it fires right at the moment the user finishes extracting, not mid-stroke. */
+  const askAIAboutPiece=useCallback(async(croppedDataUrl,pieceName)=>{
+    if(!GK())return;
+    try{
+      const b64=croppedDataUrl.split(",")[1];
+      const pr=`Esta es una pieza recortada de una imagen más grande, llamada provisionalmente "${pieceName}". En 1-2 frases cortas en español: di qué es exactamente (sé específico, no genérico) y sugiere UNA medida concreta que tendría sentido tomar aquí (ej: altura, diámetro, ángulo). Sé natural y breve, como si fueras un compañero mirando la pieza contigo.`;
+      const res=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${GK()}`},body:JSON.stringify({model:MDL,max_tokens:200,messages:[{role:"user",content:[{type:"image_url",image_url:{url:`data:image/jpeg;base64,${b64}`}},{type:"text",text:pr}]}]})});
+      const data=await res.json();
+      const txt=data?.choices?.[0]?.message?.content?.trim();
+      if(txt){
+        setChatMsgs(m=>[...m,{role:"assistant",content:txt}]);
+        setChatUnread(true);
+      }
+    }catch(e){/* silent - proactive feature, never block the user's flow */}
+  },[]);
+
   /* AI CHAT */
   useEffect(()=>{segAIRef.current=segAI;});
   const sendChat=async()=>{
@@ -1599,7 +1617,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       </defs>
       <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke="transparent" strokeWidth="14"/>
       <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={a.type==="arr2"?sw+2:sw} strokeDasharray={ld}
-        markerEnd={!noArr&&["line","dim","dist","arr1","arr2"].includes(a.type)?`url(#${aid}e)`:"none"}
+        markerEnd={!noArr&&["dist","arr1","arr2"].includes(a.type)?`url(#${aid}e)`:"none"}
         markerStart={dbl?`url(#${aid}s)`:"none"}/>
       {isDim&&<><line x1={`${p1.x*100}%`} y1={`${(p1.y-.025)*100}%`} x2={`${p1.x*100}%`} y2={`${(p1.y+.025)*100}%`} stroke={col} strokeWidth={sw+1}/><line x1={`${p2.x*100}%`} y1={`${(p2.y-.025)*100}%`} x2={`${p2.x*100}%`} y2={`${(p2.y+.025)*100}%`} stroke={col} strokeWidth={sw+1}/></>}
       <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1%" fill={col} opacity={ip?.4:.8}/>
@@ -2508,6 +2526,14 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       <button onClick={()=>setFcZoom(1)} style={{width:"28px",height:"28px",background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.12)",color:"#aaa",borderRadius:"6px",fontSize:"9px",fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>FIT</button>
       <button onClick={()=>setFcZoom(z=>Math.min(5,z+0.25))} style={{width:"28px",height:"28px",background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.12)",color:"#aaa",borderRadius:"6px",fontSize:"16px",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
     </div>
+    {/* Reposition: close panel, jump to main image with this piece pre-selected + Mover active */}
+    <button onClick={()=>{
+      const seg=editZone.seg;
+      if(fcAnns.some(a=>a.value!=null)){setExitConfirm(true);return;}
+      setEditZone(null);setFcAnns([]);setFcHist([]);
+      setSelSeg(seg.id);setTool("sel");
+      setAiMsg(`🔄 "${seg.name}" lista para mover — arrastra su interior en la imagen`);
+    }} title="Cerrar y mover esta pieza en la imagen principal" style={{background:"rgba(0,180,255,.12)",border:"1px solid rgba(0,180,255,.3)",color:"#00bbff",borderRadius:"7px",padding:"0 10px",height:"28px",fontSize:"9px",fontWeight:700,display:"flex",alignItems:"center",gap:"4px",flexShrink:0}}>🔄 Reposicionar</button>
     <button onClick={()=>{
       if(fcAnns.some(a=>a.value!=null)){setExitConfirm(true);return;}
       setEditZone(null);setFcAnns([]);setFcHist([]);
@@ -2864,6 +2890,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         setFcAnns([]);setFcZoom(1);
         setEditZone({seg:fakeSeg,croppedImg:c2.toDataURL("image/jpeg",.95)});
         setCropM(null);
+        askAIAboutPiece(c2.toDataURL("image/jpeg",.85),fakeSeg.name);
       };im.src=img;
     }} style={{width:"100%",padding:"13px",background:cropM?.isLasso?"linear-gradient(135deg,#aa00ff,#ff00aa)":"linear-gradient(135deg,#ff6600,#ffaa00)",color:cropM?.isLasso?"#fff":"#000",border:"none",borderRadius:"9px",fontSize:"12px",fontWeight:800,textAlign:"left"}}>
       {cropM?.isLasso?"⬡ EXTRAER FORMA":"✂ EXTRAER"} → Panel flotante con herramientas → 2D y 3D
@@ -2876,10 +2903,11 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       <button onClick={()=>{setCropM(null);setTool(cropM?.isLasso?"lasso":"crop");}} style={{flex:1,padding:"11px",background:"rgba(0,180,255,.08)",border:"1px solid rgba(0,180,255,.3)",color:"#00bbff",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>
         ↩ Seguir seleccionando
       </button>
-      <button onClick={()=>{setCropM(null);setTool("sel");setSheet("2d");}} style={{flex:1,padding:"11px",background:"rgba(0,200,100,.08)",border:"1px solid rgba(0,200,100,.3)",color:"#00dd77",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>
-        📐 Ir a 2D/3D
+      <button onClick={()=>{setCropM(null);setTool("sel");setSheet("2d");}} style={{flex:1,padding:"11px",background:"rgba(0,200,100,.08)",border:"1px solid rgba(0,200,100,.3)",color:"#00dd77",borderRadius:"9px",fontSize:"9px",fontWeight:700,lineHeight:1.3}}>
+        📐 Ver TODAS las zonas en 2D/3D{segs?.length>0?` (${segs.length})`:""}
       </button>
     </div>
+    {segs?.length>1&&<div style={{fontSize:"8px",color:"#555",textAlign:"center",marginTop:"-3px"}}>Incluye las {segs.length} zonas recortadas hasta ahora, no solo esta</div>}
     <button onClick={()=>setCropM(null)} style={{width:"100%",padding:"10px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.08)",color:"#444",borderRadius:"9px",fontSize:"10px"}}>Cancelar</button>
   </div>
 </div>}
