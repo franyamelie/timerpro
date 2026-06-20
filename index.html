@@ -503,6 +503,7 @@ function rerender(){
 function captureFormState(){
   if(_skipDomCapture) return; // switching days — don't read stale DOM
   try{
+    fEntry.timerDeduct=timerDeduct; // keep break-minutes in sync with the entry being saved
 
     // Read notas FIRST before persisting (fix: was saving stale data)
     const notasElFirst=document.getElementById('notas-editor');
@@ -905,8 +906,11 @@ function renderFichar(){
           ),
           h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.2rem'}},
             editingEntry
-              ? h('button',{class:'btn btn-gh btn-sm',on:{click:cancelEditing}},'✕ Cancelar')
+              ? h('button',{class:'btn btn-g btn-sm',on:{click:saveEntry}},'💾 Guardar cambios')
               : h('button',{class:'btn btn-g btn-sm',on:{click:saveEntry}},'💾 Finalizar jornada'),
+            editingEntry
+              ? h('button',{class:'btn btn-gh btn-sm',on:{click:cancelEditing}},'✕ Cancelar')
+              : null,
             !editingEntry&&fEntry.id?h('span',{style:{fontSize:'.7rem',color:'var(--acc)'},title:'Guardado automáticamente'},'✓ guardado'):null,
             !editingEntry&&today_entries.length>0
               ? h('button',{class:'btn btn-b btn-sm',on:{click:()=>loadHistorial(today_entries[0])}},`📋 Historial (${today_entries.length})`)
@@ -947,7 +951,13 @@ function renderFichar(){
           'Descanso:',
           h('input',{type:'number',min:'0',max:'480',value:timerDeduct,
             style:{width:'52px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.85rem',textAlign:'center'},
-            on:{input:ev=>{timerDeduct=0;localStorage.setItem('timerDeduct',timerDeduct);autoCalcHorasFromFichajes();}}},
+            on:{input:ev=>{
+              timerDeduct=parseInt(ev.target.value)||0;
+              fEntry.timerDeduct=timerDeduct;
+              localStorage.setItem('timerDeduct',timerDeduct);
+              autoCalcHorasFromFichajes();
+              scheduleDraftSave();
+            }}},
           'min'
         )
       ),
@@ -2021,6 +2031,7 @@ function goToDay(ds){
   selDate=null;
   S.tab='fichar';
   restoreTimerForDay(ds); // restore this day's timer if it has one
+  timerDeduct=fEntry.timerDeduct||0; // restore this jornada's break minutes (restoreTimerForDay resets to 0)
   rerender();
   requestAnimationFrame(()=>{ _skipDomCapture=false; });
   window.scrollTo(0,0);
@@ -2385,13 +2396,34 @@ function filterTasks(){
 
 
 // ── EXPORT FUNCTIONS ─────────────────────────────────────
+// ── RESUMEN: selección de jornadas (rango de fechas O días sueltos) ──
+function getResumenEntries(){
+  if(S.resMode==='days'){
+    const set=new Set(S.resDays||[]);
+    return S.entries.filter(e=>set.has(e.fecha)&&!e._draft).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  }
+  const from=S.resFrom||firstDayOfMonth();
+  const to=S.resTo||today();
+  return S.entries.filter(e=>e.fecha>=from&&e.fecha<=to&&!e._draft).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+}
+function resumenPeriodoLabel(){
+  if(S.resMode==='days'){
+    const n=(S.resDays||[]).length;
+    return n>0?n+' día'+(n>1?'s':'')+' seleccionado'+(n>1?'s':''):'Sin días seleccionados';
+  }
+  const from=S.resFrom||firstDayOfMonth(), to=S.resTo||today();
+  return 'Del '+dlbl(from)+' al '+dlbl(to);
+}
+function resumenFileTag(){
+  if(S.resMode==='days') return 'dias_sueltos';
+  return (S.resFrom||firstDayOfMonth())+'_'+(S.resTo||today());
+}
+
 function openExportModal(mode){
-  const from = S.resFrom||firstDayOfMonth();
-  const to = S.resTo||today();
-  const entries = S.entries
-    .filter(e=>e.fecha>=from && e.fecha<=to && !e._draft)
-    .sort((a,b)=>a.fecha.localeCompare(b.fecha));
-  if(!entries.length){showAlert('No hay jornadas en el rango','err');return;}
+  const entries = getResumenEntries();
+  const from = S.resMode==='days'?((entries[0]||{}).fecha||today()):(S.resFrom||firstDayOfMonth());
+  const to = S.resMode==='days'?((entries[entries.length-1]||{}).fecha||today()):(S.resTo||today());
+  if(!entries.length){showAlert(S.resMode==='days'?'No hay jornadas en los días seleccionados':'No hay jornadas en el rango','err');return;}
   const cp = mode==='con';
   const eur2 = v=>v>0?v.toFixed(2).replace('.',',')+' €':'—';
   const fh = h=>h>0?(h%1===0?h+'h':Math.floor(h)+'h '+Math.round((h%1)*60)+'m'):'—';
@@ -2490,7 +2522,7 @@ function openExportModal(mode){
       </div>
     </div>
     <div class="periodo">
-      Período:<br><strong>${dlbl(from)}</strong><br>al<br><strong>${dlbl(to)}</strong><br>
+      ${S.resMode==='days'?'<strong>'+resumenPeriodoLabel()+'</strong><br>':'Período:<br><strong>'+dlbl(from)+'</strong><br>al<br><strong>'+dlbl(to)+'</strong><br>'}
       <strong>${entries.length} jornadas</strong>
     </div>
   </div>
@@ -2527,10 +2559,10 @@ function openExportModal(mode){
 
 function exportXLSX(conPrecios){
   try{
-    const from=S.resFrom||firstDayOfMonth();
-    const to=S.resTo||today();
-    const ents=S.entries.filter(e=>e.fecha>=from&&e.fecha<=to&&!e._draft).sort((a,b)=>a.fecha.localeCompare(b.fecha));
-    if(!ents.length){showAlert('No hay jornadas en el rango','err');return;}
+    const ents=getResumenEntries();
+    const from=S.resMode==='days'?((ents[0]||{}).fecha||today()):(S.resFrom||firstDayOfMonth());
+    const to=S.resMode==='days'?((ents[ents.length-1]||{}).fecha||today()):(S.resTo||today());
+    if(!ents.length){showAlert(S.resMode==='days'?'No hay jornadas en los días seleccionados':'No hay jornadas en el rango','err');return;}
 
     const n=v=>parseFloat((v||0).toFixed(2));
     const fh=h=>{if(!h)return '';return h%1===0?h+'h':Math.floor(h)+'h '+Math.round((h%1)*60)+'m';};
@@ -2650,7 +2682,7 @@ function exportXLSX(conPrecios){
 <div class="hdr">
   <div>
     <div class="hdr-title">${company.nombre||'TimerPro'} — Informe de jornadas</div>
-    <div class="hdr-sub">${worker.nombre||''} · Del ${dlbl(from)} al ${dlbl(to)} · ${ents.length} jornadas</div>
+    <div class="hdr-sub">${worker.nombre||''} · ${S.resMode==='days'?resumenPeriodoLabel():'Del '+dlbl(from)+' al '+dlbl(to)} · ${ents.length} jornadas</div>
   </div>
   <div class="hdr-date">Generado: ${new Date().toLocaleDateString('es-ES')}</div>
 </div>
@@ -2680,7 +2712,7 @@ function exportXLSX(conPrecios){
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
     a.href=url;
-    a.download='TimerPro_'+from+'_'+to+'.xls';
+    a.download='TimerPro_'+resumenFileTag()+'.xls';
     a.click();
     URL.revokeObjectURL(url);
     showAlert('✅ Excel descargado');
@@ -2692,22 +2724,30 @@ function exportXLSX(conPrecios){
 
 
 function exportPlantilla(){
-  const from = S.resFrom||firstDayOfMonth();
-  const to = S.resTo||today();
+  const from = S.resMode==='days'?'':(S.resFrom||firstDayOfMonth());
+  const to = S.resMode==='days'?'':(S.resTo||today());
   const worker = workers.find(w=>w.id===activeWorkerId)||{};
   const company = companies.find(c=>c.id===activeCompanyId)||{};
 
-  // Generate all days in range
+  // Generate days: either every day in the range, or just the loose selected days
   const days = [];
-  let cur = new Date(from+'T12:00:00');
-  const end = new Date(to+'T12:00:00');
-  while(cur <= end){
-    const yyyy = cur.getFullYear();
-    const mm = String(cur.getMonth()+1).padStart(2,'0');
-    const dd = String(cur.getDate()).padStart(2,'0');
-    days.push({fecha:yyyy+'-'+mm+'-'+dd, fDisp:dd+'/'+mm+'/'+yyyy, dia:cap(wday(yyyy+'-'+mm+'-'+dd))});
-    cur.setDate(cur.getDate()+1);
+  if(S.resMode==='days'){
+    [...(S.resDays||[])].sort().forEach(fecha=>{
+      const[yyyy,mm,dd]=fecha.split('-');
+      days.push({fecha, fDisp:dd+'/'+mm+'/'+yyyy, dia:cap(wday(fecha))});
+    });
+  } else {
+    let cur = new Date(from+'T12:00:00');
+    const end = new Date(to+'T12:00:00');
+    while(cur <= end){
+      const yyyy = cur.getFullYear();
+      const mm = String(cur.getMonth()+1).padStart(2,'0');
+      const dd = String(cur.getDate()).padStart(2,'0');
+      days.push({fecha:yyyy+'-'+mm+'-'+dd, fDisp:dd+'/'+mm+'/'+yyyy, dia:cap(wday(yyyy+'-'+mm+'-'+dd))});
+      cur.setDate(cur.getDate()+1);
+    }
   }
+  if(S.resMode==='days'&&!days.length){showAlert('No hay días seleccionados','err');return;}
 
   const css=`
     *{box-sizing:border-box;margin:0;padding:0}
@@ -2750,7 +2790,7 @@ function exportPlantilla(){
 <div class="hdr">
   <div>
     <div class="hdr-title">${company.nombre||'TimerPro'} — Plantilla de jornadas</div>
-    <div class="hdr-sub">${worker.nombre||''} · Del ${dlbl(from)} al ${dlbl(to)} · ${days.length} días</div>
+    <div class="hdr-sub">${worker.nombre||''} · ${S.resMode==='days'?resumenPeriodoLabel():'Del '+dlbl(from)+' al '+dlbl(to)} · ${days.length} días</div>
   </div>
   <div style="font-size:10px;color:#94a3b8">Generado: ${new Date().toLocaleDateString('es-ES')}</div>
 </div>
@@ -2778,19 +2818,85 @@ function exportPlantilla(){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url;
-  a.download='TimerPro_Plantilla_'+from+'_'+to+'.xls';
+  a.download='TimerPro_Plantilla_'+resumenFileTag()+'.xls';
   a.click();
   URL.revokeObjectURL(url);
   showAlert('✅ Plantilla descargada ('+days.length+' días)');
 }
 
+// Mini calendario de selección múltiple de días sueltos (para Resumen)
+function renderResDaysPicker(){
+  const now2=new Date();
+  const year = S.resCalYear!=null?S.resCalYear:now2.getFullYear();
+  const month = S.resCalMonth!=null?S.resCalMonth:now2.getMonth();
+  const firstDay=new Date(year,month,1).getDay();
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const offset=(firstDay+6)%7; // Lunes primero
+  const cells=[];
+  for(let i=0;i<offset;i++)cells.push({d:null});
+  for(let d=1;d<=daysInMonth;d++)cells.push({d});
+  const selArr=S.resDays||[];
+  const selSet=new Set(selArr);
+
+  const toggleDay=ds=>{
+    const set=new Set(S.resDays||[]);
+    if(set.has(ds)) set.delete(ds); else set.add(ds);
+    S.resDays=[...set];
+    rerender();
+  };
+
+  return h('div',{},
+    h('div',{class:'cal-nav'},
+      h('button',{on:{click:()=>{
+        let m=month-1,y=year; if(m<0){m=11;y--;}
+        S.resCalMonth=m; S.resCalYear=y; rerender();
+      }}},'◄'),
+      h('span',{},MONTHS[month].toUpperCase()+' '+year),
+      h('button',{on:{click:()=>{
+        let m=month+1,y=year; if(m>11){m=0;y++;}
+        S.resCalMonth=m; S.resCalYear=y; rerender();
+      }}},'►')
+    ),
+    h('div',{class:'cal-grid'},
+      ...WSHORT.map(d=>h('div',{class:'cal-dn'},d)),
+      ...cells.map(cell=>{
+        if(!cell.d)return h('div',{class:'cal-day other-month'});
+        const ds=`${year}-${pad(month+1)}-${pad(cell.d)}`;
+        const hasEntry=S.entries.some(e=>e.fecha===ds);
+        const isToday=ds===today();
+        const isSel=selSet.has(ds);
+        let cls='cal-day';
+        if(isToday) cls+=' today';
+        if(hasEntry) cls+=' has-e worked';
+        return h('div',{
+          class:cls,
+          style:isSel?{background:'var(--acc)',color:'#000',fontWeight:700,boxShadow:'0 0 0 2px var(--acc) inset'}:{},
+          on:{click:()=>toggleDay(ds)},
+          title:hasEntry?'Jornada guardada · clic para '+(isSel?'quitar':'añadir')+' de la selección':'Clic para '+(isSel?'quitar':'añadir')+' de la selección'
+        },cell.d);
+      })
+    ),
+    h('div',{style:{display:'flex',gap:'.5rem',alignItems:'center',flexWrap:'wrap',marginTop:'.6rem'}},
+      h('span',{style:{fontSize:'.74rem',color:'var(--ink2)'}},selArr.length+' día'+(selArr.length===1?'':'s')+' seleccionado'+(selArr.length===1?'':'s')),
+      selArr.length>0?h('button',{class:'btn btn-r btn-sm',on:{click:()=>{S.resDays=[];rerender();}}},'✕ Limpiar selección'):null
+    ),
+    selArr.length>0?h('div',{style:{display:'flex',gap:'.3rem',flexWrap:'wrap',marginTop:'.4rem'}},
+      ...[...selArr].sort().map(ds=>
+        h('span',{
+          style:{display:'inline-flex',alignItems:'center',gap:'.3rem',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'20px',padding:'.2rem .55rem',fontSize:'.7rem',color:'var(--ink2)',cursor:'pointer'},
+          on:{click:()=>toggleDay(ds)},
+          title:'Quitar de la selección'
+        },dlbl(ds),' ✕')
+      )
+    ):null
+  );
+}
+
 function renderResumen(){
-  // Date range
+  // Date range (solo se usa para el modo 'range')
   const from = S.resFrom||firstDayOfMonth();
   const to   = S.resTo  ||today();
-  const entries = S.entries
-    .filter(e=>e.fecha>=from && e.fecha<=to && !e._draft)
-    .sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  const entries = getResumenEntries();
 
   // Totals
   const tot = entries.reduce((acc,e)=>({
@@ -2852,27 +2958,39 @@ function renderResumen(){
     h('div',{style:{display:'flex',justifyContent:'flex-end',marginBottom:'.3rem'}},
       h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{captureFormState();S.tab='fichar';rerender();}}},'✕ Cerrar')
     ),
-    // Date filter
+    // Date filter / Días sueltos
     h('div',{class:'card'},
-      h('div',{class:'sec-title'},'Filtro de fechas'),
-      h('div',{style:{display:'flex',gap:'.5rem',alignItems:'center',flexWrap:'wrap'}},
-        h('input',{type:'date',value:from,style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
-          on:{change:ev=>{S.resFrom=ev.target.value;rerender();}}}),
-        h('span',{style:{color:'var(--ink2)'}},'→'),
-        h('input',{type:'date',value:to,style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
-          on:{change:ev=>{S.resTo=ev.target.value;rerender();}}}),
-        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.resFrom=firstDayOfMonth();S.resTo=today();rerender();}}},'Este mes'),
-        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{
-          const d=new Date(); d.setMonth(d.getMonth()-1);
-          S.resFrom=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)+'-01';
-          const last=new Date(d.getFullYear(),d.getMonth()+1,0);
-          S.resTo=last.toISOString().slice(0,10); rerender();
-        }}},'Mes anterior')
-      )
+      h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',flexWrap:'wrap'}},
+        h('div',{class:'sec-title',style:{margin:0,flex:1}},S.resMode==='days'?'Días sueltos':'Filtro de fechas'),
+        h('div',{style:{display:'flex',gap:'.3rem'}},
+          h('button',{class:'btn btn-sm '+(S.resMode!=='days'?'btn-g':'btn-gh'),on:{click:()=>{S.resMode='range';rerender();}}},'Rango'),
+          h('button',{class:'btn btn-sm '+(S.resMode==='days'?'btn-g':'btn-gh'),on:{click:()=>{
+            S.resMode='days';
+            if(S.resCalYear==null){const n2=new Date();S.resCalYear=n2.getFullYear();S.resCalMonth=n2.getMonth();}
+            rerender();
+          }}},'Días sueltos')
+        )
+      ),
+      S.resMode==='days'
+        ? renderResDaysPicker()
+        : h('div',{style:{display:'flex',gap:'.5rem',alignItems:'center',flexWrap:'wrap'}},
+            h('input',{type:'date',value:from,style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
+              on:{change:ev=>{S.resFrom=ev.target.value;rerender();}}}),
+            h('span',{style:{color:'var(--ink2)'}},'→'),
+            h('input',{type:'date',value:to,style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
+              on:{change:ev=>{S.resTo=ev.target.value;rerender();}}}),
+            h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.resFrom=firstDayOfMonth();S.resTo=today();rerender();}}},'Este mes'),
+            h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{
+              const d=new Date(); d.setMonth(d.getMonth()-1);
+              S.resFrom=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)+'-01';
+              const last=new Date(d.getFullYear(),d.getMonth()+1,0);
+              S.resTo=last.toISOString().slice(0,10); rerender();
+            }}},'Mes anterior')
+          )
     ),
 
     entries.length===0
-      ? h('div',{class:'card'},h('div',{class:'empty'},'Sin jornadas en este periodo'))
+      ? h('div',{class:'card'},h('div',{class:'empty'},S.resMode==='days'?((S.resDays||[]).length===0?'Selecciona uno o varios días en el calendario':'Sin jornadas guardadas en los días seleccionados'):'Sin jornadas en este periodo'))
       : h('div',{},
 
       // KPIs principales
@@ -4995,11 +5113,12 @@ function loadHistorial(entry){
   localStorage.removeItem('_fEntry');
   // Load the new day — flag tells captureFormState to NOT read old DOM
   _skipDomCapture=true;
-  fEntry={...entry,fichajes:[...(entry.fichajes||[])],dietasExtra:[...(entry.dietasExtra||[])],otrosConceptos:[...(entry.otrosConceptos||[])],journeys:[...(entry.journeys||[])]};
+  fEntry={...entry,fichajes:[...(entry.fichajes||[]).map(f=>({...f}))],dietasExtra:[...(entry.dietasExtra||[])],otrosConceptos:[...(entry.otrosConceptos||[])],journeys:[...(entry.journeys||[])]};
   // notas come from the DB entry — don't override with localStorage
   editingEntry=true;
   S.tab='fichar';
   restoreTimerForDay(entry.fecha); // restore this day's timer if it has one
+  timerDeduct=fEntry.timerDeduct||0; // restore this jornada's break minutes (restoreTimerForDay resets to 0)
   rerender();
   requestAnimationFrame(()=>{ _skipDomCapture=false; });
 }
@@ -7751,8 +7870,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     }
     // Load persistent settings
     try{
-      const td=localStorage.getItem('timerDeduct');
-      timerDeduct=0; localStorage.setItem('timerDeduct',0);
+      timerDeduct=fEntry.timerDeduct||0; localStorage.setItem('timerDeduct',timerDeduct);
       const tt=localStorage.getItem('transportTypes');
       if(tt) S.transportTypes=JSON.parse(tt)||S.transportTypes;
       const dd=localStorage.getItem('dietaDefault');
@@ -7774,7 +7892,8 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
         if(ts.running && ts.start){
           timerStart=ts.start;
           timerElapsed=Math.floor((Date.now()-ts.start)/1000);
-          timerDeduct=0;
+          timerDeduct=typeof ts.deduct==='number'?ts.deduct:(fEntry.timerDeduct||0);
+          fEntry.timerDeduct=timerDeduct;
           timerRunning=true;
           timerInterval=setInterval(()=>{
             timerElapsed=Math.floor((Date.now()-timerStart)/1000);
@@ -7786,7 +7905,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     }
     // Restore draft if exists for today
     const todayDraft = S.entries.find(e=>e.fecha===today()&&e._draft);
-    if(todayDraft){ fEntry={...todayDraft}; editingEntry=true; }
+    if(todayDraft){ fEntry={...todayDraft}; editingEntry=true; timerDeduct=fEntry.timerDeduct||0; }
     if(driveUrl && syncStatus!=='ok') syncStatus='ok';
     // Auto sync: idle-based (see trackActivity above)
     // Auto backup weekly
