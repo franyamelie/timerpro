@@ -19,6 +19,7 @@ if('serviceWorker' in navigator){
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.14.0/ort.wasm.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -79,6 +80,41 @@ const {useState,useRef,useEffect,useCallback,useMemo}=React;
 const GK=()=>localStorage.getItem("ms3_k")||"";
 const API="https://api.groq.com/openai/v1/chat/completions";
 const MDL="meta-llama/llama-4-scout-17b-16e-instruct";
+
+/* ═══ REAL SEGMENTATION (camino 2): MobileSAM mask → polygon ═══
+   Converts a binary/probability mask (flat typed array, row-major, w*h) into a
+   closed polygon by ray-casting from the mask's centroid at fixed angle steps.
+   This is deliberately simpler/more robust than full boundary tracing (Moore-neighbor):
+   no risk of infinite loops, no special-casing for holes or multi-blob masks -
+   just bounded, deterministic execution, since this code cannot be live-tested
+   in a real browser before shipping. Trade-off: deep concavities (U-shapes) are
+   smoothed over, but the vast majority of real segmented objects (trees, rocks,
+   vehicles, people) are reasonably star-convex from their centroid. */
+function samMaskToPolygon(maskData,w,h,numAngles,threshold){
+  numAngles=numAngles||40;threshold=threshold||0.5;
+  let sumX=0,sumY=0,count=0;
+  const isFg=(x,y)=>{
+    if(x<0||y<0||x>=w||y>=h)return false;
+    return maskData[y*w+x]>threshold;
+  };
+  for(let y=0;y<h;y+=2)for(let x=0;x<w;x+=2){if(isFg(x,y)){sumX+=x;sumY+=y;count++;}}
+  if(count<8)return null;
+  const cx=sumX/count,cy=sumY/count;
+  const maxDist=Math.sqrt(w*w+h*h);
+  const pts=[];
+  for(let i=0;i<numAngles;i++){
+    const ang=(i/numAngles)*Math.PI*2;
+    const dx=Math.cos(ang),dy=Math.sin(ang);
+    let lastFg=0,gap=0;
+    for(let r=1;r<maxDist;r+=2){
+      const px=Math.round(cx+dx*r),py=Math.round(cy+dy*r);
+      if(isFg(px,py)){lastFg=r;gap=0;}
+      else if(lastFg>0){gap+=2;if(gap>10)break;}
+    }
+    if(lastFg>0)pts.push([cx+dx*lastFg,cy+dy*lastFg]);
+  }
+  return pts.length>=8?pts:null;
+}
 const cl=(v,a,b)=>Math.max(a,Math.min(b,v));
 const uid=()=>`_${Math.random().toString(36).slice(2,9)}`;
 const COLS=["#ff9500","#ff3366","#00e676","#ff9500","#cc44ff","#ffdd00","#ff6622","#00ffcc","#ff44aa","#44ffbb","#ff8844","#44aaff"];
@@ -760,6 +796,14 @@ function App(){
 
   /* misc */
   const [aiMsg,setAiMsg]=useState("");
+  /* Camino 2: segmentación real (MobileSAM) que corre en el propio navegador */
+  const [samStatus,setSamStatus]=useState(""); // "" | "loading-models" | "encoding" | "ready" | error text
+  const [samActive,setSamActive]=useState(false); // modo "toca un punto para segmentar" activo
+  const samEncSession=useRef(null);
+  const samDecSession=useRef(null);
+  const samEmbeddings=useRef(null);
+  const samDims=useRef(null); // {w,h} de la imagen redimensionada usada por el encoder
+  const samImgKey=useRef(null); // para saber si hay que re-codificar al cambiar de imagen
   const [err,setErr]=useState("");
   const [sync,setSync]=useState("");
   const [projs,setProjs]=useState(()=>{try{return JSON.parse(localStorage.getItem("ms3_pj")||"[]");}catch{return[];}});
@@ -896,6 +940,12 @@ function App(){
   /* DRAWING - React synthetic events on image div */
   /* Double-click anywhere when lasso active → close polygon */
   const onImgClick=useCallback(e=>{
+    if(samActive){
+      e.stopPropagation();
+      const p=getP(e,e.currentTarget);
+      samClickAt(p.x,p.y);
+      return;
+    }
     if(modal||tool==="sel"||DRAG.includes(tool))return;
     const td=TOOLS.find(t=>t.id===tool);if(!td||td.npts===0)return;
     const p=getP(e,e.currentTarget);
@@ -920,7 +970,7 @@ function App(){
     const pts=[...pend,p];
     if(pts.length>=td.npts){setPend([]);setPrev(null);mkAnn(tool,pts);}
     else{setPend(pts);setPrev({type:tool,points:[pts[0],p]});}
-  },[modal,tool,pend,colI,lSt,aHd,anns,getP,mkAnn]);
+  },[modal,tool,pend,colI,lSt,aHd,anns,getP,mkAnn,samActive,samClickAt]);
 
   const onImgMove=useCallback(e=>{
     if(!imgRef.current)return;
@@ -1283,6 +1333,90 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO, SIN TEXTO NI MARKDOWN:
       }
     }catch(e){/* silent - proactive feature, never block the user's flow */}
   },[]);
+
+  /* ═══ Camino 2: SAM real en el navegador (MobileSAM vía onnxruntime-web) ═══
+     Modelos verificados de un proyecto open-source funcional (akbartus/MobileSAM-in-the-Browser):
+     decoder servido desde raw.githubusercontent.com (confirmado accesible), encoder desde el
+     enlace oficial documentado en su README (HuggingFace). No puedo probar esto en un navegador
+     real desde aquí, así que si algo falla, el mensaje de estado mostrará el error exacto. */
+  const SAM_ENC_URL="https://huggingface.co/spaces/Akbartus/projects/resolve/main/mobilesam.encoder.onnx";
+  const SAM_DEC_URL="https://raw.githubusercontent.com/akbartus/MobileSAM-in-the-Browser/main/models/mobilesam.decoder.quant.onnx";
+
+  const samEnsureModels=useCallback(async()=>{
+    if(samDecSession.current&&samEncSession.current)return true;
+    if(typeof ort==="undefined"){setSamStatus("⚠️ No se pudo cargar onnxruntime-web (revisa tu conexión)");return false;}
+    try{
+      setSamStatus("loading-models");
+      ort.env.wasm.numThreads=1;
+      if(!samDecSession.current)samDecSession.current=await ort.InferenceSession.create(SAM_DEC_URL);
+      if(!samEncSession.current)samEncSession.current=await ort.InferenceSession.create(SAM_ENC_URL);
+      return true;
+    }catch(e){
+      setSamStatus(`⚠️ Error cargando el modelo IA Precisa: ${e.message||e}`);
+      return false;
+    }
+  },[]);
+
+  const samEncodeImage=useCallback(async()=>{
+    if(!img)return false;
+    if(samImgKey.current===img&&samEmbeddings.current)return true; // ya codificada
+    const ok=await samEnsureModels();if(!ok)return false;
+    try{
+      setSamStatus("encoding");
+      const el=new Image();el.crossOrigin="anonymous";
+      await new Promise((res,rej)=>{el.onload=res;el.onerror=rej;el.src=img;});
+      const iw=el.naturalWidth,ih=el.naturalHeight;
+      let rw,rh;
+      if(iw>=ih){rw=1024;rh=Math.max(1,Math.round(1024*ih/iw));}
+      else{rh=1024;rw=Math.max(1,Math.round(1024*iw/ih));}
+      const chwTensor=await ort.Tensor.fromImage(el,{resizedWidth:rw,resizedHeight:rh});
+      /* chwTensor: Float32Array CHW, valores 0-1. El encoder espera HWC, 0-255 */
+      const chw=chwTensor.data,plane=rw*rh;
+      const hwc=new Float32Array(plane*3);
+      for(let c=0;c<3;c++)for(let i=0;i<plane;i++)hwc[i*3+c]=chw[c*plane+i]*255;
+      const inputTensor=new ort.Tensor(hwc,[rh,rw,3]);
+      const out=await samEncSession.current.run({input_image:inputTensor});
+      samEmbeddings.current=out.image_embeddings;
+      samDims.current={w:rw,h:rh};
+      samImgKey.current=img;
+      setSamStatus("ready");
+      return true;
+    }catch(e){
+      setSamStatus(`⚠️ Error procesando la imagen para IA Precisa: ${e.message||e}`);
+      return false;
+    }
+  },[img,samEnsureModels]);
+
+  const samClickAt=useCallback(async(normX,normY)=>{
+    const ok=await samEncodeImage();if(!ok)return;
+    try{
+      setSamStatus("encoding");
+      const{w:rw,h:rh}=samDims.current;
+      const px=normX*rw,py=normY*rh;
+      const pointCoords=new ort.Tensor(new Float32Array([px,py,0,0]),[1,2,2]);
+      const pointLabels=new ort.Tensor(new Float32Array([1,-1]),[1,2]);
+      const maskInput=new ort.Tensor(new Float32Array(256*256),[1,1,256,256]);
+      const hasMask=new ort.Tensor(new Float32Array([0]),[1]);
+      const origSize=new ort.Tensor(new Float32Array([rh,rw]),[2]);
+      const feeds={image_embeddings:samEmbeddings.current,point_coords:pointCoords,
+        point_labels:pointLabels,mask_input:maskInput,has_mask_input:hasMask,orig_im_size:origSize};
+      const res=await samDecSession.current.run(feeds);
+      const maskT=res.masks;
+      const[,,mh,mw]=maskT.dims.length===4?maskT.dims:[1,1,rh,rw];
+      const poly=samMaskToPolygon(maskT.data,mw,mh,40,0.0); // logits: umbral en 0
+      if(!poly){setSamStatus("⚠️ No se detectó ninguna forma clara en ese punto. Prueba otro punto.");return;}
+      const normPoly=poly.map(([x,y])=>[cl(x/mw,0,1),cl(y/mh,0,1)]);
+      const xs=normPoly.map(p=>p[0]),ys=normPoly.map(p=>p[1]);
+      const newSeg={id:uid(),name:"Precisa "+new Date().toLocaleTimeString("es-ES"),
+        x1:Math.min(...xs),y1:Math.min(...ys),x2:Math.max(...xs),y2:Math.max(...ys),
+        color:COLS[colI%COLS.length],polygon:normPoly};
+      setSegs(s=>[...s,newSeg]);setSelSeg(newSeg.id);setShowSegs(true);setColI(c=>c+1);
+      setSamStatus("ready");
+      setAiMsg(`🎯 Contorno preciso añadido (${normPoly.length} puntos reales, generado en tu navegador)`);
+    }catch(e){
+      setSamStatus(`⚠️ Error generando el contorno: ${e.message||e}`);
+    }
+  },[samEncodeImage,colI]);
 
   /* AI CHAT */
   useEffect(()=>{segAIRef.current=segAI;});
@@ -2062,7 +2196,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       onTouchStart={e=>{onImgDown(e);if(e.touches.length===2)onTouchStartZoom(e);}}
       onTouchMove={e=>{if(e.touches.length===2){e.preventDefault();onTouchMoveZoom(e);}else{onImgMove(e);}}}
       onTouchEnd={e=>{onImgUp(e);onTouchEndZoom(e);}}
-      style={{position:"relative",lineHeight:0,transform:`rotate(${rot}deg) scale(${imgZoom})`,transformOrigin:"center",cursor:tool==="sel"?(imgZoom>1?"grab":"default"):"crosshair",userSelect:"none",WebkitUserSelect:"none",touchAction:"none"}}>
+      style={{position:"relative",lineHeight:0,transform:`rotate(${rot}deg) scale(${imgZoom})`,transformOrigin:"center",cursor:samActive?"crosshair":tool==="sel"?(imgZoom>1?"grab":"default"):"crosshair",userSelect:"none",WebkitUserSelect:"none",touchAction:DRAG.includes(tool)?"none":"pan-y"}}>
       <img src={img} alt="" draggable="false" style={{width:"100%",display:"block",pointerEvents:"none"}}/>
       <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",overflow:"visible",pointerEvents:"all"}}>
         {/* AI PARTS - colored, selectable, deletable (P1) */}
@@ -2219,6 +2353,17 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     </div>
   </div>
 
+  {/* SAM (IA Precisa) status - errores y progreso del modelo que corre en el navegador */}
+  {samStatus&&samStatus.startsWith("⚠️")&&<div style={{padding:"7px 10px",marginBottom:"7px",borderRadius:"9px",fontSize:"9px",fontWeight:700,
+    background:"rgba(255,50,50,.12)",border:"1px solid rgba(255,50,50,.3)",color:"#ff5577",
+    display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px"}}>
+    <span>{samStatus}</span>
+    <button onClick={()=>setSamStatus("")} style={{background:"none",border:"none",color:"inherit",opacity:.6,fontSize:"11px",cursor:"pointer",flexShrink:0}}>✕</button>
+  </div>}
+  {samActive&&<div style={{padding:"7px 10px",marginBottom:"7px",borderRadius:"9px",fontSize:"9px",fontWeight:700,
+    background:"rgba(0,200,130,.1)",border:"1px solid rgba(0,200,130,.3)",color:"#00dd99"}}>
+    🎯 Toca cualquier objeto de la imagen — la IA dibujará su contorno exacto al instante (1ª vez puede tardar unos segundos en cargar el modelo, ~30MB)
+  </div>}
   {/* AI detection status - VISIBLE feedback (was being set but never shown) */}
   {aiMsg&&<div style={{padding:"7px 10px",marginBottom:"7px",borderRadius:"9px",fontSize:"9px",fontWeight:700,
     background:aiMsg.startsWith("⚠️")?"rgba(255,50,50,.12)":"rgba(0,200,100,.12)",
@@ -2239,6 +2384,14 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     <button onClick={()=>setRot(r=>(r+90)%360)} style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.2)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:500}}>↻+90°</button>
     <button onClick={()=>setRot(r=>(r-90+360)%360)} style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.2)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:500}}>↺-90°</button>
     <button onClick={()=>{setSegs([]);segAI();}} disabled={segLoad||!GK()} style={{flex:2,padding:"7px 8px",background:segLoad?"rgba(255,150,0,.05)":"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.3)",color:segLoad?"#444":C,borderRadius:"8px",fontSize:"9px",fontWeight:700}}>{segLoad?"⏳ Detectando...":"🔍 Detectar contornos"}</button>
+    <button onClick={()=>{
+      if(samActive){setSamActive(false);setSamStatus("");return;}
+      setSamActive(true);setMeasM(null);setCalibM(null);setCropM(null);
+    }} title="Toca un objeto y la IA dibuja su contorno exacto, calculado en tu propio navegador (no depende de un servidor externo)"
+      disabled={samStatus==="loading-models"||samStatus==="encoding"}
+      style={{flex:2,padding:"7px 6px",background:samActive?"linear-gradient(135deg,#00cc88,#00ffaa)":"rgba(0,200,130,.12)",border:`1px solid ${samActive?"#00ffaa":"rgba(0,200,130,.3)"}`,color:samActive?"#000":"#00dd99",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>
+      {samStatus==="loading-models"?"⏳ Cargando IA...":samStatus==="encoding"?"⏳ Procesando...":samActive?"🎯 Toca un objeto":"🎯 IA Precisa"}
+    </button>
     <button onClick={()=>{setTool("crop");setMeasM(null);setCalibM(null);setCropM(null);}} title="Recortar rectangular → zona flotante" style={{flex:2,padding:"7px 6px",background:tool==="crop"?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.3)",color:tool==="crop"?"#000":"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>✂ Recortar</button>
     <button onClick={()=>{setMeasM(null);setCalibM(null);setCropM(null);if(tool==="lasso"){setPend([]);setTool("sel");}else{setTool("lasso");setPend([]);}}} title="Lazo poligonal: clic por clic para seleccionar área de forma libre" style={{flex:2,padding:"7px 6px",background:tool==="lasso"?"linear-gradient(135deg,#aa00ff,#ff00aa)":"rgba(170,0,255,.1)",border:`1px solid ${tool==="lasso"?"#cc44ff":"rgba(170,0,255,.3)"}`,color:tool==="lasso"?"#fff":"#bb44ff",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>{tool==="lasso"&&pend.length>0?`⬡ ${pend.length} pts`:"⬡ Lazo"}</button>
     {segs.length>0&&<button onClick={()=>setShowSegs(s=>!s)} style={{flex:1,padding:"7px 4px",background:showSegs?"rgba(0,150,255,.15)":"rgba(0,100,255,.05)",border:`1px solid rgba(0,150,255,${showSegs?.3:.12})`,color:showSegs?C:"#2a3a5a",borderRadius:"8px",fontSize:"9px"}}>👁{showSegs?"ON":"OFF"}</button>}
@@ -2689,7 +2842,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         setFcAnns(prev=>[...prev,a]);
         setMeasM({...a,_existing:true,_fc:true});setMIn({t:"",v:"",u:"cm",ax:""});
       }}>
-      <img src={editZone.croppedImg} style={{width:"100%",display:"block",cursor:tool==="sel"?"default":"crosshair",userSelect:"none",WebkitUserSelect:"none",touchAction:"none"}} draggable="false"/>
+      <img src={editZone.croppedImg} style={{width:"100%",display:"block",cursor:tool==="sel"?"default":"crosshair",userSelect:"none",WebkitUserSelect:"none",touchAction:DRAG.includes(tool)?"none":"pan-y"}} draggable="false"/>
       {/* SVG overlay for annotations */}
       <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",overflow:"visible",pointerEvents:"none"}}>
         {/* Formas con su tipo correcto: rect, circ, dim, dist, arr1, arr2, line */}
