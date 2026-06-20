@@ -155,16 +155,50 @@ const TOOLS=[
   {id:"rough",icon:"Ra",label:"Rugosidad",npts:1,cat:"spc"},
 ];
 const CATS={nav:"Nav",mrk:"Marcadores",lin:"Líneas",med:"Medición",arr:"Flechas",shp:"Formas",spc:"Especial"};
+/* Descripción de CADA herramienta, usada tanto en el title= (hover en PC) como
+   en un texto visible al seleccionar (funciona también en móvil, sin hover) */
+const TOOL_DESC={
+  sel:"Toca cualquier forma o contorno YA dibujado para seleccionarlo y arrastrarlo. No crea nada nuevo.",
+  dot:"Toca la imagen para colocar un punto numerado. Luego tócalo para añadirle una medida.",
+  pin:"Toca la imagen para clavar un pin de referencia.",
+  star:"Toca la imagen para marcar un punto destacado con estrella.",
+  tgt:"Toca la imagen para marcar un punto de referencia con diana.",
+  line:"Toca 2 puntos (o más, doble-clic para terminar) para trazar una línea simple, sin flecha.",
+  dim:"Toca 2 puntos para una cota técnica con topes perpendiculares en los extremos.",
+  dist:"Toca 2 puntos para medir una distancia, con flecha en ambos extremos.",
+  incl:"Toca 2 puntos para medir la inclinación respecto a la horizontal.",
+  ang:"Toca 3 puntos (el 2º es el vértice) para medir un ángulo en grados.",
+  rad:"Toca el centro y luego el borde para medir un radio o diámetro.",
+  arr1:"Toca 2 puntos para dibujar una flecha simple.",
+  arr2:"Toca 2 puntos para dibujar una flecha gruesa.",
+  rect:"Arrastra de una esquina a la opuesta. Al soltar, podrás medir, contornear o pasar la zona a 2D/3D.",
+  circ:"Arrastra desde el centro hacia el borde. Al soltar, podrás medir, contornear o pasar la zona a 2D/3D.",
+  calib:"Traza una línea sobre algo de longitud REAL conocida (ej: una regla) para calibrar la escala de toda la imagen.",
+  crop:"Arrastra para seleccionar una zona rectangular y recortarla en un panel flotante.",
+  poly:"Toca varios puntos seguidos para una polilínea abierta. Doble-clic para terminar.",
+  wall:"Toca 3 puntos para medir el espesor de una pared o lámina.",
+  tol:"Toca un punto para añadir una tolerancia ± de fabricación.",
+  cham:"Toca 3 puntos para marcar un chaflán/bisel.",
+  area:"Toca 4 o más puntos para medir el área de una superficie cerrada.",
+  arc:"Toca inicio, punto de paso y fin para medir un arco curvo.",
+  coord:"Toca un punto para anotar sus coordenadas X/Y exactas.",
+  note:"Toca un punto para añadir una nota de texto libre.",
+  lasso:"Toca tantos puntos como quieras (sin mínimo ni máximo) siguiendo el contorno exacto. Doble-clic o toca el punto inicial para cerrar.",
+  defl:"Toca 3 puntos para medir una deflexión o curvatura.",
+  rough:"Toca un punto para anotar la rugosidad superficial (Ra).",
+};
 const DRAG=["rect","circ","crop"];
 const MULTI_PTS=["poly","area","defl"];
 /* Tools using universal click-to-add-point + double-click-to-finish workflow */
 const OPEN_ENDED=["line","dim","dist","arr1","arr2","incl","ang","rad","wall","poly","tol","cham","area","arc","defl"];
 /* ══ VIEW 2D ══ */
-function View2D({anns,objName,sc,segs,img}){
+function View2D({anns,objName,sc,segs,img,segSel}){
   const ref=useRef(null);
   const draw=useCallback((imgEl)=>{
     const cv=ref.current;if(!cv)return;
     const ctx=cv.getContext("2d"),W=cv.width,H=cv.height;
+    /* Si hay una selección explícita de piezas, solo se dibujan esas */
+    const vSegs=(segSel&&segSel.size>0)?(segs||[]).filter(s=>segSel.has(s.id)):(segs||[]);
     ctx.clearRect(0,0,W,H);
     /* White paper background */
     ctx.fillStyle="#ffffff";ctx.fillRect(0,0,W,H);
@@ -200,8 +234,8 @@ function View2D({anns,objName,sc,segs,img}){
       /* Semi-transparent overlay for annotations */
       ctx.fillStyle="rgba(0,0,0,0.12)";ctx.fillRect(imgX,imgY,imgW,imgH);
       /* Draw segment overlays on image */
-      if(segs&&segs.length){
-        segs.forEach((seg,i)=>{
+      if(vSegs&&vSegs.length){
+        vSegs.forEach((seg,i)=>{
           const sx=imgX+seg.x1*imgW,sy=imgY+seg.y1*imgH;
           const sw2=(seg.x2-seg.x1)*imgW,sh2=(seg.y2-seg.y1)*imgH;
           const col=seg.color||"#0055cc";
@@ -293,7 +327,7 @@ function View2D({anns,objName,sc,segs,img}){
     } else {
       /* No measurements: show parts grid */
       ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="center";ctx.fillText("DETALLE DE PARTES",ortX+ortW/2,imgY+10);
-      (segs||[]).slice(0,4).forEach((seg,i)=>{
+      (vSegs||[]).slice(0,4).forEach((seg,i)=>{
         const row=Math.floor(i/2),col2=i%2;
         const bx=ortX+col2*(ortW/2)+2,by=imgY+16+row*(imgH/2.2);
         const bw=ortW/2-6,bh=imgH/2.4;
@@ -327,15 +361,15 @@ function View2D({anns,objName,sc,segs,img}){
     ctx.fillStyle="rgba(210,228,255,.5)";ctx.fillRect(mg,tY,dW,14);
     ctx.fillStyle="#1a3a8a";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";
     ctx.fillText("LISTA DE PARTES",mg+4,tY+9);
-    const colW=dW/Math.min((segs||[]).length||1,3);
-    (segs||[]).slice(0,6).forEach((seg,i)=>{
+    const colW=dW/Math.min((vSegs||[]).length||1,3);
+    (vSegs||[]).slice(0,6).forEach((seg,i)=>{
       const c=Math.floor(i/2),r=i%2;
       ctx.fillStyle=r===0?"rgba(210,228,255,.15)":"transparent";
       ctx.fillRect(mg+c*colW,tY+14+r*12,colW,12);
       ctx.fillStyle=seg.color||"#1a3a8a";ctx.font="bold 6px 'Inter',sans-serif";ctx.textAlign="left";
       ctx.fillText(`${i+1}. ${(seg.name||"Parte "+(i+1)).slice(0,20)}`,mg+c*colW+4,tY+22+r*12);
     });
-  },[anns,objName,segs,img]);
+  },[anns,objName,segs,img,segSel]);
 
   useEffect(()=>{
     if(img){
@@ -757,6 +791,7 @@ function App(){
   const [segLoad,setSegLoad]=useState(false);
   const [showSegs,setShowSegs]=useState(true);
   const [postActM,setPostActM]=useState(null); // pieza recién creada (SAM) esperando elección rápida
+  const [selModeChoice,setSelModeChoice]=useState(false); // menú ¿cómo quieres seleccionar?
   const [part3DSel,setPart3DSel]=useState(null); // null = "todas" (con tope de seguridad); Set de ids = selección explícita
 
   /* bottom sheet: null | meas | 2d | 3d | chat | export */
@@ -851,10 +886,14 @@ function App(){
     if(tool!=="lasso")return;
     const el=imgRef.current;if(!el)return;
     const closeLasso=(pts)=>{
-      if(pts.length<3)return;
+      if(pts.length<2)return;
       const x1=Math.min(...pts.map(q=>q.x)),y1=Math.min(...pts.map(q=>q.y));
       const x2=Math.max(...pts.map(q=>q.x)),y2=Math.max(...pts.map(q=>q.y));
-      setCropM({id:uid(),type:"lasso",isLasso:true,points:[...pts],polygon:pts.map(q=>[q.x,q.y]),x1,y1,x2,y2});
+      const newSeg={id:uid(),name:"Selección "+new Date().toLocaleTimeString("es-ES"),
+        x1,y1,x2,y2,color:COLS[colI%COLS.length],polygon:pts.map(q=>[q.x,q.y]),isLasso:true};
+      /* Se guarda YA como pieza visible — nunca desaparece, aunque luego canceles el menú */
+      setSegs(s=>[...s,newSeg]);setShowSegs(true);setSelSeg(newSeg.id);setColI(c=>c+1);
+      setCropM({id:newSeg.id,type:"lasso",isLasso:true,points:[...pts],polygon:pts.map(q=>[q.x,q.y]),x1,y1,x2,y2,fromSeg:newSeg.id});
       setPend([]);setPrev(null);setTool("sel");
     };
     const handleClick=(ev)=>{
@@ -865,7 +904,7 @@ function App(){
       if(cx==null||cy==null)return;
       const p={x:cl((cx-r.left)/r.width,.01,.99),y:cl((cy-r.top)/r.height,.01,.99)};
       const cur=lassoPendRef.current;
-      if(cur.length>=3){
+      if(cur.length>=2){
         const fp=cur[0];
         const dist=Math.sqrt(Math.pow((p.x-fp.x)*100,2)+Math.pow((p.y-fp.y)*100,2));
         if(dist<5){closeLasso(cur);return;}
@@ -2131,7 +2170,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     <div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"flex-start"}}>
       {(tbyCat[tCat]||[]).map(t=><button key={t.id} title={t.label} onClick={()=>{setTool(t.id);setPend([]);setPrev(null);setDragSt(null);setMeasM(null);setCalibM(null);setCropM(null);}}
               onContextMenu={e=>{e.preventDefault();setTool(t.id);setAddPartDlg(true);}}
-              title={`${t.label} — ${{"dot":"Coloca un punto de medida en la imagen","pin":"Clava un pin en la imagen","star":"Marca con estrella","tgt":"Marca con diana","line":"Dibuja una línea entre 2 puntos","dim":"Añade cota con ticks","dist":"Mide distancia A→B","arr1":"Dibuja flecha","arr2":"Flecha gruesa","arr3":"Flecha diagonal","arr4":"Doble flecha","rect":"Dibuja rectángulo","circ":"Dibuja círculo","tri":"Dibuja triángulo","calib":"Calibra escala real — traza línea de longitud conocida","crop":"Recorta zona → panel flotante para medir","sel":"Seleccionar y mover anotaciones"}[t.id]||t.label} (clic derecho = nueva parte)`}
+              title={`${t.label} — ${TOOL_DESC[t.id]||t.label} (clic derecho = nueva parte)`}
               className={`tb${tool===t.id?" act":""}`}><span>{t.icon}</span><span>{t.label}</span></button>)}
       <button title="Mover/Seleccionar" onClick={()=>{setTool("sel");setPend([]);setPrev(null);setDragSt(null);}} className={`tb${tool==="sel"?" act":""}`}><span>↖</span><span>Mover</span></button>
     </div>
@@ -2161,11 +2200,12 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       <span style={{fontSize:"9px",fontWeight:700,color:"#000"}}>{TOOLS.find(t=>t.id===tool)?.label}</span>
     </div>
     <span style={{fontSize:"9px",color:"#3355aa",flex:1}}>
-      {tool==="crop"?"✂ Mantén y arrastra para seleccionar zona rectangular":tool==="lasso"?"":DRAG.includes(tool)?"→ Arrastra en la imagen":OPEN_ENDED.includes(tool)?(pend.length===0?"▶ Toca para añadir puntos":`${pend.length} punto${pend.length>1?"s":""} — doble clic/toque para terminar`):pend.length===1?"▶ PASO 2 — 2° punto":"▶ PASO 1 — Toca la imagen"}
+      {pend.length===0&&tool!=="crop"&&tool!=="lasso"&&!DRAG.includes(tool)?TOOL_DESC[tool]:
+       tool==="crop"?"✂ Mantén y arrastra para seleccionar zona rectangular":tool==="lasso"?"":DRAG.includes(tool)?"→ Arrastra en la imagen":OPEN_ENDED.includes(tool)?(pend.length===0?"▶ Toca para añadir puntos":`${pend.length} punto${pend.length>1?"s":""} — doble clic/toque para terminar`):pend.length===1?"▶ PASO 2 — 2° punto":"▶ PASO 1 — Toca la imagen"}
     </span></>
     :<span style={{fontSize:"9px",color:"#5a7a9a",flex:1,display:"flex",alignItems:"center",gap:"6px"}}>
       <span style={{fontSize:"13px"}}>↖</span>
-      <span><b style={{color:"#88aacc"}}>Mover</b> activo — toca cualquier forma o contorno YA dibujado para seleccionarlo y arrastrarlo. Para crear algo nuevo, elige otra herramienta arriba.</span>
+      <span><b style={{color:"#88aacc"}}>Mover</b> activo — {TOOL_DESC.sel}</span>
     </span>}
     {pend.length>0&&tool!=="lasso"&&<button onClick={()=>{setPend([]);setPrev(null);}} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",fontSize:"8px",padding:"3px 9px",borderRadius:"5px"}}>✕</button>}
     <button onClick={undo} disabled={hist.length===0} style={{padding:"4px 11px",background:hist.length>0?"rgba(255,150,0,.15)":"transparent",border:`1px solid ${hist.length>0?"rgba(255,150,0,.35)":"transparent"}`,color:hist.length>0?C:"#333",borderRadius:"7px",fontSize:"9px",fontWeight:700,flexShrink:0}}>↩ {hist.length}</button>
@@ -2175,12 +2215,15 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   {tool==="lasso"&&<div style={{padding:"6px 10px",background:"rgba(170,0,255,.12)",border:"1.5px solid #cc44ff",borderRadius:"10px",marginBottom:"7px",display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap"}}>
     <span style={{fontSize:"15px"}}>⬡</span>
     <span style={{fontSize:"9px",color:"#dd88ff",fontWeight:700,flex:1}}>
-      {pend.length===0?"Clic en la imagen para empezar el contorno":pend.length<3?`${pend.length} punto${pend.length>1?"s":""} — añade al menos 3`:`${pend.length} puntos — clic en ⚪ inicio o doble-clic para cerrar`}
+      {pend.length===0?"Clic en la imagen para empezar el contorno":pend.length===1?"1 punto — añade al menos 1 más, o doble-clic para cerrar ya":`${pend.length} puntos — clic en ⚪ inicio o doble-clic para cerrar`}
     </span>
-    {pend.length>=3&&<button onClick={()=>{
+    {pend.length>=2&&<button onClick={()=>{
       const x1=Math.min(...pend.map(q=>q.x)),y1=Math.min(...pend.map(q=>q.y));
       const x2=Math.max(...pend.map(q=>q.x)),y2=Math.max(...pend.map(q=>q.y));
-      setCropM({id:uid(),type:"lasso",isLasso:true,points:[...pend],polygon:pend.map(q=>[q.x,q.y]),x1,y1,x2,y2});
+      const newSeg={id:uid(),name:"Selección "+new Date().toLocaleTimeString("es-ES"),
+        x1,y1,x2,y2,color:COLS[colI%COLS.length],polygon:pend.map(q=>[q.x,q.y]),isLasso:true};
+      setSegs(s=>[...s,newSeg]);setShowSegs(true);setSelSeg(newSeg.id);setColI(c=>c+1);
+      setCropM({id:newSeg.id,type:"lasso",isLasso:true,points:[...pend],polygon:pend.map(q=>[q.x,q.y]),x1,y1,x2,y2,fromSeg:newSeg.id});
       setPend([]);setPrev(null);setTool("sel");
     }} style={{background:"#aa00ff",color:"#fff",border:"none",borderRadius:"7px",padding:"4px 12px",fontSize:"9px",fontWeight:800}}>✓ Cerrar</button>}
     {pend.length>0&&<button onClick={()=>setPend(p=>p.slice(0,-1))} style={{background:"rgba(255,255,255,.08)",color:"#aaa",border:"1px solid rgba(255,255,255,.12)",borderRadius:"6px",padding:"4px 9px",fontSize:"9px"}}>↩</button>}
@@ -2275,7 +2318,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
               x2={`${pend[i+1].x*100}%`} y2={`${pend[i+1].y*100}%`}
               stroke={lc} strokeWidth="2" strokeDasharray="8 4"/>)}
             {/* Fill polygon area (use last-to-first lines) */}
-            {pend.length>=3&&pend.map((p,i)=>i>0&&<line key={`f${i}`}
+            {pend.length>=2&&pend.map((p,i)=>i>0&&<line key={`f${i}`}
               x1={`${pend[i-1].x*100}%`} y1={`${pend[i-1].y*100}%`}
               x2={`${p.x*100}%`} y2={`${p.y*100}%`}
               stroke={`${lc}30`} strokeWidth="12"/>)}
@@ -2285,7 +2328,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
               x2={`${cursorPt.x*100}%`} y2={`${cursorPt.y*100}%`}
               stroke={lc} strokeWidth="2" strokeDasharray="6 4"/>}
             {/* Ghost close line: cursor → first point */}
-            {pend.length>=3&&cursorPt&&<line
+            {pend.length>=2&&cursorPt&&<line
               x1={`${cursorPt.x*100}%`} y1={`${cursorPt.y*100}%`}
               x2={`${pend[0].x*100}%`} y2={`${pend[0].y*100}%`}
               stroke={lc} strokeWidth="1" strokeDasharray="3 4" opacity=".4"/>}
@@ -2294,7 +2337,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
               <circle cx={`${p.x*100}%`} cy={`${p.y*100}%`}
                 r={i===0?"7":"4"}
                 fill={i===0?"#fff":lc} stroke={lc} strokeWidth="1.5"/>
-              {i===0&&pend.length>=3&&<circle cx={`${p.x*100}%`} cy={`${p.y*100}%`} r="3" fill={lc}/>}
+              {i===0&&pend.length>=2&&<circle cx={`${p.x*100}%`} cy={`${p.y*100}%`} r="3" fill={lc}/>}
             </g>)}
           </g>;
         })()}
@@ -2392,12 +2435,33 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     <button onClick={()=>setAiMsg("")} style={{background:"none",border:"none",color:"inherit",opacity:.6,fontSize:"11px",cursor:"pointer",flexShrink:0}}>✕</button>
   </div>}
   {/* Explicit "add another selection beyond AI defaults" entry point */}
-  {segs.length>0&&<button onClick={()=>{setMeasM(null);setCalibM(null);setCropM(null);setTool("lasso");setPend([]);}}
+  {segs.length>0&&<button onClick={()=>setSelModeChoice(true)}
     style={{width:"100%",padding:"9px",marginBottom:"7px",background:"rgba(170,0,255,.1)",
       border:"1.5px dashed rgba(170,0,255,.4)",color:"#cc66ff",borderRadius:"9px",
       fontSize:"10px",fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:"6px"}}>
     ＋ Nueva selección manual <span style={{fontSize:"8px",opacity:.7,fontWeight:400}}>(además de las {segs.length} detectadas)</span>
   </button>}
+  {/* ¿Cómo quieres seleccionar esta vez? Círculo / Rectángulo / Punto a punto */}
+  {selModeChoice&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",zIndex:880,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}} onClick={()=>setSelModeChoice(false)}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#161616",border:"2px solid #cc66ff",borderRadius:"14px",padding:"16px",maxWidth:"340px",width:"100%"}}>
+      <div style={{fontSize:"12px",fontWeight:800,color:"#cc66ff",marginBottom:"10px"}}>¿Cómo quieres seleccionar?</div>
+      <div style={{display:"flex",flexDirection:"column",gap:"7px"}}>
+        <button onClick={()=>{setSelModeChoice(false);setMeasM(null);setCalibM(null);setCropM(null);setTool("lasso");setPend([]);}}
+          style={{padding:"11px",background:"linear-gradient(135deg,#aa00ff,#ff00aa)",color:"#fff",border:"none",borderRadius:"9px",fontSize:"10px",fontWeight:800,textAlign:"left"}}>
+          ⬡ Punto a punto (Lazo)<div style={{fontSize:"8px",fontWeight:400,opacity:.85,marginTop:"2px"}}>Toca cuantos puntos quieras, sin mínimo ni máximo — doble clic para cerrar</div>
+        </button>
+        <button onClick={()=>{setSelModeChoice(false);setMeasM(null);setCalibM(null);setCropM(null);setTool("rect");setPend([]);}}
+          style={{padding:"11px",background:"rgba(255,150,0,.12)",color:"#ff9500",border:"1px solid rgba(255,150,0,.3)",borderRadius:"9px",fontSize:"10px",fontWeight:700,textAlign:"left"}}>
+          ▭ Rectángulo<div style={{fontSize:"8px",fontWeight:400,opacity:.85,marginTop:"2px"}}>Arrastra una esquina a la otra</div>
+        </button>
+        <button onClick={()=>{setSelModeChoice(false);setMeasM(null);setCalibM(null);setCropM(null);setTool("circ");setPend([]);}}
+          style={{padding:"11px",background:"rgba(255,150,0,.12)",color:"#ff9500",border:"1px solid rgba(255,150,0,.3)",borderRadius:"9px",fontSize:"10px",fontWeight:700,textAlign:"left"}}>
+          ◯ Círculo<div style={{fontSize:"8px",fontWeight:400,opacity:.85,marginTop:"2px"}}>Arrastra desde el centro hacia el borde</div>
+        </button>
+        <button onClick={()=>setSelModeChoice(false)} style={{padding:"9px",background:"rgba(255,255,255,.05)",color:"#667",border:"1px solid rgba(255,255,255,.1)",borderRadius:"9px",fontSize:"9px"}}>Cancelar</button>
+      </div>
+    </div>
+  </div>}
   {/* QUICK ACTIONS under image */}
   <div style={{display:"flex",gap:"4px",marginBottom:"7px",flexWrap:"wrap"}}>
     <button onClick={()=>setRot(r=>(r+90)%360)} style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.2)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:500}}>↻+90°</button>
@@ -2415,6 +2479,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     <button onClick={()=>{setMeasM(null);setCalibM(null);setCropM(null);if(tool==="lasso"){setPend([]);setTool("sel");}else{setTool("lasso");setPend([]);}}} title="Lazo poligonal: clic por clic para seleccionar área de forma libre" style={{flex:2,padding:"7px 6px",background:tool==="lasso"?"linear-gradient(135deg,#aa00ff,#ff00aa)":"rgba(170,0,255,.1)",border:`1px solid ${tool==="lasso"?"#cc44ff":"rgba(170,0,255,.3)"}`,color:tool==="lasso"?"#fff":"#bb44ff",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>{tool==="lasso"&&pend.length>0?`⬡ ${pend.length} pts`:"⬡ Lazo"}</button>
     {segs.length>0&&<button onClick={()=>setShowSegs(s=>!s)} style={{flex:1,padding:"7px 4px",background:showSegs?"rgba(0,150,255,.15)":"rgba(0,100,255,.05)",border:`1px solid rgba(0,150,255,${showSegs?.3:.12})`,color:showSegs?C:"#2a3a5a",borderRadius:"8px",fontSize:"9px"}}>👁{showSegs?"ON":"OFF"}</button>}
     {selId&&<button onClick={()=>delA(selId)} style={{flex:1,padding:"7px 4px",background:"rgba(255,50,50,.08)",border:"1px solid rgba(255,50,50,.2)",color:"#ff3366",borderRadius:"8px",fontSize:"9px"}}>🗑</button>}
+    {(imgZoom!==1||rot!==0)&&<button onClick={()=>{setImgZoom(1);setRot(0);}} title="Restablecer solo el zoom y la rotación de la vista — no borra tu trabajo" style={{flex:1,padding:"7px 4px",background:"rgba(255,200,0,.18)",border:"1px solid rgba(255,200,0,.45)",color:"#ffcc00",borderRadius:"8px",fontSize:"9px",fontWeight:800,animation:"pulse 1.5s infinite"}}>↺ Vista</button>}
     {origImg&&origImg!==img&&<button onClick={resetToOriginal} title="Volver a imagen original" style={{flex:1,padding:"7px 4px",background:"rgba(255,150,0,.12)",border:"1px solid rgba(255,150,0,.3)",color:"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>🔄 Orig.</button>}
     <button onClick={()=>setAddPartDlg(true)} title="Añadir parte nueva para medir" style={{flex:2,padding:"7px 6px",background:"rgba(0,200,100,.1)",border:"1px solid rgba(0,200,100,.25)",color:"#00dd77",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>＋ Añadir Parte</button>
     {scale&&<span style={{fontSize:"8px",color:C,padding:"7px 7px",background:"rgba(0,150,255,.08)",borderRadius:"8px",border:"1px solid rgba(0,150,255,.18)"}}>⚖{scale.ppu.toFixed(0)}px</span>}
@@ -2521,7 +2586,27 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       💡 Añade medidas con eje Ancho/Alto/Prof. para generar el plano<br/>
       Método: Herramienta → Dibujar → Confirmar medida → seleccionar eje en el desplegable
     </div>}
-    <div ref={capRef}><View2D anns={anns} objName={objInfo?.name||pName} sc={scale} segs={segs} img={img||origImg}/>
+    {segs?.length>1&&<div style={{margin:"8px 13px",padding:"8px",background:"rgba(255,255,255,.03)",borderRadius:"8px",border:"1px solid rgba(255,255,255,.06)"}}>
+      <div style={{fontSize:"8px",color:"#556677",marginBottom:"6px",fontWeight:700}}>¿Qué piezas incluir en el plano 2D?</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:"5px"}}>
+        <button onClick={()=>setPart3DSel(new Set())} style={{padding:"4px 8px",borderRadius:"6px",fontSize:"8px",fontWeight:700,
+          background:(!part3DSel||part3DSel.size===0)?`${C}30`:"rgba(255,255,255,.04)",
+          border:`1px solid ${(!part3DSel||part3DSel.size===0)?C:"rgba(255,255,255,.1)"}`,
+          color:(!part3DSel||part3DSel.size===0)?C:"#667"}}>Todas ({segs.length})</button>
+        {segs.map(seg=>{
+          const sel=part3DSel?.has(seg.id)??false;
+          return<button key={seg.id} onClick={()=>setPart3DSel(prev=>{
+            const next=new Set(prev||[]);
+            if(next.has(seg.id))next.delete(seg.id);else next.add(seg.id);
+            return next;
+          })} style={{padding:"4px 8px",borderRadius:"6px",fontSize:"8px",fontWeight:700,
+            background:sel?`${seg.color||C}30`:"rgba(255,255,255,.04)",
+            border:`1px solid ${sel?seg.color||C:"rgba(255,255,255,.1)"}`,
+            color:sel?seg.color||C:"#667"}}>{sel?"✓ ":""}{seg.name}</button>;
+        })}
+      </div>
+    </div>}
+    <div ref={capRef}><View2D anns={anns} objName={objInfo?.name||pName} sc={scale} segs={segs} img={img||origImg} segSel={part3DSel}/>
     <ShareBar onPNG={xPNG} onPDF={xPDF} onWA={xWA} onEmail={xEmail} onLink={genLink} onDXF={xDXF} onCopy={xCopy}/></div>
     <ShareBar onPNG={xPNG} onPDF={xPDF} onWA={xWA} onEmail={xEmail} onLink={genLink} onDXF={xDXF} onCopy={xCopy}/>
   </div>}
@@ -2849,7 +2934,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           {TOOLS.find(t=>t.id===tool)?.icon} {TOOLS.find(t=>t.id===tool)?.label}
         </div>
         <span style={{fontSize:"8px",color:"#555"}}>
-          {tool==="lasso"?(pend.length===0?"Toca para añadir puntos del contorno":pend.length<3?"Añade al menos 3 puntos ("+pend.length+"/3)":`${pend.length} puntos — pulsa SELECCIONAR para confirmar`):DRAG.includes(tool)?"Arrastra para dibujar → se pedirá la medida":pend.length===1?"Toca el 2° punto → se pedirá la medida":"Toca la imagen para colocar → se pedirá la medida"}
+          {tool==="lasso"?(pend.length===0?"Toca para añadir puntos del contorno":pend.length===1?"1 punto — añade más o cierra ya (mín. 2)":`${pend.length} puntos — pulsa SELECCIONAR para confirmar`):DRAG.includes(tool)?"Arrastra para dibujar → se pedirá la medida":pend.length===1?"Toca el 2° punto → se pedirá la medida":"Toca la imagen para colocar → se pedirá la medida"}
         </span>
       </>:<span style={{fontSize:"8px",color:"#333"}}>← Selecciona herramienta arriba</span>}
       {pend.length>0&&<button onClick={()=>{setPend([]);setPrev(null);}} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",fontSize:"8px",padding:"3px 8px",borderRadius:"5px",marginLeft:"auto"}}>✕</button>}
@@ -3104,8 +3189,10 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           ctx2.closePath();ctx2.clip();
         }
         ctx2.drawImage(im,im.width*x1,im.height*y1,cW,cH,0,0,cW,cH);
-        const fakeSeg={id:uid(),name:(cropM.isLasso?"Lazo ":"Zona ")+new Date().toLocaleTimeString("es-ES"),x1,y1,x2,y2,color:cropM.isLasso?"#cc44ff":"#ff9500",polygon:cropM.polygon};
-        setSegs(s=>[...s,fakeSeg]);
+        /* Si ya existe la pieza (se guardó al cerrar el lazo), la reutilizamos en vez de duplicarla */
+        const fakeSeg=cropM.fromSeg?segs.find(s=>s.id===cropM.fromSeg)||{id:uid(),name:"Zona "+new Date().toLocaleTimeString("es-ES"),x1,y1,x2,y2,color:"#ff9500",polygon:cropM.polygon}
+          :{id:uid(),name:(cropM.isLasso?"Lazo ":"Zona ")+new Date().toLocaleTimeString("es-ES"),x1,y1,x2,y2,color:cropM.isLasso?"#cc44ff":"#ff9500",polygon:cropM.polygon};
+        if(!cropM.fromSeg)setSegs(s=>[...s,fakeSeg]);
         setFcAnns([]);setFcZoom(1);
         setEditZone({seg:fakeSeg,croppedImg:c2.toDataURL("image/jpeg",.95)});
         setCropM(null);
@@ -3127,7 +3214,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       </button>
     </div>
     {segs?.length>1&&<div style={{fontSize:"8px",color:"#555",textAlign:"center",marginTop:"-3px"}}>Incluye las {segs.length} zonas recortadas hasta ahora, no solo esta</div>}
-    <button onClick={()=>setCropM(null)} style={{width:"100%",padding:"10px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.08)",color:"#444",borderRadius:"9px",fontSize:"10px"}}>Cancelar</button>
+    <button onClick={()=>setCropM(null)} style={{width:"100%",padding:"10px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.08)",color:"#444",borderRadius:"9px",fontSize:"10px"}}>Cerrar este menú (la selección queda guardada)</button>
   </div>
 </div>}
 
