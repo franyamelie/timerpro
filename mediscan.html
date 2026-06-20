@@ -2373,7 +2373,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     </div>
     <span style={{fontSize:"9px",color:"#3355aa",flex:1}}>
       {pend.length===0&&tool!=="crop"&&tool!=="lasso"&&!DRAG.includes(tool)?TOOL_DESC[tool]:
-       tool==="crop"?"✂ Mantén y arrastra para seleccionar zona rectangular":tool==="lasso"?"":DRAG.includes(tool)?"→ Arrastra en la imagen":OPEN_ENDED.includes(tool)?(pend.length===0?"▶ Toca para añadir puntos":`${pend.length} punto${pend.length>1?"s":""} — toca 2 veces seguidas y rápido para terminar aquí (la línea es solo guía)`):pend.length===1?"▶ PASO 2 — 2° punto":"▶ PASO 1 — Toca la imagen"}
+       tool==="crop"?"✂ Mantén y arrastra para seleccionar zona rectangular":tool==="lasso"?"":DRAG.includes(tool)?"→ Arrastra en la imagen":OPEN_ENDED.includes(tool)?(pend.length===0?"▶ Toca para añadir puntos":`${pend.length} punto${pend.length>1?"s":""} — toca 2 veces seguidas y rápido para terminar aquí (la línea es solo guía)`):(()=>{const need=TOOLS.find(t=>t.id===tool)?.npts||2;return pend.length>=need?"✓ Completando…":`▶ PASO ${pend.length+1} de ${need} — toca el punto ${pend.length+1}`;})()}
     </span></>
     :<span style={{fontSize:"9px",color:"#5a7a9a",flex:1,display:"flex",alignItems:"center",gap:"6px"}}>
       <span style={{fontSize:"13px"}}>↖</span>
@@ -2435,17 +2435,23 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       <img src={img} alt="" draggable="false" style={{width:"100%",display:"block",pointerEvents:"none"}}/>
       <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",overflow:"visible",pointerEvents:"all"}}>
         {/* AI PARTS - colored, selectable, deletable (P1) */}
-        {showSegs&&segs.map(seg=>{const isSel=selSeg===seg.id;const col=seg.color||C;const isFaded=fadedSegIds.has(seg.id);return(
-          <g key={seg.id} className="segpop" opacity={isFaded?0.35:1}
-            onDoubleClick={e=>{e.stopPropagation();if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");c2.width=Math.round(im.width*(seg.x2-seg.x1));c2.height=Math.round(im.height*(seg.y2-seg.y1));c2.getContext("2d").drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);openZone(seg,c2.toDataURL("image/jpeg",.92));setSelSeg(null);};im.src=img;}}>
+        {showSegs&&segs.map(seg=>{const isSel=selSeg===seg.id;const col=seg.color||C;const isFaded=fadedSegIds.has(seg.id);
+          /* Mientras una herramienta de dibujo/medición está activa (no "Mover"),
+             los controles de segmento NO deben interceptar el clic — si no, bloquean
+             silenciosamente los toques de Chaflán/Ángulo/etc. que caigan sobre su
+             etiqueta o botones, dando la sensación de que "no suelta" el punto. */
+          const segClickable=tool==="sel";
+          return(
+          <g key={seg.id} className="segpop" opacity={isFaded?0.35:1} style={{pointerEvents:segClickable?"auto":"none"}}
+            onDoubleClick={e=>{if(!segClickable)return;e.stopPropagation();if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");c2.width=Math.round(im.width*(seg.x2-seg.x1));c2.height=Math.round(im.height*(seg.y2-seg.y1));c2.getContext("2d").drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);openZone(seg,c2.toDataURL("image/jpeg",.92));setSelSeg(null);};im.src=img;}}>
             {/* Polygon drawn in overlay SVG below */}
             <rect x={`${seg.x1*100}%`} y={`${seg.y1*100-.5}%`} width="22%" height="5.8%" rx="2.5%" fill="rgba(0,0,0,0.8)"
-              style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();setSelSeg(isSel?null:seg.id);}}/>
+              style={{cursor:"pointer"}} onClick={e=>{if(!segClickable)return;e.stopPropagation();setSelSeg(isSel?null:seg.id);}}/>
             <text x={`${seg.x1*100+1.2}%`} y={`${seg.y1*100+2.4}%`} fill="#ffffff" fontSize="2.1%"
               fontFamily="Inter,sans-serif" fontWeight="900" dominantBaseline="middle"
               stroke="rgba(0,0,0,0.8)" strokeWidth="0.2%" paintOrder="stroke fill"
               style={{pointerEvents:"none",letterSpacing:"-0.01em"}}>{isFaded?"✂ ":""}{seg.id}. {(seg.name||"").slice(0,15)}</text>
-            {isSel&&<>
+            {isSel&&segClickable&&<>
               <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();setSegs(s=>s.filter(x=>x.id!==seg.id));setSelSeg(null);}}>
                 <rect x={`${seg.x2*100-8}%`} y={`${seg.y1*100}%`} width="8%" height="6%" rx="2%" fill="#ff3366"/>
                 <text x={`${seg.x2*100-4}%`} y={`${seg.y1*100+3.2}%`} fill="#fff" fontSize="3.2%" fontWeight="800" textAnchor="middle" dominantBaseline="middle">✕</text>
@@ -2465,7 +2471,11 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         {/* Drawing preview */}
         {prev&&<Shape a={{...prev,id:"pv",color:"rgba(0,180,255,.7)",lineStyle:"solid",arrowHead:aHd}} ip/>}
         {/* First point indicator */}
-        {pend.length===1&&tool!=="lasso"&&!OPEN_ENDED.includes(tool)&&<><circle cx={`${pend[0].x*100}%`} cy={`${pend[0].y*100}%`} r="5" fill={COLS[colI%COLS.length]} opacity=".9" pointerEvents="none"/><circle cx={`${pend[0].x*100}%`} cy={`${pend[0].y*100}%`} r="10" fill="none" stroke={COLS[colI%COLS.length]} strokeWidth="1.5" opacity=".5" pointerEvents="none"/></>}
+        {pend.length>=1&&tool!=="lasso"&&!OPEN_ENDED.includes(tool)&&pend.map((pt,i)=><g key={i}>
+          <circle cx={`${pt.x*100}%`} cy={`${pt.y*100}%`} r="5" fill={COLS[colI%COLS.length]} opacity=".9" pointerEvents="none"/>
+          <circle cx={`${pt.x*100}%`} cy={`${pt.y*100}%`} r="10" fill="none" stroke={COLS[colI%COLS.length]} strokeWidth="1.5" opacity=".5" pointerEvents="none"/>
+          <text x={`${pt.x*100}%`} y={`${pt.y*100-2.5}%`} fill={COLS[colI%COLS.length]} fontSize="11" fontWeight="800" textAnchor="middle" pointerEvents="none" stroke="#000" strokeWidth="2.5" paintOrder="stroke fill">{i+1}</text>
+        </g>)}
         {/* OPEN_ENDED: full accumulated chain (click adds point, dblclick finishes) */}
         {OPEN_ENDED.includes(tool)&&pend.length>=1&&(()=>{
           const oc=COLS[colI%COLS.length];
@@ -2562,8 +2572,10 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           ⚠ {seg.name} (sin contorno preciso)
         </div>
       ))}
-      {/* Polygon vertex handles - draggable points to RESHAPE AI-detected contour */}
-      {showSegs&&segs.map(seg=>selSeg===seg.id&&seg.polygon?.length>=3&&seg.polygon.map((pt,i)=>(
+      {/* Polygon vertex handles - draggable points to RESHAPE AI-detected contour.
+          SOLO activos en modo Mover — si no, bloquean los toques de cualquier
+          otra herramienta de medición que caigan sobre estos puntos de 13px. */}
+      {showSegs&&tool==="sel"&&segs.map(seg=>selSeg===seg.id&&seg.polygon?.length>=3&&seg.polygon.map((pt,i)=>(
         <div key={`${seg.id}-pt${i}`}
           onMouseDown={e=>onSegPtDrag(e,seg.id,i)} onTouchStart={e=>onSegPtDrag(e,seg.id,i)}
           style={{position:"absolute",left:`${pt[0]*100}%`,top:`${pt[1]*100}%`,
@@ -2571,21 +2583,23 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
             background:seg.color||C,border:"2px solid #fff",cursor:"grab",zIndex:30,
             boxShadow:`0 0 7px ${seg.color||C}`}}/>
       )))}
-      {/* Marker dots (DOM) */}
+      {/* Marker dots (DOM) — SOLO clicables/arrastrables en modo Mover; si no, sus
+          círculos de 30px bloquearían los toques de cualquier herramienta de
+          medición activa que caiga encima de un marcador ya colocado. */}
       {mrkA.map((a,idx)=><div key={a.id} className="nc"
-        onMouseDown={e=>onHandleDrag(e,a.id,0)} onTouchStart={e=>onHandleDrag(e,a.id,0)}
-        onClick={e=>{e.stopPropagation();setSelId(a.id);setTool("sel");
+        onMouseDown={e=>{if(tool==="sel")onHandleDrag(e,a.id,0);}} onTouchStart={e=>{if(tool==="sel")onHandleDrag(e,a.id,0);}}
+        onClick={e=>{if(tool!=="sel")return;e.stopPropagation();setSelId(a.id);setTool("sel");
   /* Single tap on existing marker -> open measurement modal */
   setMIn({t:a.title||"",v:a.value!=null?String(a.value):"",u:a.unit||"cm",ax:a.axis||""});
   setMeasM({...a,_existing:true});}}
-        style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",width:"30px",height:"30px",borderRadius:"50%",background:selId===a.id?a.color:"rgba(6,8,16,.92)",border:`2.5px solid ${a.color}`,color:selId===a.id?"#000":a.color,display:"flex",alignItems:"center",justifyContent:"center",cursor:"grab",zIndex:15,boxShadow:`0 0 ${selId===a.id?18:8}px ${a.color}`,fontSize:a.type==="pin"?"18px":"11px",fontWeight:"700"}}>
+        style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",width:"30px",height:"30px",borderRadius:"50%",background:selId===a.id?a.color:"rgba(6,8,16,.92)",border:`2.5px solid ${a.color}`,color:selId===a.id?"#000":a.color,display:"flex",alignItems:"center",justifyContent:"center",cursor:tool==="sel"?"grab":"default",zIndex:tool==="sel"?15:1,pointerEvents:tool==="sel"?"auto":"none",boxShadow:`0 0 ${selId===a.id?18:8}px ${a.color}`,fontSize:a.type==="pin"?"18px":"11px",fontWeight:"700"}}>
         {a.type==="pin"?"📍":a.type==="star"?"★":a.type==="tgt"?"⊕":(idx+1)}
         <div style={{position:"absolute",top:"-36px",left:"50%",transform:"translateX(-50%)",background:"rgba(6,8,16,.93)",color:a.value!=null?a.color:"#3355aa",fontSize:"9px",fontWeight:"700",padding:"4px 11px",borderRadius:"20px",whiteSpace:"nowrap",border:`1.5px solid ${a.value!=null?a.color:"rgba(255,255,255,.1)"}`,pointerEvents:"none",minWidth:"60px",textAlign:"center",boxShadow:"0 2px 12px rgba(0,0,0,.6)"}}>
           {a.value!=null?(a.title?a.title+": ":"")+a.value+" "+a.unit:a.title||"Toca para medir"}
         </div>
       </div>)}
-      {/* Drag handles for selected shape */}
-      {selA&&!MRK.includes(selA.type)&&selA.points.map((p,pi)=><div key={pi} className="nc" onMouseDown={e=>onHandleDrag(e,selA.id,pi)} onTouchStart={e=>onHandleDrag(e,selA.id,pi)} style={{position:"absolute",left:`${p.x*100}%`,top:`${p.y*100}%`,transform:"translate(-50%,-50%)",width:"15px",height:"15px",borderRadius:"50%",background:selA.color,cursor:"grab",zIndex:25,border:"2.5px solid #fff",boxShadow:`0 0 9px ${selA.color}`}}/>)}
+      {/* Drag handles for selected shape — solo en modo Mover, mismo motivo */}
+      {tool==="sel"&&selA&&!MRK.includes(selA.type)&&selA.points.map((p,pi)=><div key={pi} className="nc" onMouseDown={e=>onHandleDrag(e,selA.id,pi)} onTouchStart={e=>onHandleDrag(e,selA.id,pi)} style={{position:"absolute",left:`${p.x*100}%`,top:`${p.y*100}%`,transform:"translate(-50%,-50%)",width:"15px",height:"15px",borderRadius:"50%",background:selA.color,cursor:"grab",zIndex:25,border:"2.5px solid #fff",boxShadow:`0 0 9px ${selA.color}`}}/>)}
     </div>
   </div>
 
