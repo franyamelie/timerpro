@@ -919,6 +919,34 @@ function App(){
     });
   },[snapshotActiveZone]);
 
+  /* Recorta directamente un segmento YA seleccionado (por IA o manualmente) y lo
+     abre como pestaña — sin volver a pedir selección punto a punto. Usado por el
+     botón "✂ Recortar" cuando ya hay una zona detectada activa (selSeg). */
+  const extractSegToZone=useCallback(seg=>{
+    if(!img||!seg)return;
+    const im=new Image();im.crossOrigin="anonymous";
+    im.onload=()=>{
+      const c2=document.createElement("canvas");
+      c2.width=Math.round(im.width*(seg.x2-seg.x1));
+      c2.height=Math.round(im.height*(seg.y2-seg.y1));
+      const ctx2=c2.getContext("2d");
+      if(seg.polygon?.length>=3){
+        /* Recorta siguiendo el contorno exacto detectado por IA, no solo el rectángulo */
+        ctx2.beginPath();
+        seg.polygon.forEach((pt,i)=>{
+          const px=Array.isArray(pt)?pt[0]:pt.x,py=Array.isArray(pt)?pt[1]:pt.y;
+          const rx=(px-seg.x1)/(seg.x2-seg.x1)*c2.width,ry=(py-seg.y1)/(seg.y2-seg.y1)*c2.height;
+          i===0?ctx2.moveTo(rx,ry):ctx2.lineTo(rx,ry);
+        });
+        ctx2.closePath();ctx2.clip();
+      }
+      ctx2.drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);
+      openZone(seg,c2.toDataURL("image/jpeg",.92));
+      setSelSeg(null);
+    };
+    im.src=img;
+  },[img,openZone]);
+
   /* Cambia a otra pestaña ya abierta, guardando antes el estado de la actual */
   const switchZone=useCallback(zoneId=>{
     snapshotActiveZone();
@@ -2340,11 +2368,11 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     </div>
     {/* Tool buttons */}
     <div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"flex-start"}}>
-      {(tbyCat[tCat]||[]).map(t=><button key={t.id} title={t.label} onClick={()=>{setTool(t.id);setPend([]);setPrev(null);setDragSt(null);setMeasM(null);setCalibM(null);setCropM(null);}}
+      {(tbyCat[tCat]||[]).map(t=><button key={t.id} title={t.label} onClick={()=>{setTool(t.id);setPend([]);setPrev(null);setDragSt(null);setMeasM(null);setCalibM(null);setCropM(null);setSamActive(false);}}
               onContextMenu={e=>{e.preventDefault();setTool(t.id);setAddPartDlg(true);}}
               title={`${t.label} — ${TOOL_DESC[t.id]||t.label} (clic derecho = nueva parte)`}
               className={`tb${tool===t.id?" act":""}`}><span>{t.icon}</span><span>{t.label}</span></button>)}
-      <button title="Mover/Seleccionar" onClick={()=>{setTool("sel");setPend([]);setPrev(null);setDragSt(null);}} className={`tb${tool==="sel"?" act":""}`}><span>↖</span><span>Mover</span></button>
+      <button title="Mover/Seleccionar" onClick={()=>{setTool("sel");setPend([]);setPrev(null);setDragSt(null);setSamActive(false);}} className={`tb${tool==="sel"?" act":""}`}><span>↖</span><span>Mover</span></button>
     </div>
     {/* Color + style */}
     <div style={{display:"flex",gap:"5px",alignItems:"center",marginTop:"7px",flexWrap:"wrap"}}>
@@ -2663,7 +2691,11 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       style={{flex:2,padding:"7px 6px",background:samActive?"linear-gradient(135deg,#00cc88,#00ffaa)":"rgba(0,200,130,.12)",border:`1px solid ${samActive?"#00ffaa":"rgba(0,200,130,.3)"}`,color:samActive?"#000":"#00dd99",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>
       {samStatus==="loading-models"?"⏳ Cargando IA...":samStatus==="encoding"?"⏳ Procesando...":samActive?"🎯 Toca un objeto":"🎯 IA Precisa"}
     </button>
-    <button onClick={()=>setSelModeChoice(true)} title="Elige cómo recortar: punto a punto, rectángulo o círculo" style={{flex:2,padding:"7px 6px",background:tool==="crop"?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.3)",color:tool==="crop"?"#000":"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>✂ Recortar</button>
+    <button onClick={()=>{
+      const seg=selSeg?segs.find(s=>s.id===selSeg):null;
+      if(seg){extractSegToZone(seg);return;}
+      setSelModeChoice(true);
+    }} title={selSeg?"Recorta directamente la zona ya seleccionada":"Elige cómo recortar: punto a punto, rectángulo o círculo"} style={{flex:2,padding:"7px 6px",background:tool==="crop"?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.3)",color:tool==="crop"?"#000":"#ff9500",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>{selSeg?"✂ Recortar selección":"✂ Recortar"}</button>
     <button onClick={()=>{setMeasM(null);setCalibM(null);setCropM(null);if(tool==="lasso"){setPend([]);setTool("sel");}else{setTool("lasso");setPend([]);}}} title="Lazo poligonal: clic por clic para seleccionar área de forma libre" style={{flex:2,padding:"7px 6px",background:tool==="lasso"?"linear-gradient(135deg,#aa00ff,#ff00aa)":"rgba(170,0,255,.1)",border:`1px solid ${tool==="lasso"?"#cc44ff":"rgba(170,0,255,.3)"}`,color:tool==="lasso"?"#fff":"#bb44ff",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>{tool==="lasso"&&pend.length>0?`⬡ ${pend.length} pts`:"⬡ Lazo"}</button>
     {segs.length>0&&<button onClick={()=>setShowSegs(s=>!s)} style={{flex:1,padding:"7px 4px",background:showSegs?"rgba(0,150,255,.15)":"rgba(0,100,255,.05)",border:`1px solid rgba(0,150,255,${showSegs?.3:.12})`,color:showSegs?C:"#2a3a5a",borderRadius:"8px",fontSize:"9px"}}>👁{showSegs?"ON":"OFF"}</button>}
     {selId&&<button onClick={()=>delA(selId)} style={{flex:1,padding:"7px 4px",background:"rgba(255,50,50,.08)",border:"1px solid rgba(255,50,50,.2)",color:"#ff3366",borderRadius:"8px",fontSize:"9px"}}>🗑</button>}
@@ -3225,7 +3257,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
         {(tbyCat[tCat]||[]).filter(t=>t.id!=="crop"&&t.id!=="calib").map(t=><button key={t.id}
           title={t.label}
-          onClick={()=>{setTool(t.id);setPend([]);setPrev(null);setDragSt(null);setMeasM(null);setCalibM(null);setCropM(null);}}
+          onClick={()=>{setTool(t.id);setPend([]);setPrev(null);setDragSt(null);setMeasM(null);setCalibM(null);setCropM(null);setSamActive(false);}}
           style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"2px",
             padding:"7px 6px",borderRadius:"9px",minWidth:"44px",
             background:tool===t.id?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,255,255,.04)",
@@ -3235,7 +3267,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           <span style={{fontSize:"17px",lineHeight:1}}>{t.icon}</span>
           <span style={{fontSize:"6px",fontWeight:600}}>{t.label}</span>
         </button>)}
-        <button onClick={()=>{setTool("sel");setPend([]);setPrev(null);setDragSt(null);}}
+        <button onClick={()=>{setTool("sel");setPend([]);setPrev(null);setDragSt(null);setSamActive(false);}}
           style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"2px",
             padding:"7px 6px",borderRadius:"9px",minWidth:"44px",
             background:tool==="sel"?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,255,255,.04)",
