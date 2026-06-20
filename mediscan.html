@@ -801,11 +801,19 @@ function App(){
   const [addPartDlg,setAddPartDlg]=useState(false);
   const [selSeg,setSelSeg]=useState(null); /* selected segment id */
   const [editZone,setEditZone]=useState(null);
+  const [editZones,setEditZones]=useState([]); /* [{id,seg,croppedImg,fcAnns,fcHist,fcRedo,fcZoom,dirty}] — pestañas abiertas sin límite */
+  const [activeZoneId,setActiveZoneId]=useState(null); /* id de la pestaña activa dentro de editZones */
+  const [pendingNav,setPendingNav]=useState(null); /* acción de navegación pendiente de confirmar si hay cambios sin guardar */
+  const [applyAllM,setApplyAllM]=useState(null); /* {ann} anotación a ofrecer aplicar a otras pestañas */
+  const [applyAllPick,setApplyAllPick]=useState(null); /* {ann} eligiendo a qué pestañas en concreto */
+  const [removeZoneM,setRemoveZoneM]=useState(null); /* {seg,newAnns} preguntando si quitar la zona de la imagen principal al guardar */
+  const [fadedSegIds,setFadedSegIds]=useState(()=>new Set()); /* ids de segmentos "aclarados" en la imagen principal tras recortarlos */
   const [exitConfirm,setExitConfirm]=useState(false);
   const [floatCrop,setFloatCrop]=useState(null); /* {img, seg, anns:[], name} floating cropped zone */
   const [fcTool,setFcTool]=useState("dot");
   const [fcAnns,setFcAnns]=useState([]);
   const [fcHist,setFcHist]=useState([]); /* {seg, croppedImg} for zone edit */
+  const [fcRedo,setFcRedo]=useState([]); /* pila de rehacer, se vacía con cada acción nueva */
   const [fcZoom,setFcZoom]=useState(1);
   const [fcPanX,setFcPanX]=useState(0);
   const fcViewRef=useRef(null);
@@ -872,6 +880,110 @@ function App(){
   const updA=useCallback((id,ch)=>{setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);setAnns(p=>p.map(a=>a.id===id?{...a,...ch}:a));},[anns]);
   const delA=useCallback(id=>{setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);setAnns(p=>p.filter(a=>a.id!==id));if(selId===id)setSelId(null);},[anns,selId]);
   const undo=useCallback(()=>{setHist(h=>{if(!h.length)return h;setAnns(h[h.length-1]);setSelId(null);return h.slice(0,-1);});},[]);
+
+  /* ═══ SISTEMA DE PESTAÑAS — recortes editables sin límite, cada uno con su propio
+     historial de deshacer/rehacer, navegables sin perder información ═══ */
+
+  /* Guarda en editZones el estado actual de la pestaña activa (fcAnns/fcHist/fcRedo/fcZoom)
+     antes de cambiar de pestaña o cerrar, para no perder nada al navegar */
+  const snapshotActiveZone=useCallback(()=>{
+    if(!activeZoneId)return;
+    setEditZones(zs=>zs.map(z=>z.id===activeZoneId?{...z,fcAnns,fcHist,fcRedo,fcZoom,
+      dirty:fcAnns.some(a=>a.value!=null)}:z));
+  },[activeZoneId,fcAnns,fcHist,fcRedo,fcZoom]);
+
+  /* Abre una zona en una pestaña nueva, o salta a ella si ya estaba abierta — sin límite de pestañas */
+  const openZone=useCallback((seg,croppedImg)=>{
+    snapshotActiveZone();
+    setEditZones(zs=>{
+      const existing=zs.find(z=>z.seg.id===seg.id);
+      if(existing){
+        setActiveZoneId(existing.id);
+        setFcAnns(existing.fcAnns||[]);setFcHist(existing.fcHist||[]);setFcRedo(existing.fcRedo||[]);setFcZoom(existing.fcZoom||1);
+        setEditZone({seg:existing.seg,croppedImg:existing.croppedImg});
+        return zs;
+      }
+      const id=uid();
+      setActiveZoneId(id);
+      setFcAnns([]);setFcHist([]);setFcRedo([]);setFcZoom(1);
+      setEditZone({seg,croppedImg});
+      return[...zs,{id,seg,croppedImg,fcAnns:[],fcHist:[],fcRedo:[],fcZoom:1,dirty:false}];
+    });
+  },[snapshotActiveZone]);
+
+  /* Cambia a otra pestaña ya abierta, guardando antes el estado de la actual */
+  const switchZone=useCallback(zoneId=>{
+    snapshotActiveZone();
+    const z=editZones.find(z=>z.id===zoneId);if(!z)return;
+    setActiveZoneId(z.id);
+    setFcAnns(z.fcAnns||[]);setFcHist(z.fcHist||[]);setFcRedo(z.fcRedo||[]);setFcZoom(z.fcZoom||1);
+    setEditZone({seg:z.seg,croppedImg:z.croppedImg});
+  },[editZones,snapshotActiveZone]);
+
+  /* Cierra una pestaña concreta (sin afectar a las demás). Si tiene cambios sin guardar
+     (dirty), primero pregunta. Si era la activa, salta a la siguiente disponible o a Principal. */
+  const closeZone=useCallback((zoneId,force)=>{
+    const z=editZones.find(z=>z.id===zoneId);if(!z)return;
+    const isDirty=zoneId===activeZoneId?fcAnns.some(a=>a.value!=null):z.dirty;
+    if(isDirty&&!force){setPendingNav({type:"close",zoneId});return;}
+    const rest=editZones.filter(z=>z.id!==zoneId);
+    setEditZones(rest);
+    if(zoneId===activeZoneId){
+      if(rest.length){
+        const nz=rest[rest.length-1];
+        setActiveZoneId(nz.id);
+        setFcAnns(nz.fcAnns||[]);setFcHist(nz.fcHist||[]);setFcRedo(nz.fcRedo||[]);setFcZoom(nz.fcZoom||1);
+        setEditZone({seg:nz.seg,croppedImg:nz.croppedImg});
+      }else{
+        setActiveZoneId(null);setEditZone(null);setFcAnns([]);setFcHist([]);setFcRedo([]);
+      }
+    }
+  },[editZones,activeZoneId,fcAnns]);
+
+  /* Vuelve a la imagen principal SIN cerrar ninguna pestaña — quedan abiertas de fondo */
+  const goToMainKeepingZones=useCallback(()=>{
+    snapshotActiveZone();
+    setEditZone(null);
+  },[snapshotActiveZone]);
+
+  /* Deshacer / Rehacer dentro de la pestaña activa (independiente de las demás pestañas) */
+  const fcUndo=useCallback(()=>{
+    setFcHist(h=>{
+      if(!h.length)return h;
+      setFcRedo(r=>[...r,fcAnns]);
+      setFcAnns(h[h.length-1]);
+      return h.slice(0,-1);
+    });
+  },[fcAnns]);
+  const fcRedoFn=useCallback(()=>{
+    setFcRedo(r=>{
+      if(!r.length)return r;
+      setFcHist(h=>[...h,fcAnns]);
+      setFcAnns(r[r.length-1]);
+      return r.slice(0,-1);
+    });
+  },[fcAnns]);
+  /* Registra un cambio en fcAnns guardando snapshot para poder deshacer, y vacía el rehacer */
+  const fcPush=useCallback(updater=>{
+    setFcHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(fcAnns))]);
+    setFcRedo([]);
+    setFcAnns(updater);
+  },[fcAnns]);
+
+  /* "Aplicar a las demás ventanas": copia una anotación (misma posición relativa,
+     mismo tipo y medida) a otras pestañas abiertas. allOrPick: true=todas, array de ids=selección */
+  const applyAnnToZones=useCallback((ann,targetIds)=>{
+    setEditZones(zs=>zs.map(z=>{
+      if(!targetIds.includes(z.id))return z;
+      const copy={...ann,id:uid()};
+      if(z.id===activeZoneId){
+        setFcHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(fcAnns))]);setFcRedo([]);
+        setFcAnns(p=>[...p,copy]);
+        return{...z,fcAnns:[...(z.fcAnns||[]),copy]};
+      }
+      return{...z,fcAnns:[...(z.fcAnns||[]),copy],fcHist:[...(z.fcHist||[]),JSON.parse(JSON.stringify(z.fcAnns||[]))],fcRedo:[],dirty:true};
+    }));
+  },[activeZoneId,fcAnns]);
 
   /* position helper */
   const getP=useCallback((e,el)=>{
@@ -958,14 +1070,7 @@ function App(){
     const el=imgRef.current;if(!el)return;
     const td=TOOLS.find(t=>t.id===tool);
     const finish=(pts)=>{
-      if(!td||pts.length<td.npts){
-        /* Antes fallaba en silencio — ahora avisa exactamente cuántos puntos faltan, BIEN visible */
-        if(td&&pts.length>0){
-          setNeedMoreWarn(`⚠ "${td.label}" necesita ${td.npts} puntos mínimo — llevas ${pts.length}. Añade ${td.npts-pts.length} más, o pulsa ✕ para cancelar.`);
-          setTimeout(()=>setNeedMoreWarn(""),3500);
-        }
-        return;
-      }
+      if(!td||pts.length<1)return;
       const col=COLS[colI%COLS.length];
       const a={id:uid(),type:tool,icon:td?.icon||"●",title:"",value:null,unit:"cm",axis:"",
                color:col,points:[...pts],lineStyle:lSt,arrowHead:aHd};
@@ -1293,8 +1398,13 @@ function App(){
     if(!measM)return;
     if(measM._fc){
       /* From floating crop panel */
-      setFcAnns(prev=>prev.map(a=>a.id===measM.id?{...a,title:mIn.t,value:mIn.v===""?null:parseFloat(mIn.v),unit:mIn.u}:a));
-      setMeasM(null);if(mIn.v!==""&&mIn.v!=null){setViewPrompt({title:mIn.t||"Medida",value:mIn.v,unit:mIn.u});}
+      const updatedAnn={...measM,title:mIn.t,value:mIn.v===""?null:parseFloat(mIn.v),unit:mIn.u};
+      fcPush(prev=>prev.map(a=>a.id===measM.id?updatedAnn:a));
+      setMeasM(null);
+      if(mIn.v!==""&&mIn.v!=null){
+        setViewPrompt({title:mIn.t||"Medida",value:mIn.v,unit:mIn.u});
+        if(editZones.length>1)setApplyAllM(updatedAnn);
+      }
       return;
     }
     if(measM._existing){
@@ -1686,6 +1796,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       const autoVal=`${Math.round(Math.abs(Math.atan2(dy,dx)*180/Math.PI))}°`;
       const dispBadge=ip?"":(badge||autoVal);
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke="transparent" strokeWidth="14"/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw}/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+10}%`} y2={`${p1.y*100}%`} stroke={col} strokeWidth="1" strokeDasharray="3,2" opacity=".6"/>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1.2%" fill={col}/>
@@ -1701,6 +1812,8 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       const autoVal=`${Math.round(angDeg)}°`;
       const dispBadge=ip?"":(badge||autoVal);
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
+        <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p1.x*100}%`} y2={`${p1.y*100}%`} stroke="transparent" strokeWidth="14"/>
+        <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke="transparent" strokeWidth="14"/>
         <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p1.x*100}%`} y2={`${p1.y*100}%`} stroke={col} strokeWidth={sw}/>
         <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth={sw}/>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1%" fill={col}/>
@@ -1714,6 +1827,8 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       const r=Math.sqrt(Math.pow((p2.x-p1.x)*100,2)+Math.pow((p2.y-p1.y)*100,2));
       const dispBadge=ip?"":(badge||`Ø~${Math.round(r*2)}%`);
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r={`${r}%`} stroke="transparent" strokeWidth="14" fill="none"/>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke="transparent" strokeWidth="14"/>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r={`${r}%`} stroke={col} strokeWidth={sw} fill="none" strokeDasharray="6,3"/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw}/>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1.2%" fill={col}/>
@@ -1727,6 +1842,8 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       const nx=-dy/len*.04,ny=dx/len*.04;
       const dispBadge=ip?"":(badge||"Espesor");
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke="transparent" strokeWidth="14"/>
+        <line x1={`${(p1.x+nx)*100}%`} y1={`${(p1.y+ny)*100}%`} x2={`${(p2.x+nx)*100}%`} y2={`${(p2.y+ny)*100}%`} stroke="transparent" strokeWidth="14"/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw}/>
         <line x1={`${(p1.x+nx)*100}%`} y1={`${(p1.y+ny)*100}%`} x2={`${(p2.x+nx)*100}%`} y2={`${(p2.y+ny)*100}%`} stroke={col} strokeWidth={sw} strokeDasharray="5,2"/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${(p1.x+nx)*100}%`} y2={`${(p1.y+ny)*100}%`} stroke={col} strokeWidth="1.5"/>
@@ -1761,6 +1878,8 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       const p3=pts[2];
       const dispBadge=ip?"":(badge||"Chaflán");
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke="transparent" strokeWidth="14"/>
+        <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke="transparent" strokeWidth="14"/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw}/>
         <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth={sw}/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth="1.5" strokeDasharray="5,3"/>
@@ -1775,7 +1894,8 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       const cy=pts.reduce((s,p)=>s+p.y,0)/pts.length*100;
       const dispBadge=ip?"":(badge||`${pts.length}pts`);
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
-        <path d={d} stroke={col} strokeWidth={sw} fill={`${col}18`}/>
+        <path d={d} stroke="transparent" strokeWidth="14" fill={`${col}18`}/>
+        <path d={d} stroke={col} strokeWidth={sw} fill="none"/>
         {pts.map((p,i)=><circle key={i} cx={`${p.x*100}%`} cy={`${p.y*100}%`} r="1%" fill={col}/>)}
         {!ip&&dispBadge&&<Pill mx={`${cx}`} my={`${cy}`} text={dispBadge} col={col}/>}
       </g>;
@@ -1784,8 +1904,10 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     if(a.type==="arc"&&pts.length>=3){
       const p3=pts[2];
       const dispBadge=ip?"":(badge||"Arco");
+      const arcD=`M ${p1.x*100}% ${p1.y*100}% Q ${p2.x*100}% ${p2.y*100}% ${p3.x*100}% ${p3.y*100}%`;
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
-        <path d={`M ${p1.x*100}% ${p1.y*100}% Q ${p2.x*100}% ${p2.y*100}% ${p3.x*100}% ${p3.y*100}%`} stroke={col} strokeWidth={sw} fill="none"/>
+        <path d={arcD} stroke="transparent" strokeWidth="14" fill="none"/>
+        <path d={arcD} stroke={col} strokeWidth={sw} fill="none"/>
         {[p1,p3].map((p,i)=><circle key={i} cx={`${p.x*100}%`} cy={`${p.y*100}%`} r="1%" fill={col}/>)}
         {!ip&&dispBadge&&<Pill mx={`${p2.x*100}`} my={`${p2.y*100-5}`} text={dispBadge} col={col}/>}
       </g>;
@@ -1795,6 +1917,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       const xPx=Math.round(p1.x*1000)/10,yPx=Math.round(p1.y*1000)/10;
       const dispBadge=ip?"":(badge||`X:${xPx} Y:${yPx}`);
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="3.5%" fill="transparent"/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+6}%`} y2={`${p1.y*100}%`} stroke={col} strokeWidth="1.5"/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100}%`} y2={`${p1.y*100-6}%`} stroke={col} strokeWidth="1.5"/>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1.2%" fill={col}/>
@@ -1805,9 +1928,11 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     if(a.type==="defl"&&pts.length>=3){
       const p3=pts[2];
       const dispBadge=ip?"":(badge||"Deflexión");
+      const deflD=`M ${p1.x*100}% ${p1.y*100}% Q ${p2.x*100}% ${p2.y*100}% ${p3.x*100}% ${p3.y*100}%`;
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
+        <path d={deflD} stroke="transparent" strokeWidth="14" fill="none"/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth="1.5" strokeDasharray="4,3"/>
-        <path d={`M ${p1.x*100}% ${p1.y*100}% Q ${p2.x*100}% ${p2.y*100}% ${p3.x*100}% ${p3.y*100}%`} stroke={col} strokeWidth={sw} fill="none"/>
+        <path d={deflD} stroke={col} strokeWidth={sw} fill="none"/>
         <line x1={`${(p1.x+p3.x)*50}%`} y1={`${(p1.y+p3.y)*50}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth="1" strokeDasharray="3,2" opacity=".7"/>
         {!ip&&dispBadge&&<Pill mx={`${p2.x*100}`} my={`${p2.y*100-5}`} text={dispBadge} col={col}/>}
       </g>;
@@ -1816,6 +1941,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     if(a.type==="note"&&pts.length>=1){
       const dispBadge=ip?"":(badge||a.title||"Nota");
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="3%" fill="transparent"/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+5}%`} y2={`${(p1.y-.04)*100}%`} stroke={col} strokeWidth="1.5"/>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r=".8%" fill={col}/>
         {!ip&&dispBadge&&<Pill mx={`${p1.x*100+8}`} my={`${(p1.y-.04)*100}`} text={dispBadge} col={col}/>}
@@ -1825,6 +1951,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     if(a.type==="rough"&&pts.length>=1){
       const dispBadge=ip?"":(badge||"Ra");
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="3%" fill="transparent"/>
         <path d={`M ${p1.x*100-1.5}% ${p1.y*100+2}% L ${p1.x*100}% ${p1.y*100}% L ${p1.x*100+1.5}% ${p1.y*100+2}%`} stroke={col} strokeWidth="2" fill="none"/>
         <path d={`M ${p1.x*100}% ${p1.y*100}% L ${p1.x*100+3}% ${p1.y*100}%`} stroke={col} strokeWidth="1.5" fill="none"/>
         {!ip&&dispBadge&&<Pill mx={`${p1.x*100+6}`} my={`${p1.y*100-1}`} text={dispBadge} col={col}/>}
@@ -2298,16 +2425,16 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       <img src={img} alt="" draggable="false" style={{width:"100%",display:"block",pointerEvents:"none"}}/>
       <svg style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",overflow:"visible",pointerEvents:"all"}}>
         {/* AI PARTS - colored, selectable, deletable (P1) */}
-        {showSegs&&segs.map(seg=>{const isSel=selSeg===seg.id;const col=seg.color||C;return(
-          <g key={seg.id} className="segpop"
-            onDoubleClick={e=>{e.stopPropagation();if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");c2.width=Math.round(im.width*(seg.x2-seg.x1));c2.height=Math.round(im.height*(seg.y2-seg.y1));c2.getContext("2d").drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);setFcAnns([]);setFcZoom(1);setEditZone({seg,croppedImg:c2.toDataURL("image/jpeg",.92)});setSelSeg(null);};im.src=img;}}>
+        {showSegs&&segs.map(seg=>{const isSel=selSeg===seg.id;const col=seg.color||C;const isFaded=fadedSegIds.has(seg.id);return(
+          <g key={seg.id} className="segpop" opacity={isFaded?0.35:1}
+            onDoubleClick={e=>{e.stopPropagation();if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");c2.width=Math.round(im.width*(seg.x2-seg.x1));c2.height=Math.round(im.height*(seg.y2-seg.y1));c2.getContext("2d").drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);openZone(seg,c2.toDataURL("image/jpeg",.92));setSelSeg(null);};im.src=img;}}>
             {/* Polygon drawn in overlay SVG below */}
             <rect x={`${seg.x1*100}%`} y={`${seg.y1*100-.5}%`} width="22%" height="5.8%" rx="2.5%" fill="rgba(0,0,0,0.8)"
               style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();setSelSeg(isSel?null:seg.id);}}/>
             <text x={`${seg.x1*100+1.2}%`} y={`${seg.y1*100+2.4}%`} fill="#ffffff" fontSize="2.1%"
               fontFamily="Inter,sans-serif" fontWeight="900" dominantBaseline="middle"
               stroke="rgba(0,0,0,0.8)" strokeWidth="0.2%" paintOrder="stroke fill"
-              style={{pointerEvents:"none",letterSpacing:"-0.01em"}}>{seg.id}. {(seg.name||"").slice(0,15)}</text>
+              style={{pointerEvents:"none",letterSpacing:"-0.01em"}}>{isFaded?"✂ ":""}{seg.id}. {(seg.name||"").slice(0,15)}</text>
             {isSel&&<>
               <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();setSegs(s=>s.filter(x=>x.id!==seg.id));setSelSeg(null);}}>
                 <rect x={`${seg.x2*100-8}%`} y={`${seg.y1*100}%`} width="8%" height="6%" rx="2%" fill="#ff3366"/>
@@ -2317,7 +2444,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
                 <rect x={`${seg.x2*100-19}%`} y={`${seg.y1*100}%`} width="11%" height="6%" rx="2%" fill={col}/>
                 <text x={`${seg.x2*100-13.5}%`} y={`${seg.y1*100+3.2}%`} fill="#000" fontSize="2.3%" fontWeight="800" textAnchor="middle" dominantBaseline="middle">+ Medir</text>
               </g>
-              <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");c2.width=Math.round(im.width*(seg.x2-seg.x1));c2.height=Math.round(im.height*(seg.y2-seg.y1));c2.getContext("2d").drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);setEditZone({seg,croppedImg:c2.toDataURL("image/jpeg",.92)});setSelSeg(null);};im.src=img;}}>
+              <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");c2.width=Math.round(im.width*(seg.x2-seg.x1));c2.height=Math.round(im.height*(seg.y2-seg.y1));c2.getContext("2d").drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);openZone(seg,c2.toDataURL("image/jpeg",.92));setSelSeg(null);};im.src=img;}}>
                 <rect x={`${seg.x2*100-30}%`} y={`${seg.y1*100}%`} width="11%" height="6%" rx="2%" fill="#222"/>
                 <text x={`${seg.x2*100-24.5}%`} y={`${seg.y1*100+3.2}%`} fill="#ff9500" fontSize="2.2%" fontWeight="800" textAnchor="middle" dominantBaseline="middle">✏ Ver</text>
               </g>
@@ -2392,13 +2519,14 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           const col=seg.color||C;
           const hasReal=seg.polygon?.length>=4;
           if(!hasReal)return null; /* NO synthetic octagon fallback - never show a fake contour */
+          const isFaded=fadedSegIds.has(seg.id);
           const raw=seg.polygon;
           /* Convert 0-1 coords → 0-1000 plain numbers (NO %) */
           const pts=raw.map(pt=>Array.isArray(pt)?`${(pt[0]*1000).toFixed(1)},${(pt[1]*1000).toFixed(1)}`:
             `${((pt.x||0)*1000).toFixed(1)},${((pt.y||0)*1000).toFixed(1)}`).join(" ");
-          return<g key={seg.id} style={{pointerEvents:"none"}}>
-            {/* Very light translucent fill - image always visible */}
-            <polygon points={pts} fill={isSel?`${col}35`:`${col}20`}/>
+          return<g key={seg.id} style={{pointerEvents:"none"}} opacity={isFaded?0.4:1}>
+            {/* Very light translucent fill - image always visible. Recortada → mucho más clara, como aclarado de "copiar" */}
+            <polygon points={pts} fill={isFaded?`${col}55`:isSel?`${col}35`:`${col}20`}/>
             {/* Animated dashed border */}
             <polygon points={pts} stroke={col} strokeWidth={isSel?5:3}
               fill="none" strokeDasharray={isSel?"8 3":"10 5"}
@@ -2856,15 +2984,33 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     <button onClick={()=>{
       const seg=editZone.seg;
       if(fcAnns.some(a=>a.value!=null)){setExitConfirm(true);return;}
-      setEditZone(null);setFcAnns([]);setFcHist([]);
+      closeZone(activeZoneId,true);
       setSelSeg(seg.id);setTool("sel");
       setAiMsg(`🔄 "${seg.name}" lista para mover — arrastra su interior en la imagen`);
     }} title="Cerrar y mover esta pieza en la imagen principal" style={{background:"rgba(0,180,255,.12)",border:"1px solid rgba(0,180,255,.3)",color:"#00bbff",borderRadius:"7px",padding:"0 10px",height:"28px",fontSize:"9px",fontWeight:700,display:"flex",alignItems:"center",gap:"4px",flexShrink:0}}>🔄 Reposicionar</button>
+    <button onClick={goToMainKeepingZones} title="Volver a la imagen principal — esta pestaña sigue abierta" style={{background:"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.25)",color:"#ff9500",borderRadius:"7px",padding:"0 10px",height:"28px",fontSize:"9px",fontWeight:700,display:"flex",alignItems:"center",gap:"4px",flexShrink:0}}>🏠 Principal</button>
     <button onClick={()=>{
       if(fcAnns.some(a=>a.value!=null)){setExitConfirm(true);return;}
-      setEditZone(null);setFcAnns([]);setFcHist([]);
-    }} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.35)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
+      closeZone(activeZoneId,true);
+    }} title="Cerrar esta pestaña" style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.35)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
   </div>
+
+  {/* ══ BARRA DE PESTAÑAS — todas las zonas abiertas, sin límite, navegables sin perder nada ══ */}
+  {editZones.length>0&&<div className="app-scroll" style={{display:"flex",gap:"4px",padding:"6px 10px",background:"#0a0a0a",borderBottom:"1px solid #1a1a1a",overflowX:"auto",flexShrink:0}}>
+    {editZones.map(z=>{
+      const isDirty=z.id===activeZoneId?fcAnns.some(a=>a.value!=null):z.dirty;
+      return<div key={z.id} onClick={()=>switchZone(z.id)}
+        style={{display:"flex",alignItems:"center",gap:"5px",padding:"5px 9px",borderRadius:"8px",cursor:"pointer",flexShrink:0,
+          background:z.id===activeZoneId?"rgba(255,150,0,.18)":"rgba(255,255,255,.04)",
+          border:`1.5px solid ${z.id===activeZoneId?"#ff9500":"rgba(255,255,255,.08)"}`}}>
+        <div style={{width:"7px",height:"7px",borderRadius:"50%",background:z.seg.color||"#ff9500",flexShrink:0}}/>
+        <span style={{fontSize:"9px",fontWeight:z.id===activeZoneId?700:500,color:z.id===activeZoneId?"#ff9500":"#888",
+          whiteSpace:"nowrap",maxWidth:"110px",overflow:"hidden",textOverflow:"ellipsis"}}>{z.seg.name}</span>
+        {isDirty&&<span title="Cambios sin guardar" style={{width:"5px",height:"5px",borderRadius:"50%",background:"#ffdd00",flexShrink:0}}/>}
+        <button onClick={e=>{e.stopPropagation();closeZone(z.id);}} style={{background:"transparent",border:"none",color:"#666",fontSize:"11px",padding:"0 2px",flexShrink:0}}>✕</button>
+      </div>;
+    })}
+  </div>}
 
   {/* Floating toast: AI proactive message arrived (impossible to miss) */}
   {chatUnread&&sheet!=="chat"&&<div onClick={()=>{setChatUnread(false);setSheet("chat");}}
@@ -2891,7 +3037,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           const cW=Math.round(el.width*(x2-x1)),cH=Math.round(el.height*(y2-y1));
           const c2=document.createElement("canvas");c2.width=cW;c2.height=cH;
           c2.getContext("2d").drawImage(el,el.width*x1,el.height*y1,cW,cH,0,0,cW,cH);
-          setFcAnns([]);setFcZoom(1);setEditZone({seg,croppedImg:c2.toDataURL("image/jpeg",.92)});
+          openZone(seg,c2.toDataURL("image/jpeg",.92));
         };el.src=img;
         setPostActM(null);
       }} style={{padding:"10px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"9px",fontSize:"10px",fontWeight:800}}>📏 Medir esta zona</button>
@@ -2913,13 +3059,115 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
             points:a.points.map(p=>({x:seg.x1+(p.x)*(seg.x2-seg.x1),y:seg.y1+(p.y)*(seg.y2-seg.y1)}))
           }));
           newAnns.forEach(na=>addA(na));
-          setExitConfirm(false);setEditZone(null);setFcAnns([]);setFcHist([]);
+          setExitConfirm(false);closeZone(activeZoneId,true);
         }} style={{padding:"11px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"8px",fontSize:"11px",fontWeight:800}}>✓ Guardar y salir</button>
-        <button onClick={()=>{setExitConfirm(false);setEditZone(null);setFcAnns([]);setFcHist([]);}} style={{padding:"11px",background:"rgba(255,50,50,.12)",color:"#ff5577",border:"1px solid rgba(255,50,50,.3)",borderRadius:"8px",fontSize:"11px",fontWeight:700}}>🗑 Descartar y salir</button>
+        <button onClick={()=>{setExitConfirm(false);closeZone(activeZoneId,true);}} style={{padding:"11px",background:"rgba(255,50,50,.12)",color:"#ff5577",border:"1px solid rgba(255,50,50,.3)",borderRadius:"8px",fontSize:"11px",fontWeight:700}}>🗑 Descartar y salir</button>
         <button onClick={()=>setExitConfirm(false)} style={{padding:"11px",background:"rgba(255,255,255,.05)",color:"#888",border:"1px solid rgba(255,255,255,.1)",borderRadius:"8px",fontSize:"11px"}}>↩ Seguir aquí</button>
       </div>
     </div>
   </div>}
+
+  {/* Pestaña concreta con cambios sin guardar al intentar cerrarla desde la barra de pestañas */}
+  {pendingNav?.type==="close"&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:950,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}} onClick={()=>setPendingNav(null)}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#161616",border:"2px solid #ff9500",borderRadius:"14px",padding:"18px",maxWidth:"360px",width:"100%"}}>
+      <div style={{fontSize:"13px",fontWeight:800,color:"#ff9500",marginBottom:"5px"}}>⚠️ Esta pestaña tiene cambios sin guardar</div>
+      <div style={{fontSize:"9px",color:"#777",marginBottom:"14px",lineHeight:1.7}}>
+        "{editZones.find(z=>z.id===pendingNav.zoneId)?.seg.name}" tiene medidas sin guardar. ¿Qué quieres hacer antes de cerrarla?
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:"7px"}}>
+        <button onClick={()=>{
+          const z=editZones.find(z=>z.id===pendingNav.zoneId);if(!z)return;
+          const srcAnns=z.id===activeZoneId?fcAnns:(z.fcAnns||[]);
+          const newAnns=srcAnns.filter(a=>a.value!=null).map(a=>({
+            ...a,id:uid(),_fc:false,partId:z.seg.id,partName:z.seg.name,
+            points:a.points.map(p=>({x:z.seg.x1+(p.x)*(z.seg.x2-z.seg.x1),y:z.seg.y1+(p.y)*(z.seg.y2-z.seg.y1)}))
+          }));
+          newAnns.forEach(na=>addA(na));
+          closeZone(pendingNav.zoneId,true);setPendingNav(null);
+        }} style={{padding:"11px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"8px",fontSize:"11px",fontWeight:800}}>✓ Guardar y cerrar</button>
+        <button onClick={()=>{closeZone(pendingNav.zoneId,true);setPendingNav(null);}} style={{padding:"11px",background:"rgba(255,50,50,.12)",color:"#ff5577",border:"1px solid rgba(255,50,50,.3)",borderRadius:"8px",fontSize:"11px",fontWeight:700}}>🗑 Descartar y cerrar</button>
+        <button onClick={()=>setPendingNav(null)} style={{padding:"11px",background:"rgba(255,255,255,.05)",color:"#888",border:"1px solid rgba(255,255,255,.1)",borderRadius:"8px",fontSize:"11px"}}>↩ No cerrar, seguir editando</button>
+      </div>
+    </div>
+  </div>}
+
+  {/* "Aplicar a las demás ventanas": Sí a todas / elegir cuáles / no */}
+  {applyAllM&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:950,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}} onClick={()=>setApplyAllM(null)}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#161616",border:"2px solid #00bbff",borderRadius:"14px",padding:"18px",maxWidth:"360px",width:"100%"}}>
+      <div style={{fontSize:"13px",fontWeight:800,color:"#00bbff",marginBottom:"5px"}}>⇉ ¿Aplicar a las demás ventanas?</div>
+      <div style={{fontSize:"9px",color:"#777",marginBottom:"14px",lineHeight:1.7}}>
+        "{applyAllM.title||applyAllM.type}: {applyAllM.value} {applyAllM.unit}" — hay {editZones.length-1} pestaña(s) más abierta(s).
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:"7px"}}>
+        <button onClick={()=>{
+          applyAnnToZones(applyAllM,editZones.map(z=>z.id).filter(id=>id!==activeZoneId));
+          setApplyAllM(null);
+        }} style={{padding:"11px",background:"linear-gradient(135deg,#0088ff,#00bbff)",color:"#000",border:"none",borderRadius:"8px",fontSize:"11px",fontWeight:800}}>✓ Sí, a todas</button>
+        <button onClick={()=>{setApplyAllPick({ann:applyAllM,sel:new Set()});setApplyAllM(null);}} style={{padding:"11px",background:"rgba(0,180,255,.12)",color:"#00bbff",border:"1px solid rgba(0,180,255,.3)",borderRadius:"8px",fontSize:"11px",fontWeight:700}}>☑ Elegir a cuáles</button>
+        <button onClick={()=>setApplyAllM(null)} style={{padding:"11px",background:"rgba(255,255,255,.05)",color:"#888",border:"1px solid rgba(255,255,255,.1)",borderRadius:"8px",fontSize:"11px"}}>✕ No aplicar</button>
+      </div>
+    </div>
+  </div>}
+
+  {/* Selección manual de a qué pestañas aplicar — checkboxes individuales por pestaña */}
+  {applyAllPick&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:950,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}} onClick={()=>setApplyAllPick(null)}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#161616",border:"2px solid #00bbff",borderRadius:"14px",padding:"18px",maxWidth:"380px",width:"100%",maxHeight:"70vh",overflowY:"auto"}}>
+      <div style={{fontSize:"13px",fontWeight:800,color:"#00bbff",marginBottom:"10px"}}>☑ ¿A qué pestañas aplicar?</div>
+      <div style={{display:"flex",flexDirection:"column",gap:"6px",marginBottom:"14px"}}>
+        {editZones.filter(z=>z.id!==activeZoneId).map(z=>{
+          const checked=applyAllPick.sel.has(z.id);
+          return<label key={z.id} onClick={()=>setApplyAllPick(p=>{
+              const ns=new Set(p.sel);checked?ns.delete(z.id):ns.add(z.id);return{...p,sel:ns};
+            })}
+            style={{display:"flex",alignItems:"center",gap:"8px",padding:"9px 10px",borderRadius:"8px",cursor:"pointer",
+              background:checked?"rgba(0,180,255,.12)":"rgba(255,255,255,.03)",
+              border:`1.5px solid ${checked?"#00bbff":"rgba(255,255,255,.08)"}`}}>
+            <div style={{width:"16px",height:"16px",borderRadius:"4px",border:`1.5px solid ${checked?"#00bbff":"#444"}`,
+              background:checked?"#00bbff":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              {checked&&<span style={{fontSize:"10px",color:"#000",fontWeight:900}}>✓</span>}
+            </div>
+            <div style={{width:"8px",height:"8px",borderRadius:"50%",background:z.seg.color,flexShrink:0}}/>
+            <span style={{fontSize:"10px",color:"#ccc"}}>{z.seg.name}</span>
+          </label>;
+        })}
+      </div>
+      <div style={{display:"flex",gap:"8px"}}>
+        <button onClick={()=>setApplyAllPick(null)} style={{flex:1,padding:"10px",background:"rgba(255,255,255,.05)",color:"#888",border:"1px solid rgba(255,255,255,.1)",borderRadius:"8px",fontSize:"10px"}}>Cancelar</button>
+        <button onClick={()=>{
+          applyAnnToZones(applyAllPick.ann,[...applyAllPick.sel]);
+          setApplyAllPick(null);
+        }} disabled={applyAllPick.sel.size===0} style={{flex:2,padding:"10px",background:applyAllPick.sel.size?"linear-gradient(135deg,#0088ff,#00bbff)":"rgba(255,255,255,.05)",color:applyAllPick.sel.size?"#000":"#444",border:"none",borderRadius:"8px",fontSize:"10px",fontWeight:800}}>✓ Aplicar a {applyAllPick.sel.size} pestaña(s)</button>
+      </div>
+    </div>
+  </div>}
+
+  {/* Al guardar una zona: ¿quitarla de la imagen principal (queda aclarada, como recortada)
+      o dejarla tal cual visible normalmente? */}
+  {removeZoneM&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:960,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}} onClick={()=>setRemoveZoneM(null)}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#161616",border:"2px solid #ff9500",borderRadius:"14px",padding:"18px",maxWidth:"380px",width:"100%"}}>
+      <div style={{fontSize:"13px",fontWeight:800,color:"#ff9500",marginBottom:"5px"}}>📌 "{removeZoneM.seg.name}" guardada</div>
+      <div style={{fontSize:"9px",color:"#777",marginBottom:"14px",lineHeight:1.7}}>
+        {removeZoneM.newAnns.length} medida(s) pasarán a 2D y 3D. ¿Qué hacemos con esta zona en la imagen principal?
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:"7px"}}>
+        <button onClick={()=>{
+          removeZoneM.newAnns.forEach(na=>addA(na));
+          setFadedSegIds(s=>new Set([...s,removeZoneM.seg.id]));
+          closeZone(activeZoneId,true);setSheet("2d");
+          setAiMsg(`Zona "${removeZoneM.seg.name}" guardada y marcada como recortada en la imagen principal.`);
+          setRemoveZoneM(null);
+        }} style={{padding:"11px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"8px",fontSize:"11px",fontWeight:800}}>✂ Quitar de la imagen (queda aclarada)</button>
+        <button onClick={()=>{
+          removeZoneM.newAnns.forEach(na=>addA(na));
+          closeZone(activeZoneId,true);setSheet("2d");
+          setAiMsg(`Zona "${removeZoneM.seg.name}" guardada. Sigue visible normalmente en la imagen principal.`);
+          setRemoveZoneM(null);
+        }} style={{padding:"11px",background:"rgba(0,200,100,.12)",color:"#00dd77",border:"1px solid rgba(0,200,100,.3)",borderRadius:"8px",fontSize:"11px",fontWeight:700}}>✓ Dejarla tal cual en la imagen</button>
+        <button onClick={()=>setRemoveZoneM(null)} style={{padding:"11px",background:"rgba(255,255,255,.05)",color:"#888",border:"1px solid rgba(255,255,255,.1)",borderRadius:"8px",fontSize:"11px"}}>↩ Cancelar, seguir editando</button>
+      </div>
+    </div>
+  </div>}
+
 
   <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:"0"}}>
     {/* TOOL SELECTOR - same as main */}
@@ -2965,11 +3213,18 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           style={{width:"16px",height:"16px",borderRadius:"50%",background:c,cursor:"pointer",
             border:colI===i?"3px solid #fff":"2px solid transparent",
             boxShadow:colI===i?`0 0 7px ${c}`:"none"}}/>)}
-        <button onClick={()=>{setFcHist(h=>{if(!h.length)return h;setFcAnns(h[h.length-1]);return h.slice(0,-1);});}}
+        <button onClick={fcUndo}
           disabled={fcHist.length===0}
+          title="Deshacer último cambio en esta zona"
           style={{marginLeft:"auto",padding:"4px 10px",background:fcHist.length?"rgba(255,150,0,.15)":"transparent",
             border:`1px solid ${fcHist.length?"rgba(255,150,0,.35)":"transparent"}`,
             color:fcHist.length?"#ff9500":"#333",borderRadius:"6px",fontSize:"9px",fontWeight:700}}>↩ {fcHist.length}</button>
+        <button onClick={fcRedoFn}
+          disabled={fcRedo.length===0}
+          title="Rehacer en esta zona"
+          style={{padding:"4px 10px",background:fcRedo.length?"rgba(0,180,255,.15)":"transparent",
+            border:`1px solid ${fcRedo.length?"rgba(0,180,255,.35)":"transparent"}`,
+            color:fcRedo.length?"#00bbff":"#333",borderRadius:"6px",fontSize:"9px",fontWeight:700}}>↪ {fcRedo.length}</button>
       </div>
     </div>
 
@@ -3003,7 +3258,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         if(MRK.includes(tool)||td.npts===1){
           const col=COLS[colI%COLS.length];
           const a={id:uid(),type:tool,icon:td.icon,color:col,points:[p],value:null,unit:"cm",title:"",axis:"",_fc:true};
-          setFcHist(h=>[...h.slice(-20),JSON.parse(JSON.stringify(fcAnns))]);
+          setFcHist(h=>[...h.slice(-20),JSON.parse(JSON.stringify(fcAnns))]);setFcRedo([]);
           setFcAnns(prev=>[...prev,a]);
           setMeasM({...a,_existing:true,_fc:true});setMIn({t:"",v:"",u:"cm",ax:""});
           return;
@@ -3012,7 +3267,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         if(pts.length>=td.npts){
           const col=COLS[colI%COLS.length];
           const a={id:uid(),type:tool,icon:td.icon,color:col,points:pts,value:null,unit:"cm",title:"",axis:"",_fc:true};
-          setFcHist(h=>[...h.slice(-20),JSON.parse(JSON.stringify(fcAnns))]);
+          setFcHist(h=>[...h.slice(-20),JSON.parse(JSON.stringify(fcAnns))]);setFcRedo([]);
           setFcAnns(prev=>[...prev,a]);setPend([]);setPrev(null);
           setMeasM({...a,_existing:true,_fc:true});setMIn({t:"",v:"",u:"cm",ax:""});
         }else{setPend(pts);setPrev({type:tool,points:[pts[0],p]});}
@@ -3036,7 +3291,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         if(Math.abs(p.x-ds.x)<.01&&Math.abs(p.y-ds.y)<.01)return;
         const col=COLS[colI%COLS.length];
         const a={id:uid(),type:tool,color:col,points:[ds,p],value:null,unit:"cm",title:"",axis:"",_fc:true};
-        setFcHist(h=>[...h.slice(-20),JSON.parse(JSON.stringify(fcAnns))]);
+        setFcHist(h=>[...h.slice(-20),JSON.parse(JSON.stringify(fcAnns))]);setFcRedo([]);
         setFcAnns(prev=>[...prev,a]);
         setMeasM({...a,_existing:true,_fc:true});setMIn({t:"",v:"",u:"cm",ax:""});
       }}>
@@ -3090,7 +3345,8 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <div style={{width:"8px",height:"8px",borderRadius:"50%",background:a.color,flexShrink:0}}/>
         <span style={{fontSize:"9px",color:"#bbb",flex:1}}>{a.title||a.type}</span>
         <span style={{fontSize:"11px",fontWeight:700,color:a.color}}>{a.value} {a.unit}</span>
-        <button onClick={()=>setFcAnns(p=>p.filter(x=>x.id!==a.id))} style={{background:"transparent",border:"none",color:"#ff3366",fontSize:"12px",opacity:.6}}>✕</button>
+        {editZones.length>1&&<button onClick={()=>setApplyAllM(a)} title="Aplicar esta medida a otras pestañas abiertas" style={{background:"rgba(0,180,255,.1)",border:"1px solid rgba(0,180,255,.25)",color:"#00bbff",borderRadius:"5px",padding:"2px 6px",fontSize:"8px",fontWeight:700}}>⇉</button>}
+        <button onClick={()=>fcPush(p=>p.filter(x=>x.id!==a.id))} style={{background:"transparent",border:"none",color:"#ff3366",fontSize:"12px",opacity:.6}}>✕</button>
       </div>)}
     </div>}
 
@@ -3103,10 +3359,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           ...a,id:uid(),_fc:false,partId:seg.id,partName:seg.name,
           points:a.points.map(p=>({x:seg.x1+(p.x)*(seg.x2-seg.x1),y:seg.y1+(p.y)*(seg.y2-seg.y1)}))
         }));
-        newAnns.forEach(na=>addA(na));
-        setEditZone(null);setFcAnns([]);setFcHist([]);
-        setSheet("2d");
-        setAiMsg(`Zona "${seg.name}" guardada con ${newAnns.length} medidas. Visible en 2D y 3D.`);
+        setRemoveZoneM({seg,newAnns});
       }} style={{width:"100%",padding:"12px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"9px",fontSize:"12px",fontWeight:800}}>
         ✓ GUARDAR {fcAnns.filter(a=>a.value!=null).length} medidas → 2D y 3D
       </button>
@@ -3170,7 +3423,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           }catch(e){alert("Error 2D PNG: "+e.message);}
         }} style={{flex:1,padding:"7px 4px",background:"rgba(0,150,100,.12)",border:"1px solid rgba(0,150,100,.3)",color:"#00cc88",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>📐 PNG 2D</button>
       </div>
-      <button onClick={()=>{setEditZone(null);setFcAnns([]);setFcHist([]);}} style={{width:"100%",padding:"8px",background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.08)",color:"#444",borderRadius:"8px",fontSize:"9px"}}>Cancelar — volver sin guardar</button>
+      <button onClick={()=>closeZone(activeZoneId,true)} style={{width:"100%",padding:"8px",background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.08)",color:"#444",borderRadius:"8px",fontSize:"9px"}}>Cancelar — volver sin guardar</button>
     </div>
   </div>
 </div>}
@@ -3240,8 +3493,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         const fakeSeg=cropM.fromSeg?segs.find(s=>s.id===cropM.fromSeg)||{id:uid(),name:"Zona "+new Date().toLocaleTimeString("es-ES"),x1,y1,x2,y2,color:"#ff9500",polygon:cropM.polygon}
           :{id:uid(),name:(cropM.isLasso?"Lazo ":"Zona ")+new Date().toLocaleTimeString("es-ES"),x1,y1,x2,y2,color:cropM.isLasso?"#cc44ff":"#ff9500",polygon:cropM.polygon};
         if(!cropM.fromSeg)setSegs(s=>[...s,fakeSeg]);
-        setFcAnns([]);setFcZoom(1);
-        setEditZone({seg:fakeSeg,croppedImg:c2.toDataURL("image/jpeg",.95)});
+        openZone(fakeSeg,c2.toDataURL("image/jpeg",.95));
         setCropM(null);
         askAIAboutPiece(c2.toDataURL("image/jpeg",.85),fakeSeg.name);
       };im.src=img;
