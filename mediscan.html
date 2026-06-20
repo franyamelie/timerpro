@@ -939,6 +939,90 @@ function App(){
 
   /* DRAWING - React synthetic events on image div */
   /* Double-click anywhere when lasso active → close polygon */
+  /* ═══ Camino 2: SAM real en el navegador (MobileSAM vía onnxruntime-web) ═══
+     Modelos verificados de un proyecto open-source funcional (akbartus/MobileSAM-in-the-Browser):
+     decoder servido desde raw.githubusercontent.com (confirmado accesible), encoder desde el
+     enlace oficial documentado en su README (HuggingFace). No puedo probar esto en un navegador
+     real desde aquí, así que si algo falla, el mensaje de estado mostrará el error exacto. */
+  const SAM_ENC_URL="https://huggingface.co/spaces/Akbartus/projects/resolve/main/mobilesam.encoder.onnx";
+  const SAM_DEC_URL="https://raw.githubusercontent.com/akbartus/MobileSAM-in-the-Browser/main/models/mobilesam.decoder.quant.onnx";
+
+  const samEnsureModels=useCallback(async()=>{
+    if(samDecSession.current&&samEncSession.current)return true;
+    if(typeof ort==="undefined"){setSamStatus("⚠️ No se pudo cargar onnxruntime-web (revisa tu conexión)");return false;}
+    try{
+      setSamStatus("loading-models");
+      ort.env.wasm.numThreads=1;
+      if(!samDecSession.current)samDecSession.current=await ort.InferenceSession.create(SAM_DEC_URL);
+      if(!samEncSession.current)samEncSession.current=await ort.InferenceSession.create(SAM_ENC_URL);
+      return true;
+    }catch(e){
+      setSamStatus(`⚠️ Error cargando el modelo IA Precisa: ${e.message||e}`);
+      return false;
+    }
+  },[]);
+
+  const samEncodeImage=useCallback(async()=>{
+    if(!img)return false;
+    if(samImgKey.current===img&&samEmbeddings.current)return true; // ya codificada
+    const ok=await samEnsureModels();if(!ok)return false;
+    try{
+      setSamStatus("encoding");
+      const el=new Image();el.crossOrigin="anonymous";
+      await new Promise((res,rej)=>{el.onload=res;el.onerror=rej;el.src=img;});
+      const iw=el.naturalWidth,ih=el.naturalHeight;
+      let rw,rh;
+      if(iw>=ih){rw=1024;rh=Math.max(1,Math.round(1024*ih/iw));}
+      else{rh=1024;rw=Math.max(1,Math.round(1024*iw/ih));}
+      const chwTensor=await ort.Tensor.fromImage(el,{resizedWidth:rw,resizedHeight:rh});
+      /* chwTensor: Float32Array CHW, valores 0-1. El encoder espera HWC, 0-255 */
+      const chw=chwTensor.data,plane=rw*rh;
+      const hwc=new Float32Array(plane*3);
+      for(let c=0;c<3;c++)for(let i=0;i<plane;i++)hwc[i*3+c]=chw[c*plane+i]*255;
+      const inputTensor=new ort.Tensor(hwc,[rh,rw,3]);
+      const out=await samEncSession.current.run({input_image:inputTensor});
+      samEmbeddings.current=out.image_embeddings;
+      samDims.current={w:rw,h:rh};
+      samImgKey.current=img;
+      setSamStatus("ready");
+      return true;
+    }catch(e){
+      setSamStatus(`⚠️ Error procesando la imagen para IA Precisa: ${e.message||e}`);
+      return false;
+    }
+  },[img,samEnsureModels]);
+
+  const samClickAt=useCallback(async(normX,normY)=>{
+    const ok=await samEncodeImage();if(!ok)return;
+    try{
+      setSamStatus("encoding");
+      const{w:rw,h:rh}=samDims.current;
+      const px=normX*rw,py=normY*rh;
+      const pointCoords=new ort.Tensor(new Float32Array([px,py,0,0]),[1,2,2]);
+      const pointLabels=new ort.Tensor(new Float32Array([1,-1]),[1,2]);
+      const maskInput=new ort.Tensor(new Float32Array(256*256),[1,1,256,256]);
+      const hasMask=new ort.Tensor(new Float32Array([0]),[1]);
+      const origSize=new ort.Tensor(new Float32Array([rh,rw]),[2]);
+      const feeds={image_embeddings:samEmbeddings.current,point_coords:pointCoords,
+        point_labels:pointLabels,mask_input:maskInput,has_mask_input:hasMask,orig_im_size:origSize};
+      const res=await samDecSession.current.run(feeds);
+      const maskT=res.masks;
+      const[,,mh,mw]=maskT.dims.length===4?maskT.dims:[1,1,rh,rw];
+      const poly=samMaskToPolygon(maskT.data,mw,mh,40,0.0); // logits: umbral en 0
+      if(!poly){setSamStatus("⚠️ No se detectó ninguna forma clara en ese punto. Prueba otro punto.");return;}
+      const normPoly=poly.map(([x,y])=>[cl(x/mw,0,1),cl(y/mh,0,1)]);
+      const xs=normPoly.map(p=>p[0]),ys=normPoly.map(p=>p[1]);
+      const newSeg={id:uid(),name:"Precisa "+new Date().toLocaleTimeString("es-ES"),
+        x1:Math.min(...xs),y1:Math.min(...ys),x2:Math.max(...xs),y2:Math.max(...ys),
+        color:COLS[colI%COLS.length],polygon:normPoly};
+      setSegs(s=>[...s,newSeg]);setSelSeg(newSeg.id);setShowSegs(true);setColI(c=>c+1);
+      setSamStatus("ready");
+      setAiMsg(`🎯 Contorno preciso añadido (${normPoly.length} puntos reales, generado en tu navegador)`);
+    }catch(e){
+      setSamStatus(`⚠️ Error generando el contorno: ${e.message||e}`);
+    }
+  },[samEncodeImage,colI]);
+
   const onImgClick=useCallback(e=>{
     if(samActive){
       e.stopPropagation();
@@ -1334,89 +1418,6 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO, SIN TEXTO NI MARKDOWN:
     }catch(e){/* silent - proactive feature, never block the user's flow */}
   },[]);
 
-  /* ═══ Camino 2: SAM real en el navegador (MobileSAM vía onnxruntime-web) ═══
-     Modelos verificados de un proyecto open-source funcional (akbartus/MobileSAM-in-the-Browser):
-     decoder servido desde raw.githubusercontent.com (confirmado accesible), encoder desde el
-     enlace oficial documentado en su README (HuggingFace). No puedo probar esto en un navegador
-     real desde aquí, así que si algo falla, el mensaje de estado mostrará el error exacto. */
-  const SAM_ENC_URL="https://huggingface.co/spaces/Akbartus/projects/resolve/main/mobilesam.encoder.onnx";
-  const SAM_DEC_URL="https://raw.githubusercontent.com/akbartus/MobileSAM-in-the-Browser/main/models/mobilesam.decoder.quant.onnx";
-
-  const samEnsureModels=useCallback(async()=>{
-    if(samDecSession.current&&samEncSession.current)return true;
-    if(typeof ort==="undefined"){setSamStatus("⚠️ No se pudo cargar onnxruntime-web (revisa tu conexión)");return false;}
-    try{
-      setSamStatus("loading-models");
-      ort.env.wasm.numThreads=1;
-      if(!samDecSession.current)samDecSession.current=await ort.InferenceSession.create(SAM_DEC_URL);
-      if(!samEncSession.current)samEncSession.current=await ort.InferenceSession.create(SAM_ENC_URL);
-      return true;
-    }catch(e){
-      setSamStatus(`⚠️ Error cargando el modelo IA Precisa: ${e.message||e}`);
-      return false;
-    }
-  },[]);
-
-  const samEncodeImage=useCallback(async()=>{
-    if(!img)return false;
-    if(samImgKey.current===img&&samEmbeddings.current)return true; // ya codificada
-    const ok=await samEnsureModels();if(!ok)return false;
-    try{
-      setSamStatus("encoding");
-      const el=new Image();el.crossOrigin="anonymous";
-      await new Promise((res,rej)=>{el.onload=res;el.onerror=rej;el.src=img;});
-      const iw=el.naturalWidth,ih=el.naturalHeight;
-      let rw,rh;
-      if(iw>=ih){rw=1024;rh=Math.max(1,Math.round(1024*ih/iw));}
-      else{rh=1024;rw=Math.max(1,Math.round(1024*iw/ih));}
-      const chwTensor=await ort.Tensor.fromImage(el,{resizedWidth:rw,resizedHeight:rh});
-      /* chwTensor: Float32Array CHW, valores 0-1. El encoder espera HWC, 0-255 */
-      const chw=chwTensor.data,plane=rw*rh;
-      const hwc=new Float32Array(plane*3);
-      for(let c=0;c<3;c++)for(let i=0;i<plane;i++)hwc[i*3+c]=chw[c*plane+i]*255;
-      const inputTensor=new ort.Tensor(hwc,[rh,rw,3]);
-      const out=await samEncSession.current.run({input_image:inputTensor});
-      samEmbeddings.current=out.image_embeddings;
-      samDims.current={w:rw,h:rh};
-      samImgKey.current=img;
-      setSamStatus("ready");
-      return true;
-    }catch(e){
-      setSamStatus(`⚠️ Error procesando la imagen para IA Precisa: ${e.message||e}`);
-      return false;
-    }
-  },[img,samEnsureModels]);
-
-  const samClickAt=useCallback(async(normX,normY)=>{
-    const ok=await samEncodeImage();if(!ok)return;
-    try{
-      setSamStatus("encoding");
-      const{w:rw,h:rh}=samDims.current;
-      const px=normX*rw,py=normY*rh;
-      const pointCoords=new ort.Tensor(new Float32Array([px,py,0,0]),[1,2,2]);
-      const pointLabels=new ort.Tensor(new Float32Array([1,-1]),[1,2]);
-      const maskInput=new ort.Tensor(new Float32Array(256*256),[1,1,256,256]);
-      const hasMask=new ort.Tensor(new Float32Array([0]),[1]);
-      const origSize=new ort.Tensor(new Float32Array([rh,rw]),[2]);
-      const feeds={image_embeddings:samEmbeddings.current,point_coords:pointCoords,
-        point_labels:pointLabels,mask_input:maskInput,has_mask_input:hasMask,orig_im_size:origSize};
-      const res=await samDecSession.current.run(feeds);
-      const maskT=res.masks;
-      const[,,mh,mw]=maskT.dims.length===4?maskT.dims:[1,1,rh,rw];
-      const poly=samMaskToPolygon(maskT.data,mw,mh,40,0.0); // logits: umbral en 0
-      if(!poly){setSamStatus("⚠️ No se detectó ninguna forma clara en ese punto. Prueba otro punto.");return;}
-      const normPoly=poly.map(([x,y])=>[cl(x/mw,0,1),cl(y/mh,0,1)]);
-      const xs=normPoly.map(p=>p[0]),ys=normPoly.map(p=>p[1]);
-      const newSeg={id:uid(),name:"Precisa "+new Date().toLocaleTimeString("es-ES"),
-        x1:Math.min(...xs),y1:Math.min(...ys),x2:Math.max(...xs),y2:Math.max(...ys),
-        color:COLS[colI%COLS.length],polygon:normPoly};
-      setSegs(s=>[...s,newSeg]);setSelSeg(newSeg.id);setShowSegs(true);setColI(c=>c+1);
-      setSamStatus("ready");
-      setAiMsg(`🎯 Contorno preciso añadido (${normPoly.length} puntos reales, generado en tu navegador)`);
-    }catch(e){
-      setSamStatus(`⚠️ Error generando el contorno: ${e.message||e}`);
-    }
-  },[samEncodeImage,colI]);
 
   /* AI CHAT */
   useEffect(()=>{segAIRef.current=segAI;});
