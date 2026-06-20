@@ -476,7 +476,7 @@ function Part3DWithCrop({anns,shape,color,seg}){
   return<Part3D anns={anns} shape={shape} color={color} segW={sw*400} segH={sh*400} texImg={texImg}/>;
 }
 
-function MultiPart3D({anns,segs,objShape,img}){
+function MultiPart3D({anns,segs,objShape,img,segSel}){
   const[crops,setCrops]=React.useState({});
   React.useEffect(()=>{
     if(!img||!segs?.length)return;
@@ -521,7 +521,7 @@ function MultiPart3D({anns,segs,objShape,img}){
   </div>;
 
   return<div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-    {parts.slice(0,8).map(part=>{
+    {(segSel&&segSel.size>0?parts.filter(p=>segSel.has(p.id)):parts).slice(0,4).map(part=>{
       const crop=crops[part.id];
       return<div key={part.id} style={{borderRadius:"10px",overflow:"hidden",border:`1px solid ${part.color||"#ff9500"}40`}}>
         <div style={{padding:"6px 10px",background:`${part.color||"#ff9500"}22`,display:"flex",alignItems:"center",gap:"7px",borderBottom:`1px solid ${part.color||"#ff9500"}30`}}>
@@ -756,6 +756,8 @@ function App(){
   const [segs,setSegs]=useState([]);
   const [segLoad,setSegLoad]=useState(false);
   const [showSegs,setShowSegs]=useState(true);
+  const [postActM,setPostActM]=useState(null); // pieza recién creada (SAM) esperando elección rápida
+  const [part3DSel,setPart3DSel]=useState(null); // null = "todas" (con tope de seguridad); Set de ids = selección explícita
 
   /* bottom sheet: null | meas | 2d | 3d | chat | export */
   const [sheet,setSheet]=useState(null);
@@ -928,6 +930,18 @@ function App(){
     if(type==="calib"){setCalibM(a);setMIn({t:"Escala",v:"",u:"cm",ax:""});addA(a);}
     else if(type==="crop"){setCropM({p1:pts[0],p2:pts[1]});}
     else if(type==="lasso"){setCropM({...a,isLasso:true});}
+    else if(type==="rect"||type==="circ"){
+      /* Rectángulo/Círculo se comportan como cualquier otra zona: ofrecen
+         medir/contornear/pasar a 2D-3D/seguir, igual que lazo y recorte. */
+      addA(a);
+      const[p1,p2]=pts;
+      let x1=Math.min(p1.x,p2.x),y1=Math.min(p1.y,p2.y),x2=Math.max(p1.x,p2.x),y2=Math.max(p1.y,p2.y);
+      if(type==="circ"){
+        const r=Math.sqrt(Math.pow((p2.x-p1.x),2)+Math.pow((p2.y-p1.y),2));
+        x1=cl(p1.x-r,0,1);y1=cl(p1.y-r,0,1);x2=cl(p1.x+r,0,1);y2=cl(p1.y+r,0,1);
+      }
+      setCropM({id:a.id,type,isLasso:false,fromShape:true,x1,y1,x2,y2});
+    }
     else{
       /* Add annotation WITHOUT opening modal — user taps it to add measurement */
       addA(a);
@@ -1018,6 +1032,7 @@ function App(){
       setSegs(s=>[...s,newSeg]);setSelSeg(newSeg.id);setShowSegs(true);setColI(c=>c+1);
       setSamStatus("ready");
       setAiMsg(`🎯 Contorno preciso añadido (${normPoly.length} puntos reales, generado en tu navegador)`);
+      setPostActM(newSeg);
     }catch(e){
       setSamStatus(`⚠️ Error generando el contorno: ${e.message||e}`);
     }
@@ -2148,7 +2163,10 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     <span style={{fontSize:"9px",color:"#3355aa",flex:1}}>
       {tool==="crop"?"✂ Mantén y arrastra para seleccionar zona rectangular":tool==="lasso"?"":DRAG.includes(tool)?"→ Arrastra en la imagen":OPEN_ENDED.includes(tool)?(pend.length===0?"▶ Toca para añadir puntos":`${pend.length} punto${pend.length>1?"s":""} — doble clic/toque para terminar`):pend.length===1?"▶ PASO 2 — 2° punto":"▶ PASO 1 — Toca la imagen"}
     </span></>
-    :<span style={{fontSize:"9px",color:"#2a3a5a",flex:1}}>← Selecciona herramienta arriba</span>}
+    :<span style={{fontSize:"9px",color:"#5a7a9a",flex:1,display:"flex",alignItems:"center",gap:"6px"}}>
+      <span style={{fontSize:"13px"}}>↖</span>
+      <span><b style={{color:"#88aacc"}}>Mover</b> activo — toca cualquier forma o contorno YA dibujado para seleccionarlo y arrastrarlo. Para crear algo nuevo, elige otra herramienta arriba.</span>
+    </span>}
     {pend.length>0&&tool!=="lasso"&&<button onClick={()=>{setPend([]);setPrev(null);}} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",fontSize:"8px",padding:"3px 9px",borderRadius:"5px"}}>✕</button>}
     <button onClick={undo} disabled={hist.length===0} style={{padding:"4px 11px",background:hist.length>0?"rgba(255,150,0,.15)":"transparent",border:`1px solid ${hist.length>0?"rgba(255,150,0,.35)":"transparent"}`,color:hist.length>0?C:"#333",borderRadius:"7px",fontSize:"9px",fontWeight:700,flexShrink:0}}>↩ {hist.length}</button>
   </div>
@@ -2515,9 +2533,31 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       <button onClick={()=>setSheet(null)} style={{background:"rgba(255,50,50,.18)",border:"1px solid rgba(255,50,50,.35)",color:"#ff5566",borderRadius:"50%",width:"22px",height:"22px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
     </div>
     <div ref={capRef} style={{padding:"8px"}}>
+      {!pip&&segs?.length>1&&<div style={{marginBottom:"8px",padding:"8px",background:"rgba(255,255,255,.03)",borderRadius:"8px",border:"1px solid rgba(255,255,255,.06)"}}>
+        <div style={{fontSize:"8px",color:"#556677",marginBottom:"6px",fontWeight:700}}>
+          ¿Qué piezas quieres ver en 3D? (máx. 4 a la vez, por rendimiento)
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:"5px"}}>
+          {segs.map(seg=>{
+            const sel=part3DSel?.has(seg.id)??false;
+            const atCap=!sel&&(part3DSel?.size||0)>=4;
+            return<button key={seg.id} disabled={atCap} onClick={()=>setPart3DSel(prev=>{
+              const next=new Set(prev||[]);
+              if(next.has(seg.id))next.delete(seg.id);else next.add(seg.id);
+              return next;
+            })} style={{padding:"4px 8px",borderRadius:"6px",fontSize:"8px",fontWeight:700,
+              background:sel?`${seg.color||C}30`:"rgba(255,255,255,.04)",
+              border:`1px solid ${sel?seg.color||C:"rgba(255,255,255,.1)"}`,
+              color:sel?seg.color||C:atCap?"#333":"#667",opacity:atCap?.5:1}}>
+              {sel?"✓ ":""}{seg.name}
+            </button>;
+          })}
+        </div>
+        {(!part3DSel||part3DSel.size===0)&&<div style={{fontSize:"7px",color:"#445",marginTop:"5px"}}>Sin selección = se muestran las primeras 4 automáticamente</div>}
+      </div>}
       {pip
         ?<><V3DPipe components={pip.components} dn={pip.dn}/><div style={{padding:"5px",fontSize:"8px",color:"#334455"}}>{pip.label}</div></>
-        :<MultiPart3D anns={anns} segs={segs} objShape={objInfo?.shape} img={img||origImg}/>
+        :<MultiPart3D anns={anns} segs={segs} objShape={objInfo?.shape} img={img||origImg} segSel={part3DSel}/>
       }
     </div>
     <ShareBar onPNG={xPNG} onPDF={xPDF} onWA={xWA} onEmail={xEmail} onLink={genLink} onDXF={xDXF} onCopy={xCopy}/>
@@ -2703,6 +2743,31 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     <span style={{fontSize:"18px"}}>🤖</span>
     <span style={{fontSize:"10px",fontWeight:700,lineHeight:1.4}}>La IA encontró algo y quiere hablar contigo<br/><span style={{opacity:.8,fontWeight:400}}>Toca para abrir el Chat IA</span></span>
   </div>}
+  {/* Menú rápido tras crear una pieza con IA Precisa: ¿qué hacer con ella? */}
+  {postActM&&<div style={{position:"fixed",bottom:"90px",left:"50%",transform:"translateX(-50%)",zIndex:860,
+    background:"#161616",border:`2px solid ${postActM.color||"#00cc88"}`,borderRadius:"14px",padding:"12px",
+    maxWidth:"92%",width:"360px",boxShadow:"0 8px 30px rgba(0,0,0,.6)"}}>
+    <div style={{fontSize:"10px",fontWeight:800,color:postActM.color||"#00cc88",marginBottom:"8px"}}>
+      "{postActM.name}" — ¿qué quieres hacer con esta zona?
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+      <button onClick={()=>{
+        const seg=postActM;
+        const el=new Image();el.crossOrigin="anonymous";
+        el.onload=()=>{
+          const x1=Math.min(seg.x1,seg.x2),y1=Math.min(seg.y1,seg.y2),x2=Math.max(seg.x1,seg.x2),y2=Math.max(seg.y1,seg.y2);
+          const cW=Math.round(el.width*(x2-x1)),cH=Math.round(el.height*(y2-y1));
+          const c2=document.createElement("canvas");c2.width=cW;c2.height=cH;
+          c2.getContext("2d").drawImage(el,el.width*x1,el.height*y1,cW,cH,0,0,cW,cH);
+          setFcAnns([]);setFcZoom(1);setEditZone({seg,croppedImg:c2.toDataURL("image/jpeg",.92)});
+        };el.src=img;
+        setPostActM(null);
+      }} style={{padding:"10px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"9px",fontSize:"10px",fontWeight:800}}>📏 Medir esta zona</button>
+      <button onClick={()=>{setPostActM(null);setSheet("2d");}} style={{padding:"10px",background:"rgba(0,200,100,.12)",color:"#00dd77",border:"1px solid rgba(0,200,100,.3)",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>📐 Ver en 2D/3D (ya incluida automáticamente)</button>
+      <button onClick={()=>setPostActM(null)} style={{padding:"9px",background:"rgba(255,255,255,.05)",color:"#667",border:"1px solid rgba(255,255,255,.1)",borderRadius:"9px",fontSize:"9px"}}>✓ Listo, seguir tocando otros objetos</button>
+    </div>
+  </div>}
+
   {/* Exit confirmation: save / discard / stay */}
   {exitConfirm&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:950,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}} onClick={()=>setExitConfirm(false)}>
     <div onClick={e=>e.stopPropagation()} style={{background:"#161616",border:"2px solid #ff9500",borderRadius:"14px",padding:"18px",maxWidth:"360px",width:"100%"}}>
