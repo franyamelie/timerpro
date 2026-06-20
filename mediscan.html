@@ -881,6 +881,7 @@ function App(){
 
   /* ═══ LASSO: bulletproof native listener (bypasses React synthetic event edge cases) ═══ */
   const lassoPendRef=useRef([]);
+  const lassoLastTapRef=useRef(0); // para detectar doble-toque manualmente (más fiable que dblclick nativo en táctil)
   useEffect(()=>{lassoPendRef.current=pend;},[pend]);
   useEffect(()=>{
     if(tool!=="lasso")return;
@@ -904,6 +905,16 @@ function App(){
       if(cx==null||cy==null)return;
       const p={x:cl((cx-r.left)/r.width,.01,.99),y:cl((cy-r.top)/r.height,.01,.99)};
       const cur=lassoPendRef.current;
+      /* Doble-toque manual: si llega un toque a <400ms del anterior, se interpreta
+         como "doble clic" y cierra el lazo aquí mismo, sin depender del evento
+         dblclick nativo del navegador (poco fiable en pantallas táctiles). */
+      const now=Date.now();
+      if(now-lassoLastTapRef.current<400&&cur.length>=2){
+        lassoLastTapRef.current=0;
+        closeLasso(cur);
+        return;
+      }
+      lassoLastTapRef.current=now;
       if(cur.length>=2){
         const fp=cur[0];
         const dist=Math.sqrt(Math.pow((p.x-fp.x)*100,2)+Math.pow((p.y-fp.y)*100,2));
@@ -939,6 +950,7 @@ function App(){
   /* ═══ UNIVERSAL: double-click finishes ANY open-ended measuring tool ═══
      Single click adds a point+line; double-click deactivates and asks what to do. */
   const pendRef=useRef([]);
+  const openEndedLastTapRef=useRef(0); // doble-toque manual, igual de fiable que en el lazo
   useEffect(()=>{pendRef.current=pend;},[pend]);
   useEffect(()=>{
     if(!OPEN_ENDED.includes(tool))return;
@@ -958,8 +970,23 @@ function App(){
       ev.preventDefault();ev.stopPropagation();
       finish(pendRef.current);
     };
+    /* Detección manual en fase de captura: si el toque llega <400ms tras el anterior,
+       se trata como "doble toque" y cierra aquí mismo, bloqueando que React añada
+       además un punto nuevo por el mismo gesto (preventDefault+stopPropagation ANTES
+       de que llegue el onClick de React). */
+    const handleTapCheck=(ev)=>{
+      const now=Date.now();
+      if(now-openEndedLastTapRef.current<400&&pendRef.current.length>=1){
+        openEndedLastTapRef.current=0;
+        ev.preventDefault();ev.stopPropagation();
+        finish(pendRef.current);
+        return;
+      }
+      openEndedLastTapRef.current=now;
+    };
+    el.addEventListener("click",handleTapCheck,true);
     el.addEventListener("dblclick",handleDblClick,true);
-    return()=>el.removeEventListener("dblclick",handleDblClick,true);
+    return()=>{el.removeEventListener("click",handleTapCheck,true);el.removeEventListener("dblclick",handleDblClick,true);};
   },[tool,colI,lSt,aHd]);
 
   /* create annotation after drawing */
@@ -2201,7 +2228,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     </div>
     <span style={{fontSize:"9px",color:"#3355aa",flex:1}}>
       {pend.length===0&&tool!=="crop"&&tool!=="lasso"&&!DRAG.includes(tool)?TOOL_DESC[tool]:
-       tool==="crop"?"✂ Mantén y arrastra para seleccionar zona rectangular":tool==="lasso"?"":DRAG.includes(tool)?"→ Arrastra en la imagen":OPEN_ENDED.includes(tool)?(pend.length===0?"▶ Toca para añadir puntos":`${pend.length} punto${pend.length>1?"s":""} — doble clic/toque para terminar`):pend.length===1?"▶ PASO 2 — 2° punto":"▶ PASO 1 — Toca la imagen"}
+       tool==="crop"?"✂ Mantén y arrastra para seleccionar zona rectangular":tool==="lasso"?"":DRAG.includes(tool)?"→ Arrastra en la imagen":OPEN_ENDED.includes(tool)?(pend.length===0?"▶ Toca para añadir puntos":`${pend.length} punto${pend.length>1?"s":""} — toca 2 veces seguidas y rápido para terminar aquí (la línea es solo guía)`):pend.length===1?"▶ PASO 2 — 2° punto":"▶ PASO 1 — Toca la imagen"}
     </span></>
     :<span style={{fontSize:"9px",color:"#5a7a9a",flex:1,display:"flex",alignItems:"center",gap:"6px"}}>
       <span style={{fontSize:"13px"}}>↖</span>
@@ -2215,7 +2242,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   {tool==="lasso"&&<div style={{padding:"6px 10px",background:"rgba(170,0,255,.12)",border:"1.5px solid #cc44ff",borderRadius:"10px",marginBottom:"7px",display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap"}}>
     <span style={{fontSize:"15px"}}>⬡</span>
     <span style={{fontSize:"9px",color:"#dd88ff",fontWeight:700,flex:1}}>
-      {pend.length===0?"Clic en la imagen para empezar el contorno":pend.length===1?"1 punto — añade al menos 1 más, o doble-clic para cerrar ya":`${pend.length} puntos — clic en ⚪ inicio o doble-clic para cerrar`}
+      {pend.length===0?"Toca la imagen para el punto 1":pend.length===1?"✓ Punto 1 puesto (la línea de puntos es solo una guía, no sigue tu dedo). Toca otro sitio = punto 2. Para TERMINAR: toca 2 veces seguidas y rápido en el mismo sitio":`${pend.length} puntos — toca 2 veces seguidas y rápido para terminar aquí`}
     </span>
     {pend.length>=2&&<button onClick={()=>{
       const x1=Math.min(...pend.map(q=>q.x)),y1=Math.min(...pend.map(q=>q.y));
