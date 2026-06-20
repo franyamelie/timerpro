@@ -188,9 +188,15 @@ const TOOL_DESC={
   rough:"Toca un punto para anotar la rugosidad superficial (Ra).",
 };
 const DRAG=["rect","circ","crop"];
-const MULTI_PTS=["poly","area","defl"];
-/* Tools using universal click-to-add-point + double-click-to-finish workflow */
-const OPEN_ENDED=["line","dim","dist","arr1","arr2","incl","ang","rad","wall","poly","cham","area","arc","defl"];
+const MULTI_PTS=["poly","area"];
+/* OPEN_ENDED: SOLO herramientas de número de puntos VARIABLE/ilimitado, donde
+   el usuario decide cuándo terminar con doble-toque (Polilínea y Área). El
+   Lazo tiene su propio listener nativo aparte. TODAS las demás herramientas
+   (Línea, Cota, Distancia, Inclinación, Ángulo, Radio, Flechas, Espesor,
+   Chaflán, Arco, Deflexión...) tienen número de puntos EXACTO y se completan
+   solas en cuanto se toca el último punto necesario — sin doble-toque, sin
+   esperas, cada toque se registra al instante. */
+const OPEN_ENDED=["poly","area"];
 /* ══ VIEW 2D ══ */
 function View2D({anns,objName,sc,segs,img,segSel}){
   const ref=useRef(null);
@@ -768,6 +774,7 @@ function App(){
   /* annotations */
   const [anns,setAnns]=useState([]);
   const [hist,setHist]=useState([]);
+  const [redo,setRedo]=useState([]); /* pila de rehacer para la imagen principal */
   const [tool,setTool]=useState("sel");
   const [tCat,setTCat]=useState("mrk");
   const [pend,setPend]=useState([]);
@@ -876,10 +883,11 @@ function App(){
   useEffect(()=>{setMeasM(null);setCalibM(null);setCropM(null);setPend([]);setPrev(null);setDragSt(null);},[scr]);
 
   /* UNDO step by step */
-  const addA=useCallback(a=>{setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);setAnns(p=>[...p,a]);},[anns]);
-  const updA=useCallback((id,ch)=>{setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);setAnns(p=>p.map(a=>a.id===id?{...a,...ch}:a));},[anns]);
-  const delA=useCallback(id=>{setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);setAnns(p=>p.filter(a=>a.id!==id));if(selId===id)setSelId(null);},[anns,selId]);
-  const undo=useCallback(()=>{setHist(h=>{if(!h.length)return h;setAnns(h[h.length-1]);setSelId(null);return h.slice(0,-1);});},[]);
+  const addA=useCallback(a=>{setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);setRedo([]);setAnns(p=>[...p,a]);},[anns]);
+  const updA=useCallback((id,ch)=>{setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);setRedo([]);setAnns(p=>p.map(a=>a.id===id?{...a,...ch}:a));},[anns]);
+  const delA=useCallback(id=>{setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);setRedo([]);setAnns(p=>p.filter(a=>a.id!==id));if(selId===id)setSelId(null);},[anns,selId]);
+  const undo=useCallback(()=>{setHist(h=>{if(!h.length)return h;setRedo(r=>[...r,anns]);setAnns(h[h.length-1]);setSelId(null);return h.slice(0,-1);});},[anns]);
+  const redoFn=useCallback(()=>{setRedo(r=>{if(!r.length)return r;setHist(h=>[...h,anns]);setAnns(r[r.length-1]);setSelId(null);return r.slice(0,-1);});},[anns]);
 
   /* ═══ SISTEMA DE PESTAÑAS — recortes editables sin límite, cada uno con su propio
      historial de deshacer/rehacer, navegables sin perder información ═══ */
@@ -1122,10 +1130,11 @@ function App(){
       setCropM({id:a.id,type,isLasso:false,fromShape:true,x1,y1,x2,y2});
     }
     else{
-      /* Add annotation WITHOUT opening modal — user taps it to add measurement */
+      /* Add annotation AND immediately open the measure modal — every fixed-point
+         tool (Línea, Cota, Distancia, Inclinación, Ángulo, Radio, Flechas,
+         Espesor, Chaflán, Arco, Deflexión...) asks for value/unit right away */
       addA(a);
-      setSync("📐 Toca la anotación para añadir medida");
-      setTimeout(()=>setSync(""),3000);
+      setMeasM({...a,_existing:true});setMIn({t:"",v:"",u:"cm",ax:""});
     }
     setColI(c=>c+1);
   },[colI,lSt,aHd,addA]);
@@ -1452,13 +1461,13 @@ function App(){
         ctx2.closePath();ctx2.clip();
       }
       ctx2.drawImage(im,im.width*x1,im.height*y1,cW,cH,0,0,cW,cH);
-      setImg(c2.toDataURL("image/jpeg",.9));setAnns([]);setHist([]);setSelId(null);setScale(null);setCropM(null);setTool("sel");
+      setImg(c2.toDataURL("image/jpeg",.9));setAnns([]);setHist([]);setRedo([]);setSelId(null);setScale(null);setCropM(null);setTool("sel");
     };im.src=img;
   };
   const resetToOriginal=()=>{
     if(!origImg)return;
     if(window.confirm("¿Volver a la imagen original? Se borrarán las anotaciones actuales.")){
-      setImg(origImg);setAnns([]);setHist([]);setSelId(null);setScale(null);setRot(0);setSegs([]);setSheet(null);setTool("sel");setPend([]);setPrev(null);
+      setImg(origImg);setAnns([]);setHist([]);setRedo([]);setSelId(null);setScale(null);setRot(0);setSegs([]);setSheet(null);setTool("sel");setPend([]);setPrev(null);
     }
   };
 
@@ -1486,7 +1495,7 @@ function App(){
 
   const go=i=>{
     setImg(i);setOrigImg(i);setScr("loading");stopCam();
-    setAnns([]);setHist([]);setSelId(null);setPend([]);
+    setAnns([]);setHist([]);setRedo([]);setSelId(null);setPend([]);
     setTool("sel");setErr("");setPip(null);setAiMsg("");
     setScale(null);setPrev(null);setDragSt(null);setSegs([]);
     setSheet(null);setChatMsgs([]);
@@ -1641,7 +1650,7 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO, SIN TEXTO NI MARKDOWN:
 
   /* save/load */
   const save=()=>{let thumb=null;try{const imgEl=new Image();imgEl.crossOrigin="anonymous";const tc=document.createElement("canvas");tc.width=120;tc.height=90;imgEl.onload=()=>{try{tc.getContext("2d").drawImage(imgEl,0,0,120,90);thumb=tc.toDataURL("image/jpeg",.7);}catch(e){}};imgEl.src=img||origImg;}catch(e2){}const p={id:uid(),name:pName,date:new Date().toLocaleDateString("es-ES"),img,origImg,rot,anns,scale,objInfo,pip,segs,thumb,measCount:anns.filter(a=>a.value!=null).length};const all=[p,...projs.filter(x=>x.name!==pName)].slice(0,30);localStorage.setItem("ms3_pj",JSON.stringify(all));setProjs(all);setSync("✓");setTimeout(()=>setSync(""),2000);};
-  const loadP=p=>{setImg(p.img||p.origImg);setOrigImg(p.origImg||p.img);setRot(p.rot||0);setAnns(p.anns||[]);setHist([]);setScale(p.scale||null);setObjInfo(p.objInfo);setPip(p.pip||null);setPName(p.name);setSelId(null);setPend([]);setTool("sel");setSegs(p.segs||[]);setScr("annotate");setSheet(null);};
+  const loadP=p=>{setImg(p.img||p.origImg);setOrigImg(p.origImg||p.img);setRot(p.rot||0);setAnns(p.anns||[]);setHist([]);setRedo([]);setScale(p.scale||null);setObjInfo(p.objInfo);setPip(p.pip||null);setPName(p.name);setSelId(null);setPend([]);setTool("sel");setSegs(p.segs||[]);setScr("annotate");setSheet(null);};
   const delP=(id,e)=>{e.stopPropagation();const all=projs.filter(p=>p.id!==id);localStorage.setItem("ms3_pj",JSON.stringify(all));setProjs(all);};
   const genLink=()=>{
     try{
@@ -2371,7 +2380,8 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       <span><b style={{color:"#88aacc"}}>Mover</b> activo — {TOOL_DESC.sel}</span>
     </span>}
     {pend.length>0&&tool!=="lasso"&&<button onClick={()=>{setPend([]);setPrev(null);}} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",fontSize:"8px",padding:"3px 9px",borderRadius:"5px"}}>✕</button>}
-    <button onClick={undo} disabled={hist.length===0} style={{padding:"4px 11px",background:hist.length>0?"rgba(255,150,0,.15)":"transparent",border:`1px solid ${hist.length>0?"rgba(255,150,0,.35)":"transparent"}`,color:hist.length>0?C:"#333",borderRadius:"7px",fontSize:"9px",fontWeight:700,flexShrink:0}}>↩ {hist.length}</button>
+    <button onClick={undo} disabled={hist.length===0} title="Deshacer último cambio" style={{padding:"4px 11px",background:hist.length>0?"rgba(255,150,0,.15)":"transparent",border:`1px solid ${hist.length>0?"rgba(255,150,0,.35)":"transparent"}`,color:hist.length>0?C:"#333",borderRadius:"7px",fontSize:"9px",fontWeight:700,flexShrink:0}}>↩ {hist.length}</button>
+    <button onClick={redoFn} disabled={redo.length===0} title="Rehacer" style={{padding:"4px 11px",background:redo.length>0?"rgba(0,180,255,.15)":"transparent",border:`1px solid ${redo.length>0?"rgba(0,180,255,.35)":"transparent"}`,color:redo.length>0?"#00bbff":"#333",borderRadius:"7px",fontSize:"9px",fontWeight:700,flexShrink:0}}>↪ {redo.length}</button>
   </div>
 
   {/* LASSO dedicated status bar */}
@@ -2684,7 +2694,11 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   {sheet==="meas"&&<div className="fade" style={{background:"#141414",border:"1px solid #222",borderRadius:"12px",overflow:"hidden",marginBottom:"7px"}}>
     <div style={{padding:"8px 13px",fontSize:"9px",color:C,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",borderBottom:"1px solid rgba(255,255,255,.05)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
       <span>📋 MEDIDAS ({anns.filter(a=>a.value!=null).length})</span>
-      <button onClick={()=>setSheet(null)} style={{background:"rgba(255,50,50,.18)",border:"1px solid rgba(255,50,50,.35)",color:"#ff5566",borderRadius:"50%",width:"22px",height:"22px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
+      <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
+        <button onClick={undo} disabled={hist.length===0} title="Deshacer" style={{padding:"3px 8px",background:hist.length>0?"rgba(255,150,0,.15)":"transparent",border:`1px solid ${hist.length>0?"rgba(255,150,0,.35)":"transparent"}`,color:hist.length>0?C:"#333",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>↩ {hist.length}</button>
+        <button onClick={redoFn} disabled={redo.length===0} title="Rehacer" style={{padding:"3px 8px",background:redo.length>0?"rgba(0,180,255,.15)":"transparent",border:`1px solid ${redo.length>0?"rgba(0,180,255,.35)":"transparent"}`,color:redo.length>0?"#00bbff":"#333",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>↪ {redo.length}</button>
+        <button onClick={()=>setSheet(null)} style={{background:"rgba(255,50,50,.18)",border:"1px solid rgba(255,50,50,.35)",color:"#ff5566",borderRadius:"50%",width:"22px",height:"22px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
+      </div>
     </div>
     {/* AI points without value */}
     {anns.filter(a=>a.value==null&&a.isAI).slice(0,5).map(a=><div key={a.id} style={{display:"flex",alignItems:"center",gap:"7px",padding:"7px 13px",background:"rgba(0,80,200,.04)",borderBottom:"1px solid rgba(255,255,255,.04)"}}>
@@ -2744,7 +2758,11 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   {sheet==="2d"&&<div className="fade" style={{background:"#141414",border:"1px solid #222",borderRadius:"12px",overflow:"hidden",marginBottom:"7px"}}>
     <div style={{padding:"8px 13px",fontSize:"9px",color:C,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",borderBottom:"1px solid rgba(255,255,255,.05)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
       <span>📐 PLANO 2D</span>
-      <button onClick={()=>setSheet(null)} style={{background:"rgba(255,50,50,.18)",border:"1px solid rgba(255,50,50,.35)",color:"#ff5566",borderRadius:"50%",width:"22px",height:"22px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
+      <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
+        <button onClick={undo} disabled={hist.length===0} title="Deshacer" style={{padding:"3px 8px",background:hist.length>0?"rgba(255,150,0,.15)":"transparent",border:`1px solid ${hist.length>0?"rgba(255,150,0,.35)":"transparent"}`,color:hist.length>0?C:"#333",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>↩ {hist.length}</button>
+        <button onClick={redoFn} disabled={redo.length===0} title="Rehacer" style={{padding:"3px 8px",background:redo.length>0?"rgba(0,180,255,.15)":"transparent",border:`1px solid ${redo.length>0?"rgba(0,180,255,.35)":"transparent"}`,color:redo.length>0?"#00bbff":"#333",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>↪ {redo.length}</button>
+        <button onClick={()=>setSheet(null)} style={{background:"rgba(255,50,50,.18)",border:"1px solid rgba(255,50,50,.35)",color:"#ff5566",borderRadius:"50%",width:"22px",height:"22px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
+      </div>
     </div>
     {!hasDim&&<div style={{padding:"9px 13px",fontSize:"9px",color:"#2a3a5a",background:"rgba(0,60,180,.06)",borderBottom:"1px solid rgba(0,60,180,.1)",lineHeight:1.8}}>
       💡 Añade medidas con eje Ancho/Alto/Prof. para generar el plano<br/>
@@ -2779,7 +2797,11 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   {sheet==="3d"&&<div className="fade" style={{background:"#141414",border:"1px solid #222",borderRadius:"12px",overflow:"hidden",marginBottom:"7px"}}>
     <div style={{padding:"8px 13px",fontSize:"9px",color:C,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",borderBottom:"1px solid rgba(255,255,255,.05)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
       <span>🎮 3D POR PARTES</span>
-      <button onClick={()=>setSheet(null)} style={{background:"rgba(255,50,50,.18)",border:"1px solid rgba(255,50,50,.35)",color:"#ff5566",borderRadius:"50%",width:"22px",height:"22px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
+      <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
+        <button onClick={undo} disabled={hist.length===0} title="Deshacer" style={{padding:"3px 8px",background:hist.length>0?"rgba(255,150,0,.15)":"transparent",border:`1px solid ${hist.length>0?"rgba(255,150,0,.35)":"transparent"}`,color:hist.length>0?C:"#333",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>↩ {hist.length}</button>
+        <button onClick={redoFn} disabled={redo.length===0} title="Rehacer" style={{padding:"3px 8px",background:redo.length>0?"rgba(0,180,255,.15)":"transparent",border:`1px solid ${redo.length>0?"rgba(0,180,255,.35)":"transparent"}`,color:redo.length>0?"#00bbff":"#333",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>↪ {redo.length}</button>
+        <button onClick={()=>setSheet(null)} style={{background:"rgba(255,50,50,.18)",border:"1px solid rgba(255,50,50,.35)",color:"#ff5566",borderRadius:"50%",width:"22px",height:"22px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
+      </div>
     </div>
     <div ref={capRef} style={{padding:"8px"}}>
       {!pip&&segs?.length>1&&<div style={{marginBottom:"8px",padding:"8px",background:"rgba(255,255,255,.03)",borderRadius:"8px",border:"1px solid rgba(255,255,255,.06)"}}>
@@ -2816,7 +2838,11 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   {sheet==="db"&&<div className="fade" style={{background:"#141414",border:"1px solid #222",borderRadius:"12px",overflow:"hidden",marginBottom:"7px"}}>
     <div style={{padding:"8px 13px",fontSize:"9px",color:"#ff9500",fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",borderBottom:"1px solid rgba(255,150,0,.12)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
       <span>🔩 BASE DATOS INDUSTRIAL</span>
-      <button onClick={()=>setSheet(null)} style={{background:"rgba(255,50,50,.18)",border:"1px solid rgba(255,50,50,.35)",color:"#ff5566",borderRadius:"50%",width:"22px",height:"22px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
+      <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
+        <button onClick={undo} disabled={hist.length===0} title="Deshacer" style={{padding:"3px 8px",background:hist.length>0?"rgba(255,150,0,.15)":"transparent",border:`1px solid ${hist.length>0?"rgba(255,150,0,.35)":"transparent"}`,color:hist.length>0?"#ff9500":"#333",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>↩ {hist.length}</button>
+        <button onClick={redoFn} disabled={redo.length===0} title="Rehacer" style={{padding:"3px 8px",background:redo.length>0?"rgba(0,180,255,.15)":"transparent",border:`1px solid ${redo.length>0?"rgba(0,180,255,.35)":"transparent"}`,color:redo.length>0?"#00bbff":"#333",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>↪ {redo.length}</button>
+        <button onClick={()=>setSheet(null)} style={{background:"rgba(255,50,50,.18)",border:"1px solid rgba(255,50,50,.35)",color:"#ff5566",borderRadius:"50%",width:"22px",height:"22px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
+      </div>
     </div>
     <div style={{padding:"6px 13px 4px",fontSize:"8px",color:"#334455"}}>Toca "＋ Importar" para añadir las medidas típicas de la pieza a tu proyecto</div>
     <IndustrialDB onImport={importFromDB}/>
@@ -3524,4 +3550,4 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 
 
-</body></html>
+</body></html>S
