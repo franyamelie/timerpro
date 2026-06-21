@@ -3323,7 +3323,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     <div style={{position:"relative",background:"#000",width:`${fcZoom*100}%`,margin:fcZoom<1?"0 auto":"0",minWidth:fcZoom>1?`${fcZoom*100}%`:"auto",transition:"width .15s"}}
       id="fc-img-container"
       onClick={e=>{
-        if(tool==="sel"||DRAG.includes(tool))return;
+        if(tool==="sel"||DRAG.includes(tool)||measM||calibM)return;
         const td=TOOLS.find(t=>t.id===tool);if(!td||td.npts===0)return;
         const r=e.currentTarget.getBoundingClientRect();
         const p={x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height};
@@ -3345,7 +3345,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         }else{setPend(pts);setPrev({type:tool,points:[pts[0],p]});}
       }}
       onMouseDown={e=>{
-        if(!DRAG.includes(tool))return;
+        if(!DRAG.includes(tool)||measM||calibM)return;
         const r=e.currentTarget.getBoundingClientRect();
         setDragSt({x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height});
       }}
