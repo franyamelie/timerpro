@@ -120,6 +120,21 @@ const uid=()=>`_${Math.random().toString(36).slice(2,9)}`;
 const COLS=["#ff9500","#ff3366","#00e676","#ff9500","#cc44ff","#ffdd00","#ff6622","#00ffcc","#ff44aa","#44ffbb","#ff8844","#44aaff"];
 const UF={mm:1,cm:10,m:1000,"in":25.4,ft:304.8};
 const toMM=(v,u)=>(parseFloat(v)||0)*(UF[u]||10);
+/* ¿Pertenece esta medida a esta pieza/zona? Prioriza el partId explícito (puesto
+   al guardar desde una zona o al confirmar con una "parte activa" seleccionada);
+   si no hay partId fiable, recurre a la posición real: si el punto (o centroide)
+   de la medida cae dentro del recuadro de la pieza, se considera suya. Mucho más
+   fiable que el match de texto por título que se usaba antes. */
+const annInSeg=(a,seg)=>{
+  if(!a||!seg)return false;
+  if(a.partId&&seg.id&&a.partId===seg.id)return true;
+  if(!a.points||!a.points.length)return false;
+  const cx=a.points.reduce((s,p)=>s+p.x,0)/a.points.length;
+  const cy=a.points.reduce((s,p)=>s+p.y,0)/a.points.length;
+  const x1=Math.min(seg.x1,seg.x2),x2=Math.max(seg.x1,seg.x2);
+  const y1=Math.min(seg.y1,seg.y2),y2=Math.max(seg.y1,seg.y2);
+  return cx>=x1&&cx<=x2&&cy>=y1&&cy<=y2;
+};
 const fmtV=(v,u)=>{if(v==null)return"—";const r={mm:[1,0],cm:[.1,1],m:[.001,3],"in":[.0394,2],ft:[.00328,3]}[u]||[.1,1];return`${(v*r[0]).toFixed(r[1])} ${u}`;};
 const MRK=["pin","dot","star","tgt","tol","coord","note","rough"];
 /* Industrial knowledge base embedded in prompts */
@@ -198,13 +213,15 @@ const MULTI_PTS=["poly","area"];
    esperas, cada toque se registra al instante. */
 const OPEN_ENDED=["poly","area"];
 /* ══ VIEW 2D ══ */
-function View2D({anns,objName,sc,segs,img,segSel}){
+function View2D({anns,objName,sc,segs,img,segSel,scope}){
   const ref=useRef(null);
   const draw=useCallback((imgEl)=>{
     const cv=ref.current;if(!cv)return;
     const ctx=cv.getContext("2d"),W=cv.width,H=cv.height;
-    /* Si hay una selección explícita de piezas, solo se dibujan esas */
-    const vSegs=(segSel&&segSel.size>0)?(segs||[]).filter(s=>segSel.has(s.id)):(segs||[]);
+    /* scope="measured" (por defecto si no se especifica): solo piezas con medida real,
+       para que la imagen no se llene de globos de piezas sin medir. scope="all": todas. */
+    const vSegs=((segSel&&segSel.size>0)?(segs||[]).filter(s=>segSel.has(s.id)):(segs||[]))
+      .filter(seg=>scope==="all"||anns.some(a=>a.value!=null&&annInSeg(a,seg)));
     ctx.clearRect(0,0,W,H);
     /* White paper background */
     ctx.fillStyle="#ffffff";ctx.fillRect(0,0,W,H);
@@ -225,8 +242,8 @@ function View2D({anns,objName,sc,segs,img,segSel}){
     ctx.fillStyle="#8899aa";ctx.font="6px 'Inter',sans-serif";ctx.textAlign="right";
     ctx.fillText("MediScan 3D Pro",W-mg-2,10);
 
-    /* ── REAL IMAGE EMBEDDED (left ~55% of drawing area) ── */
-    const imgW=Math.floor(dW*0.54),imgX=mg,imgY=mg+titleH+4;
+    /* ── REAL IMAGE EMBEDDED (left ~58% of drawing area) ── */
+    const imgW=Math.floor(dW*0.58),imgX=mg,imgY=mg+titleH+4;
     if(imgEl){
       /* Image frame */
       ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.5;ctx.strokeRect(imgX,imgY,imgW,imgH);
@@ -237,8 +254,8 @@ function View2D({anns,objName,sc,segs,img,segSel}){
       if(dw/dh>aspect){dw=dh*aspect;}else{dh=dw/aspect;}
       ctx.drawImage(imgEl,imgX+(imgW-dw)/2,imgY+(imgH-dh)/2,dw,dh);
       ctx.restore();
-      /* Semi-transparent overlay for annotations */
-      ctx.fillStyle="rgba(0,0,0,0.12)";ctx.fillRect(imgX,imgY,imgW,imgH);
+      /* Semi-transparent overlay for annotations (más clara para que la foto se vea bien) */
+      ctx.fillStyle="rgba(0,0,0,0.06)";ctx.fillRect(imgX,imgY,imgW,imgH);
       /* Draw segment overlays on image */
       if(vSegs&&vSegs.length){
         vSegs.forEach((seg,i)=>{
@@ -260,7 +277,7 @@ function View2D({anns,objName,sc,segs,img,segSel}){
           ctx.fillText(lbl,sx+sw2/2,sy+sh2-6);
         });
       }
-      /* Draw annotation points on image */
+      /* Draw annotation points on image (formas de 2+ puntos) */
       anns.filter(a=>a.points&&a.points.length>=2).forEach(a=>{
         const[p1,p2]=a.points;
         const ax1=imgX+p1.x*imgW,ay1=imgY+p1.y*imgH,ax2=imgX+p2.x*imgW,ay2=imgY+p2.y*imgH;
@@ -276,6 +293,18 @@ function View2D({anns,objName,sc,segs,img,segSel}){
           ctx.fillStyle="rgba(255,50,0,.85)";ctx.fillRect(mx-tw/2,my-10,tw,13);
           ctx.fillStyle="#fff";ctx.textAlign="center";ctx.fillText(lbl,mx,my);
         }
+      });
+      /* Draw single-point measurements too (marcadores: pin, punto, estrella, diana,
+         tolerancia, coordenada, nota, rugosidad) — antes no se dibujaban en absoluto. */
+      anns.filter(a=>a.points&&a.points.length===1&&a.value!=null).forEach(a=>{
+        const ax=imgX+a.points[0].x*imgW,ay=imgY+a.points[0].y*imgH;
+        ctx.beginPath();ctx.arc(ax,ay,3.2,0,Math.PI*2);ctx.fillStyle=a.color||"#ff4400";ctx.fill();
+        ctx.strokeStyle="#fff";ctx.lineWidth=1;ctx.stroke();
+        const lbl=`${a.title||a.type}: ${a.value}${a.unit}`;
+        ctx.font="bold 6.5px 'Inter',sans-serif";
+        const tw=ctx.measureText(lbl).width+6;
+        ctx.fillStyle="rgba(0,0,0,.78)";ctx.fillRect(ax-tw/2,ay-17,tw,13);
+        ctx.fillStyle="#fff";ctx.textAlign="center";ctx.fillText(lbl,ax,ay-8);
       });
       ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";ctx.textBaseline="alphabetic";
       ctx.fillText("IMAGEN REAL + ANOTACIONES",imgX,imgY-3);
@@ -347,7 +376,7 @@ function View2D({anns,objName,sc,segs,img,segSel}){
       });
     }
 
-    /* ── DIMENSION SUMMARY TABLE (below image) ── */
+    /* ── DIMENSION SUMMARY TABLE (below image) — con icono de cada herramienta ── */
     const sumY=imgY+imgH+4;
     const measWithVal=anns.filter(a=>a.value!=null);
     if(measWithVal.length){
@@ -356,8 +385,9 @@ function View2D({anns,objName,sc,segs,img,segSel}){
       measWithVal.slice(0,6).forEach((a,i)=>{
         const col2=i%2===0?"rgba(210,228,255,.3)":"transparent";
         ctx.fillStyle=col2;ctx.fillRect(imgX+i<3?0:imgW/2+4,sumY+10+(i%3)*12,imgW/2-4,11);
+        const ic=a.icon||TOOLS.find(t=>t.id===a.type)?.icon||"●";
         ctx.fillStyle="#333";ctx.font="6.5px 'Inter',sans-serif";ctx.textAlign="left";
-        ctx.fillText(`${a.title||a.type}: ${a.value}${a.unit}`,imgX+(i>=3?imgW/2+6:2),sumY+18+(i%3)*12);
+        ctx.fillText(`${ic} ${a.title||a.type}: ${a.value}${a.unit}`,imgX+(i>=3?imgW/2+6:2),sumY+18+(i%3)*12);
       });
     }
 
@@ -375,7 +405,7 @@ function View2D({anns,objName,sc,segs,img,segSel}){
       ctx.fillStyle=seg.color||"#1a3a8a";ctx.font="bold 6px 'Inter',sans-serif";ctx.textAlign="left";
       ctx.fillText(`${i+1}. ${(seg.name||"Parte "+(i+1)).slice(0,20)}`,mg+c*colW+4,tY+22+r*12);
     });
-  },[anns,objName,segs,img,segSel]);
+  },[anns,objName,segs,img,segSel,scope]);
 
   useEffect(()=>{
     if(img){
@@ -516,7 +546,7 @@ function Part3DWithCrop({anns,shape,color,seg}){
   return<Part3D anns={anns} shape={shape} color={color} segW={sw*400} segH={sh*400} texImg={texImg}/>;
 }
 
-function MultiPart3D({anns,segs,objShape,img,segSel}){
+function MultiPart3D({anns,segs,objShape,img,segSel,scope}){
   const[crops,setCrops]=React.useState({});
   React.useEffect(()=>{
     if(!img||!segs?.length)return;
@@ -542,22 +572,20 @@ function MultiPart3D({anns,segs,objShape,img,segSel}){
   const parts=React.useMemo(()=>{
     if(segs&&segs.length>0){
       return segs.map(seg=>{
-        const related=anns.filter(a=>a.value!=null&&(
-          (a.title&&seg.name&&a.title.toLowerCase().includes(seg.name.toLowerCase().slice(0,5)))||
-          (a.points&&a.points[0]&&Math.abs(a.points[0].x-(seg.x1+seg.x2)/2)<.25&&Math.abs(a.points[0].y-(seg.y1+seg.y2)/2)<.25)
-        ));
+        const related=anns.filter(a=>a.value!=null&&annInSeg(a,seg));
         return{...seg,anns:related};
-      });
+      }).filter(p=>scope==="all"||p.anns.length>0); /* scope="measured": solo piezas con al menos una medida */
     }
     const withVal=anns.filter(a=>a.value!=null);
     if(!withVal.length)return[];
     return[{id:"1",name:"Objeto completo",color:"#ff9500",anns:withVal}];
-  },[anns,segs]);
+  },[anns,segs,scope]);
 
   if(!parts.length)return<div style={{padding:"16px",fontSize:"9px",color:"#444",textAlign:"center",lineHeight:2.2}}>
     <div style={{fontSize:"12px",marginBottom:"6px"}}>🎮</div>
-    Detecta partes con IA o añade partes manualmente<br/>
-    Cada parte medida aparecerá como un modelo 3D aquí
+    {segs&&segs.length>0
+      ?<>Tienes {segs.length} pieza(s) creada(s), pero ninguna tiene medidas todavía<br/>Mide algo dentro de una zona para que aparezca aquí en 3D</>
+      :<>Detecta partes con IA o añade partes manualmente<br/>Cada parte medida aparecerá como un modelo 3D aquí</>}
   </div>;
 
   return<div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
@@ -791,6 +819,8 @@ function App(){
   const [calibM,setCalibM]=useState(null);
   const [cropM,setCropM]=useState(null); /* crop dialog */
   const [viewConfirm,setViewConfirm]=useState(null); /* "2d"|"3d"|null - confirm before leaving measure mode */
+  const [scopeAsk,setScopeAsk]=useState(null); /* "2d"|"3d"|null - pregunta SIEMPRE al entrar en 2D/3D: ¿todo o solo lo medido? */
+  const [viewScope,setViewScope]=useState("measured"); /* "all"|"measured" - qué se muestra en 2D/3D según la respuesta */
   const [mIn,setMIn]=useState({t:"",v:"",u:"cm",ax:""});
 
   /* AI parts segmentation */
@@ -833,6 +863,7 @@ function App(){
   /* AI chat */
   const [chatMsgs,setChatMsgs]=useState([]);
   const [chatUnread,setChatUnread]=useState(false);
+  const [chatOpen,setChatOpen]=useState(false); /* Chat IA: ahora vive en botón flotante propio, no en la fila de pestañas */
   const [chatInput,setChatInput]=useState("");
   const [isListening,setIsListening]=useState(false);
   const recogRef=useRef(null);
@@ -1149,7 +1180,8 @@ function App(){
   /* create annotation after drawing */
   const mkAnn=useCallback((type,pts)=>{
     const td=TOOLS.find(t=>t.id===type),col=COLS[colI%COLS.length];
-    const a={id:uid(),type,icon:td?.icon||"●",title:"",value:null,unit:"cm",axis:"",color:col,points:pts,lineStyle:lSt,arrowHead:aHd};
+    const a={id:uid(),type,icon:td?.icon||"●",title:"",value:null,unit:"cm",axis:"",color:col,points:pts,lineStyle:lSt,arrowHead:aHd,
+             partId:activePart?.id,partName:activePart?.name};
     if(type==="calib"){setCalibM(a);setMIn({t:"Escala",v:"",u:"cm",ax:""});addA(a);}
     else if(type==="crop"){setCropM({p1:pts[0],p2:pts[1]});}
     else if(type==="lasso"){setCropM({...a,isLasso:true});}
@@ -1173,7 +1205,7 @@ function App(){
       setMeasM({...a,_existing:true});setMIn({t:"",v:"",u:"cm",ax:""});
     }
     setColI(c=>c+1);
-  },[colI,lSt,aHd,addA]);
+  },[colI,lSt,aHd,addA,activePart]);
 
   /* DRAWING - React synthetic events on image div */
   /* Double-click anywhere when lasso active → close polygon */
@@ -1470,6 +1502,12 @@ function App(){
       if(!measM._existing)addA(measM); /* only add if not already on image */
       setMeasM(null);
     }
+    /* FIX: dentro de una zona recortada, cada toque se bloquea (fcClickLockRef)
+       hasta que el modal de medida se cierra, para que un mismo toque no cuente
+       dos veces. confirmM() ya lo desbloqueaba al confirmar con valor, pero este
+       camino ("Sin valor") se quedaba sin desbloquearlo nunca — dejando la zona
+       inutilizable para cualquier herramienta después de la primera medida. */
+    fcClickLockRef.current=false;
   };
   const confirmC=()=>{
     const v=parseFloat(mIn.v);if(!v){alert("Valor inválido");return;}
@@ -2399,7 +2437,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     </div>
     {/* Tool buttons */}
     <div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"flex-start"}}>
-      {(tbyCat[tCat]||[]).map(t=><button key={t.id} title={t.label} onClick={()=>{setTool(t.id);setPend([]);setPrev(null);setDragSt(null);setMeasM(null);setCalibM(null);setCropM(null);setSamActive(false);}}
+      {(tbyCat[tCat]||[]).map(t=><button key={t.id} title={t.label} onClick={()=>{setTool(t.id);setPend([]);setPrev(null);setDragSt(null);setMeasM(null);setCalibM(null);setCropM(null);setSamActive(false);fcClickLockRef.current=false;}}
               onContextMenu={e=>{e.preventDefault();setTool(t.id);setAddPartDlg(true);}}
               title={`${t.label} — ${TOOL_DESC[t.id]||t.label} (clic derecho = nueva parte)`}
               className={`tb${tool===t.id?" act":""}`}><span>{t.icon}</span><span>{t.label}</span></button>)}
@@ -2748,20 +2786,19 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   {/* PANEL TABS */}
   {/* PANEL TABS - sticky */}
   <div style={{display:"flex",gap:"3px",background:"#111",border:"1px solid #2a2a2a",borderRadius:"11px",padding:"4px",marginBottom:"7px",flexWrap:"wrap",position:"sticky",top:0,zIndex:200,boxShadow:"0 2px 12px rgba(0,0,0,.5)"}}>
-    {[["meas","📋 Medidas"],["2d","📐 2D"],["3d","🎮 3D+Partes"],["db","🔩 Base Datos"],["chat","💬 Chat IA"],["exp","📤 Exportar"]].map(([k,lb])=>(
+    {[["meas","📋 Medidas"],["2d","📐 2D"],["3d","🎮 3D+Partes"],["db","🔩 Base Datos"],["exp","📤 Exportar"]].map(([k,lb])=>(
       <button key={k} onClick={()=>{
         const switching=(k==="2d"||k==="3d")&&sheet!==k;
         const hasPendingWork=tool!=="sel"||pend.length>0||anns.some(a=>a.value==null&&!MRK.includes(a.type));
         if(switching&&hasPendingWork){setViewConfirm(k);return;}
-        if(k==="chat")setChatUnread(false);
+        if(switching){setScopeAsk(k);return;}
         setSheet(sheet===k?null:k);
       }}
         style={{flex:1,minWidth:"70px",padding:"6px 2px",borderRadius:"7px",position:"relative",
           background:sheet===k?"linear-gradient(135deg,#ff6600,#ffaa00)":"transparent",
           color:sheet===k?"#000":"#555",
-          border:`1px solid ${sheet===k?"#ff9500":k==="chat"&&chatUnread?"#ff3366":"rgba(255,255,255,.06)"}`,
+          border:`1px solid ${sheet===k?"#ff9500":"rgba(255,255,255,.06)"}`,
           fontSize:"8px",fontWeight:sheet===k?700:400}}>{lb}
-        {k==="chat"&&chatUnread&&<span style={{position:"absolute",top:"-3px",right:"-3px",width:"9px",height:"9px",borderRadius:"50%",background:"#ff3366",border:"1.5px solid #0c0c0c",animation:"pulse 1.2s infinite"}}/>}
       </button>
     ))}
   </div>
@@ -2864,7 +2901,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         })}
       </div>
     </div>}
-    <div ref={capRef}><View2D anns={anns} objName={objInfo?.name||pName} sc={scale} segs={segs} img={img||origImg} segSel={part3DSel}/>
+    <div ref={capRef}><View2D anns={anns} objName={objInfo?.name||pName} sc={scale} segs={segs} img={img||origImg} segSel={part3DSel} scope={viewScope}/>
     <ShareBar onPNG={xPNG} onPDF={xPDF} onWA={xWA} onEmail={xEmail} onLink={genLink} onDXF={xDXF} onCopy={xCopy}/></div>
     <ShareBar onPNG={xPNG} onPDF={xPDF} onWA={xWA} onEmail={xEmail} onLink={genLink} onDXF={xDXF} onCopy={xCopy}/>
   </div>}
@@ -2904,7 +2941,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       </div>}
       {pip
         ?<><V3DPipe components={pip.components} dn={pip.dn}/><div style={{padding:"5px",fontSize:"8px",color:"#334455"}}>{pip.label}</div></>
-        :<MultiPart3D anns={anns} segs={segs} objShape={objInfo?.shape} img={img||origImg} segSel={part3DSel}/>
+        :<MultiPart3D anns={anns} segs={segs} objShape={objInfo?.shape} img={img||origImg} segSel={part3DSel} scope={viewScope}/>
       }
     </div>
     <ShareBar onPNG={xPNG} onPDF={xPDF} onWA={xWA} onEmail={xEmail} onLink={genLink} onDXF={xDXF} onCopy={xCopy}/>
@@ -2924,26 +2961,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     <IndustrialDB onImport={importFromDB}/>
   </div>}
 
-  {/* CHAT IA PANEL */}
-  {sheet==="chat"&&<div className="fade" style={{background:"rgba(10,14,25,.98)",border:"1px solid rgba(100,50,255,.2)",borderRadius:"12px",overflow:"hidden",marginBottom:"7px"}}>
-    <div style={{padding:"8px 13px",fontSize:"9px",color:"#aa66ff",fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",borderBottom:"1px solid rgba(100,50,255,.15)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-      <span>💬 CHAT IA</span>
-      <button onClick={()=>setSheet(null)} style={{background:"rgba(255,50,50,.18)",border:"1px solid rgba(255,50,50,.35)",color:"#ff5566",borderRadius:"50%",width:"22px",height:"22px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
-    </div>
-    <div style={{maxHeight:"280px",overflowY:"auto",padding:"8px 0"}}>
-      {chatMsgs.map((m,i)=><div key={i} style={{padding:"8px 13px",display:"flex",gap:"8px",alignItems:"flex-start"}}>
-        <div style={{width:"26px",height:"26px",borderRadius:"50%",background:m.role==="user"?"rgba(0,100,255,.25)":"rgba(100,50,255,.25)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"12px",flexShrink:0}}>{m.role==="user"?"👤":"🤖"}</div>
-        <div style={{flex:1,fontSize:"9px",color:m.role==="user"?"#d0e8f8":"#c0a8f8",lineHeight:1.8,background:m.role==="user"?"rgba(0,60,180,.1)":"rgba(80,30,180,.1)",padding:"6px 10px",borderRadius:"8px",border:`1px solid ${m.role==="user"?"rgba(0,100,255,.15)":"rgba(100,50,255,.15)"}`}}>{m.content}</div>
-      </div>)}
-      {chatLoad&&<div style={{padding:"8px 13px",display:"flex",gap:"8px",alignItems:"center"}}><div style={{width:"26px",height:"26px",borderRadius:"50%",background:"rgba(100,50,255,.25)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"12px"}}>🤖</div><div style={{fontSize:"9px",color:"#6644aa"}}>Pensando...</div></div>}
-    </div>
-    <div style={{padding:"8px 13px",borderTop:"1px solid rgba(100,50,255,.12)",display:"flex",gap:"7px"}}>
-      <input value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendChat()} placeholder={isListening?"🎤 Escuchando...":"Pregunta algo... ej: ¿Qué material es? ¿Qué tolerancia ISO tiene?"} style={{flex:1,padding:"8px 12px",background:isListening?"rgba(255,50,50,.1)":"rgba(0,10,25,.8)",border:`1px solid ${isListening?"rgba(255,50,50,.4)":"rgba(100,50,255,.25)"}`,borderRadius:"8px",color:"#d0e8f8",fontSize:"10px"}}/>
-      <button onClick={toggleMic} title="Hablar en vez de escribir" style={{padding:"8px 11px",background:isListening?"rgba(255,50,50,.25)":"rgba(100,50,255,.15)",border:`1px solid ${isListening?"#ff3355":"rgba(100,50,255,.3)"}`,borderRadius:"8px",fontSize:"13px",color:isListening?"#ff3355":"#9966ff",cursor:"pointer",animation:isListening?"pulse 1s infinite":"none"}}>{isListening?"⏹":"🎤"}</button>
-      <button onClick={sendChat} disabled={chatLoad||!chatInput.trim()||!GK()} style={{padding:"8px 14px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#fff",border:"none",borderRadius:"8px",fontSize:"10px",fontWeight:700,cursor:chatLoad?"not-allowed":"pointer"}}>▶</button>
-    </div>
-    {!GK()&&<div style={{padding:"6px 13px",fontSize:"8px",color:"#ff9500",borderTop:"1px solid rgba(100,50,255,.1)"}}>⚠️ Necesita clave API — configura en ⚙</div>}
-  </div>}
+  {/* CHAT IA — ahora vive en su propio overlay flotante (botón 💬), no en esta fila de pestañas */}
 
   {/* EXPORT PANEL */}
   {sheet==="exp"&&<div className="fade" style={{background:"#141414",border:"1px solid #222",borderRadius:"12px",overflow:"hidden",marginBottom:"7px"}}>
@@ -2978,6 +2996,41 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     borderRadius:"50%",background:"linear-gradient(135deg,#ff6600,#ffaa00)",
     border:"none",color:"#000",fontSize:"18px",zIndex:350,
     boxShadow:"0 4px 16px rgba(0,100,255,.45)",display:"flex",alignItems:"center",justifyContent:"center"}}>⬆</button>}
+
+{/* ══ CHAT IA — botón flotante propio, independiente de las pestañas Medidas/2D/3D/Exportar.
+    Se abre como panel flotante encima de todo, sin ocupar sitio en la barra de pestañas. ══ */}
+{scr==="annotate"&&<button
+  onClick={()=>{setChatUnread(false);setChatOpen(o=>!o);}}
+  title="Chat IA"
+  style={{position:"fixed",bottom:"184px",right:"16px",width:"44px",height:"44px",
+    borderRadius:"50%",background:chatOpen?"linear-gradient(135deg,#7700ff,#aa00ff)":"rgba(20,16,32,.92)",
+    border:`2px solid ${chatOpen?"#aa00ff":"rgba(170,0,255,.4)"}`,color:chatOpen?"#fff":"#aa66ff",fontSize:"18px",zIndex:350,
+    boxShadow:chatOpen?"0 4px 18px rgba(170,0,255,.55)":"0 4px 14px rgba(0,0,0,.4)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+  💬
+  {chatUnread&&!chatOpen&&<span style={{position:"absolute",top:"-2px",right:"-2px",width:"11px",height:"11px",borderRadius:"50%",background:"#ff3366",border:"2px solid #0c0c0c",animation:"pulse 1.2s infinite"}}/>}
+</button>}
+
+{scr==="annotate"&&chatOpen&&<div style={{position:"fixed",bottom:"237px",right:"16px",width:"calc(100% - 32px)",maxWidth:"360px",zIndex:870,
+  background:"rgba(10,14,25,.98)",border:"1px solid rgba(100,50,255,.3)",borderRadius:"14px",overflow:"hidden",
+  boxShadow:"0 8px 36px rgba(0,0,0,.65)",animation:"slideUp .2s ease"}}>
+    <div style={{padding:"8px 13px",fontSize:"9px",color:"#aa66ff",fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",borderBottom:"1px solid rgba(100,50,255,.15)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <span>💬 CHAT IA</span>
+      <button onClick={()=>setChatOpen(false)} style={{background:"rgba(255,50,50,.18)",border:"1px solid rgba(255,50,50,.35)",color:"#ff5566",borderRadius:"50%",width:"22px",height:"22px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
+    </div>
+    <div style={{maxHeight:"280px",overflowY:"auto",padding:"8px 0"}}>
+      {chatMsgs.map((m,i)=><div key={i} style={{padding:"8px 13px",display:"flex",gap:"8px",alignItems:"flex-start"}}>
+        <div style={{width:"26px",height:"26px",borderRadius:"50%",background:m.role==="user"?"rgba(0,100,255,.25)":"rgba(100,50,255,.25)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"12px",flexShrink:0}}>{m.role==="user"?"👤":"🤖"}</div>
+        <div style={{flex:1,fontSize:"9px",color:m.role==="user"?"#d0e8f8":"#c0a8f8",lineHeight:1.8,background:m.role==="user"?"rgba(0,60,180,.1)":"rgba(80,30,180,.1)",padding:"6px 10px",borderRadius:"8px",border:`1px solid ${m.role==="user"?"rgba(0,100,255,.15)":"rgba(100,50,255,.15)"}`}}>{m.content}</div>
+      </div>)}
+      {chatLoad&&<div style={{padding:"8px 13px",display:"flex",gap:"8px",alignItems:"center"}}><div style={{width:"26px",height:"26px",borderRadius:"50%",background:"rgba(100,50,255,.25)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"12px"}}>🤖</div><div style={{fontSize:"9px",color:"#6644aa"}}>Pensando...</div></div>}
+    </div>
+    <div style={{padding:"8px 13px",borderTop:"1px solid rgba(100,50,255,.12)",display:"flex",gap:"7px"}}>
+      <input value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendChat()} placeholder={isListening?"🎤 Escuchando...":"Pregunta algo... ej: ¿Qué material es? ¿Qué tolerancia ISO tiene?"} style={{flex:1,padding:"8px 12px",background:isListening?"rgba(255,50,50,.1)":"rgba(0,10,25,.8)",border:`1px solid ${isListening?"rgba(255,50,50,.4)":"rgba(100,50,255,.25)"}`,borderRadius:"8px",color:"#d0e8f8",fontSize:"10px"}}/>
+      <button onClick={toggleMic} title="Hablar en vez de escribir" style={{padding:"8px 11px",background:isListening?"rgba(255,50,50,.25)":"rgba(100,50,255,.15)",border:`1px solid ${isListening?"#ff3355":"rgba(100,50,255,.3)"}`,borderRadius:"8px",fontSize:"13px",color:isListening?"#ff3355":"#9966ff",cursor:"pointer",animation:isListening?"pulse 1s infinite":"none"}}>{isListening?"⏹":"🎤"}</button>
+      <button onClick={sendChat} disabled={chatLoad||!chatInput.trim()||!GK()} style={{padding:"8px 14px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#fff",border:"none",borderRadius:"8px",fontSize:"10px",fontWeight:700,cursor:chatLoad?"not-allowed":"pointer"}}>▶</button>
+    </div>
+    {!GK()&&<div style={{padding:"6px 13px",fontSize:"8px",color:"#ff9500",borderTop:"1px solid rgba(100,50,255,.1)"}}>⚠️ Necesita clave API — configura en ⚙</div>}
+</div>}
 
 {/* Botón flotante FIJO para resetear vista (zoom/rotación) — siempre alcanzable
     aunque el scroll o el zoom hayan dejado los botones normales fuera de pantalla */}
@@ -3026,8 +3079,8 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   <div style={{fontSize:"9px",color:"#2a3a5a",marginBottom:"12px"}}>¿Dónde quieres verla reflejada ahora?</div>
   <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
     <button onClick={()=>{setViewPrompt(null);setSheet("meas");}} style={{flex:1,padding:"10px",background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.35)",color:"#ff9500",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>📋 Ver medidas</button>
-    <button onClick={()=>{setViewPrompt(null);setSheet("2d");}} style={{flex:1,padding:"10px",background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.35)",color:"#ff9500",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>📐 Ver en 2D</button>
-    <button onClick={()=>{setViewPrompt(null);setSheet("3d");}} style={{flex:1,padding:"10px",background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.35)",color:"#ff9500",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>🎮 Ver en 3D</button>
+    <button onClick={()=>{setViewPrompt(null);setScopeAsk("2d");}} style={{flex:1,padding:"10px",background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.35)",color:"#ff9500",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>📐 Ver en 2D</button>
+    <button onClick={()=>{setViewPrompt(null);setScopeAsk("3d");}} style={{flex:1,padding:"10px",background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.35)",color:"#ff9500",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>🎮 Ver en 3D</button>
     <button onClick={()=>setViewPrompt(null)} style={{flex:1,padding:"10px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.09)",color:"#2a3a5a",borderRadius:"9px",fontSize:"10px"}}>Seguir midiendo</button>
   </div>
 </div>}
@@ -3056,7 +3109,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
        panel de edición inline aparece automáticamente bajo la barra de herramientas. */
   };
   const goTo=target=>{
-    if(!fc){setIconInfoM(null);setSheet(target);return;}
+    if(!fc){setIconInfoM(null);setScopeAsk(target);return;}
     const seg=editZone?.seg;
     if(!seg){setIconInfoM(null);return;}
     const newAnns=fcAnns.filter(x=>x.value!=null).map(x=>({
@@ -3171,7 +3224,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   </div>}
 
   {/* Floating toast: AI proactive message arrived (impossible to miss) */}
-  {chatUnread&&sheet!=="chat"&&<div onClick={()=>{setChatUnread(false);setSheet("chat");}}
+  {chatUnread&&!chatOpen&&<div onClick={()=>{setChatUnread(false);setChatOpen(true);}}
     style={{position:"fixed",bottom:"90px",left:"50%",transform:"translateX(-50%)",zIndex:850,
       background:"linear-gradient(135deg,#7700ff,#aa00ff)",color:"#fff",padding:"11px 16px",
       borderRadius:"14px",boxShadow:"0 6px 24px rgba(170,0,255,.5)",cursor:"pointer",
@@ -3199,7 +3252,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         };el.src=img;
         setPostActM(null);
       }} style={{padding:"10px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"9px",fontSize:"10px",fontWeight:800}}>📏 Medir esta zona</button>
-      <button onClick={()=>{setPostActM(null);setSheet("2d");}} style={{padding:"10px",background:"rgba(0,200,100,.12)",color:"#00dd77",border:"1px solid rgba(0,200,100,.3)",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>📐 Ver en 2D/3D (ya incluida automáticamente)</button>
+      <button onClick={()=>{setPostActM(null);setScopeAsk("2d");}} style={{padding:"10px",background:"rgba(0,200,100,.12)",color:"#00dd77",border:"1px solid rgba(0,200,100,.3)",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>📐 Ver en 2D/3D (ya incluida automáticamente)</button>
       <button onClick={()=>setPostActM(null)} style={{padding:"9px",background:"rgba(255,255,255,.05)",color:"#667",border:"1px solid rgba(255,255,255,.1)",borderRadius:"9px",fontSize:"9px"}}>✓ Listo, seguir tocando otros objetos</button>
     </div>
   </div>}
@@ -3311,13 +3364,13 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <button onClick={()=>{
           removeZoneM.newAnns.forEach(na=>addA(na));
           setFadedSegIds(s=>new Set([...s,removeZoneM.seg.id]));
-          closeZone(activeZoneId,true);setSheet(removeZoneM.targetSheet||"2d");
+          closeZone(activeZoneId,true);setScopeAsk(removeZoneM.targetSheet||"2d");
           setAiMsg(`Zona "${removeZoneM.seg.name}" guardada y marcada como recortada en la imagen principal.`);
           setRemoveZoneM(null);
         }} style={{padding:"11px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"8px",fontSize:"11px",fontWeight:800}}>✂ Quitar de la imagen (queda aclarada)</button>
         <button onClick={()=>{
           removeZoneM.newAnns.forEach(na=>addA(na));
-          closeZone(activeZoneId,true);setSheet(removeZoneM.targetSheet||"2d");
+          closeZone(activeZoneId,true);setScopeAsk(removeZoneM.targetSheet||"2d");
           setAiMsg(`Zona "${removeZoneM.seg.name}" guardada. Sigue visible normalmente en la imagen principal.`);
           setRemoveZoneM(null);
         }} style={{padding:"11px",background:"rgba(0,200,100,.12)",color:"#00dd77",border:"1px solid rgba(0,200,100,.3)",borderRadius:"8px",fontSize:"11px",fontWeight:700}}>✓ Dejarla tal cual en la imagen</button>
@@ -3343,7 +3396,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
         {(tbyCat[tCat]||[]).filter(t=>t.id!=="crop"&&t.id!=="calib").map(t=><button key={t.id}
           title={t.label}
-          onClick={()=>{setTool(t.id);setPend([]);setPrev(null);setDragSt(null);setMeasM(null);setCalibM(null);setCropM(null);setSamActive(false);}}
+          onClick={()=>{setTool(t.id);setPend([]);setPrev(null);setDragSt(null);setMeasM(null);setCalibM(null);setCropM(null);setSamActive(false);fcClickLockRef.current=false;}}
           style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"2px",
             padding:"7px 6px",borderRadius:"9px",minWidth:"44px",
             background:tool===t.id?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,255,255,.04)",
@@ -3353,7 +3406,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           <span style={{fontSize:"17px",lineHeight:1}}>{t.icon}</span>
           <span style={{fontSize:"6px",fontWeight:600}}>{t.label}</span>
         </button>)}
-        <button onClick={()=>{setTool("sel");setPend([]);setPrev(null);setDragSt(null);setSamActive(false);}}
+        <button onClick={()=>{setTool("sel");setPend([]);setPrev(null);setDragSt(null);setSamActive(false);fcClickLockRef.current=false;}}
           style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"2px",
             padding:"7px 6px",borderRadius:"9px",minWidth:"44px",
             background:tool==="sel"?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,255,255,.04)",
@@ -3611,9 +3664,26 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       ↩ Seguir midiendo
       <div style={{fontSize:"8px",marginTop:"3px",opacity:.7}}>Vuelve a la imagen para añadir más medidas o recortes</div>
     </button>
-    <button onClick={()=>{setSheet(viewConfirm);setViewConfirm(null);setTool("sel");setPend([]);setPrev(null);}} style={{width:"100%",padding:"13px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"9px",fontSize:"12px",fontWeight:800,textAlign:"left"}}>
+    <button onClick={()=>{setViewConfirm(null);setTool("sel");setPend([]);setPrev(null);setScopeAsk(viewConfirm);}} style={{width:"100%",padding:"13px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"9px",fontSize:"12px",fontWeight:800,textAlign:"left"}}>
       ✓ Ir a {viewConfirm==="2d"?"Vista 2D":"Vista 3D"}
       <div style={{fontSize:"8px",marginTop:"3px",opacity:.7}}>Las medidas ya guardadas se usarán para generar el croquis</div>
+    </button>
+  </div>
+</div>}
+
+{/* ══ ¿TODO o SOLO LO MEDIDO? — se pregunta SIEMPRE al entrar en 2D o 3D ══ */}
+{scopeAsk&&<div data-modal="scopeask" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"#111",border:"2px solid #00bbff",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:600,animation:"slideUp .22s ease",backdropFilter:"blur(24px)"}}>
+  <button onClick={()=>setScopeAsk(null)} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+  <div style={{fontSize:"13px",fontWeight:800,color:"#00bbff",marginBottom:"6px"}}>{scopeAsk==="2d"?"📐 Plano 2D":"🎮 Vista 3D"} — ¿qué quieres ver?</div>
+  <div style={{fontSize:"9px",color:"#666",marginBottom:"14px",lineHeight:1.8}}>Puedes ver todas las piezas/medidas que tienes hasta ahora, o solo la imagen con lo que realmente has medido.</div>
+  <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+    <button onClick={()=>{setViewScope("measured");setSheet(scopeAsk);setScopeAsk(null);}} style={{width:"100%",padding:"13px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"9px",fontSize:"12px",fontWeight:800,textAlign:"left"}}>
+      🎯 Solo lo medido
+      <div style={{fontSize:"8px",marginTop:"3px",opacity:.7}}>Solo piezas y medidas con valor — más limpio</div>
+    </button>
+    <button onClick={()=>{setViewScope("all");setSheet(scopeAsk);setScopeAsk(null);}} style={{width:"100%",padding:"13px",background:"rgba(0,187,255,.1)",border:"1px solid rgba(0,187,255,.3)",color:"#00bbff",borderRadius:"9px",fontSize:"12px",fontWeight:800,textAlign:"left"}}>
+      🗂 Todo
+      <div style={{fontSize:"8px",marginTop:"3px",opacity:.7}}>Todas las piezas creadas, tengan medida o no</div>
     </button>
   </div>
 </div>}
@@ -3665,7 +3735,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       <button onClick={()=>{setCropM(null);setTool(cropM?.isLasso?"lasso":"crop");}} style={{flex:1,padding:"11px",background:"rgba(0,180,255,.08)",border:"1px solid rgba(0,180,255,.3)",color:"#00bbff",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>
         ↩ Seguir seleccionando
       </button>
-      <button onClick={()=>{setCropM(null);setTool("sel");setSheet("2d");}} style={{flex:1,padding:"11px",background:"rgba(0,200,100,.08)",border:"1px solid rgba(0,200,100,.3)",color:"#00dd77",borderRadius:"9px",fontSize:"9px",fontWeight:700,lineHeight:1.3}}>
+      <button onClick={()=>{setCropM(null);setTool("sel");setScopeAsk("2d");}} style={{flex:1,padding:"11px",background:"rgba(0,200,100,.08)",border:"1px solid rgba(0,200,100,.3)",color:"#00dd77",borderRadius:"9px",fontSize:"9px",fontWeight:700,lineHeight:1.3}}>
         📐 Ver TODAS las zonas en 2D/3D{segs?.length>0?` (${segs.length})`:""}
       </button>
     </div>
