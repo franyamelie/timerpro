@@ -3589,23 +3589,6 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   </div>
 </div>}
 
-{/* ═══ PANEL DE DEPURACIÓN TEMPORAL — quitar cuando se resuelva el bug de deshacer ═══ */}
-<div style={{position:"fixed",top:0,left:0,right:0,background:"#ff0044",color:"#fff",fontSize:"10px",fontWeight:700,padding:"6px 10px",zIndex:99999,fontFamily:"monospace",display:"flex",gap:"12px",flexWrap:"wrap"}}>
-  <span>scr:{scr}</span>
-  <span>tool:{tool}</span>
-  <span>modal:{String(modal)}</span>
-  <span>anns:{anns.length}</span>
-  <span>hist:{hist.length}</span>
-  <span>redo:{redo.length}</span>
-  <span>editZone:{editZone?"SI":"no"}</span>
-  <span>fcAnns:{fcAnns.length}</span>
-  <span>fcHist:{fcHist.length}</span>
-  <span>fcRedo:{fcRedo.length}</span>
-  <span>samActive:{String(samActive)}</span>
-  <span>measM:{measM?"SI":"no"}</span>
-  <span>cropM:{cropM?"SI":"no"}</span>
-</div>
-
 </div>
   );
 }
