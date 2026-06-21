@@ -825,6 +825,7 @@ function App(){
   const [fcPanX,setFcPanX]=useState(0);
   const fcViewRef=useRef(null);
   const fcPinchRef=useRef(null); /* manual add part dialog */
+  const fcClickLockRef=useRef(false); /* bloqueo INMEDIATO (no depende de re-render) para que un toque no se cuente varias veces mientras se abre el modal de medida */
   const [newPartName,setNewPartName]=useState("");
   const [activePart,setActivePart]=useState(null); /* {id,name,color} current part being measured */ /* {title,value,unit} after each measure */
 
@@ -903,6 +904,7 @@ function App(){
   /* Abre una zona en una pestaña nueva, o salta a ella si ya estaba abierta — sin límite de pestañas */
   const openZone=useCallback((seg,croppedImg)=>{
     snapshotActiveZone();
+    fcClickLockRef.current=false;
     setEditZones(zs=>{
       const existing=zs.find(z=>z.seg.id===seg.id);
       if(existing){
@@ -950,6 +952,7 @@ function App(){
   /* Cambia a otra pestaña ya abierta, guardando antes el estado de la actual */
   const switchZone=useCallback(zoneId=>{
     snapshotActiveZone();
+    fcClickLockRef.current=false;
     const z=editZones.find(z=>z.id===zoneId);if(!z)return;
     setActiveZoneId(z.id);
     setFcAnns(z.fcAnns||[]);setFcHist(z.fcHist||[]);setFcRedo(z.fcRedo||[]);setFcZoom(z.fcZoom||1);
@@ -1435,6 +1438,7 @@ function App(){
     if(!measM)return;
     if(measM._fc){
       /* From floating crop panel */
+      fcClickLockRef.current=false;
       const updatedAnn={...measM,title:mIn.t,value:mIn.v===""?null:parseFloat(mIn.v),unit:mIn.u};
       fcPush(prev=>prev.map(a=>a.id===measM.id?updatedAnn:a));
       setMeasM(null);
@@ -2962,7 +2966,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
 
 {/* ══ MEASURE MODAL ══ */}
 {measM&&<div data-modal="measure" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"#111",border:"2px solid #ff9500",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:editZone?900:500,animation:"slideUp .22s ease",backdropFilter:"blur(24px)",boxShadow:"0 -6px 40px rgba(0,0,0,.7)"}}>
-  <button onClick={()=>setMeasM(null)} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center",zIndex:20}}>✕</button>
+  <button onClick={()=>{fcClickLockRef.current=false;setMeasM(null);}} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center",zIndex:20}}>✕</button>
   <div style={{marginBottom:"16px",paddingRight:"36px"}}>
     <div style={{fontSize:"13px",fontWeight:800,color:"#ff9500",letterSpacing:"-.2px"}}>AÑADIR MEDIDA</div>
     <div style={{fontSize:"9px",color:"#2a3a5a",marginTop:"4px"}}>{measM.icon} {TOOLS.find(t=>t.id===measM.type)?.label} — escribe el valor y confirma</div>
@@ -3323,11 +3327,12 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     <div style={{position:"relative",background:"#000",width:`${fcZoom*100}%`,margin:fcZoom<1?"0 auto":"0",minWidth:fcZoom>1?`${fcZoom*100}%`:"auto",transition:"width .15s"}}
       id="fc-img-container"
       onClick={e=>{
-        if(tool==="sel"||DRAG.includes(tool)||measM||calibM)return;
+        if(tool==="sel"||DRAG.includes(tool)||measM||calibM||fcClickLockRef.current)return;
         const td=TOOLS.find(t=>t.id===tool);if(!td||td.npts===0)return;
         const r=e.currentTarget.getBoundingClientRect();
         const p={x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height};
         if(MRK.includes(tool)||td.npts===1){
+          fcClickLockRef.current=true;
           const col=COLS[colI%COLS.length];
           const a={id:uid(),type:tool,icon:td.icon,color:col,points:[p],value:null,unit:"cm",title:"",axis:"",_fc:true};
           setFcHist(h=>[...h.slice(-20),JSON.parse(JSON.stringify(fcAnns))]);setFcRedo([]);
@@ -3337,6 +3342,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         }
         const pts=[...pend,p];
         if(pts.length>=td.npts){
+          fcClickLockRef.current=true;
           const col=COLS[colI%COLS.length];
           const a={id:uid(),type:tool,icon:td.icon,color:col,points:pts,value:null,unit:"cm",title:"",axis:"",_fc:true};
           setFcHist(h=>[...h.slice(-20),JSON.parse(JSON.stringify(fcAnns))]);setFcRedo([]);
