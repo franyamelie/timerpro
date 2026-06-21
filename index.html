@@ -2723,7 +2723,7 @@ function exportXLSX(conPrecios){
 }
 
 
-function exportPlantilla(){
+async function exportPlantilla(){
   const from = S.resMode==='days'?'':(S.resFrom||firstDayOfMonth());
   const to = S.resMode==='days'?'':(S.resTo||today());
   const worker = workers.find(w=>w.id===activeWorkerId)||{};
@@ -2814,11 +2814,17 @@ function exportPlantilla(){
 </table>
 </body></html>`;
 
+  const fname='TimerPro_Plantilla_'+resumenFileTag()+'.xls';
   const blob=new Blob([htmlContent],{type:'application/vnd.ms-excel;charset=utf-8'});
+  const file=new File([blob],fname,{type:blob.type});
+  if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file],title:'Plantilla TimerPro'}); showAlert('Plantilla compartida'); return; }
+    catch(ex){ if(ex.name==='AbortError') return; }
+  }
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url;
-  a.download='TimerPro_Plantilla_'+resumenFileTag()+'.xls';
+  a.download=fname;
   a.click();
   URL.revokeObjectURL(url);
   showAlert('✅ Plantilla descargada ('+days.length+' días)');
@@ -3083,10 +3089,10 @@ function renderResumen(){
       h('div',{class:'card'},
         h('div',{class:'sec-title'},'Exportar'),
         h('div',{class:'grid-2',style:{gap:'.5rem'}},
-          h('button',{class:'btn btn-g btn-full',on:{click:()=>openExportModal('con')}},'📄 PDF con importes'),
-          h('button',{class:'btn btn-gh btn-full',on:{click:()=>openExportModal('sin')}},'📄 PDF sin importes'),
-          h('button',{class:'btn btn-b btn-full',on:{click:()=>exportXLSX(true)}},'📊 Excel con importes'),
-          h('button',{class:'btn btn-gh btn-full',on:{click:()=>exportXLSX(false)}},'📊 Excel sin importes'),
+          h('button',{class:'btn btn-g btn-full',on:{click:()=>exportPDFReal(false,getResumenEntries(),resumenPeriodoLabel(),[],resumenFileTag())}},'📄 PDF con importes'),
+          h('button',{class:'btn btn-gh btn-full',on:{click:()=>exportPDFReal(true,getResumenEntries(),resumenPeriodoLabel(),[],resumenFileTag())}},'📄 PDF sin importes'),
+          h('button',{class:'btn btn-b btn-full',on:{click:()=>exportExcel(false,getResumenEntries(),resumenPeriodoLabel(),resumenFileTag())}},'📊 Excel con importes'),
+          h('button',{class:'btn btn-gh btn-full',on:{click:()=>exportExcel(true,getResumenEntries(),resumenPeriodoLabel(),resumenFileTag())}},'📊 Excel sin importes'),
           h('button',{class:'btn btn-pur btn-full',on:{click:()=>exportPlantilla()}},'📥 Descargar plantilla en blanco')
         )
       )
@@ -6044,12 +6050,13 @@ function exportCSV(){
 }
 
 
-async function exportPDFReal(noImportes=false){
+async function exportPDFReal(noImportes=false, entriesOverride=null, periodoLabelOverride=null, tasksOverride=null, fileTagOverride=null){
   try{
-    if(!window.jspdf){showAlert('Cargando libreria PDF...','err');setTimeout(exportPDFReal,2000);return;}
+    if(!window.jspdf){showAlert('Cargando libreria PDF...','err');setTimeout(()=>exportPDFReal(noImportes,entriesOverride,periodoLabelOverride,tasksOverride,fileTagOverride),2000);return;}
     const {jsPDF}=window.jspdf;
-    const entries=filterEntries().sort((a,b)=>a.fecha.localeCompare(b.fecha));
-    const tasks=filterTasks().sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    const entries=(entriesOverride||filterEntries()).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    const tasks=(tasksOverride!==null?tasksOverride:filterTasks()).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    if(!entries.length){showAlert('No hay jornadas que exportar','err');return;}
     const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
     const G=[22,163,74],D=[20,20,20],GR=[120,120,120],BL=[59,130,246];
     const W=210,M=14;
@@ -6063,7 +6070,7 @@ async function exportPDFReal(noImportes=false){
     doc.text('TimerPro',M,12);
     doc.setFontSize(10);doc.setFont('helvetica','normal');
     doc.text('Control Horario Laboral',M,19);
-    const periodo=filterMonth?MONTHS[parseInt(filterMonth.slice(5))-1]+' '+filterMonth.slice(0,4):'Periodo completo';
+    const periodo=periodoLabelOverride||(filterMonth?MONTHS[parseInt(filterMonth.slice(5))-1]+' '+filterMonth.slice(0,4):'Periodo completo');
     doc.text(periodo,W-M,12,{align:'right'});
     doc.text(new Date().toLocaleDateString('es-ES'),W-M,19,{align:'right'});
 
@@ -6325,7 +6332,7 @@ async function exportPDFReal(noImportes=false){
     }
 
     // ── SAVE/SHARE ──
-    const fname='TimerPro_'+today()+'.pdf';
+    const fname='TimerPro_'+(fileTagOverride||today())+'.pdf';
     const blob=doc.output('blob');
     if(navigator.share&&navigator.canShare&&navigator.canShare({files:[new File([blob],fname,{type:'application/pdf'})]})){
       try{await navigator.share({files:[new File([blob],fname,{type:'application/pdf'})],title:'Informe TimerPro'});return;}
@@ -6339,13 +6346,14 @@ async function exportPDFReal(noImportes=false){
   }
 }
 
-async function exportExcel(noImportes=false){
+async function exportExcel(noImportes=false, entriesOverride=null, periodoLabelOverride=null, fileTagOverride=null){
   try{
-    if(!window.XLSX){showAlert('Cargando libreria Excel...','err');setTimeout(exportExcel,2000);return;}
-    const entries=filterEntries();
-    const tasks=filterTasks();
+    if(!window.XLSX){showAlert('Cargando libreria Excel...','err');setTimeout(()=>exportExcel(noImportes,entriesOverride,periodoLabelOverride,fileTagOverride),2000);return;}
+    const entries=entriesOverride||filterEntries();
+    const tasks=entriesOverride?[]:filterTasks();
+    if(!entries.length){showAlert('No hay jornadas que exportar','err');return;}
     const wb=XLSX.utils.book_new();
-    const jorData=[['TIMERPRO - JORNADAS'],['Trabajador:',fWorker.nombre+' '+fWorker.apellidos,'','Empresa:',fCompany.nombre],['Periodo:',filterMonth||'Completo'],[]];
+    const jorData=[['TIMERPRO - JORNADAS'],['Trabajador:',fWorker.nombre+' '+fWorker.apellidos,'','Empresa:',fCompany.nombre],['Periodo:',periodoLabelOverride||filterMonth||'Completo'],[]];
     jorData.push(noImportes
       ? ['Fecha','Dia','Entrada','Salida','H.Norm','H.Extra','H.Noct','H.Fest','Dieta','Transp','Nota']
       : ['Fecha','Dia','Entrada','Salida','H.Normales','Imp.Normales','H.Extra','Imp.Extra','H.Nocturnas','Imp.Nocturnas','H.Festivas','Imp.Festivas','Dieta','Dietas Extra','Transporte','Otros Conceptos','Nota','Ubic.Entrada','Ubic.Salida']);;
@@ -6369,9 +6377,9 @@ async function exportExcel(noImportes=false){
       const ws2=XLSX.utils.aoa_to_sheet(td);ws2['!cols']=[10,8,20,8,8,10,15,8,12,12,30].map(w=>({wch:w}));XLSX.utils.book_append_sheet(wb,ws2,'Tareas');
     }
     const tot=entries.reduce((a,e)=>({hn:a.hn+(+e.horasNormales||0),he:a.he+(+e.horasExtra||0),hnoc:a.hnoc+(+e.horasNocturnas||0),hf:a.hf+(+e.horasFestivas||0),in_:a.in_+(+e.importeNormales||0),ie:a.ie+(+e.importeExtra||0),inoc:a.inoc+(+e.importeNocturnas||0),if_:a.if_+(+e.importeFestivas||0),diet:a.diet+(+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0)),transp:a.transp+(+e.transporte||0)}),{hn:0,he:0,hnoc:0,hf:0,in_:0,ie:0,inoc:0,if_:0,diet:0,transp:0});
-    const rd=[['RESUMEN'],['Trabajador:',fWorker.nombre+' '+fWorker.apellidos],['Empresa:',fCompany.nombre],['Periodo:',filterMonth||'Completo'],[],['HORAS'],['Normales',tot.hn],['Extra',tot.he],['Nocturnas',tot.hnoc],['Festivas',tot.hf],['TOTAL HORAS',tot.hn+tot.he+tot.hnoc+tot.hf],[],['IMPORTES'],['Normales',tot.in_],['Extra',tot.ie],['Nocturnas',tot.inoc],['Festivas',tot.if_],['Subtotal horas',tot.in_+tot.ie+tot.inoc+tot.if_],[],['OTROS'],['Dietas',tot.diet],['Transporte',tot.transp],[],['TOTAL GENERAL',tot.in_+tot.ie+tot.inoc+tot.if_+tot.diet+tot.transp]];
+    const rd=[['RESUMEN'],['Trabajador:',fWorker.nombre+' '+fWorker.apellidos],['Empresa:',fCompany.nombre],['Periodo:',periodoLabelOverride||filterMonth||'Completo'],[],['HORAS'],['Normales',tot.hn],['Extra',tot.he],['Nocturnas',tot.hnoc],['Festivas',tot.hf],['TOTAL HORAS',tot.hn+tot.he+tot.hnoc+tot.hf],[],['IMPORTES'],['Normales',tot.in_],['Extra',tot.ie],['Nocturnas',tot.inoc],['Festivas',tot.if_],['Subtotal horas',tot.in_+tot.ie+tot.inoc+tot.if_],[],['OTROS'],['Dietas',tot.diet],['Transporte',tot.transp],[],['TOTAL GENERAL',tot.in_+tot.ie+tot.inoc+tot.if_+tot.diet+tot.transp]];
     const ws3=XLSX.utils.aoa_to_sheet(rd);ws3['!cols']=[{wch:20},{wch:15}];XLSX.utils.book_append_sheet(wb,ws3,'Resumen');
-    const fname='TimerPro_'+(noImportes?'SinImportes_':'')+today()+'.xlsx';
+    const fname='TimerPro_'+(noImportes?'SinImportes_':'')+(fileTagOverride||today())+'.xlsx';
     const arr=XLSX.write(wb,{bookType:'xlsx',type:'array'});
     const blob=new Blob([arr],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     const file=new File([blob],fname,{type:blob.type});
