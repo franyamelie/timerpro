@@ -805,6 +805,7 @@ function App(){
   /* bottom sheet: null | meas | 2d | 3d | chat | export */
   const [sheet,setSheet]=useState(null);
   const [viewPrompt,setViewPrompt]=useState(null);
+  const [iconInfoM,setIconInfoM]=useState(null); /* {ann,ordinal,fc} - modo iconos: detalle al tocar un icono de medida + elegir Aquí/2D/3D */
   const [addPartDlg,setAddPartDlg]=useState(false);
   const [selSeg,setSelSeg]=useState(null); /* selected segment id */
   const [editZone,setEditZone]=useState(null);
@@ -871,6 +872,10 @@ function App(){
   const selA=useMemo(()=>anns.find(a=>a.id===selId),[anns,selId]);
   const mrkA=anns.filter(a=>MRK.includes(a.type));
   const shpA=anns.filter(a=>!MRK.includes(a.type));
+  /* Modo iconos: número correlativo de "a" entre todas las anotaciones de su MISMO
+     tipo dentro de "list" (orden de creación) — ej. el 3er ángulo medido es ∠3,
+     independientemente de cuántas otras medidas de otros tipos haya de por medio. */
+  const typeOrd=(list,a)=>{let n=0;for(const x of(list||[])){if(x.type===a.type){n++;if(x.id===a.id)return n;}}return n||1;};
   const hasDim=anns.some(a=>["width","height","depth"].includes(a.axis)&&a.value!=null);
   const tbyCat=useMemo(()=>{const c={};TOOLS.forEach(t=>{if(!c[t.cat])c[t.cat]=[];c[t.cat].push(t);});return c;},[]);
 
@@ -1784,19 +1789,30 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   }catch(e){alert("Error email: "+e.message);}
 };
 
-  /* SVG PILL BADGE - dark AR Meter style */
-  const Pill=({mx,my,text,col,sm})=>{
-    if(!text)return null;
-    const w=Math.max(text.length*.65,3)+3.5,x=parseFloat(mx),y=parseFloat(my);
-    const h=sm?4:5,ry=sm?2:2.5,fs=sm?"2.3%":"2.9%";
-    return(<>
-      <rect x={`${x-w/2}%`} y={`${y-ry}%`} width={`${w}%`} height={`${h}%`} rx={`${ry}%`}
-        fill="rgba(255,255,255,.96)" style={{filter:"drop-shadow(0 2px 8px rgba(0,0,0,.7))"}}/>
-      <rect x={`${x-w/2}%`} y={`${y-ry}%`} width="1.2%" height={`${h}%`} rx={`${ry/2}%`}
-        fill={col||"#ff9500"}/>
-      <text x={`${x+.4}%`} y={`${y+.4}%`} fill="#111" fontSize={fs}
-        fontFamily="Inter,sans-serif" fontWeight="800" textAnchor="middle" dominantBaseline="middle">{text}</text>
-    </>);
+  /* SVG ICON BADGE — "modo iconos": ya NO se muestra el valor de la medida
+     sobre la foto, solo un icono pequeño del tipo de herramienta + un número
+     correlativo POR TIPO (ej. 4 ángulos medidos = ∠1 ∠2 ∠3 ∠4), para que la
+     imagen no se sature aunque haya muchas medidas de tipos distintos a la
+     vez. Al tocar el icono se abre un panel (iconInfoM) con el detalle
+     completo (tipo + número + valor) y la opción de ir a Aquí/2D/3D.
+     El valor completo SIGUE mostrándose siempre en las vistas 2D y 3D. */
+  const Pill=({mx,my,a})=>{
+    if(!a)return null;
+    const col=a.color||"#ff9500";
+    const ord=typeOrd(anns,a);
+    const ic=(TOOLS.find(t=>t.id===a.type)?.icon)||"●";
+    const x=parseFloat(mx),y=parseFloat(my);
+    const r=3.6,fs=ic.length>1?"2.2%":"3.1%";
+    const tap=e=>{e.stopPropagation();setIconInfoM({ann:a,ordinal:ord,fc:false});};
+    return(<g onClick={tap} onMouseDown={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()} style={{cursor:"pointer"}}>
+      <circle cx={`${x}%`} cy={`${y}%`} r={`${r}%`} fill="rgba(6,8,16,.92)" stroke={col} strokeWidth="0.55"
+        style={{filter:"drop-shadow(0 2px 8px rgba(0,0,0,.7))"}}/>
+      <text x={`${x}%`} y={`${y-.3}%`} fill={col} fontSize={fs}
+        fontFamily="Inter,sans-serif" fontWeight="800" textAnchor="middle" dominantBaseline="central">{ic}</text>
+      <circle cx={`${x+2.7}%`} cy={`${y+2.3}%`} r="1.7%" fill={col}/>
+      <text x={`${x+2.7}%`} y={`${y+2.3}%`} fill="#000" fontSize="2.1%"
+        fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{ord}</text>
+    </g>);
   };
 
   /* SVG SHAPE RENDERER */
@@ -1818,13 +1834,12 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       const sc=a.type==="crop"?"#ff9500":col;const area=!ip?getArea(a):null;
       return<g onClick={e=>{if(ip)return;e.stopPropagation();if(a.type!=="crop")sel();}} onMouseDown={e=>{if(a.type!=="crop"&&tool==="sel")onShapeDrag(e,a.id);}} onTouchStart={e=>{if(a.type!=="crop"&&tool==="sel")onShapeDrag(e,a.id);}} style={{cursor:a.type==="crop"?"default":tool==="sel"?"grab":"pointer"}}>
         <rect x={`${rx}%`} y={`${ry2}%`} width={`${rw}%`} height={`${rh}%`} stroke={sc} strokeWidth={sw} fill={ip?`${sc}10`:"rgba(0,100,255,.1)"} strokeDasharray={a.type==="crop"?"8,4":ld}/>
-        {!ip&&badge&&<Pill mx={`${mx}`} my={`${my}`} text={badge} col={col}/>}
-        {!ip&&area&&<Pill mx={`${mx}`} my={`${my+5.5}`} text={`A:${area}`} col={col} sm/>}
+        {!ip&&<Pill mx={`${mx}`} my={`${my}`} a={a}/>}
       </g>;}
     if(a.type==="circ"){const r=Math.sqrt(Math.pow((p2.x-p1.x)*100,2)+Math.pow((p2.y-p1.y)*100,2));
       return<g onClick={e=>{if(ip)return;e.stopPropagation();sel();}} onMouseDown={e=>{if(tool==="sel")onShapeDrag(e,a.id);}} onTouchStart={e=>{if(tool==="sel")onShapeDrag(e,a.id);}} style={{cursor:tool==="sel"?"grab":"pointer"}}>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r={`${r}%`} stroke={col} strokeWidth={sw} fill={ip?`${col}10`:"rgba(0,100,255,.1)"} strokeDasharray={ld}/>
-        {!ip&&badge&&<Pill mx={`${p1.x*100}`} my={`${p1.y*100}`} text={badge} col={col}/>}
+        {!ip&&<Pill mx={`${p1.x*100}`} my={`${p1.y*100}`} a={a}/>}
       </g>;}
 
     /* ── HANDLERS COMUNES para todas las formas especiales ──
@@ -1847,7 +1862,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+10}%`} y2={`${p1.y*100}%`} stroke={col} strokeWidth="1" strokeDasharray="3,2" opacity=".6"/>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1.2%" fill={col}/>
         <circle cx={`${p2.x*100}%`} cy={`${p2.y*100}%`} r="1%" fill={col}/>
-        {!ip&&dispBadge&&<Pill mx={`${mx}`} my={`${my-4.5}`} text={dispBadge} col={col}/>}
+        {!ip&&<Pill mx={`${mx}`} my={`${my-4.5}`} a={a}/>}
       </g>;
     }
     /* ── ÁNGULO 3 puntos (vértice = p2) ── */
@@ -1865,7 +1880,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1%" fill={col}/>
         <circle cx={`${p2.x*100}%`} cy={`${p2.y*100}%`} r="1.5%" fill={col}/>
         <circle cx={`${p3.x*100}%`} cy={`${p3.y*100}%`} r="1%" fill={col}/>
-        {!ip&&dispBadge&&<Pill mx={`${p2.x*100}`} my={`${p2.y*100-5}`} text={dispBadge} col={col}/>}
+        {!ip&&<Pill mx={`${p2.x*100}`} my={`${p2.y*100-5}`} a={a}/>}
       </g>;
     }
     /* ── RADIO / DIÁMETRO: 2 puntos (centro → borde) ── */
@@ -1878,7 +1893,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r={`${r}%`} stroke={col} strokeWidth={sw} fill="none" strokeDasharray="6,3"/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw}/>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1.2%" fill={col}/>
-        {!ip&&dispBadge&&<Pill mx={`${mx}`} my={`${my-4.5}`} text={dispBadge} col={col}/>}
+        {!ip&&<Pill mx={`${mx}`} my={`${my-4.5}`} a={a}/>}
       </g>;
     }
     /* ── ESPESOR DE PARED (wall): 3 puntos ── */
@@ -1894,7 +1909,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <line x1={`${(p1.x+nx)*100}%`} y1={`${(p1.y+ny)*100}%`} x2={`${(p2.x+nx)*100}%`} y2={`${(p2.y+ny)*100}%`} stroke={col} strokeWidth={sw} strokeDasharray="5,2"/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${(p1.x+nx)*100}%`} y2={`${(p1.y+ny)*100}%`} stroke={col} strokeWidth="1.5"/>
         <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${(p2.x+nx)*100}%`} y2={`${(p2.y+ny)*100}%`} stroke={col} strokeWidth="1.5"/>
-        {!ip&&dispBadge&&<Pill mx={`${(p1.x+p2.x)*50+nx*50}`} my={`${(p1.y+p2.y)*50+ny*50-4}`} text={dispBadge} col={col}/>}
+        {!ip&&<Pill mx={`${(p1.x+p2.x)*50+nx*50}`} my={`${(p1.y+p2.y)*50+ny*50-4}`} a={a}/>}
       </g>;
     }
     /* ── POLILÍNEA: múltiples puntos ── */
@@ -1907,7 +1922,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <path d={d} stroke={col} strokeWidth={sw} fill="none"/>
         <path d={d} stroke="transparent" strokeWidth="14" fill="none"/>
         {pts.map((p,i)=><circle key={i} cx={`${p.x*100}%`} cy={`${p.y*100}%`} r="1%" fill={col}/>)}
-        {!ip&&dispBadge&&<Pill mx={`${cx}`} my={`${cy-4}`} text={dispBadge} col={col}/>}
+        {!ip&&<Pill mx={`${cx}`} my={`${cy-4}`} a={a}/>}
       </g>;
     }
     /* ── TOLERANCIA ±: 1 punto ── */
@@ -1916,7 +1931,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+8}%`} y2={`${(p1.y-.05)*100}%`} stroke={col} strokeWidth="1.5"/>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1.5%" fill={col}/>
-        {!ip&&dispBadge&&<Pill mx={`${p1.x*100+12}`} my={`${(p1.y-.05)*100}`} text={dispBadge} col={col}/>}
+        {!ip&&<Pill mx={`${p1.x*100+12}`} my={`${(p1.y-.05)*100}`} a={a}/>}
       </g>;
     }
     /* ── CHAFLÁN/FASEO: 3 puntos ── */
@@ -1930,7 +1945,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth={sw}/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth="1.5" strokeDasharray="5,3"/>
         <circle cx={`${p2.x*100}%`} cy={`${p2.y*100}%`} r="1.3%" fill={col}/>
-        {!ip&&dispBadge&&<Pill mx={`${p2.x*100}`} my={`${p2.y*100-5}`} text={dispBadge} col={col}/>}
+        {!ip&&<Pill mx={`${p2.x*100}`} my={`${p2.y*100-5}`} a={a}/>}
       </g>;
     }
     /* ── ÁREA: 3+ puntos cerrados ── */
@@ -1943,7 +1958,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <path d={d} stroke="transparent" strokeWidth="14" fill={`${col}18`}/>
         <path d={d} stroke={col} strokeWidth={sw} fill="none"/>
         {pts.map((p,i)=><circle key={i} cx={`${p.x*100}%`} cy={`${p.y*100}%`} r="1%" fill={col}/>)}
-        {!ip&&dispBadge&&<Pill mx={`${cx}`} my={`${cy}`} text={dispBadge} col={col}/>}
+        {!ip&&<Pill mx={`${cx}`} my={`${cy}`} a={a}/>}
       </g>;
     }
     /* ── ARCO: 3 puntos (inicio, paso, fin) ── */
@@ -1955,7 +1970,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <path d={arcD} stroke="transparent" strokeWidth="14" fill="none"/>
         <path d={arcD} stroke={col} strokeWidth={sw} fill="none"/>
         {[p1,p3].map((p,i)=><circle key={i} cx={`${p.x*100}%`} cy={`${p.y*100}%`} r="1%" fill={col}/>)}
-        {!ip&&dispBadge&&<Pill mx={`${p2.x*100}`} my={`${p2.y*100-5}`} text={dispBadge} col={col}/>}
+        {!ip&&<Pill mx={`${p2.x*100}`} my={`${p2.y*100-5}`} a={a}/>}
       </g>;
     }
     /* ── COORDENADA XY: 1 punto ── */
@@ -1967,7 +1982,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+6}%`} y2={`${p1.y*100}%`} stroke={col} strokeWidth="1.5"/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100}%`} y2={`${p1.y*100-6}%`} stroke={col} strokeWidth="1.5"/>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1.2%" fill={col}/>
-        {!ip&&dispBadge&&<Pill mx={`${p1.x*100+9}`} my={`${p1.y*100-5}`} text={dispBadge} col={col}/>}
+        {!ip&&<Pill mx={`${p1.x*100+9}`} my={`${p1.y*100-5}`} a={a}/>}
       </g>;
     }
     /* ── DEFLEXIÓN: 3 puntos ── */
@@ -1980,7 +1995,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth="1.5" strokeDasharray="4,3"/>
         <path d={deflD} stroke={col} strokeWidth={sw} fill="none"/>
         <line x1={`${(p1.x+p3.x)*50}%`} y1={`${(p1.y+p3.y)*50}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth="1" strokeDasharray="3,2" opacity=".7"/>
-        {!ip&&dispBadge&&<Pill mx={`${p2.x*100}`} my={`${p2.y*100-5}`} text={dispBadge} col={col}/>}
+        {!ip&&<Pill mx={`${p2.x*100}`} my={`${p2.y*100-5}`} a={a}/>}
       </g>;
     }
     /* ── NOTA DE TEXTO: 1 punto ── */
@@ -1990,7 +2005,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="3%" fill="transparent"/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+5}%`} y2={`${(p1.y-.04)*100}%`} stroke={col} strokeWidth="1.5"/>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r=".8%" fill={col}/>
-        {!ip&&dispBadge&&<Pill mx={`${p1.x*100+8}`} my={`${(p1.y-.04)*100}`} text={dispBadge} col={col}/>}
+        {!ip&&<Pill mx={`${p1.x*100+8}`} my={`${(p1.y-.04)*100}`} a={a}/>}
       </g>;
     }
     /* ── RUGOSIDAD Ra: 1 punto ── */
@@ -2000,7 +2015,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="3%" fill="transparent"/>
         <path d={`M ${p1.x*100-1.5}% ${p1.y*100+2}% L ${p1.x*100}% ${p1.y*100}% L ${p1.x*100+1.5}% ${p1.y*100+2}%`} stroke={col} strokeWidth="2" fill="none"/>
         <path d={`M ${p1.x*100}% ${p1.y*100}% L ${p1.x*100+3}% ${p1.y*100}%`} stroke={col} strokeWidth="1.5" fill="none"/>
-        {!ip&&dispBadge&&<Pill mx={`${p1.x*100+6}`} my={`${p1.y*100-1}`} text={dispBadge} col={col}/>}
+        {!ip&&<Pill mx={`${p1.x*100+6}`} my={`${p1.y*100-1}`} a={a}/>}
       </g>;
     }
 
@@ -2020,7 +2035,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       {isDim&&<><line x1={`${p1.x*100}%`} y1={`${(p1.y-.025)*100}%`} x2={`${p1.x*100}%`} y2={`${(p1.y+.025)*100}%`} stroke={col} strokeWidth={sw+1}/><line x1={`${p2.x*100}%`} y1={`${(p2.y-.025)*100}%`} x2={`${p2.x*100}%`} y2={`${(p2.y+.025)*100}%`} stroke={col} strokeWidth={sw+1}/></>}
       <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1%" fill={col} opacity={ip?.4:.8}/>
       <circle cx={`${p2.x*100}%`} cy={`${p2.y*100}%`} r="1%" fill={col} opacity={ip?.4:.8}/>
-      {!ip&&badge&&<Pill mx={`${mx}`} my={`${my-4.5}`} text={badge} col={col}/>}
+      {!ip&&<Pill mx={`${mx}`} my={`${my-4.5}`} a={a}/>}
     </g>;
   };
 
@@ -2064,10 +2079,17 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     const mx=(p1.x+p2.x)*50, my=(p1.y+p2.y)*50;
     const bw=badge?badge.length*1.3+2:0;
     const openM=e=>{if(ip)return;e.stopPropagation();setMeasM({...a,_existing:true,_fc:true});setMIn({t:a.title||"",v:a.value!=null?String(a.value):"",u:a.unit||"cm",ax:a.axis||""});};
-    const BadgeEl=({bx,by})=>badge?<>
-      <rect x={`${bx-bw/2}%`} y={`${by-3}%`} width={`${bw}%`} height="6%" rx="3%" fill="rgba(0,0,0,0.88)" style={{filter:"drop-shadow(0 1px 6px rgba(0,0,0,.7))"}}/>
-      <text x={`${bx}%`} y={`${by}%`} fill="#fff" fontSize="2.8%" fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="middle" stroke="rgba(0,0,0,.5)" strokeWidth="0.2%" paintOrder="stroke fill">{badge}</text>
-    </>:null;
+    /* MODO ICONOS (zona recortada): mismo criterio que en la pantalla principal —
+       sobre la foto solo icono + número correlativo por tipo, sin valor. Tocar el
+       icono abre el panel de info con destino Aquí/2D/3D en vez de editar directo. */
+    const ord=typeOrd(fcAnns,a);
+    const ic=(TOOLS.find(t=>t.id===a.type)?.icon)||"●";
+    const BadgeEl=({bx,by})=>ip?null:<g onClick={e=>{e.stopPropagation();setIconInfoM({ann:a,ordinal:ord,fc:true});}} style={{cursor:"pointer"}}>
+      <circle cx={`${bx}%`} cy={`${by}%`} r="3.6%" fill="rgba(6,8,16,.92)" stroke={col} strokeWidth="0.6" style={{filter:"drop-shadow(0 1px 6px rgba(0,0,0,.7))"}}/>
+      <text x={`${bx}%`} y={`${by-.3}%`} fill={col} fontSize={ic.length>1?"2.2%":"3.1%"} fontFamily="Inter,sans-serif" fontWeight="800" textAnchor="middle" dominantBaseline="central">{ic}</text>
+      <circle cx={`${bx+2.7}%`} cy={`${by+2.3}%`} r="1.7%" fill={col}/>
+      <text x={`${bx+2.7}%`} y={`${by+2.3}%`} fill="#000" fontSize="2.1%" fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{ord}</text>
+    </g>;
 
     /* ── RECTÁNGULO ── */
     if(a.type==="rect"){
@@ -2139,7 +2161,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw}/>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+10}%`} y2={`${p1.y*100}%`} stroke={col} strokeWidth="1" strokeDasharray="3,2" opacity=".6"/>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1.2%" fill={col}/>
-        {!ip&&dispBadge&&<><rect x={`${mx-dispBadge.length*0.7}%`} y={`${my-8}%`} width={`${dispBadge.length*1.4+2}%`} height="6%" rx="3%" fill="rgba(0,0,0,.8)"/><text x={`${mx}%`} y={`${my-5}%`} fill="#fff" fontSize="2.5%" fontFamily="Inter" fontWeight="900" textAnchor="middle" dominantBaseline="middle">{dispBadge}</text></>}
+        {!ip&&<BadgeEl bx={mx} by={my-5}/>}
       </g>;
     }
     /* ── ÁNGULO 3 puntos ── */
@@ -2153,7 +2175,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p1.x*100}%`} y2={`${p1.y*100}%`} stroke={col} strokeWidth={sw}/>
         <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth={sw}/>
         <circle cx={`${p2.x*100}%`} cy={`${p2.y*100}%`} r="1.5%" fill={col}/>
-        {!ip&&dispBadge&&<><rect x={`${p2.x*100-dispBadge.length*.7}%`} y={`${p2.y*100-8}%`} width={`${dispBadge.length*1.4+2}%`} height="6%" rx="3%" fill="rgba(0,0,0,.8)"/><text x={`${p2.x*100}%`} y={`${p2.y*100-5}%`} fill="#fff" fontSize="2.5%" fontFamily="Inter" fontWeight="900" textAnchor="middle" dominantBaseline="middle">{dispBadge}</text></>}
+        {!ip&&<BadgeEl bx={p2.x*100} by={p2.y*100-5}/>}
       </g>;
     }
         /* ── RADIO/Ø ── */
@@ -2622,21 +2644,17 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       )))}
       {/* Marker dots (DOM) — SOLO clicables/arrastrables en modo Mover; si no, sus
           círculos de 30px bloquearían los toques de cualquier herramienta de
-          medición activa que caiga encima de un marcador ya colocado. */}
-      {mrkA.map((a,idx)=><div key={a.id} className="nc"
+          medición activa que caiga encima de un marcador ya colocado.
+          MODO ICONOS: ya no se muestra el valor sobre la foto, solo el icono
+          + un número correlativo POR TIPO. Tocarlo abre el panel de info. */}
+      {mrkA.map(a=><div key={a.id} className="nc"
         onMouseDown={e=>{if(tool==="sel")onHandleDrag(e,a.id,0);}} onTouchStart={e=>{if(tool==="sel")onHandleDrag(e,a.id,0);}}
-        onClick={e=>{if(tool!=="sel")return;e.stopPropagation();setSelId(a.id);setTool("sel");
-  /* Single tap on existing marker -> open measurement modal */
-  setMIn({t:a.title||"",v:a.value!=null?String(a.value):"",u:a.unit||"cm",ax:a.axis||""});
-  setMeasM({...a,_existing:true});}}
+        onClick={e=>{if(tool!=="sel")return;e.stopPropagation();setSelId(a.id);setIconInfoM({ann:a,ordinal:typeOrd(mrkA,a),fc:false});}}
         style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",width:"30px",height:"30px",borderRadius:"50%",background:selId===a.id?a.color:"rgba(6,8,16,.92)",border:`2.5px solid ${a.color}`,color:selId===a.id?"#000":a.color,display:"flex",alignItems:"center",justifyContent:"center",cursor:tool==="sel"?"grab":"default",zIndex:tool==="sel"?15:1,pointerEvents:tool==="sel"?"auto":"none",boxShadow:`0 0 ${selId===a.id?18:8}px ${a.color}`,fontSize:a.type==="pin"?"15px":"11px",fontWeight:"700"}}>
         {a.icon||(a.type==="pin"?"📍":a.type==="star"?"★":a.type==="tgt"?"⊕":"●")}
         <div style={{position:"absolute",bottom:"-3px",right:"-3px",width:"14px",height:"14px",borderRadius:"50%",
           background:a.color,color:"#000",fontSize:"8px",fontWeight:900,display:"flex",alignItems:"center",
-          justifyContent:"center",border:"1.5px solid #000",pointerEvents:"none"}}>{idx+1}</div>
-        <div style={{position:"absolute",top:"-36px",left:"50%",transform:"translateX(-50%)",background:"rgba(6,8,16,.93)",color:a.value!=null?a.color:"#3355aa",fontSize:"9px",fontWeight:"700",padding:"4px 11px",borderRadius:"20px",whiteSpace:"nowrap",border:`1.5px solid ${a.value!=null?a.color:"rgba(255,255,255,.1)"}`,pointerEvents:"none",minWidth:"60px",textAlign:"center",boxShadow:"0 2px 12px rgba(0,0,0,.6)"}}>
-          {a.value!=null?(a.title?a.title+": ":"")+a.value+" "+a.unit:a.title||"Toca para medir"}
-        </div>
+          justifyContent:"center",border:"1.5px solid #000",pointerEvents:"none"}}>{typeOrd(mrkA,a)}</div>
       </div>)}
       {/* Drag handles for selected shape — solo en modo Mover, mismo motivo */}
       {tool==="sel"&&selA&&!MRK.includes(selA.type)&&selA.points.map((p,pi)=><div key={pi} className="nc" onMouseDown={e=>onHandleDrag(e,selA.id,pi)} onTouchStart={e=>onHandleDrag(e,selA.id,pi)} style={{position:"absolute",left:`${p.x*100}%`,top:`${p.y*100}%`,transform:"translate(-50%,-50%)",width:"15px",height:"15px",borderRadius:"50%",background:selA.color,cursor:"grab",zIndex:25,border:"2.5px solid #fff",boxShadow:`0 0 9px ${selA.color}`}}/>)}
@@ -3014,6 +3032,61 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   </div>
 </div>}
 
+{/* ══ ICON INFO MODAL — MODO ICONOS: al tocar un icono de medida (foto principal
+    o pestaña de zona) se muestra el detalle completo y se elige dónde verla:
+    aquí mismo, en la vista 2D o en la vista 3D. Las vistas 2D/3D siempre
+    muestran TODAS las medidas completas (tipo+valor), sea cual sea su tipo. ══ */}
+{iconInfoM&&(()=>{
+  const{ann,ordinal,fc}=iconInfoM;
+  const td=TOOLS.find(t=>t.id===ann.type);
+  const col=ann.color||"#ff9500";
+  const valTxt=ann.value!=null?`${ann.value} ${ann.unit}`:"Sin medir todavía";
+  const areaTxt=ann.type==="rect"?getArea(ann):null;
+  const editHere=()=>{
+    setIconInfoM(null);
+    setSelId(ann.id);setTool("sel");
+    if(fc){
+      setMeasM({...ann,_existing:true,_fc:true});
+      setMIn({t:ann.title||"",v:ann.value!=null?String(ann.value):"",u:ann.unit||"cm",ax:ann.axis||""});
+    }else if(MRK.includes(ann.type)){
+      setMeasM({...ann,_existing:true});
+      setMIn({t:ann.title||"",v:ann.value!=null?String(ann.value):"",u:ann.unit||"cm",ax:ann.axis||""});
+    }
+    /* Formas (no marcador) en pantalla principal: con seleccionarla basta — el
+       panel de edición inline aparece automáticamente bajo la barra de herramientas. */
+  };
+  const goTo=target=>{
+    if(!fc){setIconInfoM(null);setSheet(target);return;}
+    const seg=editZone?.seg;
+    if(!seg){setIconInfoM(null);return;}
+    const newAnns=fcAnns.filter(x=>x.value!=null).map(x=>({
+      ...x,id:uid(),_fc:false,partId:seg.id,partName:seg.name,
+      points:x.points.map(p=>({x:seg.x1+(p.x)*(seg.x2-seg.x1),y:seg.y1+(p.y)*(seg.y2-seg.y1)}))
+    }));
+    setIconInfoM(null);
+    setRemoveZoneM({seg,newAnns,targetSheet:target});
+  };
+  return<div data-modal="iconinfo" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"#111",border:`2px solid ${col}`,borderRadius:"18px 18px 0 0",padding:"18px",zIndex:fc?960:600,animation:"slideUp .2s ease",backdropFilter:"blur(24px)",boxShadow:"0 -6px 40px rgba(0,0,0,.7)"}}>
+    <button onClick={()=>setIconInfoM(null)} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+    <div style={{display:"flex",alignItems:"center",gap:"10px",paddingRight:"34px"}}>
+      <div style={{width:"34px",height:"34px",borderRadius:"50%",background:"rgba(6,8,16,.92)",border:`2px solid ${col}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"15px",color:col,flexShrink:0}}>{ann.icon||td?.icon||"●"}</div>
+      <div style={{minWidth:0}}>
+        <div style={{fontSize:"13px",fontWeight:800,color:col}}>{(td?.label||ann.type)} {ordinal}</div>
+        <div style={{fontSize:"9px",color:"#556677",marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ann.title?ann.title+" · ":""}{valTxt}{areaTxt?` · Área: ${areaTxt}`:""}</div>
+      </div>
+    </div>
+    <div style={{fontSize:"9px",color:"#2a3a5a",margin:"14px 0 10px"}}>¿Qué quieres hacer con esta medida?</div>
+    <div style={{display:"flex",flexDirection:"column",gap:"7px"}}>
+      <button onClick={editHere} style={{padding:"12px",background:"rgba(255,150,0,.12)",border:"1px solid rgba(255,150,0,.35)",color:"#ff9500",borderRadius:"9px",fontSize:"11px",fontWeight:700,textAlign:"left"}}>✎ Ver / editar aquí mismo</button>
+      <div style={{display:"flex",gap:"7px"}}>
+        <button onClick={()=>goTo("2d")} style={{flex:1,padding:"12px",background:"rgba(0,150,255,.1)",border:"1px solid rgba(0,150,255,.3)",color:"#00bbff",borderRadius:"9px",fontSize:"11px",fontWeight:700}}>📐 Ir a 2D</button>
+        <button onClick={()=>goTo("3d")} style={{flex:1,padding:"12px",background:"rgba(150,80,255,.1)",border:"1px solid rgba(150,80,255,.3)",color:"#aa66ff",borderRadius:"9px",fontSize:"11px",fontWeight:700}}>🎮 Ir a 3D</button>
+      </div>
+    </div>
+    {fc&&<div style={{fontSize:"8px",color:"#555",marginTop:"10px",lineHeight:1.6}}>Ir a 2D/3D guardará en la imagen principal las {fcAnns.filter(x=>x.value!=null).length} medida(s) con valor de esta zona.</div>}
+  </div>;
+})()}
+
 {addPartDlg&&<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"#111",border:"2px solid #00dd77",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:600,animation:"slideUp .22s ease",backdropFilter:"blur(24px)"}}>
   <button onClick={()=>setAddPartDlg(false)} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
   <div style={{fontSize:"13px",fontWeight:800,color:"#00dd77",marginBottom:"6px"}}>＋ AÑADIR NUEVA PARTE</div>
@@ -3064,6 +3137,8 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       <button onClick={()=>setFcZoom(1)} style={{width:"28px",height:"28px",background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.12)",color:"#aaa",borderRadius:"6px",fontSize:"9px",fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>FIT</button>
       <button onClick={()=>setFcZoom(z=>Math.min(5,z+0.25))} style={{width:"28px",height:"28px",background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.12)",color:"#aaa",borderRadius:"6px",fontSize:"16px",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
     </div>
+    {/* Botón SEGURO primero y bien grande: nunca pierde nada, solo oculta el panel */}
+    <button onClick={goToMainKeepingZones} title="Volver a la imagen principal — esta pestaña sigue abierta con todo guardado" style={{background:"linear-gradient(135deg,#ff6600,#ffaa00)",border:"none",color:"#000",borderRadius:"7px",padding:"0 14px",height:"32px",fontSize:"10px",fontWeight:800,display:"flex",alignItems:"center",gap:"5px",flexShrink:0}}>🏠 Pantalla principal</button>
     {/* Reposition: close panel, jump to main image with this piece pre-selected + Mover active */}
     <button onClick={()=>{
       const seg=editZone.seg;
@@ -3072,11 +3147,10 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       setSelSeg(seg.id);setTool("sel");
       setAiMsg(`🔄 "${seg.name}" lista para mover — arrastra su interior en la imagen`);
     }} title="Cerrar y mover esta pieza en la imagen principal" style={{background:"rgba(0,180,255,.12)",border:"1px solid rgba(0,180,255,.3)",color:"#00bbff",borderRadius:"7px",padding:"0 10px",height:"28px",fontSize:"9px",fontWeight:700,display:"flex",alignItems:"center",gap:"4px",flexShrink:0}}>🔄 Reposicionar</button>
-    <button onClick={goToMainKeepingZones} title="Volver a la imagen principal — esta pestaña sigue abierta" style={{background:"rgba(255,150,0,.1)",border:"1px solid rgba(255,150,0,.25)",color:"#ff9500",borderRadius:"7px",padding:"0 10px",height:"28px",fontSize:"9px",fontWeight:700,display:"flex",alignItems:"center",gap:"4px",flexShrink:0}}>🏠 Principal</button>
     <button onClick={()=>{
       if(fcAnns.some(a=>a.value!=null)){setExitConfirm(true);return;}
       closeZone(activeZoneId,true);
-    }} title="Cerrar esta pestaña" style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.35)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
+    }} title="⚠️ CIERRA esta pestaña de verdad (no es 'volver', borra esta zona de la lista). Usa 'Pantalla principal' si solo quieres ver la foto." style={{background:"rgba(255,50,50,.15)",border:"1.5px solid rgba(255,50,50,.45)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
   </div>
 
   {/* ══ BARRA DE PESTAÑAS — todas las zonas abiertas, sin límite, navegables sin perder nada ══ */}
@@ -3237,13 +3311,13 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <button onClick={()=>{
           removeZoneM.newAnns.forEach(na=>addA(na));
           setFadedSegIds(s=>new Set([...s,removeZoneM.seg.id]));
-          closeZone(activeZoneId,true);setSheet("2d");
+          closeZone(activeZoneId,true);setSheet(removeZoneM.targetSheet||"2d");
           setAiMsg(`Zona "${removeZoneM.seg.name}" guardada y marcada como recortada en la imagen principal.`);
           setRemoveZoneM(null);
         }} style={{padding:"11px",background:"linear-gradient(135deg,#ff6600,#ffaa00)",color:"#000",border:"none",borderRadius:"8px",fontSize:"11px",fontWeight:800}}>✂ Quitar de la imagen (queda aclarada)</button>
         <button onClick={()=>{
           removeZoneM.newAnns.forEach(na=>addA(na));
-          closeZone(activeZoneId,true);setSheet("2d");
+          closeZone(activeZoneId,true);setSheet(removeZoneM.targetSheet||"2d");
           setAiMsg(`Zona "${removeZoneM.seg.name}" guardada. Sigue visible normalmente en la imagen principal.`);
           setRemoveZoneM(null);
         }} style={{padding:"11px",background:"rgba(0,200,100,.12)",color:"#00dd77",border:"1px solid rgba(0,200,100,.3)",borderRadius:"8px",fontSize:"11px",fontWeight:700}}>✓ Dejarla tal cual en la imagen</button>
@@ -3391,23 +3465,17 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         {pend.length===1&&<circle cx={`${pend[0].x*100}%`} cy={`${pend[0].y*100}%`} r="5" fill={COLS[colI%COLS.length]} opacity=".9"/>}
       </svg>
       {/* Marker dots */}
-      {fcAnns.filter(a=>MRK.includes(a.type)).map((a,i)=>(
+      {fcAnns.filter(a=>MRK.includes(a.type)).map(a=>(
         <div key={a.id} style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",
           width:"26px",height:"26px",borderRadius:"50%",background:"rgba(0,0,0,.9)",
           border:`2.5px solid ${a.color}`,color:a.color,display:"flex",alignItems:"center",
           justifyContent:"center",fontSize:a.type==="pin"?"13px":"10px",fontWeight:700,cursor:"pointer",zIndex:10,
           boxShadow:`0 0 8px ${a.color}`}}
-          onClick={e=>{e.stopPropagation();setMeasM({...a,_existing:true,_fc:true});setMIn({t:a.title||"",v:a.value!=null?String(a.value):"",u:a.unit||"cm",ax:a.axis||""});}}>
+          onClick={e=>{e.stopPropagation();setIconInfoM({ann:a,ordinal:typeOrd(fcAnns,a),fc:true});}}>
           {a.icon||(a.type==="pin"?"📍":a.type==="star"?"★":a.type==="tgt"?"⊕":"●")}
           <div style={{position:"absolute",bottom:"-3px",right:"-3px",width:"13px",height:"13px",borderRadius:"50%",
             background:a.color,color:"#000",fontSize:"7px",fontWeight:900,display:"flex",alignItems:"center",
-            justifyContent:"center",border:"1.5px solid #000",pointerEvents:"none"}}>{i+1}</div>
-          {a.value!=null&&<div style={{position:"absolute",top:"-28px",left:"50%",transform:"translateX(-50%)",
-            background:"rgba(255,255,255,.97)",color:"#111",fontSize:"8px",fontWeight:800,
-            padding:"2px 8px",borderRadius:"12px",whiteSpace:"nowrap",
-            border:`1.5px solid ${a.color}`,pointerEvents:"none"}}>
-            {a.title?a.title+": ":""}{a.value} {a.unit}
-          </div>}
+            justifyContent:"center",border:"1.5px solid #000",pointerEvents:"none"}}>{typeOrd(fcAnns,a)}</div>
         </div>
       ))}
     </div>
