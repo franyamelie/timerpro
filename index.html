@@ -2419,6 +2419,26 @@ function resumenFileTag(){
   return (S.resFrom||firstDayOfMonth())+'_'+(S.resTo||today());
 }
 
+// ── EXPORTACIÓN PERSONALIZADA: catálogo de datos que se pueden incluir/excluir ──
+const CUSTOM_EXPORT_FIELDS = [
+  {key:'hNormales',  label:'Horas normales',              group:'Horas'},
+  {key:'hExtra',     label:'Horas extra',                 group:'Horas'},
+  {key:'hNocturnas', label:'Horas nocturnas',              group:'Horas'},
+  {key:'hFestivas',  label:'Horas festivas',               group:'Horas'},
+  {key:'fichajes',   label:'Horarios (entrada/salida)',    group:'Detalle'},
+  {key:'notas',      label:'Notas',                        group:'Detalle'},
+  {key:'ubicacion',  label:'Ubicación GPS',                group:'Detalle'},
+  {key:'firma',      label:'Firma del trabajador (solo PDF)', group:'Detalle'},
+  {key:'importes',   label:'Precios e importes (€)',       group:'Económico'},
+  {key:'dietas',     label:'Dietas',                       group:'Económico'},
+  {key:'transporte', label:'Transporte',                   group:'Económico'},
+  {key:'otros',      label:'Otros conceptos',               group:'Económico'},
+  {key:'viajes',     label:'Viajes / kilometraje',          group:'Económico'},
+];
+function defaultCustomFields(){
+  const o={}; CUSTOM_EXPORT_FIELDS.forEach(f=>o[f.key]=true); return o;
+}
+
 function openExportModal(mode){
   const entries = getResumenEntries();
   const from = S.resMode==='days'?((entries[0]||{}).fecha||today()):(S.resFrom||firstDayOfMonth());
@@ -2830,6 +2850,208 @@ async function exportPlantilla(){
   showAlert('✅ Plantilla descargada ('+days.length+' días)');
 }
 
+// ── EXPORTACIÓN PERSONALIZADA: PDF y Excel con los campos elegidos por el usuario ──
+// (Funciones independientes de exportPDFReal/exportExcel — no tocan ni comparten lógica con ellas)
+async function exportCustomPDF(fields){
+  try{
+    if(!window.jspdf){showAlert('Cargando libreria PDF...','err');setTimeout(()=>exportCustomPDF(fields),2000);return;}
+    const {jsPDF}=window.jspdf;
+    const entries=getResumenEntries();
+    if(!entries.length){showAlert('No hay jornadas que exportar','err');return;}
+
+    const cols=[{head:'Fecha',get:e=>e.fecha},{head:'Día',get:e=>cap(wday(e.fecha))}];
+    if(fields.fichajes){
+      cols.push({head:'Entrada',get:e=>(e.fichajes||[])[0]?.entrada||'—'});
+      cols.push({head:'Salida',get:e=>(e.fichajes||[])[0]?.salida||'—'});
+    }
+    if(fields.hNormales){cols.push({head:'H.Norm',get:e=>fmtH(e.horasNormales||0)});if(fields.importes)cols.push({head:'Imp.Norm',get:e=>eur(e.importeNormales||0)});}
+    if(fields.hExtra){cols.push({head:'H.Extra',get:e=>fmtH(e.horasExtra||0)});if(fields.importes)cols.push({head:'Imp.Extra',get:e=>eur(e.importeExtra||0)});}
+    if(fields.hNocturnas){cols.push({head:'H.Noct',get:e=>fmtH(e.horasNocturnas||0)});if(fields.importes)cols.push({head:'Imp.Noct',get:e=>eur(e.importeNocturnas||0)});}
+    if(fields.hFestivas){cols.push({head:'H.Fest',get:e=>fmtH(e.horasFestivas||0)});if(fields.importes)cols.push({head:'Imp.Fest',get:e=>eur(e.importeFestivas||0)});}
+    if(fields.dietas)cols.push({head:'Dieta',get:e=>eur((+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0)))});
+    if(fields.transporte)cols.push({head:'Transp',get:e=>eur(e.transporte||0)});
+    if(fields.otros)cols.push({head:'Otros',get:e=>eur((e.otrosConceptos||[]).reduce((x,c)=>x+(+c.importe||0),0))});
+    if(fields.viajes)cols.push({head:'Viajes',get:e=>eur((e.journeys||[]).reduce((x,j)=>x+(+j.precioManual||0),0))});
+    if(fields.notas)cols.push({head:'Nota',get:e=>(e.notas||'').replace(/<[^>]*>/g,' ').trim()});
+    if(fields.ubicacion){
+      cols.push({head:'GPS Entrada',get:e=>{try{return JSON.parse(e.ubicacionEntrada||'{}').label||'';}catch(ex){return '';}}});
+      cols.push({head:'GPS Salida',get:e=>{try{return JSON.parse(e.ubicacionSalida||'{}').label||'';}catch(ex){return '';}}});
+    }
+    if(cols.length<=2){showAlert('Selecciona al menos un dato a mostrar','err');return;}
+
+    const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    const G=[22,163,74],D=[20,20,20],GR=[120,120,120];
+    const W=210,M=14;
+    function checkY(needed,y){if(y+needed>280){doc.addPage();return 16;}return y;}
+
+    doc.setFillColor(...G);doc.rect(0,0,W,28,'F');
+    doc.setTextColor(255,255,255);doc.setFontSize(20);doc.setFont('helvetica','bold');
+    doc.text('TimerPro',M,12);
+    doc.setFontSize(10);doc.setFont('helvetica','normal');
+    doc.text('Exportación personalizada',M,19);
+    doc.text(resumenPeriodoLabel(),W-M,12,{align:'right'});
+    doc.text(new Date().toLocaleDateString('es-ES'),W-M,19,{align:'right'});
+    let y=34;
+
+    if(fWorker.nombre||fCompany.nombre){
+      doc.setFillColor(245,255,248);doc.rect(M,y,W-2*M,fWorker.nombre&&fCompany.nombre?18:10,'F');
+      doc.setTextColor(...D);
+      if(fWorker.nombre){
+        doc.setFont('helvetica','bold');doc.setFontSize(10);
+        doc.text(fWorker.nombre+' '+(fWorker.apellidos||''),M+3,y+6);
+      }
+      if(fCompany.nombre){
+        const cy2=fWorker.nombre?y+14:y+6;
+        doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...D);
+        doc.text(fCompany.nombre,M+3,cy2);
+      }
+      y+=fWorker.nombre&&fCompany.nombre?22:14;
+    }
+
+    doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...D);
+    doc.text('JORNADAS ('+entries.length+')',M,y);y+=4;
+
+    doc.autoTable({
+      startY:y,
+      head:[cols.map(c=>c.head)],
+      body:entries.map(e=>cols.map(c=>c.get(e))),
+      styles:{fontSize:7,cellPadding:1.5},
+      headStyles:{fillColor:G,textColor:[255,255,255],fontStyle:'bold',fontSize:6.5},
+      alternateRowStyles:{fillColor:[248,255,250]},
+      margin:{left:M,right:M}
+    });
+    y=doc.lastAutoTable.finalY+6;
+
+    // Resumen de horas (solo de los tipos seleccionados)
+    y=checkY(20,y);
+    const totHN=entries.reduce((a,e)=>a+(+e.horasNormales||0),0);
+    const totHE=entries.reduce((a,e)=>a+(+e.horasExtra||0),0);
+    const totHNoc=entries.reduce((a,e)=>a+(+e.horasNocturnas||0),0);
+    const totHFes=entries.reduce((a,e)=>a+(+e.horasFestivas||0),0);
+    const partes=[];
+    if(fields.hNormales)partes.push('Normales: '+fmtH(totHN));
+    if(fields.hExtra)partes.push('Extra: '+fmtH(totHE));
+    if(fields.hNocturnas)partes.push('Nocturnas: '+fmtH(totHNoc));
+    if(fields.hFestivas)partes.push('Festivas: '+fmtH(totHFes));
+    if(partes.length){
+      doc.setFillColor(240,253,244);doc.rect(M,y,W-2*M,14,'F');doc.setDrawColor(...G);doc.rect(M,y,W-2*M,14,'S');
+      doc.setTextColor(...G);doc.setFont('helvetica','bold');doc.setFontSize(8);doc.text('RESUMEN DE HORAS',M+3,y+5);
+      doc.setTextColor(...D);doc.setFont('helvetica','normal');doc.setFontSize(8);
+      doc.text(partes.join('   ·   '),M+3,y+11);
+      y+=18;
+    }
+
+    if(fields.firma&&fWorker.firma){
+      y=checkY(40,y);
+      doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...D);
+      doc.text('FIRMA DEL TRABAJADOR',M,y);y+=5;
+      doc.setDrawColor(...GR);doc.rect(M,y,70,30,'S');
+      try{doc.addImage(fWorker.firma,'PNG',M,y,70,30);}catch(ex){}
+      y+=32;
+    }
+
+    const pc=doc.internal.getNumberOfPages();
+    for(let i=1;i<=pc;i++){
+      doc.setPage(i);
+      doc.setFillColor(...G);doc.rect(0,287,W,10,'F');
+      doc.setTextColor(255,255,255);doc.setFontSize(7);doc.setFont('helvetica','normal');
+      doc.text('TimerPro — Exportación personalizada  |  Página '+i+'/'+pc,M,293);
+      doc.text(new Date().toLocaleDateString('es-ES'),W-M,293,{align:'right'});
+    }
+
+    const fname='TimerPro_Personalizado_'+resumenFileTag()+'.pdf';
+    const blob=doc.output('blob');
+    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[new File([blob],fname,{type:'application/pdf'})]})){
+      try{await navigator.share({files:[new File([blob],fname,{type:'application/pdf'})],title:'TimerPro · Exportación personalizada'});return;}
+      catch(e){if(e.name==='AbortError')return;}
+    }
+    doc.save(fname);
+    showAlert('PDF generado: '+fname);
+  }catch(e){
+    showAlert('Error PDF: '+e.message,'err');
+    console.error(e);
+  }
+}
+
+async function exportCustomExcel(fields){
+  try{
+    if(!window.XLSX){showAlert('Cargando libreria Excel...','err');setTimeout(()=>exportCustomExcel(fields),2000);return;}
+    const entries=getResumenEntries();
+    if(!entries.length){showAlert('No hay jornadas que exportar','err');return;}
+
+    const headers=['Fecha','Día'];
+    if(fields.fichajes) headers.push('Entrada','Salida');
+    if(fields.hNormales){headers.push('H.Normales');if(fields.importes)headers.push('Imp.Normales');}
+    if(fields.hExtra){headers.push('H.Extra');if(fields.importes)headers.push('Imp.Extra');}
+    if(fields.hNocturnas){headers.push('H.Nocturnas');if(fields.importes)headers.push('Imp.Nocturnas');}
+    if(fields.hFestivas){headers.push('H.Festivas');if(fields.importes)headers.push('Imp.Festivas');}
+    if(fields.dietas) headers.push('Dietas');
+    if(fields.transporte) headers.push('Transporte');
+    if(fields.otros) headers.push('Otros conceptos');
+    if(fields.viajes) headers.push('Viajes');
+    if(fields.notas) headers.push('Notas');
+    if(fields.ubicacion) headers.push('Ubic.Entrada','Ubic.Salida');
+    if(headers.length<=2){showAlert('Selecciona al menos un dato a mostrar','err');return;}
+
+    const rows=[
+      ['TIMERPRO - EXPORTACIÓN PERSONALIZADA'],
+      ['Trabajador:',(fWorker.nombre||'')+' '+(fWorker.apellidos||''),'','Empresa:',fCompany.nombre||''],
+      ['Periodo:',resumenPeriodoLabel()],
+      [],
+      headers
+    ];
+    entries.forEach(e=>{
+      const f1=(e.fichajes||[])[0];
+      const row=[e.fecha,cap(wday(e.fecha))];
+      if(fields.fichajes) row.push(f1?.entrada||'',f1?.salida||'');
+      if(fields.hNormales){row.push(+e.horasNormales||0);if(fields.importes)row.push(+e.importeNormales||0);}
+      if(fields.hExtra){row.push(+e.horasExtra||0);if(fields.importes)row.push(+e.importeExtra||0);}
+      if(fields.hNocturnas){row.push(+e.horasNocturnas||0);if(fields.importes)row.push(+e.importeNocturnas||0);}
+      if(fields.hFestivas){row.push(+e.horasFestivas||0);if(fields.importes)row.push(+e.importeFestivas||0);}
+      if(fields.dietas) row.push((+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0)));
+      if(fields.transporte) row.push(+e.transporte||0);
+      if(fields.otros) row.push((e.otrosConceptos||[]).reduce((x,c)=>x+(+c.importe||0),0));
+      if(fields.viajes) row.push((e.journeys||[]).reduce((x,j)=>x+(+j.precioManual||0),0));
+      if(fields.notas) row.push((e.notas||'').replace(/<[^>]*>/g,' ').trim());
+      if(fields.ubicacion){
+        let le='',ls='';
+        try{le=JSON.parse(e.ubicacionEntrada||'{}').label||'';}catch(ex){}
+        try{ls=JSON.parse(e.ubicacionSalida||'{}').label||'';}catch(ex){}
+        row.push(le,ls);
+      }
+      rows.push(row);
+    });
+
+    const wb=XLSX.utils.book_new();
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols']=headers.map(()=>({wch:14}));
+    XLSX.utils.book_append_sheet(wb,ws,'Personalizado');
+
+    const fname='TimerPro_Personalizado_'+resumenFileTag()+'.xlsx';
+    const arr=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+    const blob=new Blob([arr],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const file=new File([blob],fname,{type:blob.type});
+
+    if(navigator.share){
+      try{
+        await navigator.share({files:[file],title:'TimerPro - Exportación personalizada',text:'Informe de control horario personalizado'});
+        showAlert('Excel compartido');
+        return;
+      }catch(e){
+        if(e.name==='AbortError')return;
+      }
+    }
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download=fname;a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    showAlert('Excel descargado: '+fname);
+  }catch(e){
+    showAlert('Error Excel: '+e.message,'err');
+    console.error(e);
+  }
+}
+
 // Mini calendario de selección múltiple de días sueltos (para Resumen)
 function renderResDaysPicker(){
   const now2=new Date();
@@ -3093,7 +3315,8 @@ function renderResumen(){
           h('button',{class:'btn btn-gh btn-full',on:{click:()=>exportPDFReal(true,getResumenEntries(),resumenPeriodoLabel(),[],resumenFileTag())}},'📄 PDF sin importes'),
           h('button',{class:'btn btn-b btn-full',on:{click:()=>exportExcel(false,getResumenEntries(),resumenPeriodoLabel(),resumenFileTag())}},'📊 Excel con importes'),
           h('button',{class:'btn btn-gh btn-full',on:{click:()=>exportExcel(true,getResumenEntries(),resumenPeriodoLabel(),resumenFileTag())}},'📊 Excel sin importes'),
-          h('button',{class:'btn btn-pur btn-full',on:{click:()=>exportPlantilla()}},'📥 Descargar plantilla en blanco')
+          h('button',{class:'btn btn-pur btn-full',on:{click:()=>exportPlantilla()}},'📥 Descargar plantilla en blanco'),
+          h('button',{class:'btn btn-full',style:{background:'var(--surf2)',border:'1px solid var(--acc)',color:'var(--acc)'},on:{click:()=>{if(!S.customFields)S.customFields=defaultCustomFields();openModal('customExport');}}},'🎛️ Exportación personalizada')
         )
       )
     )
@@ -4381,6 +4604,7 @@ function renderModal(){
     if(S.modal==='minicalendar') { S.modal=null; S.view='cal'; rerender(); return null; }
   if(S.modal==='resumendia') return renderModalResumenDia();
   if(S.modal==='export') return renderModalExport();
+  if(S.modal==='customExport') return renderModalCustomExport();
   if(S.modal==='dl') return renderModalDl();
   if(S.modal==='qr') return renderModalQR();
   if(S.modal==='firebase') return renderModalFirebase();
@@ -4438,6 +4662,39 @@ function renderModalExport(){
         expBtn('XLS','Excel','Sin importes','#0891b2',()=>exportExcel(true))
       ),
       h('button',{class:'btn btn-gh btn-full',style:{marginTop:'.8rem'},on:{click:()=>{S.modal=null;rerender();}}},'Cancelar')
+    )
+  );
+}
+
+function renderModalCustomExport(){
+  if(!S.customFields) S.customFields=defaultCustomFields();
+  const groups=['Horas','Económico','Detalle'];
+  const groupLabel={Horas:'⏱ Horas',Económico:'💶 Económico',Detalle:'📋 Detalle'};
+  return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.classList.contains('modal-bg')){S.modal=null;rerender();}}}},
+    h('div',{class:'modal-box',style:{maxHeight:'85vh',overflowY:'auto'}},
+      h('div',{class:'modal-title'},'🎛️ Exportación personalizada'),
+      h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',marginBottom:'.7rem',lineHeight:1.4}},
+        'Elige qué datos quieres que aparezcan en el informe. Se exportará '+
+        (S.resMode==='days'?'tu selección de días sueltos':'el rango de fechas')+' actual del Resumen.'
+      ),
+      h('div',{style:{display:'flex',gap:'.4rem',marginBottom:'.6rem'}},
+        h('button',{class:'btn btn-gh btn-sm',style:{flex:1},on:{click:()=>{CUSTOM_EXPORT_FIELDS.forEach(f=>S.customFields[f.key]=true);rerender();}}},'✓ Marcar todos'),
+        h('button',{class:'btn btn-gh btn-sm',style:{flex:1},on:{click:()=>{CUSTOM_EXPORT_FIELDS.forEach(f=>S.customFields[f.key]=false);rerender();}}},'✕ Desmarcar todos')
+      ),
+      ...groups.map(g=>h('div',{style:{marginBottom:'.3rem'}},
+        h('div',{style:{fontSize:'.72rem',color:'var(--acc)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',margin:'.5rem 0 .1rem'}},groupLabel[g]),
+        ...CUSTOM_EXPORT_FIELDS.filter(f=>f.group===g).map(f=>
+          h('div',{class:'toggle-row',style:{justifyContent:'space-between'}},
+            h('span',{style:{fontSize:'.82rem'}},f.label),
+            h('button',{class:'toggle'+(S.customFields[f.key]?' on':''),on:{click:()=>{S.customFields[f.key]=!S.customFields[f.key];rerender();}}})
+          )
+        )
+      )),
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.5rem',marginTop:'.8rem'}},
+        h('button',{class:'btn btn-g btn-full',on:{click:()=>{const f={...S.customFields};S.modal=null;rerender();setTimeout(()=>exportCustomPDF(f),200);}}},'📄 Generar PDF'),
+        h('button',{class:'btn btn-b btn-full',on:{click:()=>{const f={...S.customFields};S.modal=null;rerender();setTimeout(()=>exportCustomExcel(f),200);}}},'📊 Generar Excel')
+      ),
+      h('button',{class:'btn btn-gh btn-full',style:{marginTop:'.5rem'},on:{click:()=>{S.modal=null;rerender();}}},'Cancelar')
     )
   );
 }
