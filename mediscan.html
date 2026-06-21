@@ -1816,7 +1816,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     if(a.type==="rect"||a.type==="crop"){
       const rx=Math.min(p1.x,p2.x)*100,ry2=Math.min(p1.y,p2.y)*100,rw=Math.abs(p2.x-p1.x)*100,rh=Math.abs(p2.y-p1.y)*100;
       const sc=a.type==="crop"?"#ff9500":col;const area=!ip?getArea(a):null;
-      return<g onClick={e=>{e.stopPropagation();if(a.type!=="crop")sel();}} onMouseDown={e=>{if(a.type!=="crop"&&tool==="sel")onShapeDrag(e,a.id);}} onTouchStart={e=>{if(a.type!=="crop"&&tool==="sel")onShapeDrag(e,a.id);}} style={{cursor:a.type==="crop"?"default":tool==="sel"?"grab":"pointer"}}>
+      return<g onClick={e=>{if(ip)return;e.stopPropagation();if(a.type!=="crop")sel();}} onMouseDown={e=>{if(a.type!=="crop"&&tool==="sel")onShapeDrag(e,a.id);}} onTouchStart={e=>{if(a.type!=="crop"&&tool==="sel")onShapeDrag(e,a.id);}} style={{cursor:a.type==="crop"?"default":tool==="sel"?"grab":"pointer"}}>
         <rect x={`${rx}%`} y={`${ry2}%`} width={`${rw}%`} height={`${rh}%`} stroke={sc} strokeWidth={sw} fill={ip?`${sc}10`:"rgba(0,100,255,.1)"} strokeDasharray={a.type==="crop"?"8,4":ld}/>
         {!ip&&badge&&<Pill mx={`${mx}`} my={`${my}`} text={badge} col={col}/>}
         {!ip&&area&&<Pill mx={`${mx}`} my={`${my+5.5}`} text={`A:${area}`} col={col} sm/>}
