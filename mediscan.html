@@ -121,7 +121,7 @@ const COLS=["#ff9500","#ff3366","#00e676","#ff9500","#cc44ff","#ffdd00","#ff6622
 const UF={mm:1,cm:10,m:1000,"in":25.4,ft:304.8};
 const toMM=(v,u)=>(parseFloat(v)||0)*(UF[u]||10);
 const fmtV=(v,u)=>{if(v==null)return"—";const r={mm:[1,0],cm:[.1,1],m:[.001,3],"in":[.0394,2],ft:[.00328,3]}[u]||[.1,1];return`${(v*r[0]).toFixed(r[1])} ${u}`;};
-const MRK=["pin","dot","star","tgt"];
+const MRK=["pin","dot","star","tgt","tol","coord","note","rough"];
 /* Industrial knowledge base embedded in prompts */
 const IND_KB=`Base de conocimiento industrial: tuberías (DN15-DN600, acero carbono/inox/PVC), bridas (PN10-PN100), válvulas (compuerta/bola/mariposa/retención/globo), bombas centrífugas/alternativas, reductores (planetarios/tornillo sin fin/helicoidales), motores eléctricos (IE1-IE4), intercambiadores de calor (carcasa-tubos/placas), recipientes a presión, tornillería métrica (M3-M100), rodamientos (SKF/FAG), juntas y sellos, instrumentación (manómetros/caudalímetros/termómetros), estructuras metálicas (HEB/IPE/UPN), depósitos y tanques. Tolerancias ISO, normas DIN/EN/ASME.`;
 const TOOLS=[
@@ -1822,13 +1822,18 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         {!ip&&area&&<Pill mx={`${mx}`} my={`${my+5.5}`} text={`A:${area}`} col={col} sm/>}
       </g>;}
     if(a.type==="circ"){const r=Math.sqrt(Math.pow((p2.x-p1.x)*100,2)+Math.pow((p2.y-p1.y)*100,2));
-      return<g onClick={e=>{e.stopPropagation();sel();}} onMouseDown={e=>{if(tool==="sel")onShapeDrag(e,a.id);}} onTouchStart={e=>{if(tool==="sel")onShapeDrag(e,a.id);}} style={{cursor:tool==="sel"?"grab":"pointer"}}>
+      return<g onClick={e=>{if(ip)return;e.stopPropagation();sel();}} onMouseDown={e=>{if(tool==="sel")onShapeDrag(e,a.id);}} onTouchStart={e=>{if(tool==="sel")onShapeDrag(e,a.id);}} style={{cursor:tool==="sel"?"grab":"pointer"}}>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r={`${r}%`} stroke={col} strokeWidth={sw} fill={ip?`${col}10`:"rgba(0,100,255,.1)"} strokeDasharray={ld}/>
         {!ip&&badge&&<Pill mx={`${p1.x*100}`} my={`${p1.y*100}`} text={badge} col={col}/>}
       </g>;}
 
-    /* ── HANDLERS COMUNES para todas las formas especiales ── */
-    const sClick=e=>{e.stopPropagation();sel();};
+    /* ── HANDLERS COMUNES para todas las formas especiales ──
+       CRÍTICO: si esto es una previsualización en curso (ip=true), el onClick
+       NO debe interceptar nada. Si no, el área invisible de 14px de la línea/curva
+       que sigue al cursor mientras esperas el siguiente punto se come el clic
+       (stopPropagation) antes de que llegue al onClick de la imagen — el punto
+       nunca se registra y la herramienta da la sensación de "no soltar". */
+    const sClick=e=>{if(ip)return;e.stopPropagation();sel();};
     const sDown=e=>{if(tool==="sel")onShapeDrag(e,a.id);};
 
     /* ── INCLINACIÓN: 2 puntos, ángulo respecto a horizontal ── */
@@ -2003,7 +2008,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     const isDim=["dim","dist"].includes(a.type);
     const dbl=a.type==="dist"||a.arrowHead==="both";
     const noArr=a.arrowHead==="none";
-    return<g onClick={e=>{e.stopPropagation();sel();}} onMouseDown={e=>{if(tool==="sel"&&!ip)onShapeDrag(e,a.id);}} onTouchStart={e=>{if(tool==="sel"&&!ip)onShapeDrag(e,a.id);}} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
+    return<g onClick={e=>{if(ip)return;e.stopPropagation();sel();}} onMouseDown={e=>{if(tool==="sel"&&!ip)onShapeDrag(e,a.id);}} onTouchStart={e=>{if(tool==="sel"&&!ip)onShapeDrag(e,a.id);}} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
       <defs>
         <marker id={aid+"e"} markerWidth="10" markerHeight="10" refX="7" refY="3.5" orient="auto"><path d="M0,0 L0,7 L10,3.5z" fill={col}/></marker>
         {dbl&&<marker id={aid+"s"} markerWidth="10" markerHeight="10" refX="3" refY="3.5" orient="auto-start-reverse"><path d="M0,0 L0,7 L10,3.5z" fill={col}/></marker>}
@@ -2625,7 +2630,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   setMIn({t:a.title||"",v:a.value!=null?String(a.value):"",u:a.unit||"cm",ax:a.axis||""});
   setMeasM({...a,_existing:true});}}
         style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",width:"30px",height:"30px",borderRadius:"50%",background:selId===a.id?a.color:"rgba(6,8,16,.92)",border:`2.5px solid ${a.color}`,color:selId===a.id?"#000":a.color,display:"flex",alignItems:"center",justifyContent:"center",cursor:tool==="sel"?"grab":"default",zIndex:tool==="sel"?15:1,pointerEvents:tool==="sel"?"auto":"none",boxShadow:`0 0 ${selId===a.id?18:8}px ${a.color}`,fontSize:a.type==="pin"?"15px":"11px",fontWeight:"700"}}>
-        {a.type==="pin"?"📍":a.type==="star"?"★":a.type==="tgt"?"⊕":"●"}
+        {a.icon||(a.type==="pin"?"📍":a.type==="star"?"★":a.type==="tgt"?"⊕":"●")}
         <div style={{position:"absolute",bottom:"-3px",right:"-3px",width:"14px",height:"14px",borderRadius:"50%",
           background:a.color,color:"#000",fontSize:"8px",fontWeight:900,display:"flex",alignItems:"center",
           justifyContent:"center",border:"1.5px solid #000",pointerEvents:"none"}}>{idx+1}</div>
@@ -3393,7 +3398,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           justifyContent:"center",fontSize:a.type==="pin"?"13px":"10px",fontWeight:700,cursor:"pointer",zIndex:10,
           boxShadow:`0 0 8px ${a.color}`}}
           onClick={e=>{e.stopPropagation();setMeasM({...a,_existing:true,_fc:true});setMIn({t:a.title||"",v:a.value!=null?String(a.value):"",u:a.unit||"cm",ax:a.axis||""});}}>
-          {a.type==="pin"?"📍":a.type==="star"?"★":a.type==="tgt"?"⊕":"●"}
+          {a.icon||(a.type==="pin"?"📍":a.type==="star"?"★":a.type==="tgt"?"⊕":"●")}
           <div style={{position:"absolute",bottom:"-3px",right:"-3px",width:"13px",height:"13px",borderRadius:"50%",
             background:a.color,color:"#000",fontSize:"7px",fontWeight:900,display:"flex",alignItems:"center",
             justifyContent:"center",border:"1.5px solid #000",pointerEvents:"none"}}>{i+1}</div>
