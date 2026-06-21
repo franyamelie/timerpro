@@ -141,6 +141,8 @@ const MRK=["pin","dot","star","tgt","tol","coord","note","rough"];
 const IND_KB=`Base de conocimiento industrial: tuberías (DN15-DN600, acero carbono/inox/PVC), bridas (PN10-PN100), válvulas (compuerta/bola/mariposa/retención/globo), bombas centrífugas/alternativas, reductores (planetarios/tornillo sin fin/helicoidales), motores eléctricos (IE1-IE4), intercambiadores de calor (carcasa-tubos/placas), recipientes a presión, tornillería métrica (M3-M100), rodamientos (SKF/FAG), juntas y sellos, instrumentación (manómetros/caudalímetros/termómetros), estructuras metálicas (HEB/IPE/UPN), depósitos y tanques. Tolerancias ISO, normas DIN/EN/ASME.`;
 const TOOLS=[
   {id:"sel",icon:"✥",label:"Mover",npts:0,cat:"nav"},
+  {id:"selpts",icon:"☑",label:"Seleccionar",npts:0,cat:"nav"},
+  {id:"joinpts",icon:"🔗",label:"Unir",npts:0,cat:"nav"},
   {id:"dot",icon:"⬤",label:"Punto",npts:1,cat:"mrk"},
   {id:"pin",icon:"📍",label:"Pin",npts:1,cat:"mrk"},
   {id:"star",icon:"✦",label:"Estrella",npts:1,cat:"mrk"},
@@ -174,6 +176,8 @@ const CATS={nav:"Nav",mrk:"Marcadores",lin:"Líneas",med:"Medición",arr:"Flecha
    en un texto visible al seleccionar (funciona también en móvil, sin hover) */
 const TOOL_DESC={
   sel:"Toca cualquier forma o contorno YA dibujado para seleccionarlo y arrastrarlo. No crea nada nuevo.",
+  selpts:"Toca los iconos de las medidas/puntos que quieras incluir (se van marcando con un anillo). Luego pulsa 🔗 Unir.",
+  joinpts:"Une con líneas, en el orden en que los marcaste, los puntos/medidas que hayas elegido con ☑ Seleccionar.",
   dot:"Toca la imagen para colocar un punto numerado. Luego tócalo para añadirle una medida.",
   pin:"Toca la imagen para clavar un pin de referencia.",
   star:"Toca la imagen para marcar un punto destacado con estrella.",
@@ -836,6 +840,7 @@ function App(){
   const [sheet,setSheet]=useState(null);
   const [viewPrompt,setViewPrompt]=useState(null);
   const [iconInfoM,setIconInfoM]=useState(null); /* {ann,ordinal,fc} - modo iconos: detalle al tocar un icono de medida + elegir Aquí/2D/3D */
+  const [multiSel,setMultiSel]=useState([]); /* ids de anotaciones marcadas con ☑ Seleccionar, en orden, listas para 🔗 Unir */
   const [addPartDlg,setAddPartDlg]=useState(false);
   const [selSeg,setSelSeg]=useState(null); /* selected segment id */
   const [editZone,setEditZone]=useState(null);
@@ -1207,6 +1212,41 @@ function App(){
     setColI(c=>c+1);
   },[colI,lSt,aHd,addA,activePart]);
 
+  /* 🔗 UNIR — conecta con una polilínea, en el orden en que se marcaron, los
+     puntos/medidas elegidos con ☑ Seleccionar (multiSel). Usa el primer punto
+     de cada anotación seleccionada como vértice. */
+  const doJoinPts=useCallback(()=>{
+    if(multiSel.length<2){
+      setAiMsg("🔗 Selecciona al menos 2 puntos o medidas con ☑ Seleccionar antes de pulsar Unir.");
+      return;
+    }
+    const pts=multiSel.map(id=>anns.find(x=>x.id===id)?.points?.[0]).filter(Boolean);
+    if(pts.length<2){setAiMsg("⚠️ No se pudieron unir esos puntos — vuelve a intentarlo.");return;}
+    const col=COLS[colI%COLS.length];
+    const a={id:uid(),type:"poly",icon:"↬",title:"",value:null,unit:"cm",axis:"",color:col,points:pts,lineStyle:lSt,arrowHead:aHd,
+             partId:activePart?.id,partName:activePart?.name};
+    addA(a);setColI(c=>c+1);
+    setMultiSel([]);setTool("sel");setSelId(a.id);
+    setMeasM({...a,_existing:true});setMIn({t:"",v:"",u:"cm",ax:""});
+    setAiMsg(`🔗 Unidos ${pts.length} puntos con una polilínea nueva.`);
+  },[multiSel,anns,colI,lSt,aHd,addA,activePart]);
+
+  /* Misma función 🔗 Unir pero dentro de una pestaña de zona recortada (fcAnns) */
+  const doJoinPtsFc=useCallback(()=>{
+    if(multiSel.length<2){
+      setAiMsg("🔗 Selecciona al menos 2 puntos o medidas con ☑ Seleccionar antes de pulsar Unir.");
+      return;
+    }
+    const pts=multiSel.map(id=>fcAnns.find(x=>x.id===id)?.points?.[0]).filter(Boolean);
+    if(pts.length<2){setAiMsg("⚠️ No se pudieron unir esos puntos — vuelve a intentarlo.");return;}
+    const col=COLS[colI%COLS.length];
+    const a={id:uid(),type:"poly",icon:"↬",color:col,points:pts,value:null,unit:"cm",title:"",axis:"",_fc:true};
+    fcPush(prev=>[...prev,a]);setColI(c=>c+1);
+    setMultiSel([]);setTool("sel");
+    setMeasM({...a,_existing:true,_fc:true});setMIn({t:"",v:"",u:"cm",ax:""});
+    setAiMsg(`🔗 Unidos ${pts.length} puntos con una polilínea nueva.`);
+  },[multiSel,fcAnns,colI,fcPush]);
+
   /* DRAWING - React synthetic events on image div */
   /* Double-click anywhere when lasso active → close polygon */
   /* ═══ Camino 2: SAM real en el navegador (MobileSAM vía onnxruntime-web) ═══
@@ -1324,7 +1364,7 @@ function App(){
     }
     const pts=[...pend,p];
     if(pts.length>=td.npts){setPend([]);setPrev(null);mkAnn(tool,pts);}
-    else{setPend(pts);setPrev({type:tool,points:[pts[0],p]});}
+    else{setPend(pts);setPrev({type:tool,points:pts});}
   },[modal,tool,pend,colI,lSt,aHd,anns,getP,mkAnn,samActive,samClickAt]);
 
   const onImgMove=useCallback(e=>{
@@ -1336,7 +1376,7 @@ function App(){
     } else if(OPEN_ENDED.includes(tool)&&pend.length>=1){
       setPrev({type:tool,points:[pend[pend.length-1],p]});
     } else if(pend.length>=1){
-      setPrev({type:tool,points:[pend[0],p]});
+      setPrev({type:tool,points:[...pend,p]});
     }
     if(dragSt)setPrev({type:tool,points:[dragSt,p]});
   },[pend,tool,dragSt,getP]);
@@ -1831,9 +1871,12 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
      sobre la foto, solo un icono pequeño del tipo de herramienta + un número
      correlativo POR TIPO (ej. 4 ángulos medidos = ∠1 ∠2 ∠3 ∠4), para que la
      imagen no se sature aunque haya muchas medidas de tipos distintos a la
-     vez. Al tocar el icono se abre un panel (iconInfoM) con el detalle
-     completo (tipo + número + valor) y la opción de ir a Aquí/2D/3D.
-     El valor completo SIGUE mostrándose siempre en las vistas 2D y 3D. */
+     vez. El valor completo SIGUE mostrándose siempre en las vistas 2D y 3D.
+     TOQUE: 1er toque sobre un icono = lo selecciona (anillo blanco). 2º toque
+     sobre el MISMO icono ya seleccionado = "hace su función" (abre el panel
+     de info con detalle + Aquí/2D/3D). Con la herramienta ☑ Seleccionar
+     activa, cada toque entra/sale de la multi-selección (anillo verde) en
+     vez de abrir nada — para luego pulsar 🔗 Unir y conectarlos con líneas. */
   const Pill=({mx,my,a})=>{
     if(!a)return null;
     const col=a.color||"#ff9500";
@@ -1841,15 +1884,26 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     const ic=(TOOLS.find(t=>t.id===a.type)?.icon)||"●";
     const x=parseFloat(mx),y=parseFloat(my);
     const r=3.6,fs=ic.length>1?"2.2%":"3.1%";
-    const tap=e=>{e.stopPropagation();setIconInfoM({ann:a,ordinal:ord,fc:false});};
+    const inMulti=multiSel.includes(a.id);
+    const tap=e=>{
+      e.stopPropagation();
+      if(tool==="selpts"){
+        setMultiSel(prev=>prev.includes(a.id)?prev.filter(id=>id!==a.id):[...prev,a.id]);
+        return;
+      }
+      if(selId===a.id){setIconInfoM({ann:a,ordinal:ord,fc:false});}
+      else{setSelId(a.id);}
+    };
     return(<g onClick={tap} onMouseDown={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()} style={{cursor:"pointer"}}>
+      {(inMulti||selId===a.id)&&<circle cx={`${x}%`} cy={`${y}%`} r={`${r+1.1}%`} fill="none"
+        stroke={inMulti?"#00dd77":"#fff"} strokeWidth="0.6" strokeDasharray={inMulti?"none":"2,1.4"}/>}
       <circle cx={`${x}%`} cy={`${y}%`} r={`${r}%`} fill="rgba(6,8,16,.92)" stroke={col} strokeWidth="0.55"
         style={{filter:"drop-shadow(0 2px 8px rgba(0,0,0,.7))"}}/>
       <text x={`${x}%`} y={`${y-.3}%`} fill={col} fontSize={fs}
         fontFamily="Inter,sans-serif" fontWeight="800" textAnchor="middle" dominantBaseline="central">{ic}</text>
-      <circle cx={`${x+2.7}%`} cy={`${y+2.3}%`} r="1.7%" fill={col}/>
+      <circle cx={`${x+2.7}%`} cy={`${y+2.3}%`} r="1.7%" fill={inMulti?"#00dd77":col}/>
       <text x={`${x+2.7}%`} y={`${y+2.3}%`} fill="#000" fontSize="2.1%"
-        fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{ord}</text>
+        fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{inMulti?multiSel.indexOf(a.id)+1:ord}</text>
     </g>);
   };
 
@@ -1937,9 +1991,23 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     /* ── ESPESOR DE PARED (wall): 3 puntos ── */
     if(a.type==="wall"&&pts.length>=3){
       const p3=pts[2];
+      /* FIX: antes el desplazamiento de la línea paralela (el "grosor") era un
+         número fijo (.04) que ignoraba por completo dónde tocabas el 3er punto
+         — por eso salía una línea inesperada sin relación con lo que hacías.
+         Ahora el 3er punto SÍ define el grosor real: se proyecta sobre la
+         perpendicular a la línea principal, así que cuanto más lejos lo
+         coloques de la línea, más grosor se dibuja, en el lado que elijas. */
       const dx=p2.x-p1.x,dy=p2.y-p1.y,len=Math.sqrt(dx*dx+dy*dy)||1;
-      const nx=-dy/len*.04,ny=dx/len*.04;
-      const dispBadge=ip?"":(badge||"Espesor");
+      const px2=-dy/len,py2=dx/len;
+      let off=(p3.x-p1.x)*px2+(p3.y-p1.y)*py2;
+      if(Math.abs(off)<.012)off=off<0?-.03:.03; /* evita una línea pegada/invisible si el 3er punto cae casi sobre la línea */
+      const nx=px2*off,ny=py2*off;
+      /* Vista previa del grosor medido (distancia perpendicular real, no la
+         longitud de la línea principal) — igual que Ángulo/Inclinación
+         muestran su valor en grados como vista previa antes de confirmar. */
+      const rr=imgRef.current?.getBoundingClientRect();
+      const autoVal=(scale&&rr)?`${(Math.abs(off)*Math.sqrt(rr.width*rr.width+rr.height*rr.height)/scale.ppu).toFixed(2)} ${scale.unit}`:"Espesor";
+      const dispBadge=ip?"":(badge||autoVal);
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke="transparent" strokeWidth="14"/>
         <line x1={`${(p1.x+nx)*100}%`} y1={`${(p1.y+ny)*100}%`} x2={`${(p2.x+nx)*100}%`} y2={`${(p2.y+ny)*100}%`} stroke="transparent" strokeWidth="14"/>
@@ -2122,11 +2190,23 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
        icono abre el panel de info con destino Aquí/2D/3D en vez de editar directo. */
     const ord=typeOrd(fcAnns,a);
     const ic=(TOOLS.find(t=>t.id===a.type)?.icon)||"●";
-    const BadgeEl=({bx,by})=>ip?null:<g onClick={e=>{e.stopPropagation();setIconInfoM({ann:a,ordinal:ord,fc:true});}} style={{cursor:"pointer"}}>
+    const inMulti=multiSel.includes(a.id);
+    const tapBadge=e=>{
+      e.stopPropagation();
+      if(tool==="selpts"){
+        setMultiSel(prev=>prev.includes(a.id)?prev.filter(id=>id!==a.id):[...prev,a.id]);
+        return;
+      }
+      if(selId===a.id){setIconInfoM({ann:a,ordinal:ord,fc:true});}
+      else{setSelId(a.id);}
+    };
+    const BadgeEl=({bx,by})=>ip?null:<g onClick={tapBadge} style={{cursor:"pointer"}}>
+      {(inMulti||selId===a.id)&&<circle cx={`${bx}%`} cy={`${by}%`} r="4.7%" fill="none"
+        stroke={inMulti?"#00dd77":"#fff"} strokeWidth="0.6" strokeDasharray={inMulti?"none":"2,1.4"}/>}
       <circle cx={`${bx}%`} cy={`${by}%`} r="3.6%" fill="rgba(6,8,16,.92)" stroke={col} strokeWidth="0.6" style={{filter:"drop-shadow(0 1px 6px rgba(0,0,0,.7))"}}/>
       <text x={`${bx}%`} y={`${by-.3}%`} fill={col} fontSize={ic.length>1?"2.2%":"3.1%"} fontFamily="Inter,sans-serif" fontWeight="800" textAnchor="middle" dominantBaseline="central">{ic}</text>
-      <circle cx={`${bx+2.7}%`} cy={`${by+2.3}%`} r="1.7%" fill={col}/>
-      <text x={`${bx+2.7}%`} y={`${by+2.3}%`} fill="#000" fontSize="2.1%" fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{ord}</text>
+      <circle cx={`${bx+2.7}%`} cy={`${by+2.3}%`} r="1.7%" fill={inMulti?"#00dd77":col}/>
+      <text x={`${bx+2.7}%`} y={`${by+2.3}%`} fill="#000" fontSize="2.1%" fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{inMulti?multiSel.indexOf(a.id)+1:ord}</text>
     </g>;
 
     /* ── RECTÁNGULO ── */
@@ -2306,10 +2386,15 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       </g>;
     }
     /* ── ESPESOR PARED ── */
-    if(a.type==="wall"&&a.points?.length>=2){
+    if(a.type==="wall"&&a.points?.length>=3){
+      const p3=a.points[2];
+      /* Mismo FIX que en la pantalla principal: el 3er punto define el grosor real
+         (antes era un desplazamiento fijo que ignoraba dónde tocabas). */
       const dx=p2.x-p1.x,dy=p2.y-p1.y,len=Math.sqrt(dx*dx+dy*dy)||1;
-      const nx=-dy/len*.04,ny=dx/len*.04;
-      const disp=ip?"":(badge||"Espesor");
+      const px2=-dy/len,py2=dx/len;
+      let off=(p3.x-p1.x)*px2+(p3.y-p1.y)*py2;
+      if(Math.abs(off)<.012)off=off<0?-.03:.03;
+      const nx=px2*off,ny=py2*off;
       return<g onClick={openM} style={{cursor:ip?"crosshair":"pointer"}}>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw}/>
         <line x1={`${(p1.x+nx)*100}%`} y1={`${(p1.y+ny)*100}%`} x2={`${(p2.x+nx)*100}%`} y2={`${(p2.y+ny)*100}%`} stroke={col} strokeWidth={sw} strokeDasharray="5,2"/>
@@ -2437,11 +2522,15 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     </div>
     {/* Tool buttons */}
     <div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"flex-start"}}>
-      {(tbyCat[tCat]||[]).map(t=><button key={t.id} title={t.label} onClick={()=>{setTool(t.id);setPend([]);setPrev(null);setDragSt(null);setMeasM(null);setCalibM(null);setCropM(null);setSamActive(false);fcClickLockRef.current=false;}}
+      {(tbyCat[tCat]||[]).map(t=><button key={t.id} title={t.label} onClick={()=>{
+              if(t.id==="joinpts"){doJoinPts();return;}
+              setTool(t.id);setPend([]);setPrev(null);setDragSt(null);setMeasM(null);setCalibM(null);setCropM(null);setSamActive(false);fcClickLockRef.current=false;}}
               onContextMenu={e=>{e.preventDefault();setTool(t.id);setAddPartDlg(true);}}
               title={`${t.label} — ${TOOL_DESC[t.id]||t.label} (clic derecho = nueva parte)`}
               className={`tb${tool===t.id?" act":""}`}><span>{t.icon}</span><span>{t.label}</span></button>)}
       <button title="Mover/Seleccionar" onClick={()=>{setTool("sel");setPend([]);setPrev(null);setDragSt(null);setSamActive(false);}} className={`tb${tool==="sel"?" act":""}`}><span>↖</span><span>Mover</span></button>
+      <button title={TOOL_DESC.selpts} onClick={()=>{setTool("selpts");setPend([]);setPrev(null);setDragSt(null);setSamActive(false);}} className={`tb${tool==="selpts"?" act":""}`}><span>☑</span><span>Seleccionar{multiSel.length>0?` (${multiSel.length})`:""}</span></button>
+      <button title={TOOL_DESC.joinpts} onClick={doJoinPts} className="tb"><span>🔗</span><span>Unir</span></button>
     </div>
     {/* Color + style */}
     <div style={{display:"flex",gap:"5px",alignItems:"center",marginTop:"7px",flexWrap:"wrap"}}>
@@ -2680,20 +2769,30 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
             background:seg.color||C,border:"2px solid #fff",cursor:"grab",zIndex:30,
             boxShadow:`0 0 7px ${seg.color||C}`}}/>
       )))}
-      {/* Marker dots (DOM) — SOLO clicables/arrastrables en modo Mover; si no, sus
-          círculos de 30px bloquearían los toques de cualquier herramienta de
-          medición activa que caiga encima de un marcador ya colocado.
-          MODO ICONOS: ya no se muestra el valor sobre la foto, solo el icono
-          + un número correlativo POR TIPO. Tocarlo abre el panel de info. */}
-      {mrkA.map(a=><div key={a.id} className="nc"
+      {/* Marker dots (DOM) — interactivos en modo Mover o Seleccionar; en cualquier
+          otro modo, sus círculos de 30px bloquearían los toques de la herramienta
+          de medición activa que caiga encima de un marcador ya colocado.
+          MODO ICONOS: solo icono + número correlativo por tipo. 1er toque
+          selecciona, 2º toque (ya seleccionado) abre el panel de info. Con
+          ☑ Seleccionar activa, cada toque entra/sale de la multi-selección
+          para luego pulsar 🔗 Unir. */}
+      {mrkA.map(a=>{
+        const inMulti=multiSel.includes(a.id);
+        const interactive=tool==="sel"||tool==="selpts";
+        return<div key={a.id} className="nc"
         onMouseDown={e=>{if(tool==="sel")onHandleDrag(e,a.id,0);}} onTouchStart={e=>{if(tool==="sel")onHandleDrag(e,a.id,0);}}
-        onClick={e=>{if(tool!=="sel")return;e.stopPropagation();setSelId(a.id);setIconInfoM({ann:a,ordinal:typeOrd(mrkA,a),fc:false});}}
-        style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",width:"30px",height:"30px",borderRadius:"50%",background:selId===a.id?a.color:"rgba(6,8,16,.92)",border:`2.5px solid ${a.color}`,color:selId===a.id?"#000":a.color,display:"flex",alignItems:"center",justifyContent:"center",cursor:tool==="sel"?"grab":"default",zIndex:tool==="sel"?15:1,pointerEvents:tool==="sel"?"auto":"none",boxShadow:`0 0 ${selId===a.id?18:8}px ${a.color}`,fontSize:a.type==="pin"?"15px":"11px",fontWeight:"700"}}>
+        onClick={e=>{
+          if(!interactive)return;e.stopPropagation();
+          if(tool==="selpts"){setMultiSel(prev=>prev.includes(a.id)?prev.filter(id=>id!==a.id):[...prev,a.id]);return;}
+          if(selId===a.id){setIconInfoM({ann:a,ordinal:typeOrd(mrkA,a),fc:false});}
+          else{setSelId(a.id);}
+        }}
+        style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",width:"30px",height:"30px",borderRadius:"50%",background:selId===a.id?a.color:"rgba(6,8,16,.92)",border:`2.5px solid ${inMulti?"#00dd77":a.color}`,outline:selId===a.id&&!inMulti?"2px dashed #fff":"none",outlineOffset:"2px",color:selId===a.id?"#000":a.color,display:"flex",alignItems:"center",justifyContent:"center",cursor:tool==="sel"?"grab":interactive?"pointer":"default",zIndex:interactive?15:1,pointerEvents:interactive?"auto":"none",boxShadow:`0 0 ${selId===a.id||inMulti?18:8}px ${inMulti?"#00dd77":a.color}`,fontSize:a.type==="pin"?"15px":"11px",fontWeight:"700"}}>
         {a.icon||(a.type==="pin"?"📍":a.type==="star"?"★":a.type==="tgt"?"⊕":"●")}
         <div style={{position:"absolute",bottom:"-3px",right:"-3px",width:"14px",height:"14px",borderRadius:"50%",
-          background:a.color,color:"#000",fontSize:"8px",fontWeight:900,display:"flex",alignItems:"center",
-          justifyContent:"center",border:"1.5px solid #000",pointerEvents:"none"}}>{typeOrd(mrkA,a)}</div>
-      </div>)}
+          background:inMulti?"#00dd77":a.color,color:"#000",fontSize:"8px",fontWeight:900,display:"flex",alignItems:"center",
+          justifyContent:"center",border:"1.5px solid #000",pointerEvents:"none"}}>{inMulti?multiSel.indexOf(a.id)+1:typeOrd(mrkA,a)}</div>
+      </div>;})}
       {/* Drag handles for selected shape — solo en modo Mover, mismo motivo */}
       {tool==="sel"&&selA&&!MRK.includes(selA.type)&&selA.points.map((p,pi)=><div key={pi} className="nc" onMouseDown={e=>onHandleDrag(e,selA.id,pi)} onTouchStart={e=>onHandleDrag(e,selA.id,pi)} style={{position:"absolute",left:`${p.x*100}%`,top:`${p.y*100}%`,transform:"translate(-50%,-50%)",width:"15px",height:"15px",borderRadius:"50%",background:selA.color,cursor:"grab",zIndex:25,border:"2.5px solid #fff",boxShadow:`0 0 9px ${selA.color}`}}/>)}
     </div>
@@ -3396,7 +3495,9 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
         {(tbyCat[tCat]||[]).filter(t=>t.id!=="crop"&&t.id!=="calib").map(t=><button key={t.id}
           title={t.label}
-          onClick={()=>{setTool(t.id);setPend([]);setPrev(null);setDragSt(null);setMeasM(null);setCalibM(null);setCropM(null);setSamActive(false);fcClickLockRef.current=false;}}
+          onClick={()=>{
+            if(t.id==="joinpts"){doJoinPtsFc();return;}
+            setTool(t.id);setPend([]);setPrev(null);setDragSt(null);setMeasM(null);setCalibM(null);setCropM(null);setSamActive(false);fcClickLockRef.current=false;}}
           style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"2px",
             padding:"7px 6px",borderRadius:"9px",minWidth:"44px",
             background:tool===t.id?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,255,255,.04)",
@@ -3415,6 +3516,24 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
             boxShadow:tool==="sel"?"0 0 14px rgba(255,150,0,.4)":"none"}}>
           <span style={{fontSize:"17px",lineHeight:1}}>↖</span>
           <span style={{fontSize:"6px",fontWeight:600}}>Mover</span>
+        </button>
+        <button onClick={()=>{setTool("selpts");setPend([]);setPrev(null);setDragSt(null);setSamActive(false);fcClickLockRef.current=false;}}
+          style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"2px",
+            padding:"7px 6px",borderRadius:"9px",minWidth:"44px",
+            background:tool==="selpts"?"linear-gradient(135deg,#ff6600,#ffaa00)":"rgba(255,255,255,.04)",
+            color:tool==="selpts"?"#000":"#666",
+            border:`1.5px solid ${tool==="selpts"?"#ff9500":"rgba(255,255,255,.07)"}`,
+            boxShadow:tool==="selpts"?"0 0 14px rgba(255,150,0,.4)":"none"}}>
+          <span style={{fontSize:"17px",lineHeight:1}}>☑</span>
+          <span style={{fontSize:"6px",fontWeight:600}}>Seleccionar{multiSel.length>0?` (${multiSel.length})`:""}</span>
+        </button>
+        <button onClick={doJoinPtsFc}
+          style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"2px",
+            padding:"7px 6px",borderRadius:"9px",minWidth:"44px",
+            background:"rgba(255,255,255,.04)",color:"#666",
+            border:"1.5px solid rgba(255,255,255,.07)"}}>
+          <span style={{fontSize:"17px",lineHeight:1}}>🔗</span>
+          <span style={{fontSize:"6px",fontWeight:600}}>Unir</span>
         </button>
       </div>
       {/* Color + undo */}
@@ -3447,7 +3566,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           {TOOLS.find(t=>t.id===tool)?.icon} {TOOLS.find(t=>t.id===tool)?.label}
         </div>
         <span style={{fontSize:"8px",color:"#555"}}>
-          {tool==="lasso"?(pend.length===0?"Toca para añadir puntos del contorno":pend.length===1?"1 punto — añade más o cierra ya (mín. 2)":`${pend.length} puntos — pulsa SELECCIONAR para confirmar`):DRAG.includes(tool)?"Arrastra para dibujar → se pedirá la medida":pend.length===1?"Toca el 2° punto → se pedirá la medida":"Toca la imagen para colocar → se pedirá la medida"}
+          {tool==="selpts"?`Toca los iconos a incluir${multiSel.length?` (${multiSel.length} marcados)`:""} → luego pulsa 🔗 Unir`:tool==="lasso"?(pend.length===0?"Toca para añadir puntos del contorno":pend.length===1?"1 punto — añade más o cierra ya (mín. 2)":`${pend.length} puntos — pulsa SELECCIONAR para confirmar`):DRAG.includes(tool)?"Arrastra para dibujar → se pedirá la medida":pend.length===1?"Toca el 2° punto → se pedirá la medida":"Toca la imagen para colocar → se pedirá la medida"}
         </span>
       </>:<span style={{fontSize:"8px",color:"#333"}}>← Selecciona herramienta arriba</span>}
       {pend.length>0&&<button onClick={()=>{setPend([]);setPrev(null);}} style={{background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",fontSize:"8px",padding:"3px 8px",borderRadius:"5px",marginLeft:"auto"}}>✕</button>}
@@ -3483,7 +3602,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           setFcHist(h=>[...h.slice(-20),JSON.parse(JSON.stringify(fcAnns))]);setFcRedo([]);
           setFcAnns(prev=>[...prev,a]);setPend([]);setPrev(null);
           setMeasM({...a,_existing:true,_fc:true});setMIn({t:"",v:"",u:"cm",ax:""});
-        }else{setPend(pts);setPrev({type:tool,points:[pts[0],p]});}
+        }else{setPend(pts);setPrev({type:tool,points:pts});}
       }}
       onMouseDown={e=>{
         if(!DRAG.includes(tool)||measM||calibM)return;
@@ -3493,7 +3612,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       onMouseMove={e=>{
         const r=e.currentTarget.getBoundingClientRect();
         const p={x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height};
-        if(pend.length>=1)setPrev({type:tool,points:[pend[0],p]});
+        if(pend.length>=1)setPrev({type:tool,points:[...pend,p]});
         if(dragSt)setPrev({type:tool,points:[dragSt,p]});
       }}
       onMouseUp={e=>{
@@ -3518,19 +3637,26 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         {pend.length===1&&<circle cx={`${pend[0].x*100}%`} cy={`${pend[0].y*100}%`} r="5" fill={COLS[colI%COLS.length]} opacity=".9"/>}
       </svg>
       {/* Marker dots */}
-      {fcAnns.filter(a=>MRK.includes(a.type)).map(a=>(
-        <div key={a.id} style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",
+      {fcAnns.filter(a=>MRK.includes(a.type)).map(a=>{
+        const inMulti=multiSel.includes(a.id);
+        return<div key={a.id} style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",
           width:"26px",height:"26px",borderRadius:"50%",background:"rgba(0,0,0,.9)",
-          border:`2.5px solid ${a.color}`,color:a.color,display:"flex",alignItems:"center",
+          border:`2.5px solid ${inMulti?"#00dd77":a.color}`,outline:selId===a.id&&!inMulti?"2px dashed #fff":"none",outlineOffset:"2px",
+          color:a.color,display:"flex",alignItems:"center",
           justifyContent:"center",fontSize:a.type==="pin"?"13px":"10px",fontWeight:700,cursor:"pointer",zIndex:10,
-          boxShadow:`0 0 8px ${a.color}`}}
-          onClick={e=>{e.stopPropagation();setIconInfoM({ann:a,ordinal:typeOrd(fcAnns,a),fc:true});}}>
+          boxShadow:`0 0 8px ${inMulti?"#00dd77":a.color}`}}
+          onClick={e=>{
+            e.stopPropagation();
+            if(tool==="selpts"){setMultiSel(prev=>prev.includes(a.id)?prev.filter(id=>id!==a.id):[...prev,a.id]);return;}
+            if(selId===a.id){setIconInfoM({ann:a,ordinal:typeOrd(fcAnns,a),fc:true});}
+            else{setSelId(a.id);}
+          }}>
           {a.icon||(a.type==="pin"?"📍":a.type==="star"?"★":a.type==="tgt"?"⊕":"●")}
           <div style={{position:"absolute",bottom:"-3px",right:"-3px",width:"13px",height:"13px",borderRadius:"50%",
-            background:a.color,color:"#000",fontSize:"7px",fontWeight:900,display:"flex",alignItems:"center",
-            justifyContent:"center",border:"1.5px solid #000",pointerEvents:"none"}}>{typeOrd(fcAnns,a)}</div>
-        </div>
-      ))}
+            background:inMulti?"#00dd77":a.color,color:"#000",fontSize:"7px",fontWeight:900,display:"flex",alignItems:"center",
+            justifyContent:"center",border:"1.5px solid #000",pointerEvents:"none"}}>{inMulti?multiSel.indexOf(a.id)+1:typeOrd(fcAnns,a)}</div>
+        </div>;
+      })}
     </div>
 
     </div>{/* /scrollable viewport */}
