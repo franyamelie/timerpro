@@ -3120,6 +3120,40 @@ function renderResDaysPicker(){
   );
 }
 
+function renderDateModeCard(){
+  const from = S.resFrom||firstDayOfMonth();
+  const to = S.resTo||today();
+  return h('div',{class:'card'},
+    h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',flexWrap:'wrap'}},
+      h('div',{class:'sec-title',style:{margin:0,flex:1}},S.resMode==='days'?'Días sueltos':'Filtro de fechas'),
+      h('div',{style:{display:'flex',gap:'.3rem'}},
+        h('button',{class:'btn btn-sm '+(S.resMode!=='days'?'btn-g':'btn-gh'),on:{click:()=>{S.resMode='range';rerender();}}},'Rango'),
+        h('button',{class:'btn btn-sm '+(S.resMode==='days'?'btn-g':'btn-gh'),on:{click:()=>{
+          S.resMode='days';
+          if(S.resCalYear==null){const n2=new Date();S.resCalYear=n2.getFullYear();S.resCalMonth=n2.getMonth();}
+          rerender();
+        }}},'Días sueltos')
+      )
+    ),
+    S.resMode==='days'
+      ? renderResDaysPicker()
+      : h('div',{style:{display:'flex',gap:'.5rem',alignItems:'center',flexWrap:'wrap'}},
+          h('input',{type:'date',value:from,style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
+            on:{change:ev=>{S.resFrom=ev.target.value;rerender();}}}),
+          h('span',{style:{color:'var(--ink2)'}},'→'),
+          h('input',{type:'date',value:to,style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
+            on:{change:ev=>{S.resTo=ev.target.value;rerender();}}}),
+          h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.resFrom=firstDayOfMonth();S.resTo=today();rerender();}}},'Este mes'),
+          h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{
+            const d=new Date(); d.setMonth(d.getMonth()-1);
+            S.resFrom=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)+'-01';
+            const last=new Date(d.getFullYear(),d.getMonth()+1,0);
+            S.resTo=last.toISOString().slice(0,10); rerender();
+          }}},'Mes anterior')
+        )
+  );
+}
+
 function renderResumen(){
   // Date range (solo se usa para el modo 'range')
   const from = S.resFrom||firstDayOfMonth();
@@ -3186,36 +3220,9 @@ function renderResumen(){
     h('div',{style:{display:'flex',justifyContent:'flex-end',marginBottom:'.3rem'}},
       h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{captureFormState();S.tab='fichar';rerender();}}},'✕ Cerrar')
     ),
+
     // Date filter / Días sueltos
-    h('div',{class:'card'},
-      h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',flexWrap:'wrap'}},
-        h('div',{class:'sec-title',style:{margin:0,flex:1}},S.resMode==='days'?'Días sueltos':'Filtro de fechas'),
-        h('div',{style:{display:'flex',gap:'.3rem'}},
-          h('button',{class:'btn btn-sm '+(S.resMode!=='days'?'btn-g':'btn-gh'),on:{click:()=>{S.resMode='range';rerender();}}},'Rango'),
-          h('button',{class:'btn btn-sm '+(S.resMode==='days'?'btn-g':'btn-gh'),on:{click:()=>{
-            S.resMode='days';
-            if(S.resCalYear==null){const n2=new Date();S.resCalYear=n2.getFullYear();S.resCalMonth=n2.getMonth();}
-            rerender();
-          }}},'Días sueltos')
-        )
-      ),
-      S.resMode==='days'
-        ? renderResDaysPicker()
-        : h('div',{style:{display:'flex',gap:'.5rem',alignItems:'center',flexWrap:'wrap'}},
-            h('input',{type:'date',value:from,style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
-              on:{change:ev=>{S.resFrom=ev.target.value;rerender();}}}),
-            h('span',{style:{color:'var(--ink2)'}},'→'),
-            h('input',{type:'date',value:to,style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
-              on:{change:ev=>{S.resTo=ev.target.value;rerender();}}}),
-            h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.resFrom=firstDayOfMonth();S.resTo=today();rerender();}}},'Este mes'),
-            h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{
-              const d=new Date(); d.setMonth(d.getMonth()-1);
-              S.resFrom=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)+'-01';
-              const last=new Date(d.getFullYear(),d.getMonth()+1,0);
-              S.resTo=last.toISOString().slice(0,10); rerender();
-            }}},'Mes anterior')
-          )
-    ),
+    renderDateModeCard(),
 
     entries.length===0
       ? h('div',{class:'card'},h('div',{class:'empty'},S.resMode==='days'?((S.resDays||[]).length===0?'Selecciona uno o varios días en el calendario':'Sin jornadas guardadas en los días seleccionados'):'Sin jornadas en este periodo'))
@@ -4673,11 +4680,11 @@ function renderModalCustomExport(){
   return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.classList.contains('modal-bg')){S.modal=null;rerender();}}}},
     h('div',{class:'modal-box',style:{maxHeight:'85vh',overflowY:'auto'}},
       h('div',{class:'modal-title'},'🎛️ Exportación personalizada'),
-      h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',marginBottom:'.7rem',lineHeight:1.4}},
-        'Elige qué datos quieres que aparezcan en el informe. Se exportará '+
-        (S.resMode==='days'?'tu selección de días sueltos':'el rango de fechas')+' actual del Resumen.'
+      h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',marginBottom:'.5rem',lineHeight:1.4}},
+        'Elige el periodo y qué datos quieres que aparezcan en el informe.'
       ),
-      h('div',{style:{display:'flex',gap:'.4rem',marginBottom:'.6rem'}},
+      renderDateModeCard(),
+      h('div',{style:{display:'flex',gap:'.4rem',margin:'.8rem 0 .6rem'}},
         h('button',{class:'btn btn-gh btn-sm',style:{flex:1},on:{click:()=>{CUSTOM_EXPORT_FIELDS.forEach(f=>S.customFields[f.key]=true);rerender();}}},'✓ Marcar todos'),
         h('button',{class:'btn btn-gh btn-sm',style:{flex:1},on:{click:()=>{CUSTOM_EXPORT_FIELDS.forEach(f=>S.customFields[f.key]=false);rerender();}}},'✕ Desmarcar todos')
       ),
