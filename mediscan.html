@@ -790,64 +790,62 @@ function Part3D({anns,shape,color,segW,segH,texImg}){
     const pixW=segW||200,pixH=segH||200,ratio=pixW/pixH;
     let sw=annW?annW*0.002:2*Math.min(ratio,4);
     let sh=annH?annH*0.002:2/Math.max(ratio,0.25);
-    let sd=annD?annD*0.002:Math.min(sw,sh)*0.35; /* más profundidad por defecto */
+    let sd=annD?annD*0.002:Math.min(sw,sh)*0.35;
     const mx=Math.max(sw,sh,sd,0.1),sc=2.2/mx;sw*=sc;sh*=sc;sd*=sc;
 
-    /* Fondo degradado azul oscuro → negro */
+    /* Escena robusta — sin ShadowMaterial ni FogExp2 que pueden fallar */
     const scene=new THREE.Scene();
     scene.background=new THREE.Color(0x0d1520);
-    scene.fog=new THREE.FogExp2(0x0d1520,0.08); /* niebla suave de profundidad */
 
-    /* Cámara isométrica 3/4 para máximo tridimensionalismo */
+    /* Cámara 3/4 isométrica para máximo volumen visible */
     const cam=new THREE.PerspectiveCamera(38,W/H,0.05,100);
-    cam.position.set(sw*1.6,sh*1.4,sd*3.5);cam.lookAt(0,0,0);
+    cam.position.set(sw*1.6,sh*1.4,sd*3.5+2);cam.lookAt(0,0,0);
 
-    const rdr=new THREE.WebGLRenderer({antialias:true});
-    rdr.setSize(W,H);rdr.setPixelRatio(Math.min(devicePixelRatio,2));
-    try{rdr.outputEncoding=THREE.sRGBEncoding;}catch(e){}
-    rdr.shadowMap.enabled=true;rdr.shadowMap.type=THREE.PCFSoftShadowMap;
-    rdr.toneMapping=THREE.ACESFilmicToneMapping;rdr.toneMappingExposure=1.3;
+    const rdr=new THREE.WebGLRenderer({antialias:true,alpha:false});
+    rdr.setSize(W,H);
+    rdr.setPixelRatio(Math.min(devicePixelRatio,1.5));
+    /* Sin sombras — evita el bug de pantalla negra en GPUs con poca VRAM */
+    rdr.shadowMap.enabled=false;
+    try{rdr.toneMapping=THREE.ACESFilmicToneMapping;rdr.toneMappingExposure=1.2;}catch(e){}
     E.appendChild(rdr.domElement);
 
     const piv=new THREE.Group();scene.add(piv);
     const colNum=parseInt((color||"#00ccff").replace("#",""),16)||0x00ccff;
-    const depth=Math.max(sd,0.3); /* profundidad mínima para ver el 3D */
+    const depth=Math.max(sd,0.3);
 
-    /* Suelo con cuadrícula + sombra receptora */
-    const floorGeo=new THREE.PlaneGeometry(14,14);
-    const floorMat=new THREE.ShadowMaterial({opacity:0.35});
-    const floor=new THREE.Mesh(floorGeo,floorMat);
-    floor.rotation.x=-Math.PI/2;floor.position.y=-sh/2-0.01;floor.receiveShadow=true;scene.add(floor);
-    const grid=new THREE.GridHelper(12,24,0x1a3355,0x0d1a2a);grid.position.y=-sh/2-0.005;scene.add(grid);
+    /* Cuadrícula de suelo simple (sin sombras) */
+    const grid=new THREE.GridHelper(10,20,0x1a3355,0x0d1a2a);
+    grid.position.y=-sh/2-0.01;scene.add(grid);
 
-    const wireMat=new THREE.LineBasicMaterial({color:colNum,transparent:true,opacity:0.8});
+    const wireMat=new THREE.LineBasicMaterial({color:colNum,transparent:true,opacity:0.9});
 
     if(texImg&&segW&&segH){
       const r2=segW/segH;
       sw=2.4*Math.min(r2,3);sh=2.4/Math.max(r2,0.33);sd=Math.min(sw,sh)*0.35;
       const mx2=Math.max(sw,sh,0.1),sc2=2.5/mx2;sw*=sc2;sh*=sc2;sd*=sc2;
+      const depth2=Math.max(sd,0.3);
       const imgEl=new Image();
       imgEl.onload=()=>{
-        const tex=new THREE.Texture(imgEl);tex.needsUpdate=true;
-        try{tex.encoding=THREE.sRGBEncoding;}catch(e){}
-        /* Cara frontal con textura */
-        const faceGeo=new THREE.PlaneGeometry(sw,sh);
-        const faceMat=new THREE.MeshStandardMaterial({map:tex,metalness:0.05,roughness:0.35,side:THREE.FrontSide});
-        const face=new THREE.Mesh(faceGeo,faceMat);face.position.z=depth/2+0.002;face.castShadow=true;
-        /* Cuerpo 3D con profundidad visible */
-        const boxGeo=new THREE.BoxGeometry(sw,sh,depth);
-        const sideMat=new THREE.MeshStandardMaterial({color:colNum,metalness:0.3,roughness:0.5,transparent:true,opacity:0.45});
-        const box=new THREE.Mesh(boxGeo,sideMat);box.castShadow=true;box.receiveShadow=true;
-        const edges=new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo),wireMat);
-        piv.add(face);piv.add(box);piv.add(edges);
-        /* Texto flotante con las medidas */
+        try{
+          const tex=new THREE.Texture(imgEl);tex.needsUpdate=true;
+          const faceGeo=new THREE.PlaneGeometry(sw,sh);
+          const faceMat=new THREE.MeshStandardMaterial({map:tex,roughness:0.4,metalness:0.05,side:THREE.FrontSide});
+          const face=new THREE.Mesh(faceGeo,faceMat);face.position.z=depth2/2+0.002;piv.add(face);
+          const boxGeo=new THREE.BoxGeometry(sw,sh,depth2);
+          const sideMat=new THREE.MeshStandardMaterial({color:colNum,transparent:true,opacity:0.4,roughness:0.6});
+          piv.add(new THREE.Mesh(boxGeo,sideMat));
+          piv.add(new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo),wireMat));
+        }catch(e){
+          const bg=new THREE.BoxGeometry(sw,sh,depth2);
+          piv.add(new THREE.Mesh(bg,new THREE.MeshStandardMaterial({color:colNum,transparent:true,opacity:0.3})));
+          piv.add(new THREE.LineSegments(new THREE.EdgesGeometry(bg),wireMat));
+        }
         rdr.render(scene,cam);
       };
       imgEl.onerror=()=>{
-        const boxGeo=new THREE.BoxGeometry(sw,sh,depth);
-        const mat=new THREE.MeshStandardMaterial({color:colNum,metalness:0.3,roughness:0.5,transparent:true,opacity:0.3});
-        const box=new THREE.Mesh(boxGeo,mat);box.castShadow=true;
-        piv.add(box);piv.add(new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo),wireMat));
+        const bg=new THREE.BoxGeometry(sw,sh,depth2);
+        piv.add(new THREE.Mesh(bg,new THREE.MeshStandardMaterial({color:colNum,transparent:true,opacity:0.3})));
+        piv.add(new THREE.LineSegments(new THREE.EdgesGeometry(bg),wireMat));
         rdr.render(scene,cam);
       };
       imgEl.src=texImg;
@@ -855,44 +853,36 @@ function Part3D({anns,shape,color,segW,segH,texImg}){
       const isCyl=["cylinder","tube","pipe"].includes(shape);
       if(isCyl){
         const geo=new THREE.CylinderGeometry(Math.min(sw,sh)/2.2,Math.min(sw,sh)/2.2,sh,48);
-        const mat=new THREE.MeshStandardMaterial({color:colNum,metalness:0.5,roughness:0.3,transparent:true,opacity:0.45});
-        const m=new THREE.Mesh(geo,mat);m.castShadow=true;m.receiveShadow=true;piv.add(m);
+        piv.add(new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:colNum,metalness:0.4,roughness:0.5,transparent:true,opacity:0.45})));
         piv.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),wireMat));
       }else{
-        const boxGeo=new THREE.BoxGeometry(sw,sh,depth,8,8,4);
-        const mat=new THREE.MeshStandardMaterial({color:colNum,metalness:0.3,roughness:0.5,transparent:true,opacity:0.35});
-        const box=new THREE.Mesh(boxGeo,mat);box.castShadow=true;box.receiveShadow=true;
-        piv.add(box);piv.add(new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo),wireMat));
+        const boxGeo=new THREE.BoxGeometry(sw,sh,depth);
+        piv.add(new THREE.Mesh(boxGeo,new THREE.MeshStandardMaterial({color:colNum,metalness:0.25,roughness:0.55,transparent:true,opacity:0.38})));
+        piv.add(new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo),wireMat));
       }
     }
 
-    /* Iluminación 3 puntos — crea sombras duras y suaves para volumen real */
-    scene.add(new THREE.AmbientLight(0x304560,0.5));
-    const key=new THREE.DirectionalLight(0xfff5e0,2.8);
-    key.position.set(6,10,8);key.castShadow=true;
-    key.shadow.mapSize.set(2048,2048);key.shadow.camera.near=0.5;key.shadow.camera.far=40;
-    key.shadow.camera.left=-8;key.shadow.camera.right=8;key.shadow.camera.top=8;key.shadow.camera.bottom=-8;
-    key.shadow.bias=-0.002;scene.add(key);
-    const fill=new THREE.DirectionalLight(0x80a0ff,0.9);fill.position.set(-5,3,-4);scene.add(fill);
-    const rim=new THREE.DirectionalLight(0xff9944,0.6);rim.position.set(0,-4,6);scene.add(rim);
+    /* Iluminación robusta — sin sombras */
+    scene.add(new THREE.AmbientLight(0x506070,0.9));
+    const key=new THREE.DirectionalLight(0xfff8ee,2.5);key.position.set(5,8,7);scene.add(key);
+    const fill=new THREE.DirectionalLight(0x8090ff,0.8);fill.position.set(-5,2,-4);scene.add(fill);
+    const rim=new THREE.DirectionalLight(0xff9944,0.5);rim.position.set(0,-3,5);scene.add(rim);
     scene.add(new THREE.HemisphereLight(0x304466,0x111122,0.5));
 
-    /* Ejes de referencia — esquina inferior izquierda */
-    const axH=new THREE.AxesHelper(0.6);axH.position.set(-sw/2-0.3,-sh/2-0.3,depth/2);piv.add(axH);
-
-    let rx=texImg?0.1:0.25,ry=texImg?0.3:0.6,drag=false,lx=0,ly=0;
+    let rx=0.2,ry=0.5,drag=false,lx=0,ly=0;
     const dn=e=>{drag=true;const s=e.touches?.[0]||e;lx=s.clientX;ly=s.clientY;};
     const mv=e=>{if(!drag)return;const s=e.touches?.[0]||e;
       ry+=(s.clientX-lx)*0.014;rx+=(s.clientY-ly)*0.011;
-      rx=Math.max(-Math.PI/2.2,Math.min(Math.PI/2.2,rx));lx=s.clientX;ly=s.clientY;};
+      rx=Math.max(-1.2,Math.min(1.2,rx));lx=s.clientX;ly=s.clientY;};
     const up=()=>{drag=false;};
     rdr.domElement.addEventListener("mousedown",dn);rdr.domElement.addEventListener("touchstart",dn,{passive:true});
     window.addEventListener("mousemove",mv);window.addEventListener("touchmove",mv,{passive:true});
     window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
-    let id;const anim=()=>{id=requestAnimationFrame(anim);if(!drag)ry+=0.006;piv.rotation.y=ry;piv.rotation.x=rx;rdr.render(scene,cam);};anim();
-    return()=>{cancelAnimationFrame(id);window.removeEventListener("mousemove",mv);window.removeEventListener("touchmove",mv);window.removeEventListener("mouseup",up);window.removeEventListener("touchend",up);rdr.dispose();if(E.contains(rdr.domElement))E.removeChild(rdr.domElement);};
+    let id;const anim=()=>{id=requestAnimationFrame(anim);if(!drag)ry+=0.006;piv.rotation.y=ry;piv.rotation.x=rx;rdr.render(scene,cam);};
+    anim();
+    return()=>{cancelAnimationFrame(id);window.removeEventListener("mousemove",mv);window.removeEventListener("touchmove",mv);window.removeEventListener("mouseup",up);window.removeEventListener("touchend",up);try{rdr.dispose();}catch(e){}if(E.contains(rdr.domElement))E.removeChild(rdr.domElement);};
   },[anns,shape,color,segW,segH,texImg]);
-  return<div ref={ref} style={{width:"100%",height:"220px",cursor:"grab",borderRadius:"8px",overflow:"hidden"}}/>;
+  return<div ref={ref} style={{width:"100%",height:"220px",cursor:"grab",borderRadius:"8px",overflow:"hidden",background:"#0d1520"}}/>;
 }
 
 
