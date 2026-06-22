@@ -378,7 +378,7 @@ function View2D({anns,objName,sc,segs,img,segSel,scope}){
       const vW=wd?wd.mm:80,vH=hd?hd.mm:80;
       const sc2=Math.min((ortW-8)*.85/vW,(imgH-20)*.75/vH);
       const rW=vW*sc2,rH=vH*sc2,rX=ortX+(ortW-rW)/2,rY=imgY+14;
-      ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";ctx.fillText("FRONTAL",rX,rY-4);
+      ctx.fillStyle="#1a3a8a";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="center";ctx.fillText("ALZADO",rX+rW/2,rY-4);
       ctx.fillStyle="rgba(200,220,255,.45)";ctx.fillRect(rX,rY,rW,rH);
       ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.8;ctx.setLineDash([]);ctx.strokeRect(rX,rY,rW,rH);
       ctx.strokeStyle="#0077bb";ctx.lineWidth=.5;ctx.setLineDash([6,3]);
@@ -389,46 +389,114 @@ function View2D({anns,objName,sc,segs,img,segSel,scope}){
       if(hd)dimLine(rX,rY,rX,rY+rH,hd.lbl,-1,18);
       if(dd){
         const lX=rX,lY=rY+rH+32,lW=dd.mm*sc2,lH=rH;
-        ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="left";ctx.fillText("LATERAL",lX,lY-4);
+        ctx.fillStyle="#1a3a8a";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="center";ctx.fillText("PERFIL",lX+lW/2,lY-4);
         ctx.fillStyle="rgba(200,220,255,.3)";ctx.fillRect(lX,lY,lW,lH);
         ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.2;ctx.strokeRect(lX,lY,lW,lH);
         dimLine(lX,lY+lH,lX+lW,lY+lH,dd.lbl,1,14);
       }
     } else {
-      /* No measurements with axis: show parts as photo crops + schematic views */
-      ctx.fillStyle="#1a3a8a";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="center";ctx.fillText("DETALLE DE PARTES",ortX+ortW/2,imgY+10);
-      (vSegs||[]).slice(0,4).forEach((seg,i)=>{
-        const row=Math.floor(i/2),col2=i%2;
-        const bx=ortX+col2*(ortW/2)+2,by=imgY+16+row*(imgH/2.2);
-        const bw=ortW/2-6,bh=imgH/2.4;
-        const c=seg.color||"#1a5a9a";
-        /* Intentar dibujar la foto recortada de la zona */
-        if(imgEl){
-          try{
-            const cx=Math.round(imgEl.naturalWidth*Math.min(seg.x1,seg.x2));
-            const cy2=Math.round(imgEl.naturalHeight*Math.min(seg.y1,seg.y2));
-            const cw=Math.round(imgEl.naturalWidth*Math.abs(seg.x2-seg.x1));
-            const ch=Math.round(imgEl.naturalHeight*Math.abs(seg.y2-seg.y1));
-            ctx.save();ctx.rect(bx,by,bw,bh);ctx.clip();
-            const ar=cw/ch||1;
-            let dw2=bw,dh2=bh;
-            if(dw2/dh2>ar){dw2=dh2*ar;}else{dh2=dw2/ar;}
-            ctx.drawImage(imgEl,cx,cy2,cw,ch,bx+(bw-dw2)/2,by+(bh-dh2)/2,dw2,dh2);
+      /* ── VISTAS ORTOGONALES: ALZADO / PLANTA / PERFIL ──
+         Se generan siempre, con foto de la zona como vista frontal y
+         esquemas derivados para planta y perfil. */
+      const vSegsOrt=(vSegs&&vSegs.length>0)?vSegs.slice(0,1):[{x1:0,y1:0,x2:1,y2:1,name:objName||"Vista",color:"#1a5a9a"}];
+      const seg0=vSegsOrt[0];
+      const segAR=Math.abs((seg0.x2-seg0.x1)/((seg0.y2-seg0.y1)||.01));
+      const pw=ortW-8; /* ancho disponible en el panel ortogonal */
+      const alzW=Math.floor(pw*.65),alzH=Math.floor(alzW/Math.max(segAR,.4));
+      const planH=Math.floor(alzH*.35),perfW=pw-alzW-4;
+      const oX=ortX+4,oY=imgY+18;
+
+      /* Etiqueta del panel */
+      ctx.fillStyle="#1a3a8a";ctx.font="bold 6.5px 'Inter',sans-serif";ctx.textAlign="center";
+      ctx.fillText("VISTAS ORTOGONALES",ortX+ortW/2,imgY+9);
+
+      /* ── ALZADO (vista frontal) — foto real de la zona ── */
+      ctx.fillStyle="#7788aa";ctx.font="bold 6px 'Inter',sans-serif";ctx.textAlign="center";
+      ctx.fillText("ALZADO",oX+alzW/2,oY-2);
+      if(imgEl){
+        try{
+          const sx=Math.round(imgEl.naturalWidth*Math.min(seg0.x1,seg0.x2));
+          const sy=Math.round(imgEl.naturalHeight*Math.min(seg0.y1,seg0.y2));
+          const sw2=Math.round(imgEl.naturalWidth*Math.abs(seg0.x2-seg0.x1));
+          const sh2=Math.round(imgEl.naturalHeight*Math.abs(seg0.y2-seg0.y1));
+          if(sw2>0&&sh2>0){
+            ctx.save();ctx.beginPath();ctx.rect(oX,oY,alzW,alzH);ctx.clip();
+            const ar2=sw2/sh2;let dw2=alzW,dh2=alzH;
+            if(dw2/dh2>ar2){dw2=dh2*ar2;}else{dh2=dw2/ar2;}
+            ctx.drawImage(imgEl,sx,sy,sw2,sh2,oX+(alzW-dw2)/2,oY+(alzH-dh2)/2,dw2,dh2);
             ctx.restore();
-          }catch(e){}
-        }
-        /* Marco de color de la zona */
-        ctx.fillStyle=c+"18";ctx.strokeStyle=c;ctx.lineWidth=1.2;ctx.setLineDash([3,2]);
-        ctx.strokeRect(bx,by,bw,bh);ctx.setLineDash([]);
-        /* Número */
-        ctx.beginPath();ctx.arc(bx+10,by+10,7,0,Math.PI*2);ctx.fillStyle=c;ctx.fill();
-        ctx.fillStyle="#fff";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="center";ctx.fillText(i+1,bx+10,by+12);
-        /* Nombre */
-        ctx.fillStyle="#fff";ctx.font="bold 6.5px 'Inter',sans-serif";ctx.textAlign="center";
-        ctx.strokeStyle="rgba(0,0,0,.7)";ctx.lineWidth=2;ctx.strokeText((seg.name||"Parte "+(i+1)).slice(0,12),bx+bw/2,by+bh-4);
-        ctx.fillText((seg.name||"Parte "+(i+1)).slice(0,12),bx+bw/2,by+bh-4);
-        ctx.lineWidth=1;
+          }
+        }catch(e){}
+      }
+      ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.5;ctx.setLineDash([]);
+      ctx.strokeRect(oX,oY,alzW,alzH);
+      /* Líneas de centrado */
+      ctx.strokeStyle="rgba(0,100,200,.3)";ctx.lineWidth=0.5;ctx.setLineDash([4,2]);
+      ctx.beginPath();ctx.moveTo(oX+alzW/2,oY);ctx.lineTo(oX+alzW/2,oY+alzH);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(oX,oY+alzH/2);ctx.lineTo(oX+alzW,oY+alzH/2);ctx.stroke();
+      ctx.setLineDash([]);
+
+      /* ── PLANTA (vista superior — debajo del alzado) ── */
+      const plY=oY+alzH+10;
+      ctx.fillStyle="#7788aa";ctx.font="bold 6px 'Inter',sans-serif";ctx.textAlign="center";
+      ctx.fillText("PLANTA",oX+alzW/2,plY-2);
+      ctx.fillStyle="rgba(200,230,255,.25)";ctx.fillRect(oX,plY,alzW,planH);
+      ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.2;ctx.strokeRect(oX,plY,alzW,planH);
+      /* Representación esquemática de planta */
+      const pInset=alzW*.1;
+      ctx.fillStyle="rgba(100,160,255,.2)";ctx.fillRect(oX+pInset,plY+4,alzW-pInset*2,planH-8);
+      ctx.strokeStyle="rgba(0,80,180,.6)";ctx.lineWidth=1;ctx.setLineDash([3,2]);
+      ctx.strokeRect(oX+pInset,plY+4,alzW-pInset*2,planH-8);ctx.setLineDash([]);
+      /* Líneas de profundidad en la planta */
+      [.25,.5,.75].forEach(t=>{
+        ctx.beginPath();ctx.strokeStyle="rgba(0,80,180,.25)";ctx.lineWidth=0.5;
+        ctx.moveTo(oX+alzW*t,plY);ctx.lineTo(oX+alzW*t,plY+planH);ctx.stroke();
       });
+
+      /* ── PERFIL (vista lateral — a la derecha del alzado) ── */
+      const pX=oX+alzW+4;
+      ctx.fillStyle="#7788aa";ctx.font="bold 6px 'Inter',sans-serif";ctx.textAlign="center";
+      ctx.fillText("PERFIL",pX+perfW/2,oY-2);
+      ctx.fillStyle="rgba(200,230,255,.25)";ctx.fillRect(pX,oY,perfW,alzH);
+      ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.5;ctx.strokeRect(pX,oY,perfW,alzH);
+      /* Líneas de centrado del perfil */
+      ctx.strokeStyle="rgba(0,100,200,.3)";ctx.lineWidth=0.5;ctx.setLineDash([4,2]);
+      ctx.beginPath();ctx.moveTo(pX,oY+alzH/2);ctx.lineTo(pX+perfW,oY+alzH/2);ctx.stroke();
+      ctx.setLineDash([]);
+      /* Silueta simplificada del perfil */
+      const pInset2=perfW*.12;
+      ctx.fillStyle="rgba(100,160,255,.2)";ctx.fillRect(pX+pInset2,oY+8,perfW-pInset2*2,alzH-16);
+      ctx.strokeStyle="rgba(0,80,180,.5)";ctx.lineWidth=1;
+      ctx.strokeRect(pX+pInset2,oY+8,perfW-pInset2*2,alzH-16);
+
+      /* ── Anotaciones de medidas sobre las vistas ── */
+      const measWithAxis=anns.filter(a=>a.value!=null&&a.axis&&a.axis!=="other");
+      measWithAxis.forEach(a=>{
+        const lbl=`${a.value}${a.unit}`;
+        ctx.fillStyle="#cc2200";ctx.font="bold 6px 'Inter',sans-serif";ctx.textAlign="center";
+        if(a.axis==="width"){
+          const y=oY+alzH+3;
+          ctx.beginPath();ctx.strokeStyle="#cc2200";ctx.lineWidth=0.8;
+          ctx.moveTo(oX+4,y+8);ctx.lineTo(oX+alzW-4,y+8);ctx.stroke();
+          const tw=ctx.measureText(lbl).width+4;
+          ctx.fillStyle="rgba(255,255,255,.9)";ctx.fillRect(oX+alzW/2-tw/2,y+2,tw,10);
+          ctx.fillStyle="#cc2200";ctx.fillText(lbl,oX+alzW/2,y+9);
+        } else if(a.axis==="height"){
+          const x=oX-2;
+          ctx.beginPath();ctx.strokeStyle="#cc2200";ctx.lineWidth=0.8;
+          ctx.moveTo(x-7,oY+4);ctx.lineTo(x-7,oY+alzH-4);ctx.stroke();
+          ctx.save();ctx.translate(x-12,oY+alzH/2);ctx.rotate(-Math.PI/2);
+          const tw=ctx.measureText(lbl).width+4;
+          ctx.fillStyle="rgba(255,255,255,.9)";ctx.fillRect(-tw/2,-5,tw,10);
+          ctx.fillStyle="#cc2200";ctx.fillText(lbl,0,3);ctx.restore();
+        }
+      });
+
+      /* Si no hay partes, mostrar también la foto completa como alzado */
+      if(!vSegs||vSegs.length===0){
+        ctx.fillStyle="#1a3a8a";ctx.font="6.5px 'Inter',sans-serif";ctx.textAlign="center";
+        ctx.fillText("(sin zonas detectadas)",ortX+ortW/2,oY+alzH+planH+22);
+      }
     }
 
     /* ── DIMENSION SUMMARY TABLE (below image) — con icono de cada herramienta ── */
@@ -672,90 +740,117 @@ function Part3D({anns,shape,color,segW,segH,texImg}){
   const ref=useRef(null);
   useEffect(()=>{
     if(!ref.current)return;
-    const E=ref.current,W=E.clientWidth||300,H=200;
+    const E=ref.current,W=E.clientWidth||300,H=220;
     const gd=ax=>{const a=anns.find(a=>a.axis===ax&&a.value!=null);return a?Math.max((parseFloat(a.value)||1)*({"mm":1,"cm":10,"m":1000,"in":25.4,"ft":304.8}[a.unit]||10),1):null;};
     const annW=gd("width"),annH=gd("height"),annD=gd("depth");
     const pixW=segW||200,pixH=segH||200,ratio=pixW/pixH;
     let sw=annW?annW*0.002:2*Math.min(ratio,4);
     let sh=annH?annH*0.002:2/Math.max(ratio,0.25);
-    let sd=annD?annD*0.002:Math.min(sw,sh)*0.2;
+    let sd=annD?annD*0.002:Math.min(sw,sh)*0.35; /* más profundidad por defecto */
     const mx=Math.max(sw,sh,sd,0.1),sc=2.2/mx;sw*=sc;sh*=sc;sd*=sc;
-    const scene=new THREE.Scene();scene.background=new THREE.Color(0x0a0a14);
-    const cam=new THREE.PerspectiveCamera(42,W/H,0.05,100);
-    const camZ=texImg?Math.max(sw,sh)*1.1:Math.max(sd*2.5,3);cam.position.set(texImg?0:sw*1.4,texImg?0:sh*1.1,camZ);cam.lookAt(0,0,0);
-    const rdr=new THREE.WebGLRenderer({antialias:true});rdr.setSize(W,H);
-    rdr.setPixelRatio(Math.min(devicePixelRatio,2));rdr.outputEncoding=THREE.sRGBEncoding;
-    rdr.toneMapping=THREE.ACESFilmicToneMapping;rdr.toneMappingExposure=1.2;
+
+    /* Fondo degradado azul oscuro → negro */
+    const scene=new THREE.Scene();
+    scene.background=new THREE.Color(0x0d1520);
+    scene.fog=new THREE.FogExp2(0x0d1520,0.08); /* niebla suave de profundidad */
+
+    /* Cámara isométrica 3/4 para máximo tridimensionalismo */
+    const cam=new THREE.PerspectiveCamera(38,W/H,0.05,100);
+    cam.position.set(sw*1.6,sh*1.4,sd*3.5);cam.lookAt(0,0,0);
+
+    const rdr=new THREE.WebGLRenderer({antialias:true});
+    rdr.setSize(W,H);rdr.setPixelRatio(Math.min(devicePixelRatio,2));
+    try{rdr.outputEncoding=THREE.sRGBEncoding;}catch(e){}
+    rdr.shadowMap.enabled=true;rdr.shadowMap.type=THREE.PCFSoftShadowMap;
+    rdr.toneMapping=THREE.ACESFilmicToneMapping;rdr.toneMappingExposure=1.3;
     E.appendChild(rdr.domElement);
+
     const piv=new THREE.Group();scene.add(piv);
     const colNum=parseInt((color||"#00ccff").replace("#",""),16)||0x00ccff;
-    const isCyl=["cylinder","tube","pipe"].includes(shape);
-    /* When we have a texture, use image proportions for geometry */
+    const depth=Math.max(sd,0.3); /* profundidad mínima para ver el 3D */
+
+    /* Suelo con cuadrícula + sombra receptora */
+    const floorGeo=new THREE.PlaneGeometry(14,14);
+    const floorMat=new THREE.ShadowMaterial({opacity:0.35});
+    const floor=new THREE.Mesh(floorGeo,floorMat);
+    floor.rotation.x=-Math.PI/2;floor.position.y=-sh/2-0.01;floor.receiveShadow=true;scene.add(floor);
+    const grid=new THREE.GridHelper(12,24,0x1a3355,0x0d1a2a);grid.position.y=-sh/2-0.005;scene.add(grid);
+
+    const wireMat=new THREE.LineBasicMaterial({color:colNum,transparent:true,opacity:0.8});
+
     if(texImg&&segW&&segH){
-      const ratio=segW/segH;
-      sw=2.4*Math.min(ratio,3); sh=2.4/Math.max(ratio,0.33); sd=Math.min(sw,sh)*0.22;
+      const r2=segW/segH;
+      sw=2.4*Math.min(r2,3);sh=2.4/Math.max(r2,0.33);sd=Math.min(sw,sh)*0.35;
       const mx2=Math.max(sw,sh,0.1),sc2=2.5/mx2;sw*=sc2;sh*=sc2;sd*=sc2;
-    }
-    const depth=Math.max(sd,0.08);
-    /* Front face: PlaneGeometry with image texture */
-    const faceGeo=new THREE.PlaneGeometry(sw,sh,1,1);
-    /* Side box for depth */
-    const boxGeo=new THREE.BoxGeometry(sw,sh,depth,4,4,2);
-    const wireMat=new THREE.LineBasicMaterial({color:colNum,transparent:true,opacity:0.7});
-    const edges=new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo),wireMat);
-    if(texImg){
-      /* Use direct Image element for data URL compatibility in THREE r128 */
       const imgEl=new Image();
       imgEl.onload=()=>{
-        const tex=new THREE.Texture(imgEl);
-        tex.needsUpdate=true;
+        const tex=new THREE.Texture(imgEl);tex.needsUpdate=true;
         try{tex.encoding=THREE.sRGBEncoding;}catch(e){}
-        const faceMat=new THREE.MeshStandardMaterial({map:tex,metalness:0.05,roughness:0.4,envMapIntensity:0.8,side:THREE.DoubleSide});
-        const face=new THREE.Mesh(faceGeo,faceMat);face.position.z=depth/2+0.001;
-        const sideMat=new THREE.MeshStandardMaterial({color:colNum,transparent:true,opacity:0.2,metalness:0.2});
-        const box=new THREE.Mesh(boxGeo,sideMat);
+        /* Cara frontal con textura */
+        const faceGeo=new THREE.PlaneGeometry(sw,sh);
+        const faceMat=new THREE.MeshStandardMaterial({map:tex,metalness:0.05,roughness:0.35,side:THREE.FrontSide});
+        const face=new THREE.Mesh(faceGeo,faceMat);face.position.z=depth/2+0.002;face.castShadow=true;
+        /* Cuerpo 3D con profundidad visible */
+        const boxGeo=new THREE.BoxGeometry(sw,sh,depth);
+        const sideMat=new THREE.MeshStandardMaterial({color:colNum,metalness:0.3,roughness:0.5,transparent:true,opacity:0.45});
+        const box=new THREE.Mesh(boxGeo,sideMat);box.castShadow=true;box.receiveShadow=true;
+        const edges=new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo),wireMat);
         piv.add(face);piv.add(box);piv.add(edges);
+        /* Texto flotante con las medidas */
         rdr.render(scene,cam);
       };
       imgEl.onerror=()=>{
-        const mat=new THREE.MeshStandardMaterial({color:colNum,transparent:true,opacity:0.15});
-        piv.add(new THREE.Mesh(boxGeo,mat));piv.add(edges);
+        const boxGeo=new THREE.BoxGeometry(sw,sh,depth);
+        const mat=new THREE.MeshStandardMaterial({color:colNum,metalness:0.3,roughness:0.5,transparent:true,opacity:0.3});
+        const box=new THREE.Mesh(boxGeo,mat);box.castShadow=true;
+        piv.add(box);piv.add(new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo),wireMat));
+        rdr.render(scene,cam);
       };
       imgEl.src=texImg;
-    }else if(isCyl){
-      const geo=new THREE.CylinderGeometry(Math.min(sw,sh)/2.2,Math.min(sw,sh)/2.2,sh,48);
-      const mat=new THREE.MeshStandardMaterial({color:colNum,metalness:0.4,roughness:0.5,transparent:true,opacity:0.35});
-      piv.add(new THREE.Mesh(geo,mat));
-      piv.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),wireMat));
     }else{
-      const geo=new THREE.BoxGeometry(sw,sh,depth,8,8,4);
-      const mat=new THREE.MeshStandardMaterial({color:colNum,metalness:0.3,roughness:0.6,transparent:true,opacity:0.25});
-      piv.add(new THREE.Mesh(geo,mat));piv.add(edges);
+      const isCyl=["cylinder","tube","pipe"].includes(shape);
+      if(isCyl){
+        const geo=new THREE.CylinderGeometry(Math.min(sw,sh)/2.2,Math.min(sw,sh)/2.2,sh,48);
+        const mat=new THREE.MeshStandardMaterial({color:colNum,metalness:0.5,roughness:0.3,transparent:true,opacity:0.45});
+        const m=new THREE.Mesh(geo,mat);m.castShadow=true;m.receiveShadow=true;piv.add(m);
+        piv.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),wireMat));
+      }else{
+        const boxGeo=new THREE.BoxGeometry(sw,sh,depth,8,8,4);
+        const mat=new THREE.MeshStandardMaterial({color:colNum,metalness:0.3,roughness:0.5,transparent:true,opacity:0.35});
+        const box=new THREE.Mesh(boxGeo,mat);box.castShadow=true;box.receiveShadow=true;
+        piv.add(box);piv.add(new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo),wireMat));
+      }
     }
-    /* Professional 3-point lighting */
-    scene.add(new THREE.AmbientLight(0x334455,0.8));
-    const kl=new THREE.DirectionalLight(0xffffff,2.2);kl.position.set(5,8,6);scene.add(kl);
-    const fl=new THREE.DirectionalLight(0x8899ff,0.8);fl.position.set(-4,2,-3);scene.add(fl);
-    const bl=new THREE.DirectionalLight(0xff9944,0.5);bl.position.set(0,-3,4);scene.add(bl);
-    const hl=new THREE.HemisphereLight(0x334466,0x111122,0.6);scene.add(hl);
-    /* Ground grid */
-    const grid=new THREE.GridHelper(10,20,0x1a3a2a,0x0d1d0d);grid.position.y=-sh/2-0.02;scene.add(grid);
-    /* Axis indicator */
-    const ax=new THREE.AxesHelper(0.5);ax.position.set(-3.8,-1.5,0);scene.add(ax);
-    let rx=texImg?0.05:0.15,ry=texImg?0:0.5,drag=false,lx=0,ly=0;
-    const dn=e=>{drag=true;const s=e.touches&&e.touches[0]||e;lx=s.clientX;ly=s.clientY;};
-    const mv=e=>{if(!drag)return;const s=e.touches&&e.touches[0]||e;
-      ry+=(s.clientX-lx)*0.012;rx+=(s.clientY-ly)*0.010;
-      rx=Math.max(-Math.PI/2,Math.min(Math.PI/2,rx));lx=s.clientX;ly=s.clientY;};
+
+    /* Iluminación 3 puntos — crea sombras duras y suaves para volumen real */
+    scene.add(new THREE.AmbientLight(0x304560,0.5));
+    const key=new THREE.DirectionalLight(0xfff5e0,2.8);
+    key.position.set(6,10,8);key.castShadow=true;
+    key.shadow.mapSize.set(2048,2048);key.shadow.camera.near=0.5;key.shadow.camera.far=40;
+    key.shadow.camera.left=-8;key.shadow.camera.right=8;key.shadow.camera.top=8;key.shadow.camera.bottom=-8;
+    key.shadow.bias=-0.002;scene.add(key);
+    const fill=new THREE.DirectionalLight(0x80a0ff,0.9);fill.position.set(-5,3,-4);scene.add(fill);
+    const rim=new THREE.DirectionalLight(0xff9944,0.6);rim.position.set(0,-4,6);scene.add(rim);
+    scene.add(new THREE.HemisphereLight(0x304466,0x111122,0.5));
+
+    /* Ejes de referencia — esquina inferior izquierda */
+    const axH=new THREE.AxesHelper(0.6);axH.position.set(-sw/2-0.3,-sh/2-0.3,depth/2);piv.add(axH);
+
+    let rx=texImg?0.1:0.25,ry=texImg?0.3:0.6,drag=false,lx=0,ly=0;
+    const dn=e=>{drag=true;const s=e.touches?.[0]||e;lx=s.clientX;ly=s.clientY;};
+    const mv=e=>{if(!drag)return;const s=e.touches?.[0]||e;
+      ry+=(s.clientX-lx)*0.014;rx+=(s.clientY-ly)*0.011;
+      rx=Math.max(-Math.PI/2.2,Math.min(Math.PI/2.2,rx));lx=s.clientX;ly=s.clientY;};
     const up=()=>{drag=false;};
     rdr.domElement.addEventListener("mousedown",dn);rdr.domElement.addEventListener("touchstart",dn,{passive:true});
     window.addEventListener("mousemove",mv);window.addEventListener("touchmove",mv,{passive:true});
     window.addEventListener("mouseup",up);window.addEventListener("touchend",up);
-    let id;const anim=()=>{id=requestAnimationFrame(anim);if(!drag)ry+=0.005;piv.rotation.y=ry;piv.rotation.x=rx;rdr.render(scene,cam);};anim();
+    let id;const anim=()=>{id=requestAnimationFrame(anim);if(!drag)ry+=0.006;piv.rotation.y=ry;piv.rotation.x=rx;rdr.render(scene,cam);};anim();
     return()=>{cancelAnimationFrame(id);window.removeEventListener("mousemove",mv);window.removeEventListener("touchmove",mv);window.removeEventListener("mouseup",up);window.removeEventListener("touchend",up);rdr.dispose();if(E.contains(rdr.domElement))E.removeChild(rdr.domElement);};
   },[anns,shape,color,segW,segH,texImg]);
-  return<div ref={ref} style={{width:"100%",height:"200px",cursor:"grab",background:"#0a0a14"}}/>;
+  return<div ref={ref} style={{width:"100%",height:"220px",cursor:"grab",borderRadius:"8px",overflow:"hidden"}}/>;
 }
+
 
 /* ══ INDUSTRIAL DATABASE ══ */
 const IND_DB=[
@@ -2604,11 +2699,19 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
 <div style={{maxWidth:"960px",margin:"0 auto",background:"var(--bg)",height:"100vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
 
 {/* HEADER */}
-<div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:"8px",background:"#ffffff",borderBottom:"2px solid #ff7700",position:"sticky",top:0,zIndex:300,boxShadow:"0 2px 20px rgba(0,0,0,.8)"}}>
-  <div style={{width:"34px",height:"34px",borderRadius:"10px",background:"linear-gradient(135deg,#ff7700,#ffaa00)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"16px",flexShrink:0}}>📐</div>
+<div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:"8px",background:"#ffffff",borderBottom:"2px solid #ff7700",position:"sticky",top:0,zIndex:300,boxShadow:"0 2px 8px rgba(0,0,0,.1)"}}>
+  {/* Logo: cambia según pantalla. Inicio=icono de casa naranja. Anotación=regla/escuadra técnica */}
+  <div style={{width:"36px",height:"36px",borderRadius:"10px",
+    background:scr==="annotate"?"linear-gradient(135deg,#1a4acc,#0077ff)":"linear-gradient(135deg,#ff7700,#ffaa00)",
+    display:"flex",alignItems:"center",justifyContent:"center",fontSize:"18px",flexShrink:0,
+    boxShadow:scr==="annotate"?"0 2px 8px rgba(0,100,255,.35)":"0 2px 8px rgba(255,150,0,.35)"}}>
+    {scr==="annotate"?"📐":"🏠"}
+  </div>
   <div style={{flex:1,minWidth:0}}>
-    <div style={{fontSize:"13px",fontWeight:800,color:"#fff",letterSpacing:"-.3px"}}>MediScan 3D Pro</div>
-    <a href="https://franyamelie.github.io/timerpro/mediscan.html" target="_blank" rel="noreferrer" style={{fontSize:"7px",color:"#ff9500",textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:.7}}>franyamelie.github.io/timerpro/mediscan.html</a>
+    <div style={{fontSize:"13px",fontWeight:800,color:"#1a1a1a",letterSpacing:"-.3px"}}>MediScan 3D Pro</div>
+    <div style={{fontSize:"7px",color:"var(--txt2)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+      {scr==="annotate"&&pName?`✏ ${pName}`:"Medición y análisis técnico"}
+    </div>
   </div>
   {scr==="annotate"&&<>
     <button onClick={save} title="Guardar proyecto actual"
@@ -3438,50 +3541,61 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   const{ann,ordinal,fc}=iconInfoM;
   const td=TOOLS.find(t=>t.id===ann.type);
   const col=ann.color||"#ff9500";
-  const valTxt=ann.value!=null?`${ann.value} ${ann.unit}`:"Sin medir todavía";
-  const areaTxt=ann.type==="rect"?getArea(ann):null;
+  const valTxt=ann.value!=null?`${ann.value} ${ann.unit}`:"Sin medir";
   const editHere=()=>{
-    setIconInfoM(null);
-    setSelId(ann.id);setTool("sel");
-    if(fc){
-      setMeasM({...ann,_existing:true,_fc:true});
-      setMIn({t:ann.title||"",v:ann.value!=null?String(ann.value):"",u:ann.unit||"cm",ax:ann.axis||""});
-    }else if(MRK.includes(ann.type)){
-      setMeasM({...ann,_existing:true});
-      setMIn({t:ann.title||"",v:ann.value!=null?String(ann.value):"",u:ann.unit||"cm",ax:ann.axis||""});
-    }
-    /* Formas (no marcador) en pantalla principal: con seleccionarla basta — el
-       panel de edición inline aparece automáticamente bajo la barra de herramientas. */
+    setIconInfoM(null);setSelId(ann.id);setTool("sel");
+    if(fc){setMeasM({...ann,_existing:true,_fc:true});setMIn({t:ann.title||"",v:ann.value!=null?String(ann.value):"",u:ann.unit||"cm",ax:ann.axis||""});}
+    else if(MRK.includes(ann.type)){setMeasM({...ann,_existing:true});setMIn({t:ann.title||"",v:ann.value!=null?String(ann.value):"",u:ann.unit||"cm",ax:ann.axis||""});}
   };
   const goTo=target=>{
     if(!fc){setIconInfoM(null);setScopeAsk(target);return;}
-    const seg=editZone?.seg;
-    if(!seg){setIconInfoM(null);return;}
+    const seg=editZone?.seg;if(!seg){setIconInfoM(null);return;}
     const newAnns=fcAnns.filter(x=>x.value!=null).map(x=>({
       ...x,id:uid(),_fc:false,partId:seg.id,partName:seg.name,
       points:x.points.map(p=>({x:seg.x1+(p.x)*(seg.x2-seg.x1),y:seg.y1+(p.y)*(seg.y2-seg.y1)}))
     }));
-    setIconInfoM(null);
-    setRemoveZoneM({seg,newAnns,targetSheet:target});
+    setIconInfoM(null);setRemoveZoneM({seg,newAnns,targetSheet:target});
   };
-  return<div data-modal="iconinfo" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"var(--bg2)",border:`2px solid ${col}`,borderRadius:"18px 18px 0 0",padding:"18px",zIndex:fc?960:600,animation:"slideUp .2s ease",backdropFilter:"blur(24px)",boxShadow:"0 -6px 40px rgba(0,0,0,.7)"}}>
-    <button onClick={()=>setIconInfoM(null)} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-    <div style={{display:"flex",alignItems:"center",gap:"10px",paddingRight:"34px"}}>
-      <div style={{width:"34px",height:"34px",borderRadius:"50%",background:"rgba(6,8,16,.92)",border:`2px solid ${col}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"15px",color:col,flexShrink:0}}>{ann.icon||td?.icon||"●"}</div>
-      <div style={{minWidth:0}}>
-        <div style={{fontSize:"13px",fontWeight:800,color:col}}>{(td?.label||ann.type)} {ordinal}</div>
-        <div style={{fontSize:"9px",color:"#556677",marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ann.title?ann.title+" · ":""}{valTxt}{areaTxt?` · Área: ${areaTxt}`:""}</div>
+  /* Popover compacto — no ocupa toda la pantalla, aparece como burbuja flotante */
+  return<div data-modal="iconinfo" onClick={()=>setIconInfoM(null)}
+    style={{position:"fixed",inset:0,zIndex:fc?960:600,background:"rgba(0,0,0,.15)"}}>
+    <div onClick={e=>e.stopPropagation()}
+      style={{position:"absolute",bottom:"80px",left:"50%",transform:"translateX(-50%)",
+        width:"min(340px,calc(100% - 32px))",
+        background:"#fff",border:`2px solid ${col}`,borderRadius:"14px",
+        boxShadow:"0 8px 32px rgba(0,0,0,.25)",animation:"slideUp .15s ease",overflow:"hidden"}}>
+      {/* Cabecera del popover */}
+      <div style={{display:"flex",alignItems:"center",gap:"10px",padding:"10px 12px",
+        background:`${col}14`,borderBottom:`1px solid ${col}44`}}>
+        <div style={{width:"32px",height:"32px",borderRadius:"50%",background:"#fff",
+          border:`2.5px solid ${col}`,display:"flex",alignItems:"center",justifyContent:"center",
+          fontSize:"16px",color:col,flexShrink:0}}>{ann.icon||td?.icon||"●"}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:"12px",fontWeight:800,color:col}}>{td?.label||ann.type} #{ordinal}</div>
+          {ann.title&&<div style={{fontSize:"9px",color:"var(--txt2)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ann.title}</div>}
+        </div>
+        <div style={{fontSize:"14px",fontWeight:900,color:col,flexShrink:0}}>{valTxt}</div>
+        <button onClick={()=>setIconInfoM(null)} style={{background:"none",border:"none",color:"var(--txt2)",fontSize:"16px",padding:"0 2px",flexShrink:0}}>✕</button>
+      </div>
+      {/* Acciones en fila */}
+      <div style={{display:"flex",gap:"0"}}>
+        <button onClick={editHere} style={{flex:1,padding:"9px 6px",background:"transparent",
+          border:"none",borderRight:"1px solid var(--border)",color:"#cc6600",
+          fontSize:"9px",fontWeight:700,display:"flex",flexDirection:"column",alignItems:"center",gap:"2px"}}>
+          <span style={{fontSize:"14px"}}>✎</span>Editar
+        </button>
+        <button onClick={()=>goTo("2d")} style={{flex:1,padding:"9px 6px",background:"transparent",
+          border:"none",borderRight:"1px solid var(--border)",color:"#0055cc",
+          fontSize:"9px",fontWeight:700,display:"flex",flexDirection:"column",alignItems:"center",gap:"2px"}}>
+          <span style={{fontSize:"14px"}}>📐</span>Ver 2D
+        </button>
+        <button onClick={()=>goTo("3d")} style={{flex:1,padding:"9px 6px",background:"transparent",
+          border:"none",color:"#6633cc",
+          fontSize:"9px",fontWeight:700,display:"flex",flexDirection:"column",alignItems:"center",gap:"2px"}}>
+          <span style={{fontSize:"14px"}}>🎮</span>Ver 3D
+        </button>
       </div>
     </div>
-    <div style={{fontSize:"9px",color:"#2a3a5a",margin:"14px 0 10px"}}>¿Qué quieres hacer con esta medida?</div>
-    <div style={{display:"flex",flexDirection:"column",gap:"7px"}}>
-      <button onClick={editHere} style={{padding:"12px",background:"rgba(255,150,0,.12)",border:"1px solid rgba(255,150,0,.35)",color:"#ff9500",borderRadius:"9px",fontSize:"11px",fontWeight:700,textAlign:"left"}}>✎ Ver / editar aquí mismo</button>
-      <div style={{display:"flex",gap:"7px"}}>
-        <button onClick={()=>goTo("2d")} style={{flex:1,padding:"12px",background:"rgba(0,150,255,.1)",border:"1px solid rgba(0,150,255,.3)",color:"#00bbff",borderRadius:"9px",fontSize:"11px",fontWeight:700}}>📐 Ir a 2D</button>
-        <button onClick={()=>goTo("3d")} style={{flex:1,padding:"12px",background:"rgba(150,80,255,.1)",border:"1px solid rgba(150,80,255,.3)",color:"#aa66ff",borderRadius:"9px",fontSize:"11px",fontWeight:700}}>🎮 Ir a 3D</button>
-      </div>
-    </div>
-    {fc&&<div style={{fontSize:"8px",color:"var(--txt2)",marginTop:"10px",lineHeight:1.6}}>Ir a 2D/3D guardará en la imagen principal las {fcAnns.filter(x=>x.value!=null).length} medida(s) con valor de esta zona.</div>}
   </div>;
 })()}
 
