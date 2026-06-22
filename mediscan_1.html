@@ -1036,6 +1036,7 @@ function App(){
   const [dimVals,setDimVals]=useState({u:"cm"}); /* valores de la pestaña "Lados" */
   const [ladosSession,setLadosSession]=useState([]); /* ids de medidas añadidas en la sesión actual de "Lados" — para poder cancelarlas */
   const [part2DSel,setPart2DSel]=useState(null); /* pieza seleccionada en el panel 2D para vista interactiva */
+  const [rot2d,setRot2d]=useState(0); /* rotación de la foto en el panel 2D de pieza */
   const [viewPromptExpanded,setViewPromptExpanded]=useState(false); /* toast expandido */
 
   /* AI parts segmentation */
@@ -3371,7 +3372,6 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       {part2DSel&&(()=>{
         const seg=segs.find(s=>s.id===part2DSel);if(!seg)return null;
         const segMeas=anns.filter(a=>a.value!=null&&annInSeg(a,seg));
-        const [rot2d,setRot2d]=useState(0);
         return<div style={{marginTop:"12px",padding:"12px",background:"var(--bg3)",borderRadius:"10px",border:`2px solid ${seg.color||C}`,display:"flex",gap:"14px",alignItems:"flex-start",flexWrap:"wrap"}}>
           {/* Foto de la zona */}
           <div style={{flexShrink:0,position:"relative"}}>
