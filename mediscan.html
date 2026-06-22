@@ -991,6 +991,33 @@ function App(){
   },[]);
   useEffect(()=>{setMeasM(null);setCalibM(null);setCropM(null);setPend([]);setPrev(null);setDragSt(null);},[scr]);
 
+  /* ── ESCAPE / TECLAS GLOBALES ── */
+  useEffect(()=>{
+    const onKey=e=>{
+      if(e.key==="Escape"){
+        /* Escape: cancela herramienta activa, cierra modales, vuelve a Mover */
+        if(measM||calibM||cropM||viewPrompt||iconInfoM||scopeAsk){
+          setMeasM(null);setCalibM(null);setCropM(null);setViewPrompt(null);setIconInfoM(null);setScopeAsk(null);
+          fcClickLockRef.current=false;
+        }
+        setPend([]);setPrev(null);setDragSt(null);
+        if(tool!=="sel")setTool("sel");
+        setMultiSel([]);setSelId(null);
+      }
+    };
+    window.addEventListener("keydown",onKey);
+    return()=>window.removeEventListener("keydown",onKey);
+  },[measM,calibM,cropM,viewPrompt,iconInfoM,scopeAsk,tool]);
+
+  /* ── AUTOGUARDADO en localStorage cada vez que cambian anns, segs o img ── */
+  useEffect(()=>{
+    if(!img)return;
+    try{
+      const snap={anns,segs,img,pName,objInfo,scale,colI};
+      localStorage.setItem("ms3_autosave",JSON.stringify(snap));
+    }catch(e){}
+  },[anns,segs,img,pName]);
+
   /* UNDO step by step */
   const addA=useCallback(a=>{setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);setRedo([]);setAnns(p=>[...p,a]);},[anns]);
   const updA=useCallback((id,ch)=>{setHist(h=>[...h.slice(-30),JSON.parse(JSON.stringify(anns))]);setRedo([]);setAnns(p=>p.map(a=>a.id===id?{...a,...ch}:a));},[anns]);
@@ -2023,14 +2050,23 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     /* ── INCLINACIÓN: 2 puntos, ángulo respecto a horizontal ── */
     if(a.type==="incl"&&pts.length>=2){
       const dx=p2.x-p1.x,dy=p2.y-p1.y;
-      const autoVal=`${Math.round(Math.abs(Math.atan2(dy,dx)*180/Math.PI))}°`;
-      const dispBadge=ip?"":(badge||autoVal);
+      const angR=Math.atan2(dy,dx);
+      const angDeg=Math.abs(angR*180/Math.PI);
+      /* Inclinación: línea inclinada + línea horizontal de referencia + arco que muestra el ángulo */
+      const refLen=8; /* longitud de la línea horizontal de referencia en % */
+      const arcR2=3.5;
+      const arcX=p1.x*100+arcR2*Math.cos(0),arcY=p1.y*100; /* punto del arco en horizontal */
+      const arcX2=p1.x*100+arcR2*Math.cos(angR),arcY2=p1.y*100+arcR2*Math.sin(angR);
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke="transparent" strokeWidth="14"/>
+        {/* Línea horizontal de referencia */}
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+refLen}%`} y2={`${p1.y*100}%`} stroke={col} strokeWidth="1.2" strokeDasharray="4,2" opacity=".7"/>
+        {/* Arco del ángulo de inclinación */}
+        <path d={`M ${arcX}% ${arcY}% A ${arcR2}% ${arcR2}% 0 0 ${dy<0?0:1} ${arcX2}% ${arcY2}%`} stroke={col} strokeWidth="1.2" fill={`${col}20`}/>
+        {/* Línea inclinada */}
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw}/>
-        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+10}%`} y2={`${p1.y*100}%`} stroke={col} strokeWidth="1" strokeDasharray="3,2" opacity=".6"/>
-        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1.2%" fill={col}/>
-        <circle cx={`${p2.x*100}%`} cy={`${p2.y*100}%`} r="1%" fill={col}/>
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1%" fill={col}/>
+        <circle cx={`${p2.x*100}%`} cy={`${p2.y*100}%`} r="0.8%" fill={col}/>
         {!ip&&<Pill mx={`${mx}`} my={`${my-4.5}`} a={a}/>}
       </g>;
     }
@@ -2063,13 +2099,21 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     /* ── RADIO / DIÁMETRO: 2 puntos (centro → borde) ── */
     if(a.type==="rad"&&pts.length>=2){
       const r=Math.sqrt(Math.pow((p2.x-p1.x)*100,2)+Math.pow((p2.y-p1.y)*100,2));
-      const dispBadge=ip?"":(badge||`Ø~${Math.round(r*2)}%`);
+      /* Radio: círculo con relleno suave + cruz en el centro + radio señalado */
+      const dx2=p2.x-p1.x,dy2=p2.y-p1.y,len2=Math.sqrt(dx2*dx2+dy2*dy2)||.001;
+      const ox=dx2/len2*r,oy=dy2/len2*r; /* opuesto al radio */
+      const crS=1.5; /* tamaño de la cruz */
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r={`${r}%`} stroke="transparent" strokeWidth="14" fill="none"/>
-        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke="transparent" strokeWidth="14"/>
-        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r={`${r}%`} stroke={col} strokeWidth={sw} fill="none" strokeDasharray="6,3"/>
-        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw}/>
-        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1.2%" fill={col}/>
+        {/* Relleno semitransparente de la circunferencia */}
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r={`${r}%`} stroke={col} strokeWidth={sw} fill={`${col}14`}/>
+        {/* Línea de diámetro completo */}
+        <line x1={`${p1.x*100-ox}%`} y1={`${p1.y*100-oy}%`} x2={`${p1.x*100+ox}%`} y2={`${p1.y*100+oy}%`} stroke={col} strokeWidth="1" strokeDasharray="5,3" opacity=".7"/>
+        {/* Radio señalado */}
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw+0.5}/>
+        {/* Cruz en centro */}
+        <line x1={`${p1.x*100-crS}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+crS}%`} y2={`${p1.y*100}%`} stroke={col} strokeWidth="1.2"/>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100-crS}%`} x2={`${p1.x*100}%`} y2={`${p1.y*100+crS}%`} stroke={col} strokeWidth="1.2"/>
         {!ip&&<Pill mx={`${mx}`} my={`${my-4.5}`} a={a}/>}
       </g>;
     }
@@ -2096,47 +2140,65 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke="transparent" strokeWidth="14"/>
         <line x1={`${(p1.x+nx)*100}%`} y1={`${(p1.y+ny)*100}%`} x2={`${(p2.x+nx)*100}%`} y2={`${(p2.y+ny)*100}%`} stroke="transparent" strokeWidth="14"/>
+        {/* Relleno de rayas — el patrón es inconfundible con cualquier otra herramienta */}
+        {[0,.2,.4,.6,.8,1].map(t=>{
+          const hx1=p1.x*100+t*(p2.x-p1.x)*100,hy1=p1.y*100+t*(p2.y-p1.y)*100;
+          return<line key={t} x1={`${hx1}%`} y1={`${hy1}%`} x2={`${hx1+nx*100}%`} y2={`${hy1+ny*100}%`} stroke={col} strokeWidth="0.7" opacity="0.5"/>;
+        })}
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw}/>
         <line x1={`${(p1.x+nx)*100}%`} y1={`${(p1.y+ny)*100}%`} x2={`${(p2.x+nx)*100}%`} y2={`${(p2.y+ny)*100}%`} stroke={col} strokeWidth={sw} strokeDasharray="5,2"/>
-        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${(p1.x+nx)*100}%`} y2={`${(p1.y+ny)*100}%`} stroke={col} strokeWidth="1.5"/>
-        <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${(p2.x+nx)*100}%`} y2={`${(p2.y+ny)*100}%`} stroke={col} strokeWidth="1.5"/>
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${(p1.x+nx)*100}%`} y2={`${(p1.y+ny)*100}%`} stroke={col} strokeWidth="2"/>
+        <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${(p2.x+nx)*100}%`} y2={`${(p2.y+ny)*100}%`} stroke={col} strokeWidth="2"/>
         {!ip&&<Pill mx={`${(p1.x+p2.x)*50+nx*50}`} my={`${(p1.y+p2.y)*50+ny*50-4}`} a={a}/>}
       </g>;
     }
     /* ── POLILÍNEA: múltiples puntos ── */
     if(a.type==="poly"&&pts.length>=2){
+      /* Polilínea: puntos rombos (distintos a los círculos de Área) + líneas con guiones */
       const d="M "+pts.map(p=>`${p.x*100}% ${p.y*100}%`).join(" L ");
-      const dispBadge=ip?"":(badge||`${pts.length} pts`);
       const cx=pts.reduce((s,p)=>s+p.x,0)/pts.length*100;
       const cy=pts.reduce((s,p)=>s+p.y,0)/pts.length*100;
+      /* Polilínea: rombos en los vértices (≠ círculos de Área) */
+      const dmS=1.4; /* tamaño rombo */
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
-        <path d={d} stroke={col} strokeWidth={sw} fill="none"/>
         <path d={d} stroke="transparent" strokeWidth="14" fill="none"/>
-        {pts.map((p,i)=><circle key={i} cx={`${p.x*100}%`} cy={`${p.y*100}%`} r="1%" fill={col}/>)}
+        <path d={d} stroke={col} strokeWidth={sw} fill="none" strokeDasharray="8,3"/>
+        {pts.map((p,i)=><polygon key={i}
+          points={`${p.x*100}%,${(p.y-dmS/100)*100}% ${(p.x+dmS/100)*100}%,${p.y*100}% ${p.x*100}%,${(p.y+dmS/100)*100}% ${(p.x-dmS/100)*100}%,${p.y*100}%`}
+          fill={i===0||i===pts.length-1?"#fff":col} stroke={col} strokeWidth="0.6"/>)}
         {!ip&&<Pill mx={`${cx}`} my={`${cy-4}`} a={a}/>}
       </g>;
     }
     /* ── TOLERANCIA ±: 1 punto ── */
     if(a.type==="tol"&&pts.length>=1){
-      const dispBadge=ip?"":(badge||"± Tol");
+      /* Tolerancia: caja rectangular dividida en dos (superior: valor, inferior: ±tol) */
+      const bW=9,bH=5,bX=p1.x*100,bY=p1.y*100-bH/2;
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
-        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+8}%`} y2={`${(p1.y-.05)*100}%`} stroke={col} strokeWidth="1.5"/>
-        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1.5%" fill={col}/>
-        {!ip&&<Pill mx={`${p1.x*100+12}`} my={`${(p1.y-.05)*100}`} a={a}/>}
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${bX}%`} y2={`${bY+bH/2}%`} stroke={col} strokeWidth="1.5"/>
+        <rect x={`${bX}%`} y={`${bY}%`} width={`${bW}%`} height={`${bH/2}%`} fill="rgba(255,255,255,.7)" stroke={col} strokeWidth="0.9"/>
+        <rect x={`${bX}%`} y={`${bY+bH/2}%`} width={`${bW}%`} height={`${bH/2}%`} fill={`${col}22`} stroke={col} strokeWidth="0.9"/>
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1%" fill={col}/>
+        {!ip&&<Pill mx={`${bX+bW/2}`} my={`${bY-2}`} a={a}/>}
       </g>;
     }
     /* ── CHAFLÁN/FASEO: 3 puntos ── */
     if(a.type==="cham"&&pts.length>=3){
       const p3=pts[2];
-      const dispBadge=ip?"":(badge||"Chaflán");
+      /* Chaflán: triángulo relleno que muestra el material eliminado en el corte */
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke="transparent" strokeWidth="14"/>
         <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke="transparent" strokeWidth="14"/>
-        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw}/>
-        <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth={sw}/>
-        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth="1.5" strokeDasharray="5,3"/>
-        <circle cx={`${p2.x*100}%`} cy={`${p2.y*100}%`} r="1.3%" fill={col}/>
-        {!ip&&<Pill mx={`${p2.x*100}`} my={`${p2.y*100-5}`} a={a}/>}
+        {/* Triángulo que representa el material eliminado */}
+        <polygon points={`${p1.x*100}%,${p1.y*100}% ${p2.x*100}%,${p2.y*100}% ${p3.x*100}%,${p3.y*100}%`}
+          fill={`${col}30`} stroke="none"/>
+        {/* Línea del chaflán (diagonal de corte) */}
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth={sw+0.5}/>
+        {/* Los dos lados del material */}
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw} opacity="0.6"/>
+        <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth={sw} opacity="0.6"/>
+        {/* Punto de esquina */}
+        <rect x={`${p2.x*100-.8}%`} y={`${p2.y*100-.8}%`} width="1.6%" height="1.6%" fill={col}/>
+        {!ip&&<Pill mx={`${(p1.x*100+p3.x*100)/2}`} my={`${(p1.y*100+p3.y*100)/2-4}`} a={a}/>}
       </g>;
     }
     /* ── ÁREA: 3+ puntos cerrados ── */
@@ -2155,38 +2217,64 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     /* ── ARCO: 3 puntos (inicio, paso, fin) ── */
     if(a.type==="arc"&&pts.length>=3){
       const p3=pts[2];
-      const dispBadge=ip?"":(badge||"Arco");
       const arcD=`M ${p1.x*100}% ${p1.y*100}% Q ${p2.x*100}% ${p2.y*100}% ${p3.x*100}% ${p3.y*100}%`;
+      /* Arco: líneas rectas de referencia desde los extremos al punto de control + relleno bajo la curva */
+      const areaD=`M ${p1.x*100}% ${p1.y*100}% Q ${p2.x*100}% ${p2.y*100}% ${p3.x*100}% ${p3.y*100}% L ${p1.x*100}% ${p1.y*100}%`;
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
         <path d={arcD} stroke="transparent" strokeWidth="14" fill="none"/>
-        <path d={arcD} stroke={col} strokeWidth={sw} fill="none"/>
-        {[p1,p3].map((p,i)=><circle key={i} cx={`${p.x*100}%`} cy={`${p.y*100}%`} r="1%" fill={col}/>)}
+        {/* Cuerdas de referencia */}
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth="1" strokeDasharray="3,2" opacity=".5"/>
+        <line x1={`${p3.x*100}%`} y1={`${p3.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth="1" strokeDasharray="3,2" opacity=".5"/>
+        {/* Relleno bajo el arco */}
+        <path d={areaD} fill={`${col}18`} stroke="none"/>
+        {/* El arco en sí, grueso */}
+        <path d={arcD} stroke={col} strokeWidth={sw+0.5} fill="none"/>
+        {/* Marcadores en extremos y punto de control */}
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1%" fill={col}/>
+        <circle cx={`${p3.x*100}%`} cy={`${p3.y*100}%`} r="1%" fill={col}/>
+        <circle cx={`${p2.x*100}%`} cy={`${p2.y*100}%`} r="0.8%" fill="none" stroke={col} strokeWidth="1"/>
         {!ip&&<Pill mx={`${p2.x*100}`} my={`${p2.y*100-5}`} a={a}/>}
       </g>;
     }
     /* ── COORDENADA XY: 1 punto ── */
     if(a.type==="coord"&&pts.length>=1){
       const xPx=Math.round(p1.x*1000)/10,yPx=Math.round(p1.y*1000)/10;
-      const dispBadge=ip?"":(badge||`X:${xPx} Y:${yPx}`);
+      const aL=5.5; /* longitud de los ejes en % */
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
-        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="3.5%" fill="transparent"/>
-        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+6}%`} y2={`${p1.y*100}%`} stroke={col} strokeWidth="1.5"/>
-        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100}%`} y2={`${p1.y*100-6}%`} stroke={col} strokeWidth="1.5"/>
-        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1.2%" fill={col}/>
-        {!ip&&<Pill mx={`${p1.x*100+9}`} my={`${p1.y*100-5}`} a={a}/>}
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="4%" fill="transparent"/>
+        {/* Eje X (rojo) con flecha */}
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+aL}%`} y2={`${p1.y*100}%`} stroke="#ee2211" strokeWidth="2"/>
+        <polygon points={`${p1.x*100+aL}%,${p1.y*100}% ${p1.x*100+aL-1.5}%,${p1.y*100-.7}% ${p1.x*100+aL-1.5}%,${p1.y*100+.7}%`} fill="#ee2211"/>
+        {/* Eje Y (verde) con flecha */}
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100}%`} y2={`${p1.y*100-aL}%`} stroke="#22aa44" strokeWidth="2"/>
+        <polygon points={`${p1.x*100}%,${p1.y*100-aL}% ${p1.x*100-.7}%,${p1.y*100-aL+1.5}% ${p1.x*100+.7}%,${p1.y*100-aL+1.5}%`} fill="#22aa44"/>
+        {/* Origen */}
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1%" fill={col}/>
+        {!ip&&<Pill mx={`${p1.x*100+aL+2}`} my={`${p1.y*100-3}`} a={a}/>}
       </g>;
     }
     /* ── DEFLEXIÓN: 3 puntos ── */
     if(a.type==="defl"&&pts.length>=3){
       const p3=pts[2];
-      const dispBadge=ip?"":(badge||"Deflexión");
       const deflD=`M ${p1.x*100}% ${p1.y*100}% Q ${p2.x*100}% ${p2.y*100}% ${p3.x*100}% ${p3.y*100}%`;
+      /* Deflexión: línea recta de la posición "sin deformar" + curva de deformación + flecha de desplazamiento */
+      const midX=(p1.x+p3.x)*50,midY=(p1.y+p3.y)*50;
+      const defX=p2.x*100,defY=p2.y*100;
+      const dxArr=defX-midX,dyArr=defY-midY,lArr=Math.sqrt(dxArr*dxArr+dyArr*dyArr)||1;
+      const arX=defX-dxArr/lArr*2,arY=defY-dyArr/lArr*2;
+      const arAngle=Math.atan2(dyArr,dxArr);
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
         <path d={deflD} stroke="transparent" strokeWidth="14" fill="none"/>
-        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth="1.5" strokeDasharray="4,3"/>
-        <path d={deflD} stroke={col} strokeWidth={sw} fill="none"/>
-        <line x1={`${(p1.x+p3.x)*50}%`} y1={`${(p1.y+p3.y)*50}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth="1" strokeDasharray="3,2" opacity=".7"/>
-        {!ip&&<Pill mx={`${p2.x*100}`} my={`${p2.y*100-5}`} a={a}/>}
+        {/* Línea recta "sin deformar" */}
+        <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth="1.5"/>
+        {/* Curva de deflexión */}
+        <path d={deflD} stroke={col} strokeWidth={sw} fill="none" strokeDasharray="6,3"/>
+        {/* Flecha de desplazamiento (del medio de la línea al punto máximo de deflexión) */}
+        <line x1={`${midX}%`} y1={`${midY}%`} x2={`${arX}%`} y2={`${arY}%`} stroke={col} strokeWidth="1.5"/>
+        <polygon points={`${defX}%,${defY}% ${arX+Math.cos(arAngle-0.4)*2}%,${arY+Math.sin(arAngle-0.4)*2}% ${arX+Math.cos(arAngle+0.4)*2}%,${arY+Math.sin(arAngle+0.4)*2}%`} fill={col}/>
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="0.9%" fill={col}/>
+        <circle cx={`${p3.x*100}%`} cy={`${p3.y*100}%`} r="0.9%" fill={col}/>
+        {!ip&&<Pill mx={`${defX}`} my={`${defY-4}`} a={a}/>}
       </g>;
     }
     /* ── NOTA DE TEXTO: 1 punto ── */
@@ -2201,12 +2289,17 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     }
     /* ── RUGOSIDAD Ra: 1 punto ── */
     if(a.type==="rough"&&pts.length>=1){
-      const dispBadge=ip?"":(badge||"Ra");
+      /* Rugosidad Ra: símbolo ISO √ con línea de acabado y líneas onduladas que simulan la textura */
+      const bX=p1.x*100,bY=p1.y*100;
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
-        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="3%" fill="transparent"/>
-        <path d={`M ${p1.x*100-1.5}% ${p1.y*100+2}% L ${p1.x*100}% ${p1.y*100}% L ${p1.x*100+1.5}% ${p1.y*100+2}%`} stroke={col} strokeWidth="2" fill="none"/>
-        <path d={`M ${p1.x*100}% ${p1.y*100}% L ${p1.x*100+3}% ${p1.y*100}%`} stroke={col} strokeWidth="1.5" fill="none"/>
-        {!ip&&<Pill mx={`${p1.x*100+6}`} my={`${p1.y*100-1}`} a={a}/>}
+        <circle cx={`${bX}%`} cy={`${bY}%`} r="4%" fill="transparent"/>
+        {/* Símbolo ISO de rugosidad (√ con barra) */}
+        <path d={`M ${bX-2}% ${bY+2.5}% L ${bX}% ${bY}% L ${bX+2}% ${bY+2.5}%`} stroke={col} strokeWidth="2" fill="none"/>
+        <line x1={`${bX}%`} y1={`${bY}%`} x2={`${bX+5}%`} y2={`${bY}%`} stroke={col} strokeWidth="1.8"/>
+        {/* Líneas onduladas que simulan la textura de la superficie */}
+        <path d={`M ${bX-3}% ${bY+4}% Q ${bX-2}% ${bY+3}% ${bX-1}% ${bY+4}% Q ${bX}% ${bY+5}% ${bX+1}% ${bY+4}% Q ${bX+2}% ${bY+3}% ${bX+3}% ${bY+4}%`}
+          stroke={col} strokeWidth="0.9" fill="none" opacity="0.7"/>
+        {!ip&&<Pill mx={`${bX+7}`} my={`${bY-1}`} a={a}/>}
       </g>;
     }
 
@@ -2538,7 +2631,19 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
 
 {/* HOME */}
 {scr==="home"&&<div className="fade" style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-  <button onClick={()=>setScr("camera")} style={{width:"100%",padding:"18px",background:"linear-gradient(135deg,#ff6600,#ff9500,#ffcc00)",color:"#fff",border:"none",borderRadius:"14px",fontSize:"15px",fontWeight:800,letterSpacing:"-.2px",color:"#000",boxShadow:"0 4px 28px rgba(255,150,0,.45)"}}>＋ NUEVO PROYECTO</button>
+  {/* Recuperar sesión autosaved */}
+  {(()=>{try{const s=localStorage.getItem("ms3_autosave");if(!s)return null;const d=JSON.parse(s);if(!d?.img)return null;
+    return<button onClick={()=>{
+      setImg(d.img);setAnns(d.anns||[]);setSegs(d.segs||[]);setPName(d.pName||"");
+      setObjInfo(d.objInfo||null);setScale(d.scale||null);setColI(d.colI||0);setScr("annotate");
+    }} style={{width:"100%",padding:"14px 18px",background:"linear-gradient(135deg,#0055cc,#0099ff)",color:"#fff",border:"none",
+      borderRadius:"14px",fontSize:"13px",fontWeight:800,boxShadow:"0 4px 20px rgba(0,100,255,.3)",textAlign:"left",display:"flex",gap:"12px",alignItems:"center"}}>
+      <span style={{fontSize:"28px"}}>↩</span>
+      <div><div style={{fontSize:"13px",fontWeight:800}}>Continuar sesión anterior</div>
+      <div style={{fontSize:"9px",opacity:.85,marginTop:"2px"}}>{d.pName||"Sin nombre"} · {d.anns?.filter(a=>a.value!=null).length||0} medidas guardadas</div></div>
+    </button>;
+  }catch{return null;}})()}
+  <button onClick={()=>setScr("camera")} style={{width:"100%",padding:"18px",background:"linear-gradient(135deg,#ff6600,#ff9500,#ffcc00)",color:"#000",border:"none",borderRadius:"14px",fontSize:"15px",fontWeight:800,letterSpacing:"-.2px",boxShadow:"0 4px 28px rgba(255,150,0,.45)"}}>＋ NUEVO PROYECTO</button>
   {!GK()&&<div style={{background:"rgba(255,150,0,.12)",border:"1px solid rgba(255,150,0,.35)",borderRadius:"10px",padding:"10px 14px",fontSize:"9px",color:"#ff9500"}}>⚠️ Sin clave API Groq — toca ⚙ para configurarla</div>}
   {projs.length>0&&<div style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:"14px",overflow:"hidden"}}>
     <div style={{padding:"8px 13px",fontSize:"9px",color:"#ff9500",fontWeight:700,letterSpacing:".08em",textTransform:"uppercase",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>📁 Proyectos — {projs.length}</span><span style={{color:"#334",fontSize:"7px"}}>Toca · ✕ elimina</span></div>
@@ -2614,8 +2719,10 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     </div>
     {/* Tool buttons */}
     <div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"flex-start"}}>
-      {(tbyCat[tCat]||[]).map(t=><button key={t.id} title={t.label} onClick={()=>{
+      {(tbyCat[tCat]||[]).map(t=><button key={t.id} title={`${t.label}${TOOL_DESC[t.id]?" — "+TOOL_DESC[t.id]:""}`} onClick={()=>{
               if(t.id==="joinpts"){doJoinPts();return;}
+              /* Si pulsas la herramienta que ya está activa, vuelve a Mover */
+              if(tool===t.id){setTool("sel");setPend([]);setPrev(null);return;}
               setTool(t.id);setPend([]);setPrev(null);setDragSt(null);setMeasM(null);setCalibM(null);setCropM(null);setSamActive(false);fcClickLockRef.current=false;}}
               onContextMenu={e=>{e.preventDefault();setTool(t.id);setAddPartDlg(true);}}
               title={`${t.label} — ${TOOL_DESC[t.id]||t.label} (clic derecho = nueva parte)`}
