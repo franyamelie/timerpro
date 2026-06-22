@@ -2293,8 +2293,8 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
         <path d={d} stroke="transparent" strokeWidth="14" fill="none"/>
         <path d={d} stroke={col} strokeWidth={sw} fill="none" strokeDasharray="8,3"/>
-        {pts.map((p,i)=><polygon key={i}
-          points={`${p.x*100}%,${(p.y-dmS/100)*100}% ${(p.x+dmS/100)*100}%,${p.y*100}% ${p.x*100}%,${(p.y+dmS/100)*100}% ${(p.x-dmS/100)*100}%,${p.y*100}%`}
+        {pts.map((p,i)=><path key={i}
+          d={`M ${p.x*100}% ${(p.y-dmS/100)*100}% L ${(p.x+dmS/100)*100}% ${p.y*100}% L ${p.x*100}% ${(p.y+dmS/100)*100}% L ${(p.x-dmS/100)*100}% ${p.y*100}% Z`}
           fill={i===0||i===pts.length-1?"#fff":col} stroke={col} strokeWidth="0.6"/>)}
         {!ip&&<Pill mx={`${cx}`} my={`${cy-4}`} a={a}/>}
       </g>;
@@ -2319,7 +2319,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke="transparent" strokeWidth="14"/>
         <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke="transparent" strokeWidth="14"/>
         {/* Triángulo que representa el material eliminado */}
-        <polygon points={`${p1.x*100}%,${p1.y*100}% ${p2.x*100}%,${p2.y*100}% ${p3.x*100}%,${p3.y*100}%`}
+        <path d={`M ${p1.x*100}% ${p1.y*100}% L ${p2.x*100}% ${p2.y*100}% L ${p3.x*100}% ${p3.y*100}% Z`}
           fill={`${col}30`} stroke="none"/>
         {/* Línea del chaflán (diagonal de corte) */}
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth={sw+0.5}/>
@@ -2327,7 +2327,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p2.x*100}%`} y2={`${p2.y*100}%`} stroke={col} strokeWidth={sw} opacity="0.6"/>
         <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth={sw} opacity="0.6"/>
         {/* Punto de esquina */}
-        <rect x={`${p2.x*100-.8}%`} y={`${p2.y*100-.8}%`} width="1.6%" height="1.6%" fill={col}/>
+        <circle cx={`${p2.x*100}%`} cy={`${p2.y*100}%`} r="0.9%" fill={col}/>
         {!ip&&<Pill mx={`${(p1.x*100+p3.x*100)/2}`} my={`${(p1.y*100+p3.y*100)/2-4}`} a={a}/>}
       </g>;
     }
@@ -2374,10 +2374,10 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="4%" fill="transparent"/>
         {/* Eje X (rojo) con flecha */}
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100+aL}%`} y2={`${p1.y*100}%`} stroke="#ee2211" strokeWidth="2"/>
-        <polygon points={`${p1.x*100+aL}%,${p1.y*100}% ${p1.x*100+aL-1.5}%,${p1.y*100-.7}% ${p1.x*100+aL-1.5}%,${p1.y*100+.7}%`} fill="#ee2211"/>
+        <path d={`M ${p1.x*100+aL}% ${p1.y*100}% L ${p1.x*100+aL-1.5}% ${p1.y*100-.7}% L ${p1.x*100+aL-1.5}% ${p1.y*100+.7}% Z`} fill="#ee2211"/>
         {/* Eje Y (verde) con flecha */}
         <line x1={`${p1.x*100}%`} y1={`${p1.y*100}%`} x2={`${p1.x*100}%`} y2={`${p1.y*100-aL}%`} stroke="#22aa44" strokeWidth="2"/>
-        <polygon points={`${p1.x*100}%,${p1.y*100-aL}% ${p1.x*100-.7}%,${p1.y*100-aL+1.5}% ${p1.x*100+.7}%,${p1.y*100-aL+1.5}%`} fill="#22aa44"/>
+        <path d={`M ${p1.x*100}% ${p1.y*100-aL}% L ${p1.x*100-.7}% ${p1.y*100-aL+1.5}% L ${p1.x*100+.7}% ${p1.y*100-aL+1.5}% Z`} fill="#22aa44"/>
         {/* Origen */}
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1%" fill={col}/>
         {!ip&&<Pill mx={`${p1.x*100+aL+2}`} my={`${p1.y*100-3}`} a={a}/>}
@@ -2401,7 +2401,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         <path d={deflD} stroke={col} strokeWidth={sw} fill="none" strokeDasharray="6,3"/>
         {/* Flecha de desplazamiento (del medio de la línea al punto máximo de deflexión) */}
         <line x1={`${midX}%`} y1={`${midY}%`} x2={`${arX}%`} y2={`${arY}%`} stroke={col} strokeWidth="1.5"/>
-        <polygon points={`${defX}%,${defY}% ${arX+Math.cos(arAngle-0.4)*2}%,${arY+Math.sin(arAngle-0.4)*2}% ${arX+Math.cos(arAngle+0.4)*2}%,${arY+Math.sin(arAngle+0.4)*2}%`} fill={col}/>
+        <path d={`M ${defX}% ${defY}% L ${arX+Math.cos(arAngle-0.4)*2}% ${arY+Math.sin(arAngle-0.4)*2}% L ${arX+Math.cos(arAngle+0.4)*2}% ${arY+Math.sin(arAngle+0.4)*2}% Z`} fill={col}/>
         <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="0.9%" fill={col}/>
         <circle cx={`${p3.x*100}%`} cy={`${p3.y*100}%`} r="0.9%" fill={col}/>
         {!ip&&<Pill mx={`${defX}`} my={`${defY-4}`} a={a}/>}
@@ -3111,7 +3111,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         return<div key={a.id} className="nc"
         onMouseDown={e=>{if(tool==="sel")onHandleDrag(e,a.id,0);}} onTouchStart={e=>{if(tool==="sel")onHandleDrag(e,a.id,0);}}
         onClick={e=>{
-          if(!interactive)return;
+          /* Los iconos siempre responden al toque — no hace falta cambiar a Mover */
           e.stopPropagation();
           iconTapRef.current=true;
           setTimeout(()=>{iconTapRef.current=false;},300);
@@ -3121,23 +3121,22 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         }}
         style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,
           transform:"translate(-50%,-50%)",width:"34px",height:"34px",borderRadius:"50%",
-          /* Fondo blanco para que el icono sea legible sobre cualquier foto */
           background:"rgba(255,255,255,0.55)",
           backdropFilter:"blur(3px)",
           border:`3px solid ${inMulti?"#00cc66":a.color}`,
           outline:isSelected&&!inMulti?`3px dashed ${a.color}`:"none",outlineOffset:"3px",
           color:a.color,display:"flex",alignItems:"center",justifyContent:"center",
-          cursor:tool==="sel"?"grab":interactive?"pointer":"default",
-          zIndex:interactive?15:1,pointerEvents:interactive?"auto":"none",
+          cursor:"pointer",
+          zIndex:20,pointerEvents:"auto", /* SIEMPRE tapeables */
           boxShadow:`0 2px 12px rgba(0,0,0,.45), 0 0 ${isSelected||inMulti?16:6}px ${inMulti?"#00cc66":a.color}`,
           fontSize:a.type==="pin"?"17px":"13px",fontWeight:"700"}}>
         {a.icon||(a.type==="pin"?"📍":a.type==="star"?"⭐":a.type==="tgt"?"🎯":"●")}
         <div style={{position:"absolute",bottom:"-4px",right:"-4px",width:"16px",height:"16px",borderRadius:"50%",
-          background:inMulti?"#00cc66":a.color,color:"var(--txt)",fontSize:"9px",fontWeight:900,display:"flex",alignItems:"center",
+          background:inMulti?"#00cc66":a.color,color:"#fff",fontSize:"9px",fontWeight:900,display:"flex",alignItems:"center",
           justifyContent:"center",border:"2px solid #fff",pointerEvents:"none",
           boxShadow:"0 1px 4px rgba(0,0,0,.4)"}}>{inMulti?multiSel.indexOf(a.id)+1:typeOrd(mrkA,a)}</div>
       </div>;})}
-      {/* Drag handles for selected shape — solo en modo Mover, mismo motivo */}
+      {/* Drag handles para mover puntos — solo en modo Mover */}
       {tool==="sel"&&selA&&!MRK.includes(selA.type)&&selA.points.map((p,pi)=><div key={pi} className="nc" onMouseDown={e=>onHandleDrag(e,selA.id,pi)} onTouchStart={e=>onHandleDrag(e,selA.id,pi)} style={{position:"absolute",left:`${p.x*100}%`,top:`${p.y*100}%`,transform:"translate(-50%,-50%)",width:"18px",height:"18px",borderRadius:"50%",background:"#fff",cursor:"grab",zIndex:25,border:`3px solid ${selA.color}`,boxShadow:`0 0 10px ${selA.color}`}}/>)}
     </div>
   </div>
@@ -3611,11 +3610,13 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   const{ann,ordinal,fc}=iconInfoM;
   const td=TOOLS.find(t=>t.id===ann.type);
   const col=ann.color||"#ff9500";
-  const valTxt=ann.value!=null?`${ann.value} ${ann.unit}`:"Sin medir";
+  const sinMedida=ann.value==null;
+  const valTxt=sinMedida?`⚠ Sin medida — toca Editar`:`${ann.value} ${ann.unit}`;
   const editHere=()=>{
     setIconInfoM(null);setSelId(ann.id);setTool("sel");
-    if(fc){setMeasM({...ann,_existing:true,_fc:true});setMIn({t:ann.title||"",v:ann.value!=null?String(ann.value):"",u:ann.unit||"cm",ax:ann.axis||""});}
-    else if(MRK.includes(ann.type)){setMeasM({...ann,_existing:true});setMIn({t:ann.title||"",v:ann.value!=null?String(ann.value):"",u:ann.unit||"cm",ax:ann.axis||""});}
+    /* Siempre abrir el modal de medida, sea marcador o forma */
+    setMeasM({...ann,_existing:true,_fc:!!fc});
+    setMIn({t:ann.title||"",v:ann.value!=null?String(ann.value):"",u:ann.unit||"cm",ax:ann.axis||""});
   };
   const goTo=target=>{
     if(!fc){setIconInfoM(null);setScopeAsk(target);return;}
@@ -3644,7 +3645,10 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           <div style={{fontSize:"12px",fontWeight:800,color:col}}>{td?.label||ann.type} #{ordinal}</div>
           {ann.title&&<div style={{fontSize:"9px",color:"var(--txt2)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ann.title}</div>}
         </div>
-        <div style={{fontSize:"14px",fontWeight:900,color:col,flexShrink:0}}>{valTxt}</div>
+        <div style={{fontSize:sinMedida?"11px":"14px",fontWeight:900,
+          color:sinMedida?"#cc2200":col,flexShrink:0,
+          background:sinMedida?"rgba(200,0,0,.1)":"transparent",
+          padding:sinMedida?"3px 7px":"0",borderRadius:"6px"}}>{valTxt}</div>
         <button onClick={()=>setIconInfoM(null)} style={{background:"none",border:"none",color:"var(--txt2)",fontSize:"16px",padding:"0 2px",flexShrink:0}}>✕</button>
       </div>
       {/* Acciones en fila */}
