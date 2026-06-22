@@ -1022,6 +1022,9 @@ function App(){
   const [scopeAsk,setScopeAsk]=useState(null); /* "2d"|"3d"|null - pregunta SIEMPRE al entrar en 2D/3D: ¿todo o solo lo medido? */
   const [viewScope,setViewScope]=useState("measured"); /* "all"|"measured" - qué se muestra en 2D/3D según la respuesta */
   const [mIn,setMIn]=useState({t:"",v:"",u:"cm",ax:""});
+  const [measTab,setMeasTab]=useState("simple"); /* "simple"|"lados"|"principal" */
+  const [dimVals,setDimVals]=useState({u:"cm"}); /* valores de la pestaña "Lados" */
+  const [viewPromptExpanded,setViewPromptExpanded]=useState(false); /* toast expandido */
 
   /* AI parts segmentation */
   const [segs,setSegs]=useState([]);
@@ -1137,6 +1140,13 @@ function App(){
     window.addEventListener("keydown",onKey);
     return()=>window.removeEventListener("keydown",onKey);
   },[measM,calibM,cropM,viewPrompt,iconInfoM,scopeAsk,tool]);
+
+  /* Auto-dismiss del toast "Medida guardada" — a nivel de App, no condicional */
+  useEffect(()=>{
+    if(!viewPrompt||viewPromptExpanded)return;
+    const t=setTimeout(()=>{setViewPrompt(null);setViewPromptExpanded(false);},4500);
+    return()=>clearTimeout(t);
+  },[viewPrompt,viewPromptExpanded]);
 
   /* ── AUTOGUARDADO en localStorage cada vez que cambian anns, segs o img ── */
   useEffect(()=>{
@@ -3540,14 +3550,27 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     animation:"pulse 1.5s infinite"}}>↺</button>}
 
 {/* ══ MEASURE MODAL ══ */}
-{measM&&<div data-modal="measure" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"var(--bg2)",border:"2px solid #ff9500",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:editZone?900:500,animation:"slideUp .22s ease",backdropFilter:"blur(24px)",boxShadow:"0 -6px 40px rgba(0,0,0,.7)"}}>
-  <button onClick={()=>{fcClickLockRef.current=false;setMeasM(null);}} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center",zIndex:20}}>✕</button>
-  <div style={{marginBottom:"16px",paddingRight:"36px"}}>
+{measM&&<div data-modal="measure" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"560px",background:"var(--bg2)",border:"2px solid #ff9500",borderRadius:"18px 18px 0 0",padding:"16px 18px 20px",zIndex:editZone?900:500,animation:"slideUp .22s ease",backdropFilter:"blur(24px)",boxShadow:"0 -6px 40px rgba(0,0,0,.7)"}}>
+  <button onClick={()=>{fcClickLockRef.current=false;setMeasM(null);setMeasTab("simple");}} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center",zIndex:20}}>✕</button>
+  <div style={{marginBottom:"12px",paddingRight:"36px"}}>
     <div style={{fontSize:"13px",fontWeight:800,color:"#ff9500",letterSpacing:"-.2px"}}>AÑADIR MEDIDA</div>
-    <div style={{fontSize:"9px",color:"#2a3a5a",marginTop:"4px"}}>{measM.icon} {TOOLS.find(t=>t.id===measM.type)?.label} — escribe el valor y confirma</div>
+    <div style={{fontSize:"9px",color:"#2a3a5a",marginTop:"3px"}}>{measM.icon} {TOOLS.find(t=>t.id===measM.type)?.label} — escribe el valor y confirma</div>
   </div>
-  <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
-    <input placeholder="Título (ej: Longitud total, Diámetro exterior, Espesor de pared...)" value={mIn.t} onChange={e=>setMIn(s=>({...s,t:e.target.value}))} style={{width:"100%",padding:"10px 13px",background:"var(--bg2)",border:"1px solid rgba(0,150,255,.2)",borderRadius:"9px",color:"var(--txt)",fontSize:"11px"}}/>
+
+  {/* ── PESTAÑAS ── */}
+  <div style={{display:"flex",gap:"4px",marginBottom:"14px",background:"var(--bg3)",padding:"3px",borderRadius:"10px"}}>
+    {[["simple","📏 Medida","Una sola medida"],["lados","📐 Lados","Medir lado por lado"],["principal","↑ Pantalla","Añadir a imagen principal"]].map(([k,label,tip])=>(
+      <button key={k} title={tip} onClick={()=>setMeasTab(k)} style={{flex:1,padding:"7px 4px",borderRadius:"8px",fontSize:"9px",fontWeight:measTab===k?800:500,
+        background:measTab===k?"#fff":"transparent",
+        color:measTab===k?"#cc5500":"var(--txt2)",
+        border:measTab===k?"1px solid var(--border)":"1px solid transparent",
+        boxShadow:measTab===k?"0 1px 4px rgba(0,0,0,.1)":"none"}}>{label}</button>
+    ))}
+  </div>
+
+  {/* ── TAB: MEDIDA SIMPLE ── */}
+  {measTab==="simple"&&<div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+    <input placeholder="Título (ej: Longitud total, Diámetro exterior, Espesor...)" value={mIn.t} onChange={e=>setMIn(s=>({...s,t:e.target.value}))} style={{width:"100%",padding:"10px 13px",background:"var(--bg2)",border:"1px solid rgba(0,150,255,.2)",borderRadius:"9px",color:"var(--txt)",fontSize:"11px"}}/>
     <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
       <input type="number" min="0" step=".01" placeholder="Valor numérico" value={mIn.v} onChange={e=>setMIn(s=>({...s,v:e.target.value}))} style={{flex:1,padding:"11px 13px",background:"var(--bg2)",border:"1px solid rgba(0,180,255,.5)",borderRadius:"9px",color:C,fontSize:"24px",textAlign:"right"}}/>
       <div style={{display:"flex",gap:"3px",flexWrap:"wrap"}}>{["mm","cm","m","in","ft"].map(u=><button key={u} onClick={()=>setMIn(s=>({...s,u:u}))} style={{padding:"6px 9px",background:mIn.u===u?"rgba(0,150,255,.22)":"rgba(255,255,255,.04)",color:mIn.u===u?C:"#334455",border:`1px solid ${mIn.u===u?"rgba(255,150,0,.5)":"rgba(255,255,255,.07)"}`,borderRadius:"6px",fontSize:"10px",fontWeight:mIn.u===u?700:400}}>{u}</button>)}</div>
@@ -3560,19 +3583,102 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       <option value="other">Otra medida</option>
     </select>
     <div style={{display:"flex",gap:"8px"}}>
-      <button onClick={skipM} style={{flex:1,padding:"12px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.09)",color:"#2a3a5a",borderRadius:"9px",fontSize:"10px"}}>Sin valor</button>
-      <button onClick={confirmM} style={{flex:2,padding:"12px",background:"linear-gradient(135deg,#ff7700,#ffaa00)",color:"#fff",border:"none",borderRadius:"9px",fontSize:"13px",fontWeight:800,boxShadow:"0 2px 18px rgba(255,150,0,.4)"}}>✓ CONFIRMAR MEDIDA</button>
+      <button onClick={()=>{skipM();setMeasTab("simple");}} style={{flex:1,padding:"12px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.09)",color:"#2a3a5a",borderRadius:"9px",fontSize:"10px"}}>Sin valor</button>
+      <button onClick={()=>{confirmM();setMeasTab("simple");}} style={{flex:2,padding:"12px",background:"linear-gradient(135deg,#ff7700,#ffaa00)",color:"#fff",border:"none",borderRadius:"9px",fontSize:"13px",fontWeight:800,boxShadow:"0 2px 18px rgba(255,150,0,.4)"}}>✓ CONFIRMAR MEDIDA</button>
     </div>
-  </div>
+  </div>}
+
+  {/* ── TAB: MEDIR LADO POR LADO ── */}
+  {measTab==="lados"&&(()=>{
+    const dims=[
+      {key:"width", label:"↔ Ancho", icon:"↔", ax:"width", placeholder:"ej: 12.5"},
+      {key:"height", label:"↕ Alto",  icon:"↕", ax:"height",placeholder:"ej: 8.3"},
+      {key:"depth",  label:"⟲ Prof.", icon:"⟲", ax:"depth", placeholder:"ej: 2.1"},
+      {key:"side1",  label:"◁ Lado izq.", icon:"◁", ax:"other",placeholder:"ej: 5"},
+      {key:"side2",  label:"▷ Lado der.", icon:"▷", ax:"other",placeholder:"ej: 5"},
+      {key:"diag",   label:"⤢ Diagonal", icon:"⤢", ax:"other",placeholder:"ej: 14"},
+    ];
+    const addDim=(d)=>{
+      const v=parseFloat(dimVals[d.key]);if(!v)return;
+      const col2=COLS[colI%COLS.length];
+      const cx=(measM.points?.[0]?.x||0.5),cy=(measM.points?.[0]?.y||0.5);
+      const offset={width:.05,height:.05,depth:.03,side1:.04,side2:.06,diag:.07}[d.key]||.04;
+      const a={id:uid(),type:"dim",icon:d.icon,title:d.label,value:v,unit:dimVals.u,axis:d.ax,
+               color:col2,points:[{x:cx-offset,y:cy},{x:cx+offset,y:cy}],lineStyle:"solid",arrowHead:"both"};
+      addA(a);setColI(c=>c+1);
+      setDimVals(prev=>({...prev,[d.key]:""}));
+      setAiMsg(`${d.icon} ${d.label}: ${v} ${dimVals.u} añadida`);
+    };
+    return<div>
+      <div style={{fontSize:"9px",color:"var(--txt2)",marginBottom:"10px",lineHeight:1.7}}>
+        Escribe el valor de cada lado/dimensión y pulsa <b>+</b> para añadirla a la imagen. Puedes añadir las que quieras.
+      </div>
+      <div style={{display:"flex",gap:"4px",marginBottom:"10px"}}>
+        {["mm","cm","m","in","ft"].map(u=><button key={u} onClick={()=>setDimVals(s=>({...s,u}))} style={{flex:1,padding:"5px",background:dimVals.u===u?"rgba(255,119,0,.2)":"var(--bg3)",color:dimVals.u===u?"#cc5500":"var(--txt2)",border:`1px solid ${dimVals.u===u?"#ff9500":"var(--border)"}`,borderRadius:"6px",fontSize:"9px",fontWeight:dimVals.u===u?700:400}}>{u}</button>)}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:"7px",maxHeight:"240px",overflowY:"auto"}}>
+        {dims.map(d=>(
+          <div key={d.key} style={{display:"flex",gap:"8px",alignItems:"center"}}>
+            <div style={{width:"80px",fontSize:"9px",fontWeight:700,color:"var(--txt2)",flexShrink:0}}>{d.label}</div>
+            <input type="number" min="0" step=".01" placeholder={d.placeholder}
+              value={dimVals[d.key]||""} onChange={e=>setDimVals(s=>({...s,[d.key]:e.target.value}))}
+              onKeyDown={e=>e.key==="Enter"&&addDim(d)}
+              style={{flex:1,padding:"8px 10px",background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:"7px",color:"var(--txt)",fontSize:"13px",textAlign:"right"}}/>
+            <button onClick={()=>addDim(d)} style={{padding:"8px 14px",background:"linear-gradient(135deg,#ff7700,#ffaa00)",color:"#fff",border:"none",borderRadius:"7px",fontSize:"14px",fontWeight:900,flexShrink:0}}>+</button>
+          </div>
+        ))}
+      </div>
+      <button onClick={()=>{skipM();setMeasTab("simple");}} style={{width:"100%",marginTop:"12px",padding:"10px",background:"var(--bg3)",border:"1px solid var(--border)",color:"var(--txt2)",borderRadius:"9px",fontSize:"10px"}}>↩ Cerrar sin añadir</button>
+    </div>;
+  })()}
+
+  {/* ── TAB: AÑADIR A IMAGEN PRINCIPAL ── */}
+  {measTab==="principal"&&(()=>{
+    const existingMeas=editZone?fcAnns.filter(a=>a.value!=null):anns.filter(a=>a.value!=null);
+    const seg=editZone?.seg;
+    return<div>
+      <div style={{fontSize:"9px",color:"var(--txt2)",marginBottom:"12px",lineHeight:1.7}}>
+        {editZone
+          ?`Estas ${existingMeas.length} medida(s) de la zona se copiarán a la imagen principal con las coordenadas reales.`
+          :`Tienes ${existingMeas.length} medida(s) en la imagen. Elige cuáles mostrar en el plano 2D y la vista 3D.`}
+      </div>
+      {existingMeas.length===0&&<div style={{padding:"16px",textAlign:"center",color:"var(--txt2)",fontSize:"9px"}}>
+        Aún no hay medidas confirmadas. Añade al menos una desde la pestaña "Medida" o "Lados".
+      </div>}
+      {existingMeas.length>0&&<div style={{display:"flex",flexDirection:"column",gap:"6px",maxHeight:"180px",overflowY:"auto"}}>
+        {existingMeas.map(a=>(
+          <div key={a.id} style={{display:"flex",alignItems:"center",gap:"8px",padding:"8px 10px",background:"var(--bg3)",borderRadius:"8px",border:"1px solid var(--border)"}}>
+            <span style={{fontSize:"16px"}}>{a.icon||"●"}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:"10px",fontWeight:700,color:"var(--txt)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.title||a.type}</div>
+              <div style={{fontSize:"9px",color:"#ff7700",fontWeight:700}}>{a.value} {a.unit}{a.axis?` · ${a.axis}`:""}</div>
+            </div>
+            <div style={{width:"10px",height:"10px",borderRadius:"50%",background:a.color,flexShrink:0}}/>
+          </div>
+        ))}
+      </div>}
+      <div style={{display:"flex",gap:"8px",marginTop:"12px"}}>
+        {editZone&&seg&&<button onClick={()=>{
+          const newAnns=fcAnns.filter(x=>x.value!=null).map(x=>({...x,id:uid(),_fc:false,partId:seg.id,partName:seg.name,
+            points:x.points.map(p=>({x:seg.x1+(p.x)*(seg.x2-seg.x1),y:seg.y1+(p.y)*(seg.y2-seg.y1)}))}));
+          newAnns.forEach(a=>addA(a));
+          setMeasM(null);setMeasTab("simple");
+          setAiMsg(`✅ ${newAnns.length} medida(s) de "${seg.name}" añadidas a la imagen principal`);
+        }} style={{flex:2,padding:"12px",background:"linear-gradient(135deg,#0055cc,#0099ff)",color:"#fff",border:"none",borderRadius:"9px",fontSize:"11px",fontWeight:700}}>
+          ↑ Copiar todas a imagen principal
+        </button>}
+        <button onClick={()=>{setMeasM(null);setScopeAsk("2d");setMeasTab("simple");}} style={{flex:1,padding:"12px",background:"rgba(0,100,255,.1)",border:"1px solid rgba(0,100,255,.25)",color:"#0055cc",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>📐 Ver 2D</button>
+        <button onClick={()=>{setMeasM(null);setScopeAsk("3d");setMeasTab("simple");}} style={{flex:1,padding:"12px",background:"rgba(100,50,255,.1)",border:"1px solid rgba(100,50,255,.25)",color:"#6633cc",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>🎮 Ver 3D</button>
+      </div>
+      <button onClick={()=>{skipM();setMeasTab("simple");}} style={{width:"100%",marginTop:"8px",padding:"10px",background:"var(--bg3)",border:"1px solid var(--border)",color:"var(--txt2)",borderRadius:"9px",fontSize:"10px"}}>↩ Cerrar</button>
+    </div>;
+  })()}
 </div>}
 
 {/* TOAST PEQUEÑO "Medida guardada" — aparece 3 segundos y tiene un botón ▼
     para desplegar las acciones (Ver medidas / 2D / 3D / Seguir midiendo) */}
 {viewPrompt&&(()=>{
-  const [expanded,setExpanded]=React.useState(false);
-  React.useEffect(()=>{
-    if(!expanded){const t=setTimeout(()=>setViewPrompt(null),4000);return()=>clearTimeout(t);}
-  },[expanded]);
+  /* auto-dismiss gestionado externamente con useEffect en App */
   return<div style={{position:"fixed",bottom:"16px",left:"50%",transform:"translateX(-50%)",zIndex:680,
     minWidth:"260px",maxWidth:"380px",background:"#fff",
     border:"2px solid #ff7700",borderRadius:"14px",
@@ -3585,15 +3691,15 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         </div>
         {viewPrompt.title&&<div style={{fontSize:"9px",color:"var(--txt2)",marginTop:"1px"}}>{viewPrompt.title}</div>}
       </div>
-      <button onClick={()=>setExpanded(e=>!e)} style={{flexShrink:0,padding:"4px 8px",background:"rgba(255,119,0,.1)",
+      <button onClick={()=>setViewPromptExpanded(e=>!e)} style={{flexShrink:0,padding:"4px 8px",background:"rgba(255,119,0,.1)",
         border:"1px solid rgba(255,119,0,.3)",borderRadius:"7px",fontSize:"11px",color:"#cc5500",fontWeight:700}}>
-        {expanded?"▲":"▼"}
+        {viewPromptExpanded?"▲":"▼"}
       </button>
       <button onClick={()=>setViewPrompt(null)} style={{flexShrink:0,width:"22px",height:"22px",
         background:"rgba(255,50,50,.1)",border:"1px solid rgba(255,50,50,.2)",borderRadius:"50%",
         color:"#cc3344",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
     </div>
-    {expanded&&<div style={{display:"flex",gap:"5px",padding:"0 12px 12px",flexWrap:"wrap"}}>
+    {viewPromptExpanded&&<div style={{display:"flex",gap:"5px",padding:"0 12px 12px",flexWrap:"wrap"}}>
       <button onClick={()=>{setViewPrompt(null);setSheet("meas");}} style={{flex:1,padding:"8px 4px",background:"rgba(255,150,0,.12)",border:"1px solid rgba(255,150,0,.3)",color:"#cc6600",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>📋 Medidas</button>
       <button onClick={()=>{setViewPrompt(null);setScopeAsk("2d");}} style={{flex:1,padding:"8px 4px",background:"rgba(0,100,255,.08)",border:"1px solid rgba(0,100,255,.2)",color:"#0055cc",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>📐 2D</button>
       <button onClick={()=>{setViewPrompt(null);setScopeAsk("3d");}} style={{flex:1,padding:"8px 4px",background:"rgba(100,50,255,.08)",border:"1px solid rgba(100,50,255,.2)",color:"#6633cc",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>🎮 3D</button>
