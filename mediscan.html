@@ -75,17 +75,25 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 /* TOOL BUTTON — fondo claro */
 .tb{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 7px;border-radius:12px;min-width:52px;
   background:var(--bg2);border:1.5px solid var(--border);color:var(--txt2);
-  font-size:7px;font-weight:600;cursor:pointer;
+  font-size:7px;font-weight:600;cursor:pointer;position:relative;
   box-shadow:0 1px 4px rgba(0,0,0,.07);transition:all .15s}
 .tb span:first-child{font-size:20px;line-height:1}
 .tb:hover{background:var(--accentbg);border-color:var(--accent);color:var(--accent)}
 .tb:active{transform:scale(.9)}
 .tb.act{background:linear-gradient(135deg,#ff7700,#ffaa00);border-color:#ff9500;color:#fff;box-shadow:0 2px 12px rgba(255,150,0,.4)}
-/* Tooltip nativo en TODAS las herramientas */
-.tb[title]:hover::after{content:attr(title);position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);
-  background:#1a1a1a;color:#fff;padding:4px 8px;border-radius:6px;font-size:10px;white-space:nowrap;
-  pointer-events:none;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,.3)}
-.tb{position:relative}
+/* Tooltip visible al pasar el ratón — usa el atributo title del botón */
+.tb[title]:hover::after{
+  content:attr(title);
+  position:fixed;
+  background:#111;color:#fff;
+  padding:5px 10px;border-radius:7px;
+  font-size:10px;font-weight:600;white-space:pre-wrap;max-width:200px;
+  pointer-events:none;z-index:9999;
+  box-shadow:0 3px 12px rgba(0,0,0,.4);
+  border:1px solid rgba(255,255,255,.15);
+  /* se posiciona con JS — aquí ponemos un fallback */
+  top:auto;left:50%;transform:translateX(-50%);bottom:calc(100% + 8px);
+}
 
 /* CARD — fondo blanco */
 .card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
@@ -2085,8 +2093,9 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         setMultiSel(prev=>prev.includes(a.id)?prev.filter(id=>id!==a.id):[...prev,a.id]);
         return;
       }
-      if(selId===a.id){setIconInfoM({ann:a,ordinal:ord,fc:false});}
-      else{setSelId(a.id);}
+      /* Un solo toque abre el popover directamente — más intuitivo */
+      setSelId(a.id);
+      setIconInfoM({ann:a,ordinal:ord,fc:false});
     };
     return(<g onClick={tap} onMouseDown={e=>e.stopPropagation()} onTouchStart={e=>{iconTapRef.current=true;setTimeout(()=>{iconTapRef.current=false;},300);e.stopPropagation();}} style={{cursor:"pointer"}}>
       {/* Círculo principal compacto — fondo blanco semitransparente, borde del color */}
@@ -2470,8 +2479,8 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         setMultiSel(prev=>prev.includes(a.id)?prev.filter(id=>id!==a.id):[...prev,a.id]);
         return;
       }
-      if(selId===a.id){setIconInfoM({ann:a,ordinal:ord,fc:true});}
-      else{setSelId(a.id);}
+      setSelId(a.id);
+      setIconInfoM({ann:a,ordinal:ord,fc:true});
     };
     const BadgeEl=({bx,by})=>ip?null:<g onClick={tapBadge} style={{cursor:"pointer"}}>
       <circle cx={`${bx}%`} cy={`${by}%`} r="2.1%" fill="rgba(255,255,255,0.82)" stroke={col}
@@ -2940,24 +2949,9 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
               stroke="rgba(0,0,0,0.8)" strokeWidth="0.2%" paintOrder="stroke fill"
               style={{pointerEvents:"none",letterSpacing:"-0.01em"}}>{isFaded?"✂ ":""}{seg.id}. {(seg.name||"").slice(0,15)}</text>
             {isSel&&segClickable&&<>
-              {/* ── BOTÓN ELIMINAR ZONA ── */}
-              <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();if(!window.confirm(`¿Eliminar la zona "${seg.name}"?`))return;setSegs(s=>s.filter(x=>x.id!==seg.id));setSelSeg(null);}}>
-                <rect x={`${seg.x2*100-9}%`} y={`${seg.y1*100}%`} width="9%" height="7%" rx="2%" fill="#ee2244"/>
-                <text x={`${seg.x2*100-4.5}%`} y={`${seg.y1*100+2}%`} fill="#fff" fontSize="2.8%" fontWeight="900" textAnchor="middle" dominantBaseline="middle">🗑</text>
-                <text x={`${seg.x2*100-4.5}%`} y={`${seg.y1*100+5.2}%`} fill="#fff" fontSize="1.5%" fontWeight="700" textAnchor="middle" dominantBaseline="middle">Borrar</text>
-              </g>
-              {/* ── BOTÓN AÑADIR MEDIDA RÁPIDA ── */}
-              <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();setMeasM({id:uid(),type:"dot",icon:"🔍",title:seg.name,value:null,unit:"cm",axis:"",color:col,points:[{x:(seg.x1+seg.x2)/2,y:(seg.y1+seg.y2)/2}]});setMIn({t:seg.name,v:"",u:"cm",ax:"other"});setSelSeg(null);}}>
-                <rect x={`${seg.x2*100-20}%`} y={`${seg.y1*100}%`} width="11%" height="7%" rx="2%" fill={col}/>
-                <text x={`${seg.x2*100-14.5}%`} y={`${seg.y1*100+2}%`} fill="#fff" fontSize="2.8%" fontWeight="900" textAnchor="middle" dominantBaseline="middle">📏</text>
-                <text x={`${seg.x2*100-14.5}%`} y={`${seg.y1*100+5.2}%`} fill="#fff" fontSize="1.5%" fontWeight="700" textAnchor="middle" dominantBaseline="middle">+ Medir</text>
-              </g>
-              {/* ── BOTÓN ABRIR ZONA (ver interior ampliado y medir dentro) ── */}
-              <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");c2.width=Math.round(im.width*(seg.x2-seg.x1));c2.height=Math.round(im.height*(seg.y2-seg.y1));c2.getContext("2d").drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);openZone(seg,c2.toDataURL("image/jpeg",.92));setSelSeg(null);};im.src=img;}}>
-                <rect x={`${seg.x2*100-33}%`} y={`${seg.y1*100}%`} width="13%" height="7%" rx="2%" fill="#1a6644"/>
-                <text x={`${seg.x2*100-26.5}%`} y={`${seg.y1*100+2}%`} fill="#fff" fontSize="2.8%" fontWeight="900" textAnchor="middle" dominantBaseline="middle">🔍</text>
-                <text x={`${seg.x2*100-26.5}%`} y={`${seg.y1*100+5.2}%`} fill="#fff" fontSize="1.5%" fontWeight="700" textAnchor="middle" dominantBaseline="middle">Abrir zona</text>
-              </g>
+              {/* Indicador de selección — borde más grueso */}
+              <rect x={`${seg.x1*100}%`} y={`${seg.y1*100}%`} width={`${(seg.x2-seg.x1)*100}%`} height={`${(seg.y2-seg.y1)*100}%`}
+                fill="none" stroke="#fff" strokeWidth="2.5" strokeDasharray="6,3" opacity="0.9"/>
             </>}
           </g>);})}
         {/* Shape annotations */}
@@ -3096,8 +3090,8 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           iconTapRef.current=true;
           setTimeout(()=>{iconTapRef.current=false;},300);
           if(tool==="selpts"){setMultiSel(prev=>prev.includes(a.id)?prev.filter(id=>id!==a.id):[...prev,a.id]);return;}
-          if(selId===a.id){setIconInfoM({ann:a,ordinal:typeOrd(mrkA,a),fc:false});}
-          else{setSelId(a.id);}
+          setSelId(a.id);
+          setIconInfoM({ann:a,ordinal:typeOrd(mrkA,a),fc:false});
         }}
         style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,
           transform:"translate(-50%,-50%)",width:"34px",height:"34px",borderRadius:"50%",
@@ -3436,6 +3430,56 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   💬
   {chatUnread&&!chatOpen&&<span style={{position:"absolute",top:"-2px",right:"-2px",width:"11px",height:"11px",borderRadius:"50%",background:"#ff3366",border:"2px solid #0c0c0c",animation:"pulse 1.2s infinite"}}/>}
 </button>}
+
+{/* ══ PANEL DE ZONA SELECCIONADA — aparece cuando se toca una zona en la imagen ══
+    Reemplaza los botones SVG diminutos con un panel DOM legible y grande */}
+{selSeg&&(()=>{
+  const seg=segs.find(s=>s.id===selSeg);
+  if(!seg)return null;
+  const col=seg.color||"#ff9500";
+  return<div style={{position:"fixed",bottom:"80px",left:"50%",transform:"translateX(-50%)",
+    width:"min(420px,calc(100% - 24px))",background:"#fff",
+    border:`2px solid ${col}`,borderRadius:"16px",zIndex:500,
+    boxShadow:"0 6px 28px rgba(0,0,0,.2)",animation:"slideUp .18s ease",overflow:"hidden"}}>
+    {/* Cabecera */}
+    <div style={{display:"flex",alignItems:"center",gap:"10px",padding:"10px 14px",
+      background:`${col}18`,borderBottom:`1px solid ${col}44`}}>
+      <div style={{width:"28px",height:"28px",borderRadius:"50%",background:col,
+        display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:"13px",fontWeight:900,flexShrink:0}}>
+        {segs.findIndex(s=>s.id===selSeg)+1}
+      </div>
+      <div style={{flex:1,fontSize:"13px",fontWeight:800,color:"#1a1a1a"}}>{seg.name}</div>
+      <button onClick={()=>setSelSeg(null)} style={{background:"none",border:"none",fontSize:"18px",color:"#888",cursor:"pointer"}}>✕</button>
+    </div>
+    {/* 3 acciones en fila — grandes y claras */}
+    <div style={{display:"flex"}}>
+      <button onClick={()=>{if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");c2.width=Math.round(im.width*(seg.x2-seg.x1));c2.height=Math.round(im.height*(seg.y2-seg.y1));c2.getContext("2d").drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);openZone(seg,c2.toDataURL("image/jpeg",.92));setSelSeg(null);};im.src=img;}}
+        style={{flex:1,padding:"14px 8px",background:"transparent",border:"none",
+          borderRight:"1px solid var(--border)",color:"#1a6644",cursor:"pointer",
+          display:"flex",flexDirection:"column",alignItems:"center",gap:"4px"}}>
+        <span style={{fontSize:"22px"}}>🔍</span>
+        <span style={{fontSize:"10px",fontWeight:700}}>Abrir zona</span>
+        <span style={{fontSize:"8px",color:"#888"}}>Medir en detalle</span>
+      </button>
+      <button onClick={()=>{setMeasM({id:uid(),type:"dot",icon:"📏",title:seg.name,value:null,unit:"cm",axis:"",color:col,points:[{x:(seg.x1+seg.x2)/2,y:(seg.y1+seg.y2)/2}]});setMIn({t:seg.name,v:"",u:"cm",ax:"other"});setSelSeg(null);}}
+        style={{flex:1,padding:"14px 8px",background:"transparent",border:"none",
+          borderRight:"1px solid var(--border)",color:col,cursor:"pointer",
+          display:"flex",flexDirection:"column",alignItems:"center",gap:"4px"}}>
+        <span style={{fontSize:"22px"}}>📏</span>
+        <span style={{fontSize:"10px",fontWeight:700}}>+ Medir</span>
+        <span style={{fontSize:"8px",color:"#888"}}>Añadir medida rápida</span>
+      </button>
+      <button onClick={()=>{if(!window.confirm(`¿Eliminar la zona "${seg.name}"?`))return;setSegs(s=>s.filter(x=>x.id!==seg.id));setSelSeg(null);}}
+        style={{flex:1,padding:"14px 8px",background:"transparent",border:"none",
+          color:"#ee2244",cursor:"pointer",
+          display:"flex",flexDirection:"column",alignItems:"center",gap:"4px"}}>
+        <span style={{fontSize:"22px"}}>🗑</span>
+        <span style={{fontSize:"10px",fontWeight:700}}>Borrar zona</span>
+        <span style={{fontSize:"8px",color:"#888"}}>Eliminar selección</span>
+      </button>
+    </div>
+  </div>;
+})()}
 
 {scr==="annotate"&&chatOpen&&<div style={{position:"fixed",bottom:"237px",right:"16px",width:"calc(100% - 32px)",maxWidth:"360px",zIndex:870,
   background:"rgba(255,255,255,.98)",border:"1px solid rgba(100,50,255,.3)",borderRadius:"14px",overflow:"hidden",
@@ -4012,8 +4056,8 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           onClick={e=>{
             e.stopPropagation();
             if(tool==="selpts"){setMultiSel(prev=>prev.includes(a.id)?prev.filter(id=>id!==a.id):[...prev,a.id]);return;}
-            if(selId===a.id){setIconInfoM({ann:a,ordinal:typeOrd(fcAnns,a),fc:true});}
-            else{setSelId(a.id);}
+            setSelId(a.id);
+            setIconInfoM({ann:a,ordinal:typeOrd(fcAnns,a),fc:true});
           }}>
           {a.icon||(a.type==="pin"?"📍":a.type==="star"?"⭐":a.type==="tgt"?"🎯":"●")}
           <div style={{position:"absolute",bottom:"-4px",right:"-4px",width:"15px",height:"15px",borderRadius:"50%",
