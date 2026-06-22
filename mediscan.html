@@ -583,7 +583,7 @@ function View2D({anns,objName,sc,segs,img,segSel,scope}){
     } else {draw(null);}
   },[draw,img]);
 
-  return <canvas ref={ref} width={440} height={420} style={{width:"100%",display:"block",background:"#ffffff"}}/>;
+  return <canvas ref={ref} width={2800} height={1800} style={{width:"100%",display:"block",background:"#ffffff",imageRendering:"crisp-edges"}}/>;
 }
 
 /* ══ V3D ══ */
@@ -756,11 +756,21 @@ function MultiPart3D({anns,segs,objShape,img,segSel,scope}){
     return[{id:"1",name:"Objeto completo",color:"#ff9500",anns:withVal}];
   },[anns,segs,scope]);
 
-  if(!parts.length)return<div style={{padding:"16px",fontSize:"9px",color:"var(--txt2)",textAlign:"center",lineHeight:2.2}}>
-    <div style={{fontSize:"12px",marginBottom:"6px"}}>🎮</div>
-    {segs&&segs.length>0
-      ?<>Tienes {segs.length} pieza(s) creada(s), pero ninguna tiene medidas todavía<br/>Mide algo dentro de una zona para que aparezca aquí en 3D</>
-      :<>Detecta partes con IA o añade partes manualmente<br/>Cada parte medida aparecerá como un modelo 3D aquí</>}
+  if(!parts.length)return<div style={{padding:"24px 16px",textAlign:"center",lineHeight:2}}>
+    <div style={{fontSize:"40px",marginBottom:"8px"}}>🎮</div>
+    <div style={{fontSize:"12px",fontWeight:700,color:"var(--txt)",marginBottom:"6px"}}>
+      {segs&&segs.length>0?"Zonas sin medidas todavía":"Sin zonas detectadas"}
+    </div>
+    <div style={{fontSize:"9px",color:"var(--txt2)",lineHeight:1.8,marginBottom:"14px"}}>
+      {segs&&segs.length>0
+        ?<>Tienes <b>{segs.length}</b> zona(s). Para verlas en 3D selecciona <b>"Todo"</b> cuando abras la vista 3D, o mide algo dentro de una zona y selecciona "Solo lo medido".</>
+        :<>Detecta objetos con <b>IA Precisa</b> o añade partes manualmente con <b>+ Añadir Parte</b>. Cada parte aparecerá como un modelo 3D interactivo.</>}
+    </div>
+    {segs&&segs.length>0&&<button onClick={()=>{/* forzar scope=all */}}
+      style={{padding:"10px 20px",background:"linear-gradient(135deg,#ff7700,#ffaa00)",color:"#fff",border:"none",borderRadius:"9px",fontSize:"11px",fontWeight:700,cursor:"pointer"}}
+      onClick={()=>{/* el scope lo controla el modal anterior */}}>
+      ← Vuelve atrás y elige "Todo"
+    </button>}
   </div>;
 
   return<div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
@@ -4343,18 +4353,23 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
 </div>}
 
 {/* ══ ¿TODO o SOLO LO MEDIDO? — se pregunta SIEMPRE al entrar en 2D o 3D ══ */}
-{scopeAsk&&<div data-modal="scopeask" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"var(--bg2)",border:"2px solid #00bbff",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:600,animation:"slideUp .22s ease",backdropFilter:"blur(24px)"}}>
+{scopeAsk&&<div data-modal="scopeask" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"520px",background:"var(--bg2)",border:"2px solid #0099ff",borderRadius:"18px 18px 0 0",padding:"20px 18px",zIndex:600,animation:"slideUp .22s ease",boxShadow:"0 -6px 32px rgba(0,0,0,.2)"}}>
   <button onClick={()=>setScopeAsk(null)} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-  <div style={{fontSize:"13px",fontWeight:800,color:"#00bbff",marginBottom:"6px"}}>{scopeAsk==="2d"?"📐 Plano 2D":"🎮 Vista 3D"} — ¿qué quieres ver?</div>
-  <div style={{fontSize:"9px",color:"var(--txt2)",marginBottom:"14px",lineHeight:1.8}}>Puedes ver todas las piezas/medidas que tienes hasta ahora, o solo la imagen con lo que realmente has medido.</div>
+  <div style={{fontSize:"14px",fontWeight:800,color:"#0077cc",marginBottom:"4px"}}>{scopeAsk==="2d"?"📐 Plano 2D":"🎮 Vista 3D"}</div>
+  <div style={{fontSize:"9px",color:"var(--txt2)",marginBottom:"16px",lineHeight:1.8}}>
+    ¿Qué quieres visualizar?{"\n"}
+    <b>Recomendado si no has medido todavía:</b> elige <b>Todo</b> para ver todas las zonas detectadas.
+  </div>
   <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-    <button onClick={()=>{setViewScope("measured");setSheet(scopeAsk);setScopeAsk(null);}} style={{width:"100%",padding:"13px",background:"linear-gradient(135deg,#ff7700,#ffaa00)",color:"#fff",border:"none",borderRadius:"9px",fontSize:"12px",fontWeight:800,textAlign:"left"}}>
-      🎯 Solo lo medido
-      <div style={{fontSize:"8px",marginTop:"3px",opacity:.7}}>Solo piezas y medidas con valor — más limpio</div>
+    <button onClick={()=>{setViewScope("all");setSheet(scopeAsk);setScopeAsk(null);}}
+      style={{width:"100%",padding:"14px",background:"linear-gradient(135deg,#0055cc,#0099ff)",color:"#fff",border:"none",borderRadius:"10px",fontSize:"13px",fontWeight:800,textAlign:"left",boxShadow:"0 3px 12px rgba(0,100,255,.3)"}}>
+      🗂 Todo — ver todas las zonas y piezas
+      <div style={{fontSize:"9px",marginTop:"4px",opacity:.85}}>Muestra todos los objetos detectados aunque no tengan medida todavía</div>
     </button>
-    <button onClick={()=>{setViewScope("all");setSheet(scopeAsk);setScopeAsk(null);}} style={{width:"100%",padding:"13px",background:"rgba(0,187,255,.1)",border:"1px solid rgba(0,187,255,.3)",color:"#00bbff",borderRadius:"9px",fontSize:"12px",fontWeight:800,textAlign:"left"}}>
-      🗂 Todo
-      <div style={{fontSize:"8px",marginTop:"3px",opacity:.7}}>Todas las piezas creadas, tengan medida o no</div>
+    <button onClick={()=>{setViewScope("measured");setSheet(scopeAsk);setScopeAsk(null);}}
+      style={{width:"100%",padding:"14px",background:"var(--bg3)",border:"1px solid var(--border)",color:"var(--txt)",borderRadius:"10px",fontSize:"12px",fontWeight:700,textAlign:"left"}}>
+      🎯 Solo lo medido
+      <div style={{fontSize:"9px",marginTop:"4px",color:"var(--txt2)"}}>Únicamente objetos con al menos una medida confirmada</div>
     </button>
   </div>
 </div>}
