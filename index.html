@@ -2587,6 +2587,12 @@ function openExportModal(mode){
   w.document.write(htmlContent);
   w.document.close();
   setTimeout(()=>w.print(),800);
+
+  // Además: ofrecer guardar el HTML en el dispositivo
+  const fname='TimerPro_'+resumenFileTag()+(cp?'':'_SinImportes')+'.html';
+  const blob=new Blob([htmlContent],{type:'text/html;charset=utf-8'});
+  dlDialog={blob,filename:fname,type:'html',title:'Guardar informe en este dispositivo'};
+  S.modal='dl';rerender();
 }
 
 function exportXLSX(conPrecios){
@@ -2864,237 +2870,153 @@ async function exportPlantilla(){
 
 // ── EXPORTACIÓN PERSONALIZADA: PDF y Excel con los campos elegidos por el usuario ──
 // (Funciones independientes de exportPDFReal/exportExcel — no tocan ni comparten lógica con ellas)
-async function exportCustomPDF(fields){
-  try{
-    if(!window.jspdf){showAlert('Cargando libreria PDF...','err');setTimeout(()=>exportCustomPDF(fields),2000);return;}
-    const {jsPDF}=window.jspdf;
-    const entries=getResumenEntries();
-    if(!entries.length){showAlert('No hay jornadas que exportar','err');return;}
-    const anyField=fields.hNormales||fields.hExtra||fields.hNocturnas||fields.hFestivas||
-      fields.fichajes||fields.notas||fields.ubicacion||fields.importes||
-      fields.dietas||fields.transporte||fields.otros||fields.viajes;
-    if(!anyField){showAlert('Selecciona al menos un dato a mostrar','err');return;}
+// ── EXPORTACIÓN PERSONALIZADA HTML (mismo estilo que openExportModal) ──
+function openCustomExportHTML(fields){
+  const entries=getResumenEntries();
+  if(!entries.length){showAlert('No hay jornadas que exportar','err');return;}
+  const anyField=fields.hNormales||fields.hExtra||fields.hNocturnas||fields.hFestivas||
+    fields.fichajes||fields.notas||fields.ubicacion||fields.importes||
+    fields.dietas||fields.transporte||fields.otros||fields.viajes;
+  if(!anyField){showAlert('Selecciona al menos un dato a mostrar','err');return;}
 
-    const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-    const G=[22,163,74],D=[20,20,20],GR=[120,120,120],BL=[59,130,246];
-    const W=210,M=14;
-    function checkY(needed,y){if(y+needed>280){doc.addPage();return 16;}return y;}
+  const worker=workers.find(w=>w.id===activeWorkerId)||{};
+  const company=companies.find(c=>c.id===activeCompanyId)||{};
+  const fh=h=>h>0?(h%1===0?h+'h':Math.floor(h)+'h '+Math.round((h%1)*60)+'m'):'—';
+  const eur2=v=>v>0?v.toFixed(2).replace('.',',')+' €':'—';
 
-    // ── CABECERA ──
-    doc.setFillColor(...G);doc.rect(0,0,W,28,'F');
-    doc.setTextColor(255,255,255);doc.setFontSize(20);doc.setFont('helvetica','bold');
-    doc.text('TimerPro',M,12);
-    doc.setFontSize(10);doc.setFont('helvetica','normal');
-    doc.text('Exportación personalizada',M,19);
-    doc.text(resumenPeriodoLabel(),W-M,12,{align:'right'});
-    doc.text(new Date().toLocaleDateString('es-ES'),W-M,19,{align:'right'});
-    let y=34;
+  let diasHtml='';
+  let totHN=0,totHE=0,totHNoc=0,totHFes=0,totIN=0,totIE=0,totINoc=0,totIFes=0,totD=0,totT=0,totO=0,totViaj=0;
 
-    // ── TRABAJADOR / EMPRESA ──
-    if(fWorker.nombre||fCompany.nombre){
-      const bh=fWorker.nombre&&fCompany.nombre?18:10;
-      doc.setFillColor(245,255,248);doc.rect(M,y,W-2*M,bh,'F');
-      doc.setTextColor(...D);
-      if(fWorker.nombre){
-        doc.setFont('helvetica','bold');doc.setFontSize(10);
-        doc.text(fWorker.nombre+' '+(fWorker.apellidos||''),M+3,y+6);
-        doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
-        const info=[fWorker.dni&&'DNI: '+fWorker.dni,fWorker.cargo,fWorker.email,fWorker.telefono].filter(Boolean).join('  ·  ');
-        if(info)doc.text(info,M+3,y+11);
-      }
-      if(fCompany.nombre){
-        const cy2=fWorker.nombre?y+14:y+6;
-        doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...D);
-        doc.text(fCompany.nombre,M+3,cy2);
-        doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
-        const ci=[fCompany.cif&&'CIF: '+fCompany.cif,fCompany.ciudad,fCompany.email].filter(Boolean).join('  ·  ');
-        if(ci)doc.text(ci,M+3,cy2+5);
-      }
-      y+=bh+4;
+  entries.forEach(e=>{
+    const hN=+e.horasNormales||0,hE=+e.horasExtra||0,hNoc=+e.horasNocturnas||0,hFes=+e.horasFestivas||0;
+    const iN=+e.importeNormales||0,iE=+e.importeExtra||0,iNoc=+e.importeNocturnas||0,iFes=+e.importeFestivas||0;
+    const diet=(+e.dieta||0)+((e.dietasExtra||[]).reduce((a,d)=>a+(+d.importe||0),0));
+    const transp=+e.transporte||0;
+    const otros=(e.otrosConceptos||[]).reduce((a,c)=>a+(+c.importe||0),0);
+    const viajes=(e.journeys||[]).reduce((a,j)=>a+(+j.precioManual||0),0);
+
+    if(fields.hNormales)totHN+=hN;
+    if(fields.hExtra)totHE+=hE;
+    if(fields.hNocturnas)totHNoc+=hNoc;
+    if(fields.hFestivas)totHFes+=hFes;
+    if(fields.importes){totIN+=iN;totIE+=iE;totINoc+=iNoc;totIFes+=iFes;}
+    if(fields.dietas)totD+=diet;
+    if(fields.transporte)totT+=transp;
+    if(fields.otros)totO+=otros;
+    if(fields.viajes)totViaj+=viajes;
+
+    const totalDia=(fields.importes?(iN+iE+iNoc+iFes):0)+(fields.dietas?diet:0)+(fields.transporte?transp:0)+(fields.otros?otros:0)+(fields.viajes?viajes:0);
+    const fichajes=fields.fichajes?(e.fichajes||[]).filter(f=>f.entrada||f.salida):[];
+    const notasText=fields.notas?htmlToText(e.notas||''):'';
+
+    let filas='';
+    if(fields.hNormales&&hN>0)filas+=`<tr><td>Horas normales</td><td>${fh(hN)}</td>${fields.importes?`<td>${e.precioHoraNormal?e.precioHoraNormal+' €/h':'—'}</td><td>${eur2(iN)}</td>`:''}</tr>`;
+    if(fields.hExtra&&hE>0)filas+=`<tr><td>Horas extra</td><td>${fh(hE)}</td>${fields.importes?`<td>${e.precioHoraExtra?e.precioHoraExtra+' €/h':'—'}</td><td>${eur2(iE)}</td>`:''}</tr>`;
+    if(fields.hNocturnas&&hNoc>0)filas+=`<tr><td>Horas nocturnas</td><td>${fh(hNoc)}</td>${fields.importes?`<td>—</td><td>${eur2(iNoc)}</td>`:''}</tr>`;
+    if(fields.hFestivas&&hFes>0)filas+=`<tr><td>Horas festivas</td><td>${fh(hFes)}</td>${fields.importes?`<td>—</td><td>${eur2(iFes)}</td>`:''}</tr>`;
+    if(fields.dietas&&diet>0)filas+=`<tr><td>Dieta</td><td>—</td>${fields.importes?`<td>—</td><td>${eur2(diet)}</td>`:''}</tr>`;
+    if(fields.transporte&&transp>0){const tt=(S.transportTypes||[]).find(t=>t.id===e._transportType);filas+=`<tr><td>Transporte${tt?' ('+tt.nombre+')':''}</td><td>—</td>${fields.importes?`<td>—</td><td>${eur2(transp)}</td>`:''}</tr>`;}
+    if(fields.otros)(e.otrosConceptos||[]).forEach(o=>{if(+o.importe>0)filas+=`<tr><td>${o.concepto||'Otro'}</td><td>—</td>${fields.importes?`<td>—</td><td>${eur2(o.importe)}</td>`:''}</tr>`;});
+    if(fields.viajes)(e.journeys||[]).forEach(j=>{if(+j.precioManual>0)filas+=`<tr><td>Viaje</td><td>—</td>${fields.importes?`<td>—</td><td>${eur2(j.precioManual)}</td>`:''}</tr>`;});
+
+    let locE='',locS='';
+    if(fields.ubicacion){
+      try{locE=JSON.parse(e.ubicacionEntrada||'{}').label||'';}catch(ex){locE='';}
+      try{locS=JSON.parse(e.ubicacionSalida||'{}').label||'';}catch(ex){locS='';}
     }
 
-    // ── RESUMEN GLOBAL ──
-    const tot=entries.reduce((a,e)=>({
-      hn:a.hn+(+e.horasNormales||0),he:a.he+(+e.horasExtra||0),
-      hnoc:a.hnoc+(+e.horasNocturnas||0),hf:a.hf+(+e.horasFestivas||0),
-      in_:a.in_+(+e.importeNormales||0),ie:a.ie+(+e.importeExtra||0),
-      inoc:a.inoc+(+e.importeNocturnas||0),if_:a.if_+(+e.importeFestivas||0),
-      diet:a.diet+(+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0)),
-      transp:a.transp+(+e.transporte||0),
-      otros:a.otros+((e.otrosConceptos||[]).reduce((x,c)=>x+(+c.importe||0),0))
-    }),{hn:0,he:0,hnoc:0,hf:0,in_:0,ie:0,inoc:0,if_:0,diet:0,transp:0,otros:0});
-    const totalH=(fields.hNormales?tot.hn:0)+(fields.hExtra?tot.he:0)+(fields.hNocturnas?tot.hnoc:0)+(fields.hFestivas?tot.hf:0);
-    const totalImp=fields.importes?((fields.hNormales?tot.in_:0)+(fields.hExtra?tot.ie:0)+(fields.hNocturnas?tot.inoc:0)+(fields.hFestivas?tot.if_:0)):0;
-    const totalOther=(fields.dietas?tot.diet:0)+(fields.transporte?tot.transp:0)+(fields.otros?tot.otros:0);
+    const thCols=fields.importes?'<th>Concepto</th><th>Horas</th><th>Precio</th><th>Importe</th>':'<th>Concepto</th><th>Horas</th>';
 
-    doc.setFillColor(240,253,244);doc.rect(M,y,W-2*M,16,'F');
-    doc.setDrawColor(...G);doc.rect(M,y,W-2*M,16,'S');
-    doc.setTextColor(...G);doc.setFont('helvetica','bold');doc.setFontSize(8);
-    doc.text('RESUMEN  ('+entries.length+' jornadas)',M+3,y+5);
-    doc.setTextColor(...D);doc.setFontSize(9);
-    const partsRes=[];
-    if(fields.hNormales||fields.hExtra||fields.hNocturnas||fields.hFestivas)partsRes.push('Total horas: '+fmtH(totalH));
-    if(fields.importes&&totalImp)partsRes.push('Horas: '+eur(totalImp));
-    if(fields.dietas&&tot.diet)partsRes.push('Dietas: '+eur(tot.diet));
-    if(fields.transporte&&tot.transp)partsRes.push('Transp: '+eur(tot.transp));
-    doc.text(partsRes.join('   ·   ')||'—',M+3,y+12);
-    if(fields.importes)(()=>{
-      const grand=totalImp+totalOther;
-      doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...G);
-      doc.text('TOTAL: '+eur(grand),W-M,y+12,{align:'right'});
-    })();
-    y+=20;
+    diasHtml+=`
+    <div class="dia">
+      <div class="dia-head">
+        <span>${cap(wday(e.fecha))}, ${dlbl(e.fecha)}</span>
+        ${fields.importes&&totalDia>0?`<span class="dia-total">${totalDia.toFixed(2).replace('.',',')} €</span>`:''}
+      </div>
+      ${fichajes.length>0?`<div class="sub-sec">Fichajes: ${fichajes.map(f=>(f.entrada||'--')+'→'+(f.salida||'--')).join(' | ')}</div>`:''}
+      ${filas?`<table class="det"><thead><tr>${thCols}</tr></thead><tbody>${filas}</tbody></table>`:''}
+      ${locE?`<div class="sub-sec">📍 Entrada: ${locE}</div>`:''}
+      ${locS&&locS!==locE?`<div class="sub-sec">📍 Salida: ${locS}</div>`:''}
+      ${notasText?`<div class="sub-sec nota">📝 ${notasText}</div>`:''}
+    </div>`;
+  });
 
-    // ── TABLA RESUMEN DE JORNADAS ──
-    const thead=['Fecha','Día'];
-    if(fields.fichajes)thead.push('Entrada','Salida');
-    if(fields.hNormales)thead.push('H.Norm');
-    if(fields.hExtra)thead.push('H.Extra');
-    if(fields.hNocturnas)thead.push('H.Noct');
-    if(fields.hFestivas)thead.push('H.Fest');
-    if(fields.importes){
-      if(fields.hNormales)thead.push('Imp.Norm');
-      if(fields.hExtra)thead.push('Imp.Extra');
-    }
-    if(fields.dietas)thead.push('Dieta');
-    if(fields.transporte)thead.push('Transp');
-    if(fields.importes&&(fields.hNormales||fields.hExtra||fields.dietas||fields.transporte||fields.otros))thead.push('Total día');
+  const totTotal=totIN+totIE+totINoc+totIFes+totD+totT+totO+totViaj;
+  const totH=totHN+totHE+totHNoc+totHFes;
 
-    doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...D);
-    doc.text('JORNADAS ('+entries.length+')',M,y);y+=4;
+  const htmlContent=`<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Exportación personalizada TimerPro</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,sans-serif;font-size:12px;color:#1e293b;padding:20px}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #1e293b}
+    .header h1{font-size:16px;font-weight:800}
+    .header .meta{font-size:11px;color:#64748b;line-height:1.6}
+    .header .periodo{font-size:11px;text-align:right;color:#64748b}
+    .dia{border:1px solid #e2e8f0;border-radius:6px;margin-bottom:10px;overflow:hidden;page-break-inside:avoid}
+    .dia-head{background:#1e293b;color:#fff;padding:7px 12px;display:flex;justify-content:space-between;font-weight:700;font-size:12px}
+    .dia-total{color:#4ade80;font-weight:800}
+    .sub-sec{padding:4px 12px;font-size:11px;color:#475569;border-top:1px solid #f1f5f9}
+    .nota{font-style:italic}
+    table.det{width:100%;border-collapse:collapse;font-size:11px}
+    table.det th{background:#f8fafc;padding:5px 12px;text-align:left;color:#64748b;font-weight:600;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0}
+    table.det td{padding:4px 12px;border-bottom:1px solid #f1f5f9}
+    table.det td:last-child{text-align:right;font-weight:600}
+    .resumen{margin-top:16px;border:2px solid #1e293b;border-radius:6px;overflow:hidden}
+    .resumen-head{background:#1e293b;color:#fff;padding:8px 14px;font-weight:800;font-size:13px}
+    .resumen table{width:100%;border-collapse:collapse;font-size:12px}
+    .resumen td{padding:5px 14px;border-bottom:1px solid #e2e8f0}
+    .resumen td:last-child{text-align:right;font-weight:700}
+    .gran-total{background:#f0fdf4;font-size:14px;font-weight:800;color:#166534}
+    @media print{body{padding:10px}.dia{page-break-inside:avoid}}
+  </style></head><body>
+  <div class="header">
+    <div>
+      <h1>${company.nombre||'TimerPro'} — Exportación personalizada</h1>
+      <div class="meta">
+        ${worker.nombre?'Trabajador: <strong>'+worker.nombre+'</strong><br>':''}
+        ${worker.dni?'DNI: '+worker.dni+'<br>':''}
+        Generado: ${new Date().toLocaleDateString('es-ES',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}
+      </div>
+    </div>
+    <div class="periodo">
+      <strong>${resumenPeriodoLabel()}</strong><br>
+      <strong>${entries.length} jornadas</strong>
+    </div>
+  </div>
+  ${diasHtml}
+  <div class="resumen">
+    <div class="resumen-head">RESUMEN TOTAL</div>
+    <table>
+      ${fields.hNormales&&totHN>0?`<tr><td>Horas normales</td><td>${fh(totHN)}</td>${fields.importes?'<td>'+eur2(totIN)+'</td>':''}</tr>`:''}
+      ${fields.hExtra&&totHE>0?`<tr><td>Horas extra</td><td>${fh(totHE)}</td>${fields.importes?'<td>'+eur2(totIE)+'</td>':''}</tr>`:''}
+      ${fields.hNocturnas&&totHNoc>0?`<tr><td>Horas nocturnas</td><td>${fh(totHNoc)}</td>${fields.importes?'<td>'+eur2(totINoc)+'</td>':''}</tr>`:''}
+      ${fields.hFestivas&&totHFes>0?`<tr><td>Horas festivas</td><td>${fh(totHFes)}</td>${fields.importes?'<td>'+eur2(totIFes)+'</td>':''}</tr>`:''}
+      ${fields.dietas&&totD>0?`<tr><td>Dietas</td><td>—</td>${fields.importes?'<td>'+eur2(totD)+'</td>':''}</tr>`:''}
+      ${fields.transporte&&totT>0?`<tr><td>Transporte</td><td>—</td>${fields.importes?'<td>'+eur2(totT)+'</td>':''}</tr>`:''}
+      ${fields.otros&&totO>0?`<tr><td>Otros conceptos</td><td>—</td>${fields.importes?'<td>'+eur2(totO)+'</td>':''}</tr>`:''}
+      ${fields.viajes&&totViaj>0?`<tr><td>Viajes</td><td>—</td>${fields.importes?'<td>'+eur2(totViaj)+'</td>':''}</tr>`:''}
+      <tr class="gran-total"><td>TOTAL${fields.importes&&totTotal>0?' GENERAL':' HORAS'}</td><td>${fh(totH)}</td>${fields.importes&&totTotal>0?'<td>'+totTotal.toFixed(2).replace('.',',')+' €</td>':''}</tr>
+    </table>
+  </div>
+  ${fields.firma&&worker.firma?`<div style="margin-top:20px;padding-top:10px;border-top:1px solid #e2e8f0"><p style="font-size:11px;color:#64748b;margin-bottom:8px">FIRMA DEL TRABAJADOR</p><img src="${worker.firma}" style="max-height:80px;border:1px solid #e2e8f0"><p style="font-size:11px;color:#64748b;margin-top:4px">${worker.nombre||''} ${worker.apellidos||''}${worker.dni?' — DNI: '+worker.dni:''}</p></div>`:''}
+  </body></html>`;
 
-    doc.autoTable({
-      startY:y,
-      head:[thead],
-      body:entries.map(e=>{
-        const f1=(e.fichajes||[])[0];
-        const diet=(+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0));
-        const impH=(+e.importeNormales||0)+(+e.importeExtra||0)+(+e.importeNocturnas||0)+(+e.importeFestivas||0);
-        const row=[e.fecha,cap(wday(e.fecha))];
-        if(fields.fichajes)row.push(f1?.entrada||'—',f1?.salida||'—');
-        if(fields.hNormales)row.push(fmtH(e.horasNormales||0));
-        if(fields.hExtra)row.push(fmtH(e.horasExtra||0));
-        if(fields.hNocturnas)row.push(fmtH(e.horasNocturnas||0));
-        if(fields.hFestivas)row.push(fmtH(e.horasFestivas||0));
-        if(fields.importes){
-          if(fields.hNormales)row.push(eur(e.importeNormales||0));
-          if(fields.hExtra)row.push(eur(e.importeExtra||0));
-        }
-        if(fields.dietas)row.push(eur(diet));
-        if(fields.transporte)row.push(eur(e.transporte||0));
-        if(fields.importes&&(fields.hNormales||fields.hExtra||fields.dietas||fields.transporte||fields.otros)){
-          row.push(eur(
-            (fields.hNormales?+e.importeNormales||0:0)+(fields.hExtra?+e.importeExtra||0:0)+
-            (fields.hNocturnas?+e.importeNocturnas||0:0)+(fields.hFestivas?+e.importeFestivas||0:0)+
-            (fields.dietas?diet:0)+(fields.transporte?+e.transporte||0:0)+
-            (fields.otros?(e.otrosConceptos||[]).reduce((x,c)=>x+(+c.importe||0),0):0)
-          ));
-        }
-        return row;
-      }),
-      styles:{fontSize:6.5,cellPadding:1.5},
-      headStyles:{fillColor:G,textColor:[255,255,255],fontStyle:'bold',fontSize:6},
-      alternateRowStyles:{fillColor:[248,255,250]},
-      columnStyles:{0:{cellWidth:18},1:{cellWidth:10}},
-      margin:{left:M,right:M}
-    });
-    y=doc.lastAutoTable.finalY+4;
+  const w=window.open('','_blank','width=900,height=700');
+  if(!w){showAlert('Permite ventanas emergentes para exportar','err');return;}
+  w.document.write(htmlContent);
+  w.document.close();
+  setTimeout(()=>w.print(),800);
 
-    // ── DETALLE POR JORNADA (mismo estilo que PDF 2) ──
-    const conDetalle=entries.filter(e=>
-      (fields.notas&&e.notas)||(fields.ubicacion&&(e.ubicacionEntrada||e.ubicacionSalida))||
-      (fields.dietas&&(e.dietasExtra||[]).length)||(fields.otros&&(e.otrosConceptos||[]).length)||
-      (fields.viajes&&(e.journeys||[]).length)
-    );
-    if(conDetalle.length){
-      y=checkY(10,y);
-      doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...D);
-      doc.text('DETALLE DE JORNADAS',M,y);y+=5;
-      for(const e of conDetalle){
-        y=checkY(12,y);
-        doc.setFillColor(245,245,245);doc.rect(M,y,W-2*M,7,'F');
-        doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...D);
-        doc.text(cap(wday(e.fecha))+', '+dlbl(e.fecha),M+2,y+5);y+=9;
-
-        if(fields.notas&&e.notas){
-          const notaLimpia=htmlToText(e.notas);
-          if(notaLimpia){
-            y=checkY(6,y);
-            doc.setFont('helvetica','italic');doc.setFontSize(8);doc.setTextColor(...GR);
-            const lineas=doc.splitTextToSize('Nota: '+notaLimpia,W-2*M-6);
-            lineas.forEach(l=>{y=checkY(5,y);doc.text(l,M+3,y);y+=4.5;});
-          }
-        }
-        if(fields.dietas&&(e.dietasExtra||[]).length){
-          y=checkY(5,y);
-          doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...D);
-          doc.text('Dietas extra: '+e.dietasExtra.map(d=>d.concepto+': '+eur(d.importe)).join('  |  '),M+3,y);y+=5;
-        }
-        if(fields.otros&&(e.otrosConceptos||[]).length){
-          y=checkY(5,y);
-          doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...D);
-          doc.text('Otros: '+e.otrosConceptos.map(c=>c.concepto+': '+eur(c.importe)).join('  |  '),M+3,y);y+=5;
-        }
-        if(fields.ubicacion){
-          ['Entrada','Salida'].forEach(tipo=>{
-            const locStr=e['ubicacion'+tipo];if(!locStr)return;
-            y=checkY(5,y);
-            try{
-              const d=JSON.parse(locStr);
-              doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...BL);
-              doc.text('📍 '+tipo+': '+d.label,M+3,y);
-            }catch(ex){
-              doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
-              doc.text('Ubic.'+tipo+': '+locStr,M+3,y);
-            }
-            y+=5;
-          });
-        }
-        if(fields.viajes&&(e.journeys||[]).length){
-          y=checkY(5,y);
-          doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(...D);
-          doc.text('Viajes:',M+3,y);y+=4;
-          e.journeys.forEach((j,ji)=>{
-            y=checkY(5,y);
-            const ruta=[j.origen,j.destino].filter(Boolean).join(' → ')||'Sin ruta';
-            doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
-            doc.text((ji+1)+'. '+(j.tipoManual||'Vehículo')+' | '+ruta+(j.km?' | '+j.km+'km':'')+' | '+eur((j.km||0)*(j.precioManual||0)),M+6,y);y+=4;
-          });
-        }
-        y+=2;
-      }
-    }
-
-    // ── FIRMA ──
-    if(fields.firma&&fWorker.firma){
-      y=checkY(40,y);
-      doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...D);
-      doc.text('FIRMA DEL TRABAJADOR',M,y);y+=5;
-      doc.setDrawColor(...GR);doc.rect(M,y,70,30,'S');
-      try{doc.addImage(fWorker.firma,'PNG',M,y,70,30);}catch(ex){}
-      y+=32;
-      doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
-      doc.text((fWorker.nombre||'')+' '+(fWorker.apellidos||'')+(fWorker.dni?' — DNI: '+fWorker.dni:''),M,y);
-    }
-
-    // ── FOOTER ──
-    const pc=doc.internal.getNumberOfPages();
-    for(let i=1;i<=pc;i++){
-      doc.setPage(i);
-      doc.setFillColor(...G);doc.rect(0,287,W,10,'F');
-      doc.setTextColor(255,255,255);doc.setFontSize(7);doc.setFont('helvetica','normal');
-      doc.text('TimerPro — Exportación personalizada  |  Página '+i+'/'+pc,M,293);
-      doc.text(new Date().toLocaleDateString('es-ES'),W-M,293,{align:'right'});
-    }
-
-    // ── GUARDAR / COMPARTIR via dlDialog ──
-    const fname='TimerPro_Personalizado_'+resumenFileTag()+'.pdf';
-    dlDialog={blob:doc.output('blob'),filename:fname,type:'pdf',title:'PDF personalizado listo'};
-    S.modal='dl';rerender();
-  }catch(e){
-    showAlert('Error PDF: '+e.message,'err');console.error(e);
-  }
+  const fname='TimerPro_Personalizado_'+resumenFileTag()+'.html';
+  const blob=new Blob([htmlContent],{type:'text/html;charset=utf-8'});
+  dlDialog={blob,filename:fname,type:'html',title:'Guardar exportación personalizada'};
+  S.modal='dl';rerender();
 }
+
+async function exportCustomPDF(fields){ return openCustomExportHTML(fields); }
+
+
 
 async function exportCustomExcel(fields){
   try{
@@ -3427,8 +3349,8 @@ function renderResumen(){
       h('div',{class:'card'},
         h('div',{class:'sec-title'},'Exportar'),
         h('div',{class:'grid-2',style:{gap:'.5rem'}},
-          h('button',{class:'btn btn-g btn-full',on:{click:()=>exportPDFReal(false,getResumenEntries(),resumenPeriodoLabel(),[],resumenFileTag())}},'📄 PDF con importes'),
-          h('button',{class:'btn btn-gh btn-full',on:{click:()=>exportPDFReal(true,getResumenEntries(),resumenPeriodoLabel(),[],resumenFileTag())}},'📄 PDF sin importes'),
+          h('button',{class:'btn btn-g btn-full',on:{click:()=>openExportModal('con')}},'📄 PDF con importes'),
+          h('button',{class:'btn btn-gh btn-full',on:{click:()=>openExportModal('sin')}},'📄 PDF sin importes'),
           h('button',{class:'btn btn-b btn-full',on:{click:()=>exportExcel(false,getResumenEntries(),resumenPeriodoLabel(),resumenFileTag())}},'📊 Excel con importes'),
           h('button',{class:'btn btn-gh btn-full',on:{click:()=>exportExcel(true,getResumenEntries(),resumenPeriodoLabel(),resumenFileTag())}},'📊 Excel sin importes'),
           h('button',{class:'btn btn-pur btn-full',on:{click:()=>exportPlantilla()}},'📥 Descargar plantilla en blanco'),
@@ -6486,7 +6408,7 @@ async function exportPDFReal(noImportes=false, entriesOverride=null, periodoLabe
     const totalOther=tot.diet+tot.transp+tot.otros;
     const grandTotal=totalImp+totalOther;
 
-    doc.setFillColor(22,163,74,0.1);doc.setFillColor(240,253,244);
+    doc.setFillColor(245,245,245);
     doc.rect(M,y,W-2*M,16,'F');
     doc.setDrawColor(...G);doc.rect(M,y,W-2*M,16,'S');
     doc.setTextColor(...G);doc.setFont('helvetica','bold');doc.setFontSize(8);
@@ -6501,156 +6423,168 @@ async function exportPDFReal(noImportes=false, entriesOverride=null, periodoLabe
     }
     y+=20;
 
-    // ── JORNADAS ──
+    // ── JORNADAS: tarjeta por día (formato Informe_TimerPro) ──
     doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...D);
-    doc.text('JORNADAS ('+entries.length+')',M,y);y+=4;
+    doc.text('JORNADAS ('+entries.length+')',M,y);y+=5;
 
-    doc.autoTable({
-      startY:y,
-      head:[noImportes
-        ? ['Fecha','Dia','Entrada','Salida','H.Norm','H.Extra','H.Noct','H.Fest','Dieta','Transp','Nota']
-        : ['Fecha','Dia','Entrada','Salida','H.Norm','/h','Imp.Norm','H.Extra','/h','Imp.Extra','H.Noct','Imp.Noct','H.Fest','Imp.Fest','Dieta','Transp','Total']],
-      body:entries.map(e=>{
-        const f1=(e.fichajes||[])[0];
-        const impH=(+e.importeNormales||0)+(+e.importeExtra||0)+(+e.importeNocturnas||0)+(+e.importeFestivas||0);
-        const diet=(+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0));
-        if(noImportes) return[
-          e.fecha,cap(wday(e.fecha)),f1?.entrada||'--',f1?.salida||'--',
-          fmtH(e.horasNormales||0),fmtH(e.horasExtra||0),
-          fmtH(e.horasNocturnas||0),fmtH(e.horasFestivas||0),
-          e.dieta||0,e.transporte||0,htmlToText(e.notas||'')
-        ];
-        return[
-          e.fecha,cap(wday(e.fecha)),f1?.entrada||'—',f1?.salida||'—',
-          fmtH(e.horasNormales||0),e.precioHoraNormal||'—',eur(e.importeNormales||0),
-          fmtH(e.horasExtra||0),e.precioHoraExtra||'—',eur(e.importeExtra||0),
-          fmtH(e.horasNocturnas||0),eur(e.importeNocturnas||0),
-          fmtH(e.horasFestivas||0),eur(e.importeFestivas||0),
-          eur(diet),eur(e.transporte||0),eur(impH+diet+(+e.transporte||0))
-        ];
-      }),
-      styles:{fontSize:6.5,cellPadding:1.5},
-      headStyles:{fillColor:G,textColor:[255,255,255],fontStyle:'bold',fontSize:6},
-      alternateRowStyles:{fillColor:[248,255,250]},
-      columnStyles:{0:{cellWidth:18},1:{cellWidth:10}},
-      margin:{left:M,right:M}
-    });
-    y=doc.lastAutoTable.finalY+4;
+    for(const e of entries){
+      const f1=(e.fichajes||[])[0];
+      const diet=(+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0));
+      const impH=(+e.importeNormales||0)+(+e.importeExtra||0)+(+e.importeNocturnas||0)+(+e.importeFestivas||0);
+      const totalDia=impH+diet+(+e.transporte||0)+((e.otrosConceptos||[]).reduce((x,c)=>x+(+c.importe||0),0));
+      const eTasks=tasks.filter(t=>t.fecha===e.fecha);
+      const notaLimpia=htmlToText(e.notas||'');
 
-    // ── DETALLE JORNADAS (notas, viajes, GPS, dietas extra) ──
-    const jornadasConDetalle=entries.filter(e=>
-      e.notas||(e.dietasExtra||[]).length||(e.otrosConceptos||[]).length||
-      (e.journeys||[]).length||e.ubicacionEntrada||e.ubicacionSalida
-    );
+      // Estimar altura mínima de la tarjeta para decidir si cabe
+      const notaLineas=notaLimpia?doc.splitTextToSize(notaLimpia,W-2*M-8).length:0;
+      const alturaMin=9+6+(eTasks.length>0?6:0)+(notaLimpia?notaLineas*4.5+2:0)+4;
+      y=checkY(Math.max(alturaMin,22),y);
 
-    if(jornadasConDetalle.length>0){
-      y=checkY(10,y);
-      doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...D);
-      doc.text('DETALLE DE JORNADAS',M,y);y+=5;
-
-      for(const e of jornadasConDetalle){
-        y=checkY(12,y);
-        doc.setFillColor(245,245,245);doc.rect(M,y,W-2*M,7,'F');
-        doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...D);
-        doc.text(cap(wday(e.fecha))+', '+dlbl(e.fecha),M+2,y+5);
-        y+=9;
-
-        // Notas
-        if(e.notas){
-          const notaLimpia=htmlToText(e.notas);
-          if(notaLimpia){
-            y=checkY(6,y);
-            doc.setFont('helvetica','italic');doc.setFontSize(8);doc.setTextColor(...GR);
-            const lineas=doc.splitTextToSize('Nota: '+notaLimpia, W-2*M-6);
-            lineas.forEach(l=>{y=checkY(5,y);doc.text(l,M+3,y);y+=4.5;});
-          }
-        }
-
-        // Dietas extra
-        if((e.dietasExtra||[]).length){
-          y=checkY(5,y);
-          doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...D);
-          const dex=e.dietasExtra.map(d=>d.concepto+': '+eur(d.importe)).join('  |  ');
-          doc.text('Dietas extra: '+dex,M+3,y);y+=5;
-        }
-
-        // Otros conceptos
-        if((e.otrosConceptos||[]).length){
-          y=checkY(5,y);
-          doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...D);
-          const oc=e.otrosConceptos.map(c=>c.concepto+': '+eur(c.importe)).join('  |  ');
-          doc.text('Otros: '+oc,M+3,y);y+=5;
-        }
-
-        // GPS
-        ['Entrada','Salida'].forEach(tipo=>{
-          const locStr=e['ubicacion'+tipo];
-          if(!locStr)return;
-          y=checkY(5,y);
-          try{
-            const d=JSON.parse(locStr);
-            doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...BL);
-            doc.textWithLink('GPS '+tipo+': '+d.label,M+3,y,{url:d.url});
-            if(d.acc){doc.setTextColor(...GR);doc.text(' (±'+d.acc+'m)',M+3+doc.getTextWidth('GPS '+tipo+': '+d.label),y);}
-          }catch(ex){
-            doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
-            doc.text('Ubicacion '+tipo+': '+locStr,M+3,y);
-          }
-          y+=5;
-        });
-
-        // Viajes
-        if((e.journeys||[]).length){
-          y=checkY(5,y);
-          doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(...D);
-          doc.text('Viajes:',M+3,y);y+=4;
-          e.journeys.forEach((j,ji)=>{
-            y=checkY(5,y);
-            const v=S.vehicles.find(v=>v.id==j.vehicleId);
-            const veh=v?v.nombre+' ('+v.matricula+')':j.tipoManual||'Vehiculo';
-            const precio=v?v.precioPorKm:j.precioManual||0;
-            const coste=(j.km||0)*precio;
-            const ruta=[j.origen,j.destino].filter(Boolean).join(' → ')||'Sin ruta';
-            doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
-            doc.text((ji+1)+'. '+veh+' | '+ruta+(j.km?' | '+j.km+'km':'')+' | '+eur(coste),M+6,y);
-            y+=4;
-          });
-        }
-        y+=2;
+      // Cabecera de la tarjeta (verde claro)
+      doc.setFillColor(245,245,245);doc.rect(M,y,W-2*M,8,'F');
+      doc.setDrawColor(...G);doc.rect(M,y,W-2*M,8,'S');
+      doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(20,20,20);
+      doc.text(cap(wday(e.fecha))+', '+dlbl(e.fecha),M+3,y+5.5);
+      if(!noImportes&&totalDia>0){
+        doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(20,20,20);
+        doc.text(eur(totalDia),W-M-2,y+5.5,{align:'right'});
       }
+      y+=10;
+
+      // Fichajes
+      if(f1?.entrada||f1?.salida){
+        y=checkY(5,y);
+        doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
+        const fich=(e.fichajes||[]).filter(f=>f.entrada||f.salida).map(f=>(f.entrada||'--')+'→'+(f.salida||'--')).join('  |  ');
+        doc.text('Fichajes: '+fich,M+3,y);y+=5;
+      }
+
+      // Mini-tabla de conceptos por día
+      const conceptRows=[];
+      if((+e.horasNormales||0)>0||!noImportes){
+        conceptRows.push(['Horas normales',fmtH(+e.horasNormales||0),
+          noImportes?'':(e.precioHoraNormal?e.precioHoraNormal+' €/h':'—'),
+          noImportes?'':eur(e.importeNormales||0)]);
+      }
+      if((+e.horasExtra||0)>0){
+        conceptRows.push(['Horas extra',fmtH(+e.horasExtra||0),
+          noImportes?'':(e.precioHoraExtra?e.precioHoraExtra+' €/h':'—'),
+          noImportes?'':eur(e.importeExtra||0)]);
+      }
+      if((+e.horasNocturnas||0)>0){
+        conceptRows.push(['Horas nocturnas',fmtH(+e.horasNocturnas||0),'',noImportes?'':eur(e.importeNocturnas||0)]);
+      }
+      if((+e.horasFestivas||0)>0){
+        conceptRows.push(['Horas festivas',fmtH(+e.horasFestivas||0),'',noImportes?'':eur(e.importeFestivas||0)]);
+      }
+      if(diet>0){
+        const dLabel=(e.dietasExtra||[]).length?'Dieta + extras':'Dieta';
+        conceptRows.push([dLabel,'—','—',noImportes?eur(diet):eur(diet)]);
+      }
+      if((+e.transporte||0)>0){
+        const vt=e.tipoTransporte?(' ('+cap(e.tipoTransporte)+')'):'';
+        conceptRows.push(['Transporte'+vt,'—','—',eur(e.transporte||0)]);
+      }
+      (e.otrosConceptos||[]).forEach(c=>{if(+c.importe>0)conceptRows.push([c.concepto,'—','—',eur(c.importe)]);});
+
+      if(conceptRows.length>0){
+        y=checkY(conceptRows.length*5+6,y);
+        doc.autoTable({
+          startY:y,
+          head:[noImportes?['Concepto','Horas']:['Concepto','Horas','Precio','Importe']],
+          body:noImportes?conceptRows.map(r=>[r[0],r[1]]):conceptRows,
+          styles:{fontSize:7.5,cellPadding:1.8},
+          headStyles:{fillColor:[245,245,245],textColor:[20,20,20],fontStyle:'bold',fontSize:7},
+          bodyStyles:{textColor:D},
+          alternateRowStyles:{fillColor:[249,249,249]},
+          columnStyles:noImportes?{0:{cellWidth:100},1:{cellWidth:32}}:{0:{cellWidth:80},1:{cellWidth:22},2:{cellWidth:28},3:{cellWidth:28}},
+          margin:{left:M+2,right:M+2},
+          tableLineColor:G,tableLineWidth:.2
+        });
+        y=doc.lastAutoTable.finalY+3;
+      }
+
+      // Tareas del día
+      if(eTasks.length>0){
+        y=checkY(5,y);
+        doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(...BL);
+        const tDesc=eTasks.map(t=>(t.titulo||(t.descripcion||'').slice(0,40))+(t.otNumero?' (OT:'+t.otNumero+')':'')).join('  |  ');
+        const tLines=doc.splitTextToSize('Tareas: '+tDesc,W-2*M-6);
+        tLines.forEach(l=>{y=checkY(5,y);doc.text(l,M+3,y);y+=4;});
+        y+=1;
+      }
+
+      // GPS (sin emoji — usa texto plano para compatibilidad con jsPDF)
+      ['Entrada','Salida'].forEach(tipo=>{
+        const locStr=e['ubicacion'+tipo];if(!locStr)return;
+        y=checkY(5,y);
+        try{
+          const d=JSON.parse(locStr);
+          doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...BL);
+          doc.text('GPS '+tipo+': '+d.label,M+3,y);
+        }catch(ex){
+          doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
+          doc.text('GPS '+tipo+': '+locStr,M+3,y);
+        }
+        y+=4.5;
+      });
+
+      // Notas
+      if(notaLimpia){
+        y=checkY(6,y);
+        doc.setFont('helvetica','italic');doc.setFontSize(7.5);doc.setTextColor(...GR);
+        const lineas=doc.splitTextToSize('Nota: '+notaLimpia,W-2*M-6);
+        lineas.forEach(l=>{y=checkY(5,y);doc.text(l,M+3,y);y+=4.2;});
+      }
+
+      // Viajes
+      if((e.journeys||[]).length){
+        y=checkY(5,y);
+        doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(...D);
+        doc.text('Viajes:',M+3,y);y+=4;
+        e.journeys.forEach((j,ji)=>{
+          y=checkY(5,y);
+          const v=S.vehicles.find(vv=>vv.id==j.vehicleId);
+          const veh=v?v.nombre+' ('+v.matricula+')':j.tipoManual||'Vehiculo';
+          const precio=v?v.precioPorKm:(j.precioManual||0);
+          const ruta=[j.origen,j.destino].filter(Boolean).join(' > ')||'Sin ruta';
+          doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.setTextColor(...GR);
+          doc.text((ji+1)+'. '+veh+' | '+ruta+(j.km?' | '+j.km+'km':'')+' | '+eur((j.km||0)*precio),M+6,y);y+=4;
+        });
+      }
+
+      y+=4; // separación entre tarjetas
     }
 
-    // ── TAREAS ──
+    // ── TAREAS (tabla resumen si las hay) ──
     if(tasks.length>0){
       y=checkY(15,y);
       doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...D);
       doc.text('TAREAS ('+tasks.length+')',M,y);y+=4;
-
       doc.autoTable({
         startY:y,
-        head:[['Fecha','Día','Título','H.Inicio','H.Fin','Duración','Sitio','O.T.','Descripción']],
+        head:[['Fecha','Día','Título','H.Inicio','H.Fin','Sitio','O.T.','Descripción']],
         body:tasks.map(t=>{
           const site=S.sites.find(s=>s.id==t.siteId);
           const wo=S.workorders.find(w=>w.id==t.workOrderId);
           const dur=t.horaInicio&&t.horaFin?fmtH(calcH(t.horaInicio,t.horaFin)):'—';
-          return[t.fecha,cap(wday(t.fecha)),t.titulo||'—',t.horaInicio||'—',t.horaFin||'—',dur,site?.nombre||'—',wo?.codigo||'Sin O.T.',t.descripcion||''];
+          return[t.fecha,cap(wday(t.fecha)),t.titulo||'—',t.horaInicio||'—',t.horaFin||'—',site?.nombre||'—',wo?.codigo||'Sin O.T.',t.descripcion||''];
         }),
-        styles:{fontSize:7.5,cellPadding:1.5},
+        styles:{fontSize:7,cellPadding:1.5},
         headStyles:{fillColor:BL,textColor:[255,255,255],fontStyle:'bold'},
         alternateRowStyles:{fillColor:[239,246,255]},
         margin:{left:M,right:M}
       });
       y=doc.lastAutoTable.finalY+5;
 
-      // Fotos de gastos de jornadas
+      // Fotos de gastos
       const jornadasConFotos=entries.filter(e=>(e.fotosGastos||[]).length>0);
       if(jornadasConFotos.length>0&&!noImportes){
         y=checkY(15,y);
         doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...D);
         doc.text('TICKETS Y GASTOS',M,y);y+=5;
         for(const e of jornadasConFotos){
-          y=checkY(12,y);
-          doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
+          y=checkY(12,y);doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
           doc.text(cap(wday(e.fecha))+', '+dlbl(e.fecha),M,y);y+=4;
           let fx=M;
           for(const foto of(e.fotosGastos||[])){
@@ -6667,35 +6601,55 @@ async function exportPDFReal(noImportes=false, entriesOverride=null, periodoLabe
         y=checkY(15,y);
         doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...D);
         doc.text('FOTOGRAFIAS DE TAREAS',M,y);y+=5;
-
         for(const t of tareasConFotos){
-          y=checkY(12,y);
-          doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(...GR);
+          y=checkY(12,y);doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(...GR);
           doc.text(t.titulo||t.fecha,M,y);y+=4;
-
           let fx=M;
           for(const foto of(t.fotos||[])){
             if(fx+45>W-M){fx=M;y+=45;y=checkY(45,y);}
-            try{
-              doc.addImage(foto,'JPEG',fx,y,42,42);
-              fx+=44;
-            }catch(ex){}
+            try{doc.addImage(foto,'JPEG',fx,y,42,42);fx+=44;}catch(ex){}
           }
           y+=46;
         }
       }
     }
 
-    // ── FIRMA ──
-    if(fWorker.firma){
-      y=checkY(40,y);
-      doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...D);
-      doc.text('FIRMA DEL TRABAJADOR',M,y);y+=5;
-      doc.setDrawColor(...GR);doc.rect(M,y,70,30,'S');
-      try{doc.addImage(fWorker.firma,'PNG',M,y,70,30);}catch(ex){}
-      y+=32;
-      doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
-      doc.text(fWorker.nombre+' '+fWorker.apellidos+(fWorker.dni?' — DNI: '+fWorker.dni:''),M,y);
+    // ── RESUMEN FINAL (igual que Informe_TimerPro) ──
+    y=checkY(40,y);
+    doc.setFillColor(220,220,220);doc.rect(M,y,W-2*M,1,'F');
+    doc.setDrawColor(...G);doc.rect(M,y,W-2*M,2,'S');
+    y+=5;
+    doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...D);
+    doc.text('RESUMEN TOTAL',M,y);y+=5;
+    const resRows=[];
+    if(tot.hn>0)resRows.push(['Horas normales',fmtH(tot.hn),noImportes?'':('—'),noImportes?'':eur(tot.in_)]);
+    if(tot.he>0)resRows.push(['Horas extra',fmtH(tot.he),noImportes?'':(entries[0]?.precioHoraExtra?entries[0].precioHoraExtra+' €/h':'—'),noImportes?'':eur(tot.ie)]);
+    if(tot.hnoc>0)resRows.push(['Horas nocturnas',fmtH(tot.hnoc),'',noImportes?'':eur(tot.inoc)]);
+    if(tot.hf>0)resRows.push(['Horas festivas',fmtH(tot.hf),'',noImportes?'':eur(tot.if_)]);
+    if(!noImportes&&tot.diet>0){
+      const nd=entries.filter(e=>(+e.dieta||0)>0||(e.dietasExtra||[]).length>0).length;
+      resRows.push(['Dietas ('+nd+' jornadas)','—','—',eur(tot.diet)]);
+    }
+    if(!noImportes&&tot.transp>0){
+      const nt=entries.filter(e=>(+e.transporte||0)>0).length;
+      resRows.push(['Transporte ('+nt+' viajes)','—','—',eur(tot.transp)]);
+    }
+    if(!noImportes&&tot.otros>0)resRows.push(['Otros conceptos','—','—',eur(tot.otros)]);
+    if(resRows.length>0){
+      doc.autoTable({
+        startY:y,
+        head:[noImportes?['Concepto','Horas']:['Concepto','Horas','Precio','Importe']],
+        body:noImportes?resRows.map(r=>[r[0],r[1]]):resRows,
+        styles:{fontSize:8,cellPadding:2},
+        headStyles:{fillColor:G,textColor:[255,255,255],fontStyle:'bold'},
+        alternateRowStyles:{fillColor:[248,255,250]},
+        columnStyles:noImportes?{0:{cellWidth:100},1:{cellWidth:40}}:{0:{cellWidth:80},1:{cellWidth:22},2:{cellWidth:28},3:{cellWidth:28}},
+        foot:noImportes?[['TOTAL HORAS',fmtH(totalH),'']]:
+          [['TOTAL',fmtH(totalH),'',eur(grandTotal)]],
+        footStyles:{fillColor:G,textColor:[255,255,255],fontStyle:'bold',fontSize:9},
+        margin:{left:M,right:M}
+      });
+      y=doc.lastAutoTable.finalY+5;
     }
 
     // ── FOOTER ──
