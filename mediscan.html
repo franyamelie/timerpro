@@ -606,10 +606,18 @@ function MultiPart3D({anns,segs,objShape,img,segSel,scope}){
 
   const parts=React.useMemo(()=>{
     if(segs&&segs.length>0){
-      return segs.map(seg=>{
+      const mapped=segs.map(seg=>{
         const related=anns.filter(a=>a.value!=null&&annInSeg(a,seg));
         return{...seg,anns:related};
-      }).filter(p=>scope==="all"||p.anns.length>0); /* scope="measured": solo piezas con al menos una medida */
+      });
+      const filtered=mapped.filter(p=>scope==="all"||p.anns.length>0);
+      /* Si "solo lo medido" resulta vacío (medidas en imagen principal sin zona asignada),
+         mostramos todas las medidas agrupadas bajo "Objeto completo" para no dejar pantalla vacía */
+      if(filtered.length===0&&scope==="measured"){
+        const withVal=anns.filter(a=>a.value!=null);
+        if(withVal.length)return[{id:"_all",name:"Objeto completo",color:"#ff9500",anns:withVal}];
+      }
+      return filtered;
     }
     const withVal=anns.filter(a=>a.value!=null);
     if(!withVal.length)return[];
@@ -810,13 +818,20 @@ function IndustrialDB({onImport}){
 
 /* ══ COMPACT SHARE BAR - shown in every panel ══ */
 function ShareBar({onPNG,onPDF,onWA,onEmail,onLink,onDXF,onCopy}){
-  return<div style={{display:"flex",gap:"4px",padding:"7px 10px",borderTop:"1px solid rgba(255,255,255,.05)",background:"rgba(0,0,0,.2)",flexWrap:"wrap"}}>
-    <span style={{fontSize:"8px",color:"#2a3a5a",alignSelf:"center",marginRight:"2px"}}>Compartir:</span>
-    <button onClick={onPNG} style={{flex:1,minWidth:"42px",padding:"5px 4px",background:"rgba(0,150,255,.12)",border:"1px solid rgba(0,150,255,.25)",color:"#00b4ff",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>📥 PNG</button>
-    <button onClick={onPDF} style={{flex:1,minWidth:"42px",padding:"5px 4px",background:"rgba(255,50,50,.08)",border:"1px solid rgba(255,50,50,.2)",color:"#ff3366",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>📄 PDF</button>
-    <button onClick={onWA} style={{flex:1,minWidth:"42px",padding:"5px 4px",background:"rgba(37,211,102,.08)",border:"1px solid rgba(37,211,102,.25)",color:"#25d366",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>💬 WhatsApp</button>
-    <button onClick={onEmail} style={{flex:1,minWidth:"42px",padding:"5px 4px",background:"rgba(100,150,255,.07)",border:"1px solid rgba(100,150,255,.2)",color:"#88aaff",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>📧 Email</button>
-    <button onClick={onLink} style={{flex:1,minWidth:"42px",padding:"5px 4px",background:"rgba(0,80,200,.12)",border:"1px solid rgba(0,100,255,.22)",color:"#66aaff",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>☁ Link</button>
+  const btn=(onClick,bg,label)=><button onClick={onClick} style={{
+    flex:1,minWidth:"64px",padding:"10px 6px",background:bg,border:"none",
+    color:"#fff",borderRadius:"10px",fontSize:"11px",fontWeight:700,
+    display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",
+    boxShadow:"0 2px 8px rgba(0,0,0,.15)",cursor:"pointer"}}>
+    {label}
+  </button>;
+  return<div style={{display:"flex",gap:"6px",padding:"10px 12px",borderTop:"1px solid var(--border)",background:"var(--bg3)",flexWrap:"wrap",alignItems:"center"}}>
+    <span style={{fontSize:"10px",fontWeight:700,color:"var(--txt2)",marginRight:"4px",whiteSpace:"nowrap"}}>📤 Compartir:</span>
+    {btn(onPNG,  "linear-gradient(135deg,#0088dd,#00aaff)", <>📥<br/>PNG</>)}
+    {btn(onPDF,  "linear-gradient(135deg,#cc1133,#ff3355)", <>📄<br/>PDF</>)}
+    {btn(onWA,   "linear-gradient(135deg,#128c3e,#25d366)", <>💬<br/>WA</>)}
+    {btn(onEmail,"linear-gradient(135deg,#4455cc,#6677ff)", <>📧<br/>Email</>)}
+    {btn(onLink, "linear-gradient(135deg,#884400,#ff9500)", <>☁<br/>Link</>)}
   </div>;
 }
 
@@ -3054,23 +3069,27 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       💡 Añade medidas con eje Ancho/Alto/Prof. para generar el plano<br/>
       Método: Herramienta → Dibujar → Confirmar medida → seleccionar eje en el desplegable
     </div>}
-    {segs?.length>1&&<div style={{margin:"8px 13px",padding:"8px",background:"rgba(255,255,255,.03)",borderRadius:"8px",border:"1px solid rgba(255,255,255,.06)"}}>
-      <div style={{fontSize:"8px",color:"#556677",marginBottom:"6px",fontWeight:700}}>¿Qué piezas incluir en el plano 2D?</div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:"5px"}}>
-        <button onClick={()=>setPart3DSel(new Set())} style={{padding:"4px 8px",borderRadius:"6px",fontSize:"8px",fontWeight:700,
-          background:(!part3DSel||part3DSel.size===0)?`${C}30`:"rgba(255,255,255,.04)",
-          border:`1px solid ${(!part3DSel||part3DSel.size===0)?C:"rgba(255,255,255,.1)"}`,
-          color:(!part3DSel||part3DSel.size===0)?C:"#667"}}>Todas ({segs.length})</button>
+    {segs?.length>1&&<div style={{margin:"8px 13px",padding:"10px",background:"#fff",borderRadius:"10px",border:"1px solid var(--border)",boxShadow:"0 1px 6px rgba(0,0,0,.06)"}}>
+      <div style={{fontSize:"9px",color:"var(--txt2)",marginBottom:"8px",fontWeight:700,letterSpacing:".04em"}}>🗂 ¿Qué piezas incluir en el plano 2D?</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
+        <button onClick={()=>setPart3DSel(new Set())} style={{padding:"6px 12px",borderRadius:"8px",fontSize:"9px",fontWeight:700,
+          background:(!part3DSel||part3DSel.size===0)?"linear-gradient(135deg,#ff7700,#ffaa00)":"var(--bg3)",
+          border:`2px solid ${(!part3DSel||part3DSel.size===0)?"#ff7700":"var(--border)"}`,
+          color:(!part3DSel||part3DSel.size===0)?"#fff":"var(--txt2)",
+          boxShadow:(!part3DSel||part3DSel.size===0)?"0 2px 8px rgba(255,119,0,.3)":"none"}}>
+          {(!part3DSel||part3DSel.size===0)?"✓ ":""}Todas ({segs.length})</button>
         {segs.map(seg=>{
           const sel=part3DSel?.has(seg.id)??false;
           return<button key={seg.id} onClick={()=>setPart3DSel(prev=>{
             const next=new Set(prev||[]);
             if(next.has(seg.id))next.delete(seg.id);else next.add(seg.id);
             return next;
-          })} style={{padding:"4px 8px",borderRadius:"6px",fontSize:"8px",fontWeight:700,
-            background:sel?`${seg.color||C}30`:"rgba(255,255,255,.04)",
-            border:`1px solid ${sel?seg.color||C:"rgba(255,255,255,.1)"}`,
-            color:sel?seg.color||C:"#667"}}>{sel?"✓ ":""}{seg.name}</button>;
+          })} style={{padding:"6px 12px",borderRadius:"8px",fontSize:"9px",fontWeight:700,
+            background:sel?(seg.color||C):"var(--bg3)",
+            border:`2px solid ${sel?(seg.color||C):"var(--border)"}`,
+            color:sel?"#fff":"var(--txt2)",
+            boxShadow:sel?`0 2px 8px ${(seg.color||C)}55`:"none",
+            transform:sel?"scale(1.05)":"scale(1)",transition:"all .15s"}}>{sel?"✓ ":""}{seg.name}</button>;
         })}
       </div>
     </div>}
