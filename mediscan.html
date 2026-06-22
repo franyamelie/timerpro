@@ -145,8 +145,8 @@ const TOOLS=[
   {id:"joinpts",icon:"🔗",label:"Unir",npts:0,cat:"nav"},
   {id:"dot",icon:"⬤",label:"Punto",npts:1,cat:"mrk"},
   {id:"pin",icon:"📍",label:"Pin",npts:1,cat:"mrk"},
-  {id:"star",icon:"✦",label:"Estrella",npts:1,cat:"mrk"},
-  {id:"tgt",icon:"⊕",label:"Diana",npts:1,cat:"mrk"},
+  {id:"star",icon:"⭐",label:"Estrella",npts:1,cat:"mrk"},
+  {id:"tgt",icon:"🎯",label:"Diana",npts:1,cat:"mrk"},
   {id:"line",icon:"─",label:"Línea",npts:2,cat:"lin"},
   {id:"dim",icon:"↹",label:"Cota",npts:2,cat:"lin"},
   {id:"dist",icon:"⟷",label:"Distancia",npts:2,cat:"lin"},
@@ -1883,8 +1883,10 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     const ord=typeOrd(anns,a);
     const ic=(TOOLS.find(t=>t.id===a.type)?.icon)||"●";
     const x=parseFloat(mx),y=parseFloat(my);
-    const r=3.6,fs=ic.length>1?"2.2%":"3.1%";
+    /* Radio más grande y fondo blanco para que destaquen sobre cualquier foto */
+    const r=4.2, fs=ic.length>1?"2.5%":"3.4%";
     const inMulti=multiSel.includes(a.id);
+    const isSelected=selId===a.id;
     const tap=e=>{
       e.stopPropagation();
       if(tool==="selpts"){
@@ -1895,14 +1897,22 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       else{setSelId(a.id);}
     };
     return(<g onClick={tap} onMouseDown={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()} style={{cursor:"pointer"}}>
-      {(inMulti||selId===a.id)&&<circle cx={`${x}%`} cy={`${y}%`} r={`${r+1.1}%`} fill="none"
-        stroke={inMulti?"#00dd77":"#fff"} strokeWidth="0.6" strokeDasharray={inMulti?"none":"2,1.4"}/>}
-      <circle cx={`${x}%`} cy={`${y}%`} r={`${r}%`} fill="rgba(6,8,16,.92)" stroke={col} strokeWidth="0.55"
-        style={{filter:"drop-shadow(0 2px 8px rgba(0,0,0,.7))"}}/>
+      {/* Halo exterior blanco para que resalte sobre cualquier fondo de foto */}
+      <circle cx={`${x}%`} cy={`${y}%`} r={`${r+1.4}%`} fill="rgba(255,255,255,0.85)"
+        style={{filter:"drop-shadow(0 2px 10px rgba(0,0,0,.55))"}}/>
+      {/* Círculo principal — blanco con borde del color de la herramienta */}
+      <circle cx={`${x}%`} cy={`${y}%`} r={`${r}%`} fill="#fff" stroke={col}
+        strokeWidth={isSelected?"1.2":"0.9"}/>
+      {/* Anillo de selección/multiselección */}
+      {(inMulti||isSelected)&&<circle cx={`${x}%`} cy={`${y}%`} r={`${r+2.2}%`} fill="none"
+        stroke={inMulti?"#00cc66":col} strokeWidth="0.8" strokeDasharray={inMulti?"none":"3,2"}/>}
+      {/* Icono de la herramienta — oscuro sobre fondo blanco, muy legible */}
       <text x={`${x}%`} y={`${y-.3}%`} fill={col} fontSize={fs}
-        fontFamily="Inter,sans-serif" fontWeight="800" textAnchor="middle" dominantBaseline="central">{ic}</text>
-      <circle cx={`${x+2.7}%`} cy={`${y+2.3}%`} r="1.7%" fill={inMulti?"#00dd77":col}/>
-      <text x={`${x+2.7}%`} y={`${y+2.3}%`} fill="#000" fontSize="2.1%"
+        fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{ic}</text>
+      {/* Contador numerado — pastilla sólida del color de la herramienta */}
+      <circle cx={`${x+3.1}%`} cy={`${y+2.8}%`} r="2%" fill={inMulti?"#00cc66":col}
+        stroke="#fff" strokeWidth="0.4"/>
+      <text x={`${x+3.1}%`} y={`${y+2.8}%`} fill="#fff" fontSize="2.3%"
         fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{inMulti?multiSel.indexOf(a.id)+1:ord}</text>
     </g>);
   };
@@ -2201,12 +2211,19 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       else{setSelId(a.id);}
     };
     const BadgeEl=({bx,by})=>ip?null:<g onClick={tapBadge} style={{cursor:"pointer"}}>
-      {(inMulti||selId===a.id)&&<circle cx={`${bx}%`} cy={`${by}%`} r="4.7%" fill="none"
-        stroke={inMulti?"#00dd77":"#fff"} strokeWidth="0.6" strokeDasharray={inMulti?"none":"2,1.4"}/>}
-      <circle cx={`${bx}%`} cy={`${by}%`} r="3.6%" fill="rgba(6,8,16,.92)" stroke={col} strokeWidth="0.6" style={{filter:"drop-shadow(0 1px 6px rgba(0,0,0,.7))"}}/>
-      <text x={`${bx}%`} y={`${by-.3}%`} fill={col} fontSize={ic.length>1?"2.2%":"3.1%"} fontFamily="Inter,sans-serif" fontWeight="800" textAnchor="middle" dominantBaseline="central">{ic}</text>
-      <circle cx={`${bx+2.7}%`} cy={`${by+2.3}%`} r="1.7%" fill={inMulti?"#00dd77":col}/>
-      <text x={`${bx+2.7}%`} y={`${by+2.3}%`} fill="#000" fontSize="2.1%" fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{inMulti?multiSel.indexOf(a.id)+1:ord}</text>
+      {/* Halo blanco exterior para legibilidad sobre cualquier foto */}
+      <circle cx={`${bx}%`} cy={`${by}%`} r="5.2%" fill="rgba(255,255,255,0.85)"
+        style={{filter:"drop-shadow(0 2px 8px rgba(0,0,0,.5))"}}/>
+      {/* Círculo principal blanco con borde de color */}
+      <circle cx={`${bx}%`} cy={`${by}%`} r="4.2%" fill="#fff" stroke={col} strokeWidth={selId===a.id?"1.1":"0.8"}/>
+      {/* Anillo de selección/multiselección */}
+      {(inMulti||selId===a.id)&&<circle cx={`${bx}%`} cy={`${by}%`} r="5.8%" fill="none"
+        stroke={inMulti?"#00cc66":col} strokeWidth="0.9" strokeDasharray={inMulti?"none":"3,2"}/>}
+      {/* Icono en color de la herramienta — muy legible sobre blanco */}
+      <text x={`${bx}%`} y={`${by-.3}%`} fill={col} fontSize={ic.length>1?"2.5%":"3.4%"} fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{ic}</text>
+      {/* Contador numerado */}
+      <circle cx={`${bx+3.1}%`} cy={`${by+2.8}%`} r="2%" fill={inMulti?"#00cc66":col} stroke="#fff" strokeWidth="0.4"/>
+      <text x={`${bx+3.1}%`} y={`${by+2.8}%`} fill="#fff" fontSize="2.3%" fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{inMulti?multiSel.indexOf(a.id)+1:ord}</text>
     </g>;
 
     /* ── RECTÁNGULO ── */
@@ -2778,6 +2795,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           para luego pulsar 🔗 Unir. */}
       {mrkA.map(a=>{
         const inMulti=multiSel.includes(a.id);
+        const isSelected=selId===a.id;
         const interactive=tool==="sel"||tool==="selpts";
         return<div key={a.id} className="nc"
         onMouseDown={e=>{if(tool==="sel")onHandleDrag(e,a.id,0);}} onTouchStart={e=>{if(tool==="sel")onHandleDrag(e,a.id,0);}}
@@ -2787,14 +2805,25 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
           if(selId===a.id){setIconInfoM({ann:a,ordinal:typeOrd(mrkA,a),fc:false});}
           else{setSelId(a.id);}
         }}
-        style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",width:"30px",height:"30px",borderRadius:"50%",background:selId===a.id?a.color:"rgba(6,8,16,.92)",border:`2.5px solid ${inMulti?"#00dd77":a.color}`,outline:selId===a.id&&!inMulti?"2px dashed #fff":"none",outlineOffset:"2px",color:selId===a.id?"#000":a.color,display:"flex",alignItems:"center",justifyContent:"center",cursor:tool==="sel"?"grab":interactive?"pointer":"default",zIndex:interactive?15:1,pointerEvents:interactive?"auto":"none",boxShadow:`0 0 ${selId===a.id||inMulti?18:8}px ${inMulti?"#00dd77":a.color}`,fontSize:a.type==="pin"?"15px":"11px",fontWeight:"700"}}>
-        {a.icon||(a.type==="pin"?"📍":a.type==="star"?"★":a.type==="tgt"?"⊕":"●")}
-        <div style={{position:"absolute",bottom:"-3px",right:"-3px",width:"14px",height:"14px",borderRadius:"50%",
-          background:inMulti?"#00dd77":a.color,color:"#000",fontSize:"8px",fontWeight:900,display:"flex",alignItems:"center",
-          justifyContent:"center",border:"1.5px solid #000",pointerEvents:"none"}}>{inMulti?multiSel.indexOf(a.id)+1:typeOrd(mrkA,a)}</div>
+        style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,
+          transform:"translate(-50%,-50%)",width:"34px",height:"34px",borderRadius:"50%",
+          /* Fondo blanco para que el icono sea legible sobre cualquier foto */
+          background:"#fff",
+          border:`3px solid ${inMulti?"#00cc66":a.color}`,
+          outline:isSelected&&!inMulti?`3px dashed ${a.color}`:"none",outlineOffset:"3px",
+          color:a.color,display:"flex",alignItems:"center",justifyContent:"center",
+          cursor:tool==="sel"?"grab":interactive?"pointer":"default",
+          zIndex:interactive?15:1,pointerEvents:interactive?"auto":"none",
+          boxShadow:`0 2px 12px rgba(0,0,0,.45), 0 0 ${isSelected||inMulti?16:6}px ${inMulti?"#00cc66":a.color}`,
+          fontSize:a.type==="pin"?"17px":"13px",fontWeight:"700"}}>
+        {a.icon||(a.type==="pin"?"📍":a.type==="star"?"⭐":a.type==="tgt"?"🎯":"●")}
+        <div style={{position:"absolute",bottom:"-4px",right:"-4px",width:"16px",height:"16px",borderRadius:"50%",
+          background:inMulti?"#00cc66":a.color,color:"#fff",fontSize:"9px",fontWeight:900,display:"flex",alignItems:"center",
+          justifyContent:"center",border:"2px solid #fff",pointerEvents:"none",
+          boxShadow:"0 1px 4px rgba(0,0,0,.4)"}}>{inMulti?multiSel.indexOf(a.id)+1:typeOrd(mrkA,a)}</div>
       </div>;})}
       {/* Drag handles for selected shape — solo en modo Mover, mismo motivo */}
-      {tool==="sel"&&selA&&!MRK.includes(selA.type)&&selA.points.map((p,pi)=><div key={pi} className="nc" onMouseDown={e=>onHandleDrag(e,selA.id,pi)} onTouchStart={e=>onHandleDrag(e,selA.id,pi)} style={{position:"absolute",left:`${p.x*100}%`,top:`${p.y*100}%`,transform:"translate(-50%,-50%)",width:"15px",height:"15px",borderRadius:"50%",background:selA.color,cursor:"grab",zIndex:25,border:"2.5px solid #fff",boxShadow:`0 0 9px ${selA.color}`}}/>)}
+      {tool==="sel"&&selA&&!MRK.includes(selA.type)&&selA.points.map((p,pi)=><div key={pi} className="nc" onMouseDown={e=>onHandleDrag(e,selA.id,pi)} onTouchStart={e=>onHandleDrag(e,selA.id,pi)} style={{position:"absolute",left:`${p.x*100}%`,top:`${p.y*100}%`,transform:"translate(-50%,-50%)",width:"18px",height:"18px",borderRadius:"50%",background:"#fff",cursor:"grab",zIndex:25,border:`3px solid ${selA.color}`,boxShadow:`0 0 10px ${selA.color}`}}/>)}
     </div>
   </div>
 
@@ -3639,22 +3668,26 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       {/* Marker dots */}
       {fcAnns.filter(a=>MRK.includes(a.type)).map(a=>{
         const inMulti=multiSel.includes(a.id);
+        const isSelected=selId===a.id;
         return<div key={a.id} style={{position:"absolute",left:`${a.points[0].x*100}%`,top:`${a.points[0].y*100}%`,transform:"translate(-50%,-50%)",
-          width:"26px",height:"26px",borderRadius:"50%",background:"rgba(0,0,0,.9)",
-          border:`2.5px solid ${inMulti?"#00dd77":a.color}`,outline:selId===a.id&&!inMulti?"2px dashed #fff":"none",outlineOffset:"2px",
+          width:"32px",height:"32px",borderRadius:"50%",
+          background:"#fff",
+          border:`3px solid ${inMulti?"#00cc66":a.color}`,
+          outline:isSelected&&!inMulti?`3px dashed ${a.color}`:"none",outlineOffset:"3px",
           color:a.color,display:"flex",alignItems:"center",
-          justifyContent:"center",fontSize:a.type==="pin"?"13px":"10px",fontWeight:700,cursor:"pointer",zIndex:10,
-          boxShadow:`0 0 8px ${inMulti?"#00dd77":a.color}`}}
+          justifyContent:"center",fontSize:a.type==="pin"?"16px":"12px",fontWeight:700,cursor:"pointer",zIndex:10,
+          boxShadow:`0 2px 10px rgba(0,0,0,.4), 0 0 ${isSelected||inMulti?14:5}px ${inMulti?"#00cc66":a.color}`}}
           onClick={e=>{
             e.stopPropagation();
             if(tool==="selpts"){setMultiSel(prev=>prev.includes(a.id)?prev.filter(id=>id!==a.id):[...prev,a.id]);return;}
             if(selId===a.id){setIconInfoM({ann:a,ordinal:typeOrd(fcAnns,a),fc:true});}
             else{setSelId(a.id);}
           }}>
-          {a.icon||(a.type==="pin"?"📍":a.type==="star"?"★":a.type==="tgt"?"⊕":"●")}
-          <div style={{position:"absolute",bottom:"-3px",right:"-3px",width:"13px",height:"13px",borderRadius:"50%",
-            background:inMulti?"#00dd77":a.color,color:"#000",fontSize:"7px",fontWeight:900,display:"flex",alignItems:"center",
-            justifyContent:"center",border:"1.5px solid #000",pointerEvents:"none"}}>{inMulti?multiSel.indexOf(a.id)+1:typeOrd(fcAnns,a)}</div>
+          {a.icon||(a.type==="pin"?"📍":a.type==="star"?"⭐":a.type==="tgt"?"🎯":"●")}
+          <div style={{position:"absolute",bottom:"-4px",right:"-4px",width:"15px",height:"15px",borderRadius:"50%",
+            background:inMulti?"#00cc66":a.color,color:"#fff",fontSize:"8px",fontWeight:900,display:"flex",alignItems:"center",
+            justifyContent:"center",border:"2px solid #fff",pointerEvents:"none",
+            boxShadow:"0 1px 4px rgba(0,0,0,.4)"}}>{inMulti?multiSel.indexOf(a.id)+1:typeOrd(fcAnns,a)}</div>
         </div>;
       })}
     </div>
