@@ -299,14 +299,28 @@ function View2D({anns,objName,sc,segs,img,segSel,scope}){
       ctx.restore();
       /* Semi-transparent overlay for annotations (más clara para que la foto se vea bien) */
       ctx.fillStyle="rgba(0,0,0,0.06)";ctx.fillRect(imgX,imgY,imgW,imgH);
-      /* Draw segment overlays on image */
+      /* Draw segment overlays on image — si tiene polígono preciso, usarlo */
       if(vSegs&&vSegs.length){
         vSegs.forEach((seg,i)=>{
           const sx=imgX+seg.x1*imgW,sy=imgY+seg.y1*imgH;
           const sw2=(seg.x2-seg.x1)*imgW,sh2=(seg.y2-seg.y1)*imgH;
           const col=seg.color||"#0055cc";
-          ctx.fillStyle=col+"28";ctx.fillRect(sx,sy,sw2,sh2);
-          ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.setLineDash([5,3]);ctx.strokeRect(sx,sy,sw2,sh2);ctx.setLineDash([]);
+          ctx.save();
+          if(seg.polygon&&seg.polygon.length>=3){
+            /* Contorno preciso: dibujar el polígono real en vez del rectángulo */
+            ctx.beginPath();
+            seg.polygon.forEach(([px,py],j)=>{
+              const cx2=imgX+px*imgW,cy2=imgY+py*imgH;
+              j===0?ctx.moveTo(cx2,cy2):ctx.lineTo(cx2,cy2);
+            });
+            ctx.closePath();
+            ctx.fillStyle=col+"38";ctx.fill();
+            ctx.strokeStyle=col;ctx.lineWidth=2;ctx.setLineDash([6,3]);ctx.stroke();ctx.setLineDash([]);
+          }else{
+            ctx.fillStyle=col+"28";ctx.fillRect(sx,sy,sw2,sh2);
+            ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.setLineDash([5,3]);ctx.strokeRect(sx,sy,sw2,sh2);ctx.setLineDash([]);
+          }
+          ctx.restore();
           /* Balloon */
           ctx.beginPath();ctx.arc(sx+12,sy+12,9,0,Math.PI*2);
           ctx.fillStyle=col;ctx.fill();ctx.strokeStyle="#fff";ctx.lineWidth=1;ctx.stroke();
@@ -418,7 +432,7 @@ function View2D({anns,objName,sc,segs,img,segSel,scope}){
       ctx.fillStyle="#1a3a8a";ctx.font="bold 6.5px 'Inter',sans-serif";ctx.textAlign="center";
       ctx.fillText("VISTAS ORTOGONALES",ortX+ortW/2,imgY+9);
 
-      /* ── ALZADO (vista frontal) — foto real de la zona ── */
+      /* ── ALZADO (vista frontal) — foto real de la zona con contorno preciso ── */
       ctx.fillStyle="#7788aa";ctx.font="bold 6px 'Inter',sans-serif";ctx.textAlign="center";
       ctx.fillText("ALZADO",oX+alzW/2,oY-2);
       if(imgEl){
@@ -428,7 +442,18 @@ function View2D({anns,objName,sc,segs,img,segSel,scope}){
           const sw2=Math.round(imgEl.naturalWidth*Math.abs(seg0.x2-seg0.x1));
           const sh2=Math.round(imgEl.naturalHeight*Math.abs(seg0.y2-seg0.y1));
           if(sw2>0&&sh2>0){
-            ctx.save();ctx.beginPath();ctx.rect(oX,oY,alzW,alzH);ctx.clip();
+            ctx.save();
+            /* Si hay polígono preciso, clipear con su forma real */
+            if(seg0.polygon&&seg0.polygon.length>=3){
+              ctx.beginPath();
+              seg0.polygon.forEach(([px,py],j)=>{
+                const cx2=oX+px*alzW,cy2=oY+py*alzH;
+                j===0?ctx.moveTo(cx2,cy2):ctx.lineTo(cx2,cy2);
+              });
+              ctx.closePath();ctx.clip();
+            }else{
+              ctx.beginPath();ctx.rect(oX,oY,alzW,alzH);ctx.clip();
+            }
             const ar2=sw2/sh2;let dw2=alzW,dh2=alzH;
             if(dw2/dh2>ar2){dw2=dh2*ar2;}else{dh2=dw2/ar2;}
             ctx.drawImage(imgEl,sx,sy,sw2,sh2,oX+(alzW-dw2)/2,oY+(alzH-dh2)/2,dw2,dh2);
@@ -436,8 +461,19 @@ function View2D({anns,objName,sc,segs,img,segSel,scope}){
           }
         }catch(e){}
       }
-      ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.5;ctx.setLineDash([]);
-      ctx.strokeRect(oX,oY,alzW,alzH);
+      /* Marco del alzado — polígono o rectángulo */
+      if(seg0.polygon&&seg0.polygon.length>=3){
+        ctx.beginPath();
+        seg0.polygon.forEach(([px,py],j)=>{
+          const cx2=oX+px*alzW,cy2=oY+py*alzH;
+          j===0?ctx.moveTo(cx2,cy2):ctx.lineTo(cx2,cy2);
+        });
+        ctx.closePath();
+        ctx.strokeStyle="#1a3a8a";ctx.lineWidth=2;ctx.setLineDash([]);ctx.stroke();
+      }else{
+        ctx.strokeStyle="#1a3a8a";ctx.lineWidth=1.5;ctx.setLineDash([]);
+        ctx.strokeRect(oX,oY,alzW,alzH);
+      }
       /* Líneas de centrado */
       ctx.strokeStyle="rgba(0,100,200,.3)";ctx.lineWidth=0.5;ctx.setLineDash([4,2]);
       ctx.beginPath();ctx.moveTo(oX+alzW/2,oY);ctx.lineTo(oX+alzW/2,oY+alzH);ctx.stroke();
