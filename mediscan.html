@@ -813,6 +813,7 @@ function App(){
   const [prev,setPrev]=useState(null);
   const [dragSt,setDragSt]=useState(null);
   const [selId,setSelId]=useState(null);
+  const iconTapRef=useRef(false); /* true durante ~300ms tras tocar un icono existente — impide que el onImgClick coloque un nuevo marcador encima */
   const [colI,setColI]=useState(0);
   const [scale,setScale]=useState(null);
   const [lSt,setLSt]=useState("solid");
@@ -1335,6 +1336,7 @@ function App(){
   },[samEncodeImage,colI]);
 
   const onImgClick=useCallback(e=>{
+    if(iconTapRef.current)return; /* toque sobre icono ya existente — no colocar nada nuevo */
     if(samActive){
       e.stopPropagation();
       const p=getP(e,e.currentTarget);
@@ -1883,12 +1885,16 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     const ord=typeOrd(anns,a);
     const ic=(TOOLS.find(t=>t.id===a.type)?.icon)||"●";
     const x=parseFloat(mx),y=parseFloat(my);
-    /* Radio más grande y fondo blanco para que destaquen sobre cualquier foto */
-    const r=4.2, fs=ic.length>1?"2.5%":"3.4%";
+    /* Radio mayor y etiqueta del tipo de herramienta debajo del círculo,
+       igual que en apps como Ruler 2D donde cada marcador tiene nombre visible */
+    const r=5.5, fs=ic.length>1?"3.2%":"4.2%";
+    const label=(TOOLS.find(t=>t.id===a.type)?.label||"").slice(0,7);
     const inMulti=multiSel.includes(a.id);
     const isSelected=selId===a.id;
     const tap=e=>{
       e.stopPropagation();
+      iconTapRef.current=true;
+      setTimeout(()=>{iconTapRef.current=false;},300);
       if(tool==="selpts"){
         setMultiSel(prev=>prev.includes(a.id)?prev.filter(id=>id!==a.id):[...prev,a.id]);
         return;
@@ -1896,23 +1902,27 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       if(selId===a.id){setIconInfoM({ann:a,ordinal:ord,fc:false});}
       else{setSelId(a.id);}
     };
-    return(<g onClick={tap} onMouseDown={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()} style={{cursor:"pointer"}}>
-      {/* Halo exterior blanco para que resalte sobre cualquier fondo de foto */}
-      <circle cx={`${x}%`} cy={`${y}%`} r={`${r+1.4}%`} fill="rgba(255,255,255,0.85)"
-        style={{filter:"drop-shadow(0 2px 10px rgba(0,0,0,.55))"}}/>
-      {/* Círculo principal — blanco con borde del color de la herramienta */}
+    return(<g onClick={tap} onMouseDown={e=>e.stopPropagation()} onTouchStart={e=>{iconTapRef.current=true;setTimeout(()=>{iconTapRef.current=false;},300);e.stopPropagation();}} style={{cursor:"pointer"}}>
+      {/* Halo blanco exterior */}
+      <circle cx={`${x}%`} cy={`${y}%`} r={`${r+1.8}%`} fill="rgba(255,255,255,0.9)"
+        style={{filter:"drop-shadow(0 3px 12px rgba(0,0,0,.6))"}}/>
+      {/* Círculo principal blanco con borde grueso del color */}
       <circle cx={`${x}%`} cy={`${y}%`} r={`${r}%`} fill="#fff" stroke={col}
-        strokeWidth={isSelected?"1.2":"0.9"}/>
-      {/* Anillo de selección/multiselección */}
-      {(inMulti||isSelected)&&<circle cx={`${x}%`} cy={`${y}%`} r={`${r+2.2}%`} fill="none"
-        stroke={inMulti?"#00cc66":col} strokeWidth="0.8" strokeDasharray={inMulti?"none":"3,2"}/>}
-      {/* Icono de la herramienta — oscuro sobre fondo blanco, muy legible */}
-      <text x={`${x}%`} y={`${y-.3}%`} fill={col} fontSize={fs}
+        strokeWidth={isSelected?"1.6":"1.1"}/>
+      {/* Anillo de selección */}
+      {(inMulti||isSelected)&&<circle cx={`${x}%`} cy={`${y}%`} r={`${r+3}%`} fill="none"
+        stroke={inMulti?"#00cc66":col} strokeWidth="1" strokeDasharray={inMulti?"none":"4,2.5"}/>}
+      {/* Icono grande y claro */}
+      <text x={`${x}%`} y={`${y-.5}%`} fill={col} fontSize={fs}
         fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{ic}</text>
-      {/* Contador numerado — pastilla sólida del color de la herramienta */}
-      <circle cx={`${x+3.1}%`} cy={`${y+2.8}%`} r="2%" fill={inMulti?"#00cc66":col}
-        stroke="#fff" strokeWidth="0.4"/>
-      <text x={`${x+3.1}%`} y={`${y+2.8}%`} fill="#fff" fontSize="2.3%"
+      {/* Etiqueta del nombre de herramienta debajo — como en Ruler 2D */}
+      <rect x={`${x-6}%`} y={`${y+r+.8}%`} width="12%" height="3.2%" rx="1.2%" fill={col}/>
+      <text x={`${x}%`} y={`${y+r+2.5}%`} fill="#fff" fontSize="2.2%"
+        fontFamily="Inter,sans-serif" fontWeight="800" textAnchor="middle" dominantBaseline="central">{label}</text>
+      {/* Contador */}
+      <circle cx={`${x+4.2}%`} cy={`${y+3.8}%`} r="2.4%" fill={inMulti?"#00cc66":col}
+        stroke="#fff" strokeWidth="0.5"/>
+      <text x={`${x+4.2}%`} y={`${y+3.8}%`} fill="#fff" fontSize="2.6%"
         fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{inMulti?multiSel.indexOf(a.id)+1:ord}</text>
     </g>);
   };
@@ -2800,7 +2810,10 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
         return<div key={a.id} className="nc"
         onMouseDown={e=>{if(tool==="sel")onHandleDrag(e,a.id,0);}} onTouchStart={e=>{if(tool==="sel")onHandleDrag(e,a.id,0);}}
         onClick={e=>{
-          if(!interactive)return;e.stopPropagation();
+          if(!interactive)return;
+          e.stopPropagation();
+          iconTapRef.current=true;
+          setTimeout(()=>{iconTapRef.current=false;},300);
           if(tool==="selpts"){setMultiSel(prev=>prev.includes(a.id)?prev.filter(id=>id!==a.id):[...prev,a.id]);return;}
           if(selId===a.id){setIconInfoM({ann:a,ordinal:typeOrd(mrkA,a),fc:false});}
           else{setSelId(a.id);}
