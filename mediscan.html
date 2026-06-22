@@ -395,19 +395,39 @@ function View2D({anns,objName,sc,segs,img,segSel,scope}){
         dimLine(lX,lY+lH,lX+lW,lY+lH,dd.lbl,1,14);
       }
     } else {
-      /* No measurements: show parts grid */
-      ctx.fillStyle="#7788aa";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="center";ctx.fillText("DETALLE DE PARTES",ortX+ortW/2,imgY+10);
+      /* No measurements with axis: show parts as photo crops + schematic views */
+      ctx.fillStyle="#1a3a8a";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="center";ctx.fillText("DETALLE DE PARTES",ortX+ortW/2,imgY+10);
       (vSegs||[]).slice(0,4).forEach((seg,i)=>{
         const row=Math.floor(i/2),col2=i%2;
         const bx=ortX+col2*(ortW/2)+2,by=imgY+16+row*(imgH/2.2);
         const bw=ortW/2-6,bh=imgH/2.4;
         const c=seg.color||"#1a5a9a";
-        ctx.fillStyle=c+"18";ctx.strokeStyle=c;ctx.lineWidth=1;ctx.setLineDash([4,2]);
-        ctx.fillRect(bx,by,bw,bh);ctx.strokeRect(bx,by,bw,bh);ctx.setLineDash([]);
-        ctx.fillStyle=c;ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="center";
-        ctx.fillText((seg.name||"Parte "+(i+1)).slice(0,12),bx+bw/2,by+bh/2+2);
-        ctx.beginPath();ctx.arc(bx+12,by+12,8,0,Math.PI*2);ctx.fillStyle=c;ctx.fill();
-        ctx.fillStyle="#fff";ctx.font="bold 8px 'Inter',sans-serif";ctx.fillText(i+1,bx+12,by+14);
+        /* Intentar dibujar la foto recortada de la zona */
+        if(imgEl){
+          try{
+            const cx=Math.round(imgEl.naturalWidth*Math.min(seg.x1,seg.x2));
+            const cy2=Math.round(imgEl.naturalHeight*Math.min(seg.y1,seg.y2));
+            const cw=Math.round(imgEl.naturalWidth*Math.abs(seg.x2-seg.x1));
+            const ch=Math.round(imgEl.naturalHeight*Math.abs(seg.y2-seg.y1));
+            ctx.save();ctx.rect(bx,by,bw,bh);ctx.clip();
+            const ar=cw/ch||1;
+            let dw2=bw,dh2=bh;
+            if(dw2/dh2>ar){dw2=dh2*ar;}else{dh2=dw2/ar;}
+            ctx.drawImage(imgEl,cx,cy2,cw,ch,bx+(bw-dw2)/2,by+(bh-dh2)/2,dw2,dh2);
+            ctx.restore();
+          }catch(e){}
+        }
+        /* Marco de color de la zona */
+        ctx.fillStyle=c+"18";ctx.strokeStyle=c;ctx.lineWidth=1.2;ctx.setLineDash([3,2]);
+        ctx.strokeRect(bx,by,bw,bh);ctx.setLineDash([]);
+        /* Número */
+        ctx.beginPath();ctx.arc(bx+10,by+10,7,0,Math.PI*2);ctx.fillStyle=c;ctx.fill();
+        ctx.fillStyle="#fff";ctx.font="bold 7px 'Inter',sans-serif";ctx.textAlign="center";ctx.fillText(i+1,bx+10,by+12);
+        /* Nombre */
+        ctx.fillStyle="#fff";ctx.font="bold 6.5px 'Inter',sans-serif";ctx.textAlign="center";
+        ctx.strokeStyle="rgba(0,0,0,.7)";ctx.lineWidth=2;ctx.strokeText((seg.name||"Parte "+(i+1)).slice(0,12),bx+bw/2,by+bh-4);
+        ctx.fillText((seg.name||"Parte "+(i+1)).slice(0,12),bx+bw/2,by+bh-4);
+        ctx.lineWidth=1;
       });
     }
 
@@ -1931,10 +1951,8 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     const ord=typeOrd(anns,a);
     const ic=(TOOLS.find(t=>t.id===a.type)?.icon)||"●";
     const x=parseFloat(mx),y=parseFloat(my);
-    /* Radio mayor y etiqueta del tipo de herramienta debajo del círculo,
-       igual que en apps como Ruler 2D donde cada marcador tiene nombre visible */
-    const r=5.5, fs=ic.length>1?"3.2%":"4.2%";
-    const label=(TOOLS.find(t=>t.id===a.type)?.label||"").slice(0,7);
+    /* Tamaño real de icono: r=2% = ~18px en imagen de 900px. Sin halos gigantes. */
+    const r=2.1, fs=ic.length>1?"1.6%":"2.2%";
     const inMulti=multiSel.includes(a.id);
     const isSelected=selId===a.id;
     const tap=e=>{
@@ -1949,26 +1967,19 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       else{setSelId(a.id);}
     };
     return(<g onClick={tap} onMouseDown={e=>e.stopPropagation()} onTouchStart={e=>{iconTapRef.current=true;setTimeout(()=>{iconTapRef.current=false;},300);e.stopPropagation();}} style={{cursor:"pointer"}}>
-      {/* Halo translúcido — se ve la foto a través */}
-      <circle cx={`${x}%`} cy={`${y}%`} r={`${r+1.8}%`} fill="rgba(255,255,255,0.25)"
-        style={{filter:"drop-shadow(0 3px 12px rgba(0,0,0,.5))"}}/>
-      {/* Círculo principal translúcido con borde del color */}
-      <circle cx={`${x}%`} cy={`${y}%`} r={`${r}%`} fill="rgba(255,255,255,0.55)" stroke={col}
-        strokeWidth={isSelected?"1.8":"1.3"}/>
-      {/* Anillo de selección */}
-      {(inMulti||isSelected)&&<circle cx={`${x}%`} cy={`${y}%`} r={`${r+3}%`} fill="none"
-        stroke={inMulti?"#00cc66":col} strokeWidth="1" strokeDasharray={inMulti?"none":"4,2.5"}/>}
-      {/* Icono grande y claro */}
-      <text x={`${x}%`} y={`${y-.5}%`} fill={col} fontSize={fs}
+      {/* Círculo principal compacto — fondo blanco semitransparente, borde del color */}
+      <circle cx={`${x}%`} cy={`${y}%`} r={`${r}%`} fill="rgba(255,255,255,0.82)" stroke={col}
+        strokeWidth={isSelected?"1.4":"1.0"}
+        style={{filter:"drop-shadow(0 1px 4px rgba(0,0,0,.45))"}}/>
+      {/* Anillo fino de selección/multiselección — solo cuando está activo */}
+      {(inMulti||isSelected)&&<circle cx={`${x}%`} cy={`${y}%`} r={`${r+0.9}%`} fill="none"
+        stroke={inMulti?"#00cc66":col} strokeWidth="0.7" strokeDasharray={inMulti?"none":"3,2"}/>}
+      {/* Icono */}
+      <text x={`${x}%`} y={`${y}%`} fill={col} fontSize={fs}
         fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{ic}</text>
-      {/* Etiqueta del nombre de herramienta debajo — como en Ruler 2D */}
-      <rect x={`${x-6}%`} y={`${y+r+.8}%`} width="12%" height="3.2%" rx="1.2%" fill={col}/>
-      <text x={`${x}%`} y={`${y+r+2.5}%`} fill="#fff" fontSize="2.2%"
-        fontFamily="Inter,sans-serif" fontWeight="800" textAnchor="middle" dominantBaseline="central">{label}</text>
-      {/* Contador */}
-      <circle cx={`${x+4.2}%`} cy={`${y+3.8}%`} r="2.4%" fill={inMulti?"#00cc66":col}
-        stroke="#fff" strokeWidth="0.5"/>
-      <text x={`${x+4.2}%`} y={`${y+3.8}%`} fill="#fff" fontSize="2.6%"
+      {/* Número de orden — pastilla pequeña pegada al icono */}
+      <circle cx={`${x+1.6}%`} cy={`${y-1.6}%`} r="1%" fill={inMulti?"#00cc66":col} stroke="#fff" strokeWidth="0.3"/>
+      <text x={`${x+1.6}%`} y={`${y-1.6}%`} fill="#fff" fontSize="1.1%"
         fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{inMulti?multiSel.indexOf(a.id)+1:ord}</text>
     </g>);
   };
@@ -2029,15 +2040,23 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       const a1=Math.atan2(p1.y-p2.y,p1.x-p2.x),a2=Math.atan2(p3.y-p2.y,p3.x-p2.x);
       let angDeg=Math.abs((a2-a1)*180/Math.PI);if(angDeg>180)angDeg=360-angDeg;
       const autoVal=`${Math.round(angDeg)}°`;
-      const dispBadge=ip?"":(badge||autoVal);
+      /* Arco de sector que rellena el ángulo — única representación que lo diferencia de cualquier otra medida */
+      const arcR=4; /* % del viewport */
+      const ax1=p2.x*100+arcR*Math.cos(a1),ay1=p2.y*100+arcR*Math.sin(a1);
+      const ax2=p2.x*100+arcR*Math.cos(a2),ay2=p2.y*100+arcR*Math.sin(a2);
+      const large=angDeg>180?1:0;
+      const arcD=`M ${ax1}% ${ay1}% A ${arcR}% ${arcR}% 0 ${large} 1 ${ax2}% ${ay2}%`;
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
         <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p1.x*100}%`} y2={`${p1.y*100}%`} stroke="transparent" strokeWidth="14"/>
         <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke="transparent" strokeWidth="14"/>
+        {/* Relleno del sector angular */}
+        <path d={`M ${p2.x*100}% ${p2.y*100}% L ${ax1}% ${ay1}% A ${arcR}% ${arcR}% 0 ${large} 1 ${ax2}% ${ay2}% Z`} fill={`${col}28`}/>
+        <path d={arcD} stroke={col} strokeWidth={sw} fill="none"/>
         <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p1.x*100}%`} y2={`${p1.y*100}%`} stroke={col} strokeWidth={sw}/>
         <line x1={`${p2.x*100}%`} y1={`${p2.y*100}%`} x2={`${p3.x*100}%`} y2={`${p3.y*100}%`} stroke={col} strokeWidth={sw}/>
-        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="1%" fill={col}/>
-        <circle cx={`${p2.x*100}%`} cy={`${p2.y*100}%`} r="1.5%" fill={col}/>
-        <circle cx={`${p3.x*100}%`} cy={`${p3.y*100}%`} r="1%" fill={col}/>
+        <circle cx={`${p1.x*100}%`} cy={`${p1.y*100}%`} r="0.8%" fill={col}/>
+        <circle cx={`${p2.x*100}%`} cy={`${p2.y*100}%`} r="1.2%" fill={col}/>
+        <circle cx={`${p3.x*100}%`} cy={`${p3.y*100}%`} r="0.8%" fill={col}/>
         {!ip&&<Pill mx={`${p2.x*100}`} my={`${p2.y*100-5}`} a={a}/>}
       </g>;
     }
@@ -2125,11 +2144,11 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       const d="M "+pts.map(p=>`${p.x*100}% ${p.y*100}%`).join(" L ")+" Z";
       const cx=pts.reduce((s,p)=>s+p.x,0)/pts.length*100;
       const cy=pts.reduce((s,p)=>s+p.y,0)/pts.length*100;
-      const dispBadge=ip?"":(badge||`${pts.length}pts`);
+      /* ÁREA: relleno claramente visible (38% opacidad) + borde sólido + puntos en esquinas */
       return<g onClick={sClick} onMouseDown={sDown} onTouchStart={sDown} style={{cursor:ip?"crosshair":tool==="sel"?"grab":"pointer"}}>
-        <path d={d} stroke="transparent" strokeWidth="14" fill={`${col}18`}/>
-        <path d={d} stroke={col} strokeWidth={sw} fill="none"/>
-        {pts.map((p,i)=><circle key={i} cx={`${p.x*100}%`} cy={`${p.y*100}%`} r="1%" fill={col}/>)}
+        <path d={d} stroke="transparent" strokeWidth="14" fill={`${col}38`}/>
+        <path d={d} stroke={col} strokeWidth={sw+1} fill={`${col}22`} strokeDasharray="8,4"/>
+        {pts.map((p,i)=><circle key={i} cx={`${p.x*100}%`} cy={`${p.y*100}%`} r="1.2%" fill="#fff" stroke={col} strokeWidth="0.8"/>)}
         {!ip&&<Pill mx={`${cx}`} my={`${cy}`} a={a}/>}
       </g>;
     }
@@ -2267,19 +2286,14 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       else{setSelId(a.id);}
     };
     const BadgeEl=({bx,by})=>ip?null:<g onClick={tapBadge} style={{cursor:"pointer"}}>
-      {/* Halo translúcido */}
-      <circle cx={`${bx}%`} cy={`${by}%`} r="5.2%" fill="rgba(255,255,255,0.2)"
-        style={{filter:"drop-shadow(0 2px 8px rgba(0,0,0,.5))"}}/>
-      {/* Círculo principal translúcido */}
-      <circle cx={`${bx}%`} cy={`${by}%`} r="4.2%" fill="rgba(255,255,255,0.52)" stroke={col} strokeWidth={selId===a.id?"1.3":"1.0"}/>
-      {/* Anillo de selección/multiselección */}
-      {(inMulti||selId===a.id)&&<circle cx={`${bx}%`} cy={`${by}%`} r="5.8%" fill="none"
-        stroke={inMulti?"#00cc66":col} strokeWidth="0.9" strokeDasharray={inMulti?"none":"3,2"}/>}
-      {/* Icono en color de la herramienta — muy legible sobre blanco */}
-      <text x={`${bx}%`} y={`${by-.3}%`} fill={col} fontSize={ic.length>1?"2.5%":"3.4%"} fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{ic}</text>
-      {/* Contador numerado */}
-      <circle cx={`${bx+3.1}%`} cy={`${by+2.8}%`} r="2%" fill={inMulti?"#00cc66":col} stroke="#fff" strokeWidth="0.4"/>
-      <text x={`${bx+3.1}%`} y={`${by+2.8}%`} fill="#fff" fontSize="2.3%" fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{inMulti?multiSel.indexOf(a.id)+1:ord}</text>
+      <circle cx={`${bx}%`} cy={`${by}%`} r="2.1%" fill="rgba(255,255,255,0.82)" stroke={col}
+        strokeWidth={selId===a.id?"1.4":"1.0"}
+        style={{filter:"drop-shadow(0 1px 4px rgba(0,0,0,.45))"}}/>
+      {(inMulti||selId===a.id)&&<circle cx={`${bx}%`} cy={`${by}%`} r="3%" fill="none"
+        stroke={inMulti?"#00cc66":col} strokeWidth="0.7" strokeDasharray={inMulti?"none":"3,2"}/>}
+      <text x={`${bx}%`} y={`${by}%`} fill={col} fontSize={ic.length>1?"1.6%":"2.2%"} fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{ic}</text>
+      <circle cx={`${bx+1.6}%`} cy={`${by-1.6}%`} r="1%" fill={inMulti?"#00cc66":col} stroke="#fff" strokeWidth="0.3"/>
+      <text x={`${bx+1.6}%`} y={`${by-1.6}%`} fill="#fff" fontSize="1.1%" fontFamily="Inter,sans-serif" fontWeight="900" textAnchor="middle" dominantBaseline="central">{inMulti?multiSel.indexOf(a.id)+1:ord}</text>
     </g>;
 
     /* ── RECTÁNGULO ── */
@@ -2508,7 +2522,12 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       style={{padding:"5px 10px",background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.4)",color:"#ff9500",borderRadius:"7px",fontSize:"9px",fontWeight:700}}>{sync||"💾 Editar proyecto"}</button>
     <button onClick={()=>setScr("camera")} title="Nuevo proyecto desde cámara o galería"
       style={{padding:"5px 10px",background:"linear-gradient(135deg,#ff7700,#ffaa00)",border:"none",color:"#fff",borderRadius:"7px",fontSize:"9px",fontWeight:800}}>＋ Nuevo proyecto</button>
-    <button onClick={()=>setScr("home")} title="Ir al inicio"
+    <button onClick={()=>{
+      if(anns.length>0||segs.length>0){
+        if(!window.confirm("¿Volver a la pantalla principal?\n\nSe perderán las medidas y zonas actuales si no las has exportado."))return;
+      }
+      setScr("home");
+    }} title="Ir al inicio"
       style={{padding:"5px 9px",background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.12)",color:"var(--txt2)",borderRadius:"7px",fontSize:"11px"}}>🏠</button>
   </>}
   <button onClick={()=>setScr("setup")} title="Configurar API"
@@ -2711,17 +2730,23 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
               stroke="rgba(0,0,0,0.8)" strokeWidth="0.2%" paintOrder="stroke fill"
               style={{pointerEvents:"none",letterSpacing:"-0.01em"}}>{isFaded?"✂ ":""}{seg.id}. {(seg.name||"").slice(0,15)}</text>
             {isSel&&segClickable&&<>
-              <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();setSegs(s=>s.filter(x=>x.id!==seg.id));setSelSeg(null);}}>
-                <rect x={`${seg.x2*100-8}%`} y={`${seg.y1*100}%`} width="8%" height="6%" rx="2%" fill="#ff3366"/>
-                <text x={`${seg.x2*100-4}%`} y={`${seg.y1*100+3.2}%`} fill="#fff" fontSize="3.2%" fontWeight="800" textAnchor="middle" dominantBaseline="middle">✕</text>
+              {/* ── BOTÓN ELIMINAR ZONA ── */}
+              <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();if(!window.confirm(`¿Eliminar la zona "${seg.name}"?`))return;setSegs(s=>s.filter(x=>x.id!==seg.id));setSelSeg(null);}}>
+                <rect x={`${seg.x2*100-9}%`} y={`${seg.y1*100}%`} width="9%" height="7%" rx="2%" fill="#ee2244"/>
+                <text x={`${seg.x2*100-4.5}%`} y={`${seg.y1*100+2}%`} fill="#fff" fontSize="2.8%" fontWeight="900" textAnchor="middle" dominantBaseline="middle">🗑</text>
+                <text x={`${seg.x2*100-4.5}%`} y={`${seg.y1*100+5.2}%`} fill="#fff" fontSize="1.5%" fontWeight="700" textAnchor="middle" dominantBaseline="middle">Borrar</text>
               </g>
+              {/* ── BOTÓN AÑADIR MEDIDA RÁPIDA ── */}
               <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();setMeasM({id:uid(),type:"dot",icon:"🔍",title:seg.name,value:null,unit:"cm",axis:"",color:col,points:[{x:(seg.x1+seg.x2)/2,y:(seg.y1+seg.y2)/2}]});setMIn({t:seg.name,v:"",u:"cm",ax:"other"});setSelSeg(null);}}>
-                <rect x={`${seg.x2*100-19}%`} y={`${seg.y1*100}%`} width="11%" height="6%" rx="2%" fill={col}/>
-                <text x={`${seg.x2*100-13.5}%`} y={`${seg.y1*100+3.2}%`} fill="#000" fontSize="2.3%" fontWeight="800" textAnchor="middle" dominantBaseline="middle">+ Medir</text>
+                <rect x={`${seg.x2*100-20}%`} y={`${seg.y1*100}%`} width="11%" height="7%" rx="2%" fill={col}/>
+                <text x={`${seg.x2*100-14.5}%`} y={`${seg.y1*100+2}%`} fill="#fff" fontSize="2.8%" fontWeight="900" textAnchor="middle" dominantBaseline="middle">📏</text>
+                <text x={`${seg.x2*100-14.5}%`} y={`${seg.y1*100+5.2}%`} fill="#fff" fontSize="1.5%" fontWeight="700" textAnchor="middle" dominantBaseline="middle">+ Medir</text>
               </g>
+              {/* ── BOTÓN ABRIR ZONA (ver interior ampliado y medir dentro) ── */}
               <g style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");c2.width=Math.round(im.width*(seg.x2-seg.x1));c2.height=Math.round(im.height*(seg.y2-seg.y1));c2.getContext("2d").drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);openZone(seg,c2.toDataURL("image/jpeg",.92));setSelSeg(null);};im.src=img;}}>
-                <rect x={`${seg.x2*100-30}%`} y={`${seg.y1*100}%`} width="11%" height="6%" rx="2%" fill="#222"/>
-                <text x={`${seg.x2*100-24.5}%`} y={`${seg.y1*100+3.2}%`} fill="#ff9500" fontSize="2.2%" fontWeight="800" textAnchor="middle" dominantBaseline="middle">✏ Ver</text>
+                <rect x={`${seg.x2*100-33}%`} y={`${seg.y1*100}%`} width="13%" height="7%" rx="2%" fill="#1a6644"/>
+                <text x={`${seg.x2*100-26.5}%`} y={`${seg.y1*100+2}%`} fill="#fff" fontSize="2.8%" fontWeight="900" textAnchor="middle" dominantBaseline="middle">🔍</text>
+                <text x={`${seg.x2*100-26.5}%`} y={`${seg.y1*100+5.2}%`} fill="#fff" fontSize="1.5%" fontWeight="700" textAnchor="middle" dominantBaseline="middle">Abrir zona</text>
               </g>
             </>}
           </g>);})}
@@ -3262,20 +3287,41 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
   </div>
 </div>}
 
-{/* CALIBRATE MODAL */}
-{viewPrompt&&<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"480px",background:"var(--bg2)",border:"2px solid #ff9500",borderRadius:"18px 18px 0 0",padding:"18px",zIndex:600,animation:"slideUp .2s ease",backdropFilter:"blur(24px)"}}>
-  <div style={{marginBottom:"12px"}}>
-    <div style={{fontSize:"12px",fontWeight:800,color:"#ff9500"}}>✅ Medida guardada</div>
-    <div style={{fontSize:"10px",color:"#4466aa",marginTop:"4px"}}>"{viewPrompt.title}": {viewPrompt.value} {viewPrompt.unit}</div>
-  </div>
-  <div style={{fontSize:"9px",color:"#2a3a5a",marginBottom:"12px"}}>¿Dónde quieres verla reflejada ahora?</div>
-  <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
-    <button onClick={()=>{setViewPrompt(null);setSheet("meas");}} style={{flex:1,padding:"10px",background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.35)",color:"#ff9500",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>📋 Ver medidas</button>
-    <button onClick={()=>{setViewPrompt(null);setScopeAsk("2d");}} style={{flex:1,padding:"10px",background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.35)",color:"#ff9500",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>📐 Ver en 2D</button>
-    <button onClick={()=>{setViewPrompt(null);setScopeAsk("3d");}} style={{flex:1,padding:"10px",background:"rgba(255,150,0,.15)",border:"1px solid rgba(255,150,0,.35)",color:"#ff9500",borderRadius:"9px",fontSize:"10px",fontWeight:700}}>🎮 Ver en 3D</button>
-    <button onClick={()=>setViewPrompt(null)} style={{flex:1,padding:"10px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.09)",color:"#2a3a5a",borderRadius:"9px",fontSize:"10px"}}>Seguir midiendo</button>
-  </div>
-</div>}
+{/* TOAST PEQUEÑO "Medida guardada" — aparece 3 segundos y tiene un botón ▼
+    para desplegar las acciones (Ver medidas / 2D / 3D / Seguir midiendo) */}
+{viewPrompt&&(()=>{
+  const [expanded,setExpanded]=React.useState(false);
+  React.useEffect(()=>{
+    if(!expanded){const t=setTimeout(()=>setViewPrompt(null),4000);return()=>clearTimeout(t);}
+  },[expanded]);
+  return<div style={{position:"fixed",bottom:"16px",left:"50%",transform:"translateX(-50%)",zIndex:680,
+    minWidth:"260px",maxWidth:"380px",background:"#fff",
+    border:"2px solid #ff7700",borderRadius:"14px",
+    boxShadow:"0 4px 24px rgba(0,0,0,.18)",animation:"slideUp .2s ease",overflow:"hidden"}}>
+    <div style={{display:"flex",alignItems:"center",gap:"10px",padding:"10px 14px"}}>
+      <span style={{fontSize:"18px"}}>✅</span>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:"11px",fontWeight:800,color:"#cc5500",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+          Medida guardada — {viewPrompt.value} {viewPrompt.unit}
+        </div>
+        {viewPrompt.title&&<div style={{fontSize:"9px",color:"var(--txt2)",marginTop:"1px"}}>{viewPrompt.title}</div>}
+      </div>
+      <button onClick={()=>setExpanded(e=>!e)} style={{flexShrink:0,padding:"4px 8px",background:"rgba(255,119,0,.1)",
+        border:"1px solid rgba(255,119,0,.3)",borderRadius:"7px",fontSize:"11px",color:"#cc5500",fontWeight:700}}>
+        {expanded?"▲":"▼"}
+      </button>
+      <button onClick={()=>setViewPrompt(null)} style={{flexShrink:0,width:"22px",height:"22px",
+        background:"rgba(255,50,50,.1)",border:"1px solid rgba(255,50,50,.2)",borderRadius:"50%",
+        color:"#cc3344",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+    </div>
+    {expanded&&<div style={{display:"flex",gap:"5px",padding:"0 12px 12px",flexWrap:"wrap"}}>
+      <button onClick={()=>{setViewPrompt(null);setSheet("meas");}} style={{flex:1,padding:"8px 4px",background:"rgba(255,150,0,.12)",border:"1px solid rgba(255,150,0,.3)",color:"#cc6600",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>📋 Medidas</button>
+      <button onClick={()=>{setViewPrompt(null);setScopeAsk("2d");}} style={{flex:1,padding:"8px 4px",background:"rgba(0,100,255,.08)",border:"1px solid rgba(0,100,255,.2)",color:"#0055cc",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>📐 2D</button>
+      <button onClick={()=>{setViewPrompt(null);setScopeAsk("3d");}} style={{flex:1,padding:"8px 4px",background:"rgba(100,50,255,.08)",border:"1px solid rgba(100,50,255,.2)",color:"#6633cc",borderRadius:"8px",fontSize:"9px",fontWeight:700}}>🎮 3D</button>
+      <button onClick={()=>setViewPrompt(null)} style={{flex:1,padding:"8px 4px",background:"var(--bg3)",border:"1px solid var(--border)",color:"var(--txt2)",borderRadius:"8px",fontSize:"9px"}}>↩ Seguir</button>
+    </div>}
+  </div>;
+})()}
 
 {/* ══ ICON INFO MODAL — MODO ICONOS: al tocar un icono de medida (foto principal
     o pestaña de zona) se muestra el detalle completo y se elige dónde verla:
