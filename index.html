@@ -1378,7 +1378,7 @@ function renderFichar(){
               t.otNumero?h('span',{class:'badge badge-y',style:{fontSize:'.65rem',fontWeight:800}},'OT '+t.otNumero):null
             ),
             t.horaInicio||t.horaFin
-              ? h('div',{style:{fontSize:'.75rem',color:'var(--ink)',fontWeight:600}},(t.horaInicio||'--')+' → '+(t.horaFin||'--'))
+              ? h('div',{style:{fontSize:'.8rem',color:'#000000',fontWeight:800}},(t.horaInicio||'--')+' → '+(t.horaFin||'--'))
               : null,
             t.descripcion
               ? h('div',{style:{fontSize:'.73rem',color:'var(--ink3)',marginTop:'.15rem'}},
@@ -3879,8 +3879,8 @@ function renderModalResumenDia(){
               h('div',{style:{fontWeight:700,fontSize:'.85rem',color:'#1e293b',lineHeight:1.6}},
                 ...lineas.map(l=>h('div',{},l))
               ),
-              t.horaInicio?h('div',{style:{fontSize:'.75rem',color:'#7c3700',fontWeight:700,marginTop:'.3rem'}},
-                '🕐 '+t.horaInicio+(t.horaFin?' → '+t.horaFin:'')):null
+              t.horaInicio?h('div',{style:{fontSize:'.82rem',color:'#000000',fontWeight:800,marginTop:'.4rem',letterSpacing:'.02em'}},
+                t.horaInicio+(t.horaFin?' → '+t.horaFin:'')):null
             );
           })
         ):null,
