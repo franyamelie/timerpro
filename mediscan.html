@@ -3741,10 +3741,24 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     ];
     const addDim=(d)=>{
       const v=parseFloat(dimVals[d.key]);if(!v)return;
-      /* Entrar en modo "toca la imagen para colocar la medida" */
-      setPendLados({d, v, u:dimVals.u});
-      setMeasM(null); /* minimizar modal para ver la imagen */
+      const col2=COLS[colI%COLS.length];
+      /* Posición escalonada para que las medidas no se superpongan */
+      const base=measM.points?.[0]||{x:.5,y:.5};
+      const offsets={width:[-.1,0,.1,0],height:[0,-.1,0,.1],depth:[.05,.05,-.05,.05],
+                     side1:[-.12,.05,.12,.05],side2:[.12,.05,-.12,.05],diag:[-.08,-.08,.08,.08]};
+      const [ox,oy]=offsets[d.key]||[-.06,0];
+      const isV=d.ax==="height";
+      const a={id:uid(),type:"dim",icon:d.icon,title:d.label,value:v,unit:dimVals.u,axis:d.ax,
+               color:col2,
+               points:isV
+                 ?[{x:base.x+ox,y:base.y-.06},{x:base.x+ox,y:base.y+.06}]
+                 :[{x:base.x-.07,y:base.y+oy},{x:base.x+.07,y:base.y+oy}],
+               lineStyle:"solid",arrowHead:"both"};
+      addA(a);setColI(c=>c+1);
+      setLadosSession(prev=>[...prev,a.id]);
       setDimVals(prev=>({...prev,[d.key]:""}));
+      /* Feedback visual sin cerrar el modal */
+      setAiMsg(`${d.icon} ${d.label}: ${v} ${dimVals.u} añadida ✓`);
     };
     const cancelarLados=()=>{
       /* Eliminar todas las medidas añadidas en esta sesión */
