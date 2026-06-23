@@ -1037,6 +1037,8 @@ function App(){
   const [ladosSession,setLadosSession]=useState([]); /* ids de medidas añadidas en la sesión actual de "Lados" — para poder cancelarlas */
   const [part2DSel,setPart2DSel]=useState(null); /* pieza seleccionada en el panel 2D para vista interactiva */
   const [rot2d,setRot2d]=useState(0); /* rotación de la foto en el panel 2D de pieza */
+  const [pendLados,setPendLados]=useState(null); /* medida pendiente de colocar en imagen: {d, v, u} */
+  const [show3DMeas,setShow3DMeas]=useState(true); /* mostrar panel flotante de medidas en 3D */
   const [viewPromptExpanded,setViewPromptExpanded]=useState(false); /* toast expandido */
 
   /* AI parts segmentation */
@@ -1581,7 +1583,29 @@ function App(){
   },[samEncodeImage,colI]);
 
   const onImgClick=useCallback(e=>{
-    if(iconTapRef.current)return; /* toque sobre icono ya existente — no colocar nada nuevo */
+    if(iconTapRef.current)return;
+    /* ── MODO COLOCAR MEDIDA DE LADOS — toca la imagen para fijar la posición ── */
+    if(pendLados){
+      const p=getP(e,e.currentTarget);
+      const {d,v,u}=pendLados;
+      const col2=COLS[colI%COLS.length];
+      const offset={width:.06,height:.06,depth:.04,side1:.05,side2:.05,diag:.07}[d.key]||.05;
+      const isV=d.ax==="height"; /* dimensión vertical → puntos arriba/abajo */
+      const a={id:uid(),type:"dim",icon:d.icon,title:d.label,value:v,unit:u,axis:d.ax,
+               color:col2,
+               points:isV?[{x:p.x,y:p.y-offset},{x:p.x,y:p.y+offset}]
+                         :[{x:p.x-offset,y:p.y},{x:p.x+offset,y:p.y}],
+               lineStyle:"solid",arrowHead:"both"};
+      addA(a);setColI(c=>c+1);
+      setLadosSession(prev=>[...prev,a.id]);
+      setAiMsg(`${d.icon} ${d.label}: ${v} ${u} → colocada ✓`);
+      setPendLados(null);
+      /* Reabrir el modal de Lados para continuar añadiendo */
+      setMeasM({id:uid(),type:"dot",icon:"📏",title:"",value:null,unit:u,axis:"",color:col2,points:[p]});
+      setMIn({t:"",v:"",u,ax:""});
+      setMeasTab("lados");
+      return;
+    }
     if(samActive){
       e.stopPropagation();
       const p=getP(e,e.currentTarget);
@@ -1592,7 +1616,6 @@ function App(){
     const td=TOOLS.find(t=>t.id===tool);if(!td||td.npts===0)return;
     const p=getP(e,e.currentTarget);
     if(MRK.includes(tool)||td.npts===1){
-      /* Place marker/single-point tool IMMEDIATELY - NO modal. Tap to add value */
       const col=COLS[colI%COLS.length];
       const a={id:uid(),type:tool,icon:td?.icon||"●",title:"",value:null,unit:"cm",axis:"",color:col,
                points:[p],lineStyle:lSt,arrowHead:aHd,
@@ -3424,11 +3447,44 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     <div style={{padding:"8px 13px",fontSize:"9px",color:C,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",borderBottom:"1px solid rgba(255,255,255,.05)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
       <span>🎮 3D POR PARTES</span>
       <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
+        {/* Toggle panel de medidas flotante */}
+        <button onClick={()=>setShow3DMeas(v=>!v)} title={show3DMeas?"Ocultar medidas":"Mostrar medidas"}
+          style={{padding:"3px 8px",background:show3DMeas?"rgba(0,200,100,.2)":"rgba(255,255,255,.06)",
+            border:`1px solid ${show3DMeas?"rgba(0,200,100,.4)":"rgba(255,255,255,.1)"}`,
+            color:show3DMeas?"#00cc66":"#556677",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>
+          {show3DMeas?"📋 Medidas ON":"📋 Medidas OFF"}</button>
         <button onClick={undo} disabled={hist.length===0} title="Deshacer" style={{padding:"3px 8px",background:hist.length>0?"rgba(255,150,0,.15)":"transparent",border:`1px solid ${hist.length>0?"rgba(255,150,0,.35)":"transparent"}`,color:hist.length>0?C:"#333",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>↩ {hist.length}</button>
         <button onClick={redoFn} disabled={redo.length===0} title="Rehacer" style={{padding:"3px 8px",background:redo.length>0?"rgba(0,180,255,.15)":"transparent",border:`1px solid ${redo.length>0?"rgba(0,180,255,.35)":"transparent"}`,color:redo.length>0?"#00bbff":"#333",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>↪ {redo.length}</button>
         <button onClick={()=>setSheet(null)} style={{background:"rgba(255,50,50,.18)",border:"1px solid rgba(255,50,50,.35)",color:"#ff5566",borderRadius:"50%",width:"22px",height:"22px",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
       </div>
     </div>
+    {/* Panel flotante de medidas en 3D */}
+    {show3DMeas&&anns.filter(a=>a.value!=null).length>0&&<div style={{
+      margin:"8px",padding:"10px",background:"rgba(0,0,0,.35)",
+      borderRadius:"10px",border:"1px solid rgba(255,255,255,.1)"}}>
+      <div style={{fontSize:"8px",fontWeight:700,color:"#aabbcc",marginBottom:"6px",letterSpacing:".05em"}}>
+        📋 MEDIDAS DEL OBJETO
+        <button onClick={()=>{setSheet(null);setScopeAsk(null);}}
+          style={{float:"right",background:"none",border:"none",color:"#ff7700",fontSize:"8px",cursor:"pointer",fontWeight:700}}>
+          + Añadir medida →</button>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:"4px",maxHeight:"120px",overflowY:"auto"}}>
+        {anns.filter(a=>a.value!=null).map(a=>(
+          <div key={a.id} style={{display:"flex",alignItems:"center",gap:"8px",padding:"5px 8px",
+            background:"rgba(255,255,255,.06)",borderRadius:"7px",border:`1px solid ${a.color}44`}}>
+            <span style={{fontSize:"14px",flexShrink:0}}>{a.icon||"●"}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:"9px",color:"#ccd",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.title||TOOLS.find(t=>t.id===a.type)?.label||a.type}</div>
+            </div>
+            <div style={{fontSize:"11px",fontWeight:800,color:a.color,flexShrink:0}}>{a.value} {a.unit}</div>
+            <button onClick={()=>{setSelId(a.id);setIconInfoM({ann:a,ordinal:1,fc:false});}}
+              style={{background:"none",border:"none",color:"#778899",fontSize:"12px",cursor:"pointer",flexShrink:0,padding:"0 2px"}}>✎</button>
+            <button onClick={()=>{if(window.confirm("¿Eliminar esta medida?"))setAnns(p=>p.filter(x=>x.id!==a.id));}}
+              style={{background:"none",border:"none",color:"#cc4455",fontSize:"12px",cursor:"pointer",flexShrink:0,padding:"0 2px"}}>🗑</button>
+          </div>
+        ))}
+      </div>
+    </div>}
     <div ref={capRef} style={{padding:"8px"}}>
       {!pip&&segs?.length>1&&<div style={{marginBottom:"8px",padding:"8px",background:"rgba(255,255,255,.03)",borderRadius:"8px",border:"1px solid rgba(255,255,255,.06)"}}>
         <div style={{fontSize:"8px",color:"#556677",marginBottom:"6px",fontWeight:700}}>
@@ -3525,6 +3581,22 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
 
 {/* ══ PANEL DE ZONA SELECCIONADA — aparece cuando se toca una zona en la imagen ══
     Reemplaza los botones SVG diminutos con un panel DOM legible y grande */}
+{/* ══ BANNER: modo colocar medida de Lados ══ */}
+{pendLados&&<div style={{position:"fixed",top:"80px",left:"50%",transform:"translateX(-50%)",
+  zIndex:900,background:"linear-gradient(135deg,#ff7700,#ffaa00)",
+  color:"#fff",borderRadius:"14px",padding:"12px 20px",
+  boxShadow:"0 4px 20px rgba(255,150,0,.5)",
+  display:"flex",alignItems:"center",gap:"12px",maxWidth:"340px",animation:"slideUp .2s ease"}}>
+  <span style={{fontSize:"24px"}}>👆</span>
+  <div>
+    <div style={{fontSize:"12px",fontWeight:800}}>Toca en la imagen para colocar</div>
+    <div style={{fontSize:"10px",opacity:.9}}>{pendLados.d.icon} {pendLados.d.label}: <b>{pendLados.v} {pendLados.u}</b></div>
+  </div>
+  <button onClick={()=>setPendLados(null)} style={{background:"rgba(255,255,255,.25)",border:"none",
+    color:"#fff",borderRadius:"8px",padding:"4px 10px",fontSize:"11px",fontWeight:700,cursor:"pointer",
+    flexShrink:0}}>✕ Cancelar</button>
+</div>}
+
 {selSeg&&(()=>{
   const seg=segs.find(s=>s.id===selSeg);
   if(!seg)return null;
@@ -3657,15 +3729,10 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     ];
     const addDim=(d)=>{
       const v=parseFloat(dimVals[d.key]);if(!v)return;
-      const col2=COLS[colI%COLS.length];
-      const cx=(measM.points?.[0]?.x||0.5),cy=(measM.points?.[0]?.y||0.5);
-      const offset={width:.05,height:.05,depth:.03,side1:.04,side2:.06,diag:.07}[d.key]||.04;
-      const a={id:uid(),type:"dim",icon:d.icon,title:d.label,value:v,unit:dimVals.u,axis:d.ax,
-               color:col2,points:[{x:cx-offset,y:cy},{x:cx+offset,y:cy}],lineStyle:"solid",arrowHead:"both"};
-      addA(a);setColI(c=>c+1);
-      setLadosSession(prev=>[...prev,a.id]); /* registrar para poder cancelar */
+      /* Entrar en modo "toca la imagen para colocar la medida" */
+      setPendLados({d, v, u:dimVals.u});
+      setMeasM(null); /* minimizar modal para ver la imagen */
       setDimVals(prev=>({...prev,[d.key]:""}));
-      setAiMsg(`${d.icon} ${d.label}: ${v} ${dimVals.u} → añadida a imagen ✓`);
     };
     const cancelarLados=()=>{
       /* Eliminar todas las medidas añadidas en esta sesión */
