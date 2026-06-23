@@ -3685,7 +3685,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
     animation:"pulse 1.5s infinite"}}>↺</button>}
 
 {/* ══ MEASURE MODAL ══ */}
-{measM&&<div data-modal="measure" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"560px",background:"var(--bg2)",border:"2px solid #ff9500",borderRadius:"18px 18px 0 0",padding:"16px 18px 20px",zIndex:editZone?900:500,animation:"slideUp .22s ease",backdropFilter:"blur(24px)",boxShadow:"0 -6px 40px rgba(0,0,0,.7)"}}>
+{measM&&<div data-modal="measure" style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:"560px",maxHeight:"90vh",overflowY:"auto",background:"var(--bg2)",border:"2px solid #ff9500",borderRadius:"18px 18px 0 0",padding:"16px 18px 20px",zIndex:editZone?900:500,animation:"slideUp .22s ease",backdropFilter:"blur(24px)",boxShadow:"0 -6px 40px rgba(0,0,0,.7)"}}>
   <button onClick={()=>{fcClickLockRef.current=false;setMeasM(null);setMeasTab("simple");}} style={{position:"absolute",top:"12px",right:"14px",background:"rgba(255,50,50,.15)",border:"1px solid rgba(255,50,50,.3)",color:"#ff3366",borderRadius:"50%",width:"28px",height:"28px",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center",zIndex:20}}>✕</button>
   <div style={{marginBottom:"12px",paddingRight:"36px"}}>
     <div style={{fontSize:"13px",fontWeight:800,color:"#ff9500",letterSpacing:"-.2px"}}>AÑADIR MEDIDA</div>
@@ -3770,7 +3770,7 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       <div style={{display:"flex",gap:"4px",marginBottom:"10px"}}>
         {["mm","cm","m","in","ft"].map(u=><button key={u} onClick={()=>setDimVals(s=>({...s,u}))} style={{flex:1,padding:"5px",background:dimVals.u===u?"rgba(255,119,0,.2)":"var(--bg3)",color:dimVals.u===u?"#cc5500":"var(--txt2)",border:`1px solid ${dimVals.u===u?"#ff9500":"var(--border)"}`,borderRadius:"6px",fontSize:"9px",fontWeight:dimVals.u===u?700:400}}>{u}</button>)}
       </div>
-      <div style={{display:"flex",flexDirection:"column",gap:"7px",maxHeight:"200px",overflowY:"auto"}}>
+      <div style={{display:"flex",flexDirection:"column",gap:"7px",maxHeight:"280px",overflowY:"auto",paddingRight:"2px"}}>
         {dims.map(d=>(
           <div key={d.key} style={{display:"flex",gap:"8px",alignItems:"center"}}>
             <div style={{width:"80px",fontSize:"9px",fontWeight:700,color:"var(--txt2)",flexShrink:0}}>{d.label}</div>
