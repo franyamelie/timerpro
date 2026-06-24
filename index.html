@@ -2,6 +2,10 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8"/>
+<script>
+if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(s){s.unregister();});});}
+if('caches' in window){caches.keys().then(function(k){k.forEach(function(c){caches.delete(c);});});}
+</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
@@ -1827,11 +1831,14 @@ async function adjuntarTareaADia(t){
     };
   });
   if(!fecha) return;
-  // Update task date
-  const idx = S.tasks.findIndex(x=>x.id===t.id);
-  if(idx<0) return;
-  S.tasks[idx] = {...S.tasks[idx], fecha:fecha};
-  try{ dbPut(ST.tasks, S.tasks[idx]); }catch(ex){}
+  if(fecha === t.fecha){ showAlert('La tarea ya está en ese día','err'); return; }
+  // COPIAR la tarea al nuevo día (no mover) para no perder la del día original
+  const nuevaTarea = {...t, id:undefined, fecha:fecha};
+  try{
+    const newId = await dbPut(ST.tasks, nuevaTarea);
+    S.tasks.push({...nuevaTarea, id:newId});
+    showAlert('Tarea copiada al '+dlbl(fecha)+' ✓ (la original del '+dlbl(t.fecha)+' se mantiene)');
+  }catch(ex){ showAlert('Error al copiar tarea','err'); return; }
   // Link to entry for that day
   let entry = S.entries.find(e=>e.fecha===fecha);
   if(!entry){
@@ -3375,6 +3382,30 @@ function sumRow(label, val, total=false){
 // ══════════════════════════════════════════════════════════
 function renderSincronizar(){
   return h('div',{},
+    // ── NUEVA: IMPORTAR DESDE IMAGEN CON IA ──
+    h('div',{class:'card',style:{border:'2px solid var(--acc)',marginBottom:'.8rem'}},
+      h('div',{class:'sec-title',style:{color:'var(--acc)'}},'🤖 IMPORTAR JORNADA DESDE IMAGEN (IA)'),
+      h('p',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.8rem',lineHeight:1.6}},
+        'Sube una captura de pantalla del resumen de una jornada (WhatsApp, foto de pantalla...) y la IA reconocerá automáticamente todos los datos: horas, OTs, importes, notas, fichajes.'
+      ),
+      h('div',{
+        style:{border:'2px dashed var(--acc)',borderRadius:'var(--r)',padding:'1.5rem',textAlign:'center',cursor:'pointer',color:'var(--acc)',background:'var(--acc-lt)'},
+        on:{
+          click:()=>{
+            const inp=document.createElement('input');
+            inp.type='file';inp.accept='image/*';
+            inp.onchange=e=>importarDesdeImagen(e.target.files[0]);
+            inp.click();
+          },
+          dragover:ev=>ev.preventDefault(),
+          drop:ev=>{ev.preventDefault();importarDesdeImagen(ev.dataTransfer.files[0]);}
+        }
+      },
+        h('div',{style:{fontSize:'2.5rem',marginBottom:'.5rem'}},'📷'),
+        h('div',{style:{fontWeight:700,fontSize:'.9rem'}},'Arrastra una imagen o pulsa para seleccionar'),
+        h('div',{style:{fontSize:'.75rem',marginTop:'.3rem',opacity:.8}},'Capturas de WhatsApp, fotos de pantalla, imágenes de jornada...')
+      )
+    ),
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'☁️ GOOGLE DRIVE'),
       h('div',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'1rem',lineHeight:1.7}},
@@ -3881,9 +3912,9 @@ function renderModalResumenDia(){
                 ...lineas.map(l=>h('div',{},l))
               ),
               (()=>{
-                const hi=t.horaInicio||t.hora_inicio||t.startTime||t.start||'';
-                const hf=t.horaFin||t.hora_fin||t.endTime||t.end||'';
-                return hi||hf?h('div',{style:{fontSize:'.85rem',color:'#000',fontWeight:800,marginTop:'.5rem',paddingTop:'.4rem',borderTop:'1px solid #fde68a'}},(hi||'--')+(hf?' → '+hf:'')):null;
+                const hi=t.horaInicio||'';
+                const hf=t.horaFin||'';
+                return hi||hf?h('div',{style:{fontSize:'.9rem',color:'#000000',fontWeight:900,marginTop:'.5rem',paddingTop:'.4rem',borderTop:'2px solid #f59e0b'}},(hi||'--')+(hf?' → '+hf:'')):null;
               })()
             );
           })
@@ -5571,11 +5602,10 @@ async function saveTask(){
 }
 
 function editTask(t){
-  fTask={...t,fotos:[...(t.fotos||[])],journeys:[...(t.journeys||[])]};
-  editTaskId=t.id; // mark as editing
+  fTask={...defTask(t.fecha),...t,fotos:[...(t.fotos||[])],journeys:[...(t.journeys||[])]};
+  editTaskId=t.id;
   S.tab='tareas';
   rerender();
-  // Scroll to form top
   setTimeout(()=>{
     const el=document.querySelector('.card');
     if(el) el.scrollIntoView({behavior:'smooth'});
@@ -5777,7 +5807,132 @@ function readPhotos(files,target){
   });
 }
 
-// ── EXPORTAR ─────────────────────────────────────────────
+// ── IMPORTAR JORNADA DESDE IMAGEN CON IA ──────────────────
+async function importarDesdeImagen(file){
+  if(!file){showAlert('No se seleccionó ningún archivo','err');return;}
+  if(!file.type.startsWith('image/')){showAlert('Solo se admiten imágenes','err');return;}
+  showAlert('🤖 Analizando imagen con IA...');
+
+  try{
+    // Convertir imagen a base64
+    const base64=await new Promise((res,rej)=>{
+      const r=new FileReader();
+      r.onload=e=>res(e.target.result.split(',')[1]);
+      r.onerror=rej;
+      r.readAsDataURL(file);
+    });
+    const mediaType=file.type||'image/jpeg';
+
+    const prompt=`Analiza esta imagen de un resumen de jornada laboral de la aplicación TimerPro y extrae TODOS los datos que veas.
+Responde ÚNICAMENTE con un JSON válido con esta estructura exacta (sin texto adicional, sin markdown):
+{
+  "fecha": "YYYY-MM-DD o null si no ves fecha",
+  "titulo": "título de jornada si aparece o null",
+  "horasNormales": número o 0,
+  "horasExtra": número o 0,
+  "horasNocturnas": número o 0,
+  "horasFestivas": número o 0,
+  "dieta": número o 0,
+  "transporte": número o 0,
+  "fichajes": [{"entrada": "HH:MM", "salida": "HH:MM", "nota": "texto o vacío"}],
+  "tareas": [{"titulo": "nombre de la tarea", "otNumero": "número OT sin 'OT' o vacío", "horaInicio": "HH:MM o vacío", "horaFin": "HH:MM o vacío"}],
+  "notas": "texto completo de las notas o vacío",
+  "ubicacionEntrada": "texto de ubicación de entrada o vacío",
+  "ubicacionSalida": "texto de ubicación de salida o vacío"
+}
+Extrae los horarios de las tareas (ej: 10:00 → 14:00) con precisión. Si ves "OT 7941581076" extrae "7941581076" como otNumero.`;
+
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-6',
+        max_tokens:1500,
+        messages:[{
+          role:'user',
+          content:[
+            {type:'image',source:{type:'base64',media_type:mediaType,data:base64}},
+            {type:'text',text:prompt}
+          ]
+        }]
+      })
+    });
+
+    if(!res.ok) throw new Error('Error API: '+res.status);
+    const data=await res.json();
+    const text=data.content?.[0]?.text||'';
+    const clean=text.replace(/```json|```/g,'').trim();
+    const parsed=JSON.parse(clean);
+
+    // Confirmar con el usuario antes de rellenar
+    let resumen='La IA ha detectado:\n\n';
+    if(parsed.fecha) resumen+='📅 Fecha: '+dlbl(parsed.fecha)+'\n';
+    if(parsed.horasNormales>0) resumen+='⏱ Horas normales: '+parsed.horasNormales+'h\n';
+    if(parsed.horasExtra>0) resumen+='⏱ Horas extra: '+parsed.horasExtra+'h\n';
+    if(parsed.dieta>0) resumen+='🍽 Dieta: '+parsed.dieta+'€\n';
+    if(parsed.transporte>0) resumen+='🚗 Transporte: '+parsed.transporte+'€\n';
+    if((parsed.fichajes||[]).length>0) resumen+='📍 Fichajes: '+(parsed.fichajes||[]).map(f=>f.entrada+'→'+f.salida).join(', ')+'\n';
+    if((parsed.tareas||[]).length>0){
+      resumen+='🔧 Tareas:\n';
+      (parsed.tareas||[]).forEach(t=>{
+        resumen+='  • '+(t.titulo||'')+(t.otNumero?' (OT:'+t.otNumero+')':'')+(t.horaInicio?' '+t.horaInicio+'→'+t.horaFin:'')+'\n';
+      });
+    }
+    resumen+='\n¿Importar estos datos?';
+
+    if(!confirm(resumen)) return;
+
+    // Rellenar fEntry con los datos
+    if(parsed.fecha) fEntry.fecha=parsed.fecha;
+    if(parsed.titulo) fEntry.titulo=parsed.titulo;
+    if(parsed.horasNormales>0) fEntry.horasNormales=parsed.horasNormales;
+    if(parsed.horasExtra>0) fEntry.horasExtra=parsed.horasExtra;
+    if(parsed.horasNocturnas>0) fEntry.horasNocturnas=parsed.horasNocturnas;
+    if(parsed.horasFestivas>0) fEntry.horasFestivas=parsed.horasFestivas;
+    if(parsed.dieta>0) fEntry.dieta=parsed.dieta;
+    if(parsed.transporte>0) fEntry.transporte=parsed.transporte;
+    if(parsed.notas) fEntry.notas=parsed.notas;
+    if(parsed.ubicacionEntrada) fEntry.ubicacionEntrada=textToLoc(parsed.ubicacionEntrada);
+    if(parsed.ubicacionSalida) fEntry.ubicacionSalida=textToLoc(parsed.ubicacionSalida);
+
+    // Fichajes
+    if((parsed.fichajes||[]).length>0){
+      fEntry.fichajes=(parsed.fichajes||[]).map(f=>({
+        _fid:Date.now()+Math.random(),
+        entrada:f.entrada||'',salida:f.salida||'',
+        nota:f.nota||'',editing:false,taskId:''
+      }));
+    }
+
+    // Tareas — guardar en S.tasks con horaInicio y horaFin
+    const tareasNuevas=[];
+    for(const t of(parsed.tareas||[])){
+      if(!t.titulo&&!t.otNumero) continue;
+      const tarea={
+        ...defTask(fEntry.fecha),
+        titulo:t.titulo||'Tarea importada',
+        otNumero:(t.otNumero||'').replace(/\D/g,'').slice(0,10),
+        horaInicio:t.horaInicio||'',
+        horaFin:t.horaFin||'',
+        usaOT:!!(t.otNumero),
+        fecha:parsed.fecha||fEntry.fecha||today()
+      };
+      const id=await dbPut(ST.tasks,tarea);
+      S.tasks.push({...tarea,id});
+      tareasNuevas.push({...tarea,id});
+    }
+
+    await scheduleDraftSave();
+    S.tab='fichar';
+    showAlert('✅ Importados: '+tareasNuevas.length+' tareas, fichajes y datos de jornada');
+    rerender();
+  }catch(e){
+    showAlert('Error al analizar imagen: '+e.message,'err');
+    console.error(e);
+  }
+}
+
+
 async function exportJSON(){
   const entries=await dbAll(ST.entries);
   const tasks=await dbAll(ST.tasks);
@@ -7282,7 +7437,7 @@ async function gdriveSaveData(data){
       headers: {'Authorization':'Bearer '+gdriveToken, 'Content-Type':'application/json'},
       body: blob
     });
-    if(!r.ok) throw new Error('Drive update error: '+r.status);
+    if(!r.ok){if(r.status===401){gdriveToken='';localStorage.removeItem('gdrive_token');localStorage.removeItem('gdrive_token_expiry');gdriveLogin();await new Promise(()=>{});}throw new Error('Drive update error: '+r.status);}
   } else {
     // Create new file
     const meta = JSON.stringify({name: GDRIVE_FILE_NAME, mimeType:'application/json'});
@@ -7294,7 +7449,7 @@ async function gdriveSaveData(data){
       headers: {'Authorization':'Bearer '+gdriveToken},
       body: form
     });
-    if(!r.ok) throw new Error('Drive create error: '+r.status);
+    if(!r.ok){if(r.status===401){gdriveToken='';localStorage.removeItem('gdrive_token');localStorage.removeItem('gdrive_token_expiry');gdriveLogin();await new Promise(()=>{});}throw new Error('Drive create error: '+r.status);}
     const result = await r.json();
     gdriveFileId = result.id;
     localStorage.setItem('gdrive_file_id', gdriveFileId);
@@ -7309,7 +7464,17 @@ async function gdriveLoadData(){
   const r = await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media', {
     headers: {'Authorization':'Bearer '+gdriveToken}
   });
-  if(!r.ok) throw new Error('Drive load error: '+r.status);
+  if(!r.ok){
+    if(r.status===401){
+      // Token expired - clear it and re-authenticate
+      gdriveToken='';
+      localStorage.removeItem('gdrive_token');
+      localStorage.removeItem('gdrive_token_expiry');
+      gdriveLogin();
+      await new Promise(()=>{});
+    }
+    throw new Error('Drive load error: '+r.status);
+  }
   return await r.json();
 }
 
