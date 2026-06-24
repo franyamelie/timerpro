@@ -3914,7 +3914,28 @@ function renderModalResumenDia(){
               (()=>{
                 const hi=t.horaInicio||'';
                 const hf=t.horaFin||'';
-                return hi||hf?h('div',{style:{fontSize:'.9rem',color:'#000000',fontWeight:900,marginTop:'.5rem',paddingTop:'.4rem',borderTop:'2px solid #f59e0b'}},(hi||'--')+(hf?' → '+hf:'')):null;
+                return h('div',{style:{marginTop:'.5rem',paddingTop:'.4rem',borderTop:'1px solid #fde68a',display:'flex',alignItems:'center',gap:'.5rem'}},
+                  hi||hf
+                    ? h('div',{style:{fontSize:'.85rem',color:'#000',fontWeight:800,flex:1}},(hi||'--')+(hf?' → '+hf:''))
+                    : h('div',{style:{fontSize:'.75rem',color:'#94a3b8',fontStyle:'italic',flex:1}},'Sin horario'),
+                  h('button',{
+                    style:{background:'#f59e0b',color:'#000',border:'none',borderRadius:'6px',padding:'.2rem .5rem',fontSize:'.7rem',fontWeight:700,cursor:'pointer',flexShrink:0},
+                    on:{click:()=>{
+                      const nh=prompt('Hora inicio (HH:MM):',hi||'');
+                      if(nh===null) return;
+                      const nf=prompt('Hora fin (HH:MM):',hf||'');
+                      if(nf===null) return;
+                      const idx=S.tasks.findIndex(x=>x.id===t.id);
+                      if(idx>=0){
+                        S.tasks[idx]={...S.tasks[idx],horaInicio:nh,horaFin:nf};
+                        dbPut(ST.tasks,S.tasks[idx]).then(()=>{
+                          showAlert('Horas guardadas ✓');
+                          rerender();
+                        });
+                      }
+                    }}
+                  },'✏️ Editar horas')
+                );
               })()
             );
           })
@@ -5811,8 +5832,11 @@ function readPhotos(files,target){
 async function importarDesdeImagen(file){
   if(!file){showAlert('No se seleccionó ningún archivo','err');return;}
   if(!file.type.startsWith('image/')){showAlert('Solo se admiten imágenes','err');return;}
-  showAlert('🤖 Analizando imagen con IA...');
 
+  const groqKey=localStorage.getItem('groq_api_key')||'';
+  if(!groqKey){showAlert('Necesitas una API Key de Groq. Ve a la pestaña IA y configúrala primero.','err');return;}
+
+  showAlert('🤖 Analizando imagen con IA...');
   try{
     // Convertir imagen a base64
     const base64=await new Promise((res,rej)=>{
@@ -5822,51 +5846,53 @@ async function importarDesdeImagen(file){
       r.readAsDataURL(file);
     });
     const mediaType=file.type||'image/jpeg';
+    const dataUrl='data:'+mediaType+';base64,'+base64;
 
-    const prompt=`Analiza esta imagen de un resumen de jornada laboral de la aplicación TimerPro y extrae TODOS los datos que veas.
-Responde ÚNICAMENTE con un JSON válido con esta estructura exacta (sin texto adicional, sin markdown):
+    const prompt=`Analiza esta imagen de un resumen de jornada laboral y extrae TODOS los datos visibles.
+Responde ÚNICAMENTE con un JSON válido sin texto adicional ni markdown:
 {
-  "fecha": "YYYY-MM-DD o null si no ves fecha",
-  "titulo": "título de jornada si aparece o null",
-  "horasNormales": número o 0,
-  "horasExtra": número o 0,
-  "horasNocturnas": número o 0,
-  "horasFestivas": número o 0,
-  "dieta": número o 0,
-  "transporte": número o 0,
-  "fichajes": [{"entrada": "HH:MM", "salida": "HH:MM", "nota": "texto o vacío"}],
-  "tareas": [{"titulo": "nombre de la tarea", "otNumero": "número OT sin 'OT' o vacío", "horaInicio": "HH:MM o vacío", "horaFin": "HH:MM o vacío"}],
-  "notas": "texto completo de las notas o vacío",
-  "ubicacionEntrada": "texto de ubicación de entrada o vacío",
-  "ubicacionSalida": "texto de ubicación de salida o vacío"
+  "fecha": "YYYY-MM-DD o null",
+  "titulo": "título de jornada o null",
+  "horasNormales": 0,
+  "horasExtra": 0,
+  "horasNocturnas": 0,
+  "horasFestivas": 0,
+  "dieta": 0,
+  "transporte": 0,
+  "fichajes": [{"entrada":"HH:MM","salida":"HH:MM","nota":""}],
+  "tareas": [{"titulo":"nombre","otNumero":"solo dígitos sin OT","horaInicio":"HH:MM o vacío","horaFin":"HH:MM o vacío"}],
+  "notas": "texto completo o vacío",
+  "ubicacionEntrada": "texto o vacío",
+  "ubicacionSalida": "texto o vacío"
 }
-Extrae los horarios de las tareas (ej: 10:00 → 14:00) con precisión. Si ves "OT 7941581076" extrae "7941581076" como otNumero.`;
+Extrae los horarios de cada tarea (ej: 10:00 → 14:00). Si ves "OT 7941581076" extrae "7941581076".`;
 
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
+    const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+groqKey},
       body:JSON.stringify({
-        model:'claude-sonnet-4-6',
+        model:'meta-llama/llama-4-scout-17b-16e-instruct',
         max_tokens:1500,
-        messages:[{
-          role:'user',
-          content:[
-            {type:'image',source:{type:'base64',media_type:mediaType,data:base64}},
-            {type:'text',text:prompt}
-          ]
-        }]
+        messages:[{role:'user',content:[
+          {type:'image_url',image_url:{url:dataUrl}},
+          {type:'text',text:prompt}
+        ]}]
       })
     });
 
-    if(!res.ok) throw new Error('Error API: '+res.status);
+    if(!res.ok){
+      const err=await res.text();
+      throw new Error('Error Groq '+res.status+': '+err.slice(0,200));
+    }
     const data=await res.json();
-    const text=data.content?.[0]?.text||'';
+    const text=data.choices?.[0]?.message?.content||'';
     const clean=text.replace(/```json|```/g,'').trim();
     const parsed=JSON.parse(clean);
 
-    // Confirmar con el usuario antes de rellenar
+    // Mostrar resumen al usuario
     let resumen='La IA ha detectado:\n\n';
     if(parsed.fecha) resumen+='📅 Fecha: '+dlbl(parsed.fecha)+'\n';
+    if(parsed.titulo) resumen+='📋 Título: '+parsed.titulo+'\n';
     if(parsed.horasNormales>0) resumen+='⏱ Horas normales: '+parsed.horasNormales+'h\n';
     if(parsed.horasExtra>0) resumen+='⏱ Horas extra: '+parsed.horasExtra+'h\n';
     if(parsed.dieta>0) resumen+='🍽 Dieta: '+parsed.dieta+'€\n';
@@ -5874,15 +5900,12 @@ Extrae los horarios de las tareas (ej: 10:00 → 14:00) con precisión. Si ves "
     if((parsed.fichajes||[]).length>0) resumen+='📍 Fichajes: '+(parsed.fichajes||[]).map(f=>f.entrada+'→'+f.salida).join(', ')+'\n';
     if((parsed.tareas||[]).length>0){
       resumen+='🔧 Tareas:\n';
-      (parsed.tareas||[]).forEach(t=>{
-        resumen+='  • '+(t.titulo||'')+(t.otNumero?' (OT:'+t.otNumero+')':'')+(t.horaInicio?' '+t.horaInicio+'→'+t.horaFin:'')+'\n';
-      });
+      (parsed.tareas||[]).forEach(t=>{ resumen+='  • '+(t.titulo||'')+(t.otNumero?' (OT:'+t.otNumero+')':'')+(t.horaInicio?' '+t.horaInicio+'→'+(t.horaFin||'?'):'')+'\n'; });
     }
     resumen+='\n¿Importar estos datos?';
-
     if(!confirm(resumen)) return;
 
-    // Rellenar fEntry con los datos
+    // Rellenar fEntry
     if(parsed.fecha) fEntry.fecha=parsed.fecha;
     if(parsed.titulo) fEntry.titulo=parsed.titulo;
     if(parsed.horasNormales>0) fEntry.horasNormales=parsed.horasNormales;
@@ -5894,40 +5917,26 @@ Extrae los horarios de las tareas (ej: 10:00 → 14:00) con precisión. Si ves "
     if(parsed.notas) fEntry.notas=parsed.notas;
     if(parsed.ubicacionEntrada) fEntry.ubicacionEntrada=textToLoc(parsed.ubicacionEntrada);
     if(parsed.ubicacionSalida) fEntry.ubicacionSalida=textToLoc(parsed.ubicacionSalida);
-
-    // Fichajes
     if((parsed.fichajes||[]).length>0){
-      fEntry.fichajes=(parsed.fichajes||[]).map(f=>({
-        _fid:Date.now()+Math.random(),
-        entrada:f.entrada||'',salida:f.salida||'',
-        nota:f.nota||'',editing:false,taskId:''
-      }));
+      fEntry.fichajes=(parsed.fichajes||[]).map(f=>({_fid:Date.now()+Math.random(),entrada:f.entrada||'',salida:f.salida||'',nota:f.nota||'',editing:false,taskId:''}));
     }
 
-    // Tareas — guardar en S.tasks con horaInicio y horaFin
-    const tareasNuevas=[];
+    // Tareas con horaInicio y horaFin
+    let nTareas=0;
     for(const t of(parsed.tareas||[])){
       if(!t.titulo&&!t.otNumero) continue;
-      const tarea={
-        ...defTask(fEntry.fecha),
-        titulo:t.titulo||'Tarea importada',
-        otNumero:(t.otNumero||'').replace(/\D/g,'').slice(0,10),
-        horaInicio:t.horaInicio||'',
-        horaFin:t.horaFin||'',
-        usaOT:!!(t.otNumero),
-        fecha:parsed.fecha||fEntry.fecha||today()
-      };
+      const tarea={...defTask(parsed.fecha||fEntry.fecha||today()),titulo:t.titulo||'Tarea importada',otNumero:(t.otNumero||'').replace(/\D/g,'').slice(0,10),horaInicio:t.horaInicio||'',horaFin:t.horaFin||'',usaOT:!!(t.otNumero),fecha:parsed.fecha||fEntry.fecha||today()};
       const id=await dbPut(ST.tasks,tarea);
       S.tasks.push({...tarea,id});
-      tareasNuevas.push({...tarea,id});
+      nTareas++;
     }
 
-    await scheduleDraftSave();
+    scheduleDraftSave();
     S.tab='fichar';
-    showAlert('✅ Importados: '+tareasNuevas.length+' tareas, fichajes y datos de jornada');
+    showAlert('✅ Importados: '+nTareas+' tareas y datos de jornada');
     rerender();
   }catch(e){
-    showAlert('Error al analizar imagen: '+e.message,'err');
+    showAlert('Error al analizar: '+e.message,'err');
     console.error(e);
   }
 }
