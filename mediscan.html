@@ -4359,10 +4359,9 @@ async function compartirComoImagen(conPrecios){
       tareas.forEach(function(t){
         var titulo=(t.titulo||'').replace(/<[^>]*>/g,'');
         var lineas=titulo.split('\n').filter(function(l){return l.trim();});
-        var hi=t.horaInicio||t.hora_inicio||t.startTime||t.start||'';
-        var hf=t.horaFin||t.hora_fin||t.endTime||t.end||'';
-        var debugTxt='DBG:hi='+JSON.stringify(t.horaInicio)+'|hf='+JSON.stringify(t.horaFin);
-        var horasHtml='<div style="font-size:10px;color:#dc2626;font-weight:700;margin-top:4px">'+debugTxt+'</div>'+(hi||hf?'<div style="font-size:14px;font-weight:900;color:#000000;margin-top:4px;padding:4px 0;border-top:2px solid #f59e0b">'+(hi||'--')+(hf?' \u2192 '+hf:'')+'</div>':'<div style="color:red;font-size:12px">SIN HORA</div>');
+        var hi=t.horaInicio||'';
+        var hf=t.horaFin||'';
+        var horasHtml=(hi||hf)?'<div style="font-size:14px;font-weight:900;color:#000000;margin-top:6px;padding:4px 0;border-top:2px solid #f59e0b">'+(hi||'--')+(hf?' \u2192 '+hf:'')+'</div>':'';
         html += '<div style="background:#fefce8;border:1px solid #fef08a;border-radius:8px;padding:9px 12px;margin-bottom:5px">'
           +(t.otNumero?'<div style="margin-bottom:5px"><span style="background:#f59e0b;color:#1e293b;border-radius:4px;padding:2px 9px;font-size:10px;font-weight:800">OT '+t.otNumero+'</span></div>':'')
           +'<div style="font-weight:700;font-size:12px;line-height:1.6">'
