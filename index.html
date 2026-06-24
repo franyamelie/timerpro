@@ -3885,9 +3885,9 @@ function renderModalResumenDia(){
                 ...lineas.map(l=>h('div',{},l))
               ),
               (()=>{
-                const hi=t.horaInicio||t.hora_inicio||t.startTime||t.start||'';
-                const hf=t.horaFin||t.hora_fin||t.endTime||t.end||'';
-                return hi||hf?h('div',{style:{fontSize:'.85rem',color:'#000',fontWeight:800,marginTop:'.5rem',paddingTop:'.4rem',borderTop:'1px solid #fde68a'}},(hi||'--')+(hf?' → '+hf:'')):null;
+                const hi=t.horaInicio||'';
+                const hf=t.horaFin||'';
+                return hi||hf?h('div',{style:{fontSize:'.9rem',color:'#000000',fontWeight:900,marginTop:'.5rem',paddingTop:'.4rem',borderTop:'2px solid #f59e0b'}},(hi||'--')+(hf?' → '+hf:'')):null;
               })()
             );
           })
