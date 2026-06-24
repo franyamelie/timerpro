@@ -1831,11 +1831,14 @@ async function adjuntarTareaADia(t){
     };
   });
   if(!fecha) return;
-  // Update task date
-  const idx = S.tasks.findIndex(x=>x.id===t.id);
-  if(idx<0) return;
-  S.tasks[idx] = {...S.tasks[idx], fecha:fecha};
-  try{ dbPut(ST.tasks, S.tasks[idx]); }catch(ex){}
+  if(fecha === t.fecha){ showAlert('La tarea ya está en ese día','err'); return; }
+  // COPIAR la tarea al nuevo día (no mover) para no perder la del día original
+  const nuevaTarea = {...t, id:undefined, fecha:fecha};
+  try{
+    const newId = await dbPut(ST.tasks, nuevaTarea);
+    S.tasks.push({...nuevaTarea, id:newId});
+    showAlert('Tarea copiada al '+dlbl(fecha)+' ✓ (la original del '+dlbl(t.fecha)+' se mantiene)');
+  }catch(ex){ showAlert('Error al copiar tarea','err'); return; }
   // Link to entry for that day
   let entry = S.entries.find(e=>e.fecha===fecha);
   if(!entry){
@@ -5575,11 +5578,10 @@ async function saveTask(){
 }
 
 function editTask(t){
-  fTask={...t,fotos:[...(t.fotos||[])],journeys:[...(t.journeys||[])]};
-  editTaskId=t.id; // mark as editing
+  fTask={...defTask(t.fecha),...t,fotos:[...(t.fotos||[])],journeys:[...(t.journeys||[])]};
+  editTaskId=t.id;
   S.tab='tareas';
   rerender();
-  // Scroll to form top
   setTimeout(()=>{
     const el=document.querySelector('.card');
     if(el) el.scrollIntoView({behavior:'smooth'});
