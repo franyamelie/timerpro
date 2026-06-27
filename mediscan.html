@@ -1036,9 +1036,11 @@ function App(){
   const [dimVals,setDimVals]=useState({u:"cm"}); /* valores de la pestaña "Lados" */
   const [ladosSession,setLadosSession]=useState([]); /* ids de medidas añadidas en la sesión actual de "Lados" — para poder cancelarlas */
   const [part2DSel,setPart2DSel]=useState(null); /* pieza seleccionada en el panel 2D para vista interactiva */
-  const [rot2d,setRot2d]=useState(0); /* rotación de la foto en el panel 2D de pieza */
-  const [pendLados,setPendLados]=useState(null); /* medida pendiente de colocar en imagen: {d, v, u} */
-  const [show3DMeas,setShow3DMeas]=useState(true); /* mostrar panel flotante de medidas en 3D */
+  const [rot2d,setRot2d]=useState(0);
+  const [pendLados,setPendLados]=useState(null);
+  const [show3DMeas,setShow3DMeas]=useState(true);
+  const [loadedParts,setLoadedParts]=useState([]);
+  const [selParts2D,setSelParts2D]=useState(new Set());
   const [viewPromptExpanded,setViewPromptExpanded]=useState(false); /* toast expandido */
 
   /* AI parts segmentation */
@@ -3379,73 +3381,75 @@ const xWA=async()=>{try{const cv=await cap();if(!cv)return;const url=cv.toDataUR
       💡 Añade medidas con eje Ancho/Alto/Prof. para generar el plano<br/>
       Método: Herramienta → Dibujar → Confirmar medida → seleccionar eje en el desplegable
     </div>}
-    {segs?.length>1&&<div style={{margin:"8px 13px",padding:"10px",background:"#fff",borderRadius:"10px",border:"1px solid var(--border)",boxShadow:"0 1px 6px rgba(0,0,0,.06)"}}>
-      <div style={{fontSize:"9px",color:"var(--txt2)",marginBottom:"8px",fontWeight:700,letterSpacing:".04em"}}>🗂 ¿Qué piezas incluir? — pulsa una para ver detalles</div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
-        <button onClick={()=>{setPart3DSel(new Set());setPart2DSel(null);}} style={{padding:"6px 12px",borderRadius:"8px",fontSize:"9px",fontWeight:700,
-          background:(!part3DSel||part3DSel.size===0)?"linear-gradient(135deg,#ff7700,#ffaa00)":"var(--bg3)",
-          border:`2px solid ${(!part3DSel||part3DSel.size===0)?"#ff7700":"var(--border)"}`,
-          color:(!part3DSel||part3DSel.size===0)?"#fff":"var(--txt2)",
-          boxShadow:(!part3DSel||part3DSel.size===0)?"0 2px 8px rgba(255,119,0,.3)":"none"}}>
-          {(!part3DSel||part3DSel.size===0)?"✓ ":""}Todas ({segs.length})</button>
+    {segs?.length>0&&<div style={{margin:"8px 13px",padding:"10px",background:"#fff",borderRadius:"10px",border:"1px solid var(--border)",boxShadow:"0 1px 6px rgba(0,0,0,.06)"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"8px",flexWrap:"wrap",gap:"6px"}}>
+        <div style={{fontSize:"9px",fontWeight:700,color:"var(--txt2)"}}>🗂 Selecciona partes — {selParts2D.size>0?`${selParts2D.size} seleccionadas`:"ninguna seleccionada"}</div>
+        <div style={{display:"flex",gap:"5px"}}>
+          <button onClick={()=>setSelParts2D(new Set(segs.map(s=>s.id)))} style={{padding:"4px 9px",background:"var(--bg3)",border:"1px solid var(--border)",color:"var(--txt2)",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>☑ Todas</button>
+          <button onClick={()=>setSelParts2D(new Set())} style={{padding:"4px 9px",background:"var(--bg3)",border:"1px solid var(--border)",color:"var(--txt2)",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>☐ Ninguna</button>
+          <button onClick={()=>{setLoadedParts(segs.filter(s=>selParts2D.has(s.id)));}}
+            style={{padding:"4px 14px",background:selParts2D.size>0?"linear-gradient(135deg,#ff7700,#ffaa00)":"var(--bg3)",border:`1px solid ${selParts2D.size>0?"#ff7700":"var(--border)"}`,color:selParts2D.size>0?"#fff":"var(--txt2)",borderRadius:"6px",fontSize:"9px",fontWeight:800}}>
+            ↓ Cargar {selParts2D.size>0?`(${selParts2D.size})`:"partes"}
+          </button>
+        </div>
+      </div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:"5px"}}>
         {segs.map(seg=>{
-          const sel=part3DSel?.has(seg.id)??false;
-          return<button key={seg.id} onClick={()=>{
-            setPart3DSel(prev=>{const next=new Set(prev||[]);if(next.has(seg.id))next.delete(seg.id);else next.add(seg.id);return next;});
-            setPart2DSel(seg.id===part2DSel?null:seg.id);
-          }} style={{padding:"6px 12px",borderRadius:"8px",fontSize:"9px",fontWeight:700,
-            background:sel?(seg.color||C):"var(--bg3)",
-            border:`2px solid ${part2DSel===seg.id?"#000":sel?(seg.color||C):"var(--border)"}`,
-            color:sel?"#fff":"var(--txt2)",
-            boxShadow:sel?`0 2px 8px ${(seg.color||C)}55`:"none",
-            transform:sel?"scale(1.05)":"scale(1)",transition:"all .15s"}}>{sel?"✓ ":""}{seg.name}</button>;
+          const sel=selParts2D.has(seg.id);
+          const loaded=loadedParts.some(p=>p.id===seg.id);
+          return<button key={seg.id} onClick={()=>{setSelParts2D(prev=>{const n=new Set(prev);if(n.has(seg.id))n.delete(seg.id);else n.add(seg.id);return n;});}}
+            style={{padding:"5px 11px",borderRadius:"8px",fontSize:"9px",fontWeight:700,position:"relative",
+              background:sel?(seg.color||C):"var(--bg3)",border:`2px solid ${loaded?"#00cc44":sel?(seg.color||C):"var(--border)"}`,
+              color:sel?"#fff":"var(--txt2)",transition:"all .15s"}}>
+            {sel?"☑ ":"☐ "}{seg.name}
+            {loaded&&<span style={{position:"absolute",top:"-4px",right:"-4px",background:"#00cc44",color:"#fff",borderRadius:"50%",width:"12px",height:"12px",fontSize:"8px",display:"flex",alignItems:"center",justifyContent:"center",border:"1px solid #fff"}}>✓</span>}
+          </button>;
         })}
       </div>
-      {/* Panel interactivo de la pieza seleccionada */}
-      {part2DSel&&(()=>{
-        const seg=segs.find(s=>s.id===part2DSel);if(!seg)return null;
+    </div>}
+    {loadedParts.length>0&&<div style={{margin:"0 13px 12px",display:"flex",flexDirection:"column",gap:"10px"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{fontSize:"10px",fontWeight:800,color:"#cc5500"}}>📂 Partes cargadas ({loadedParts.length})</div>
+        <div style={{display:"flex",gap:"5px"}}>
+          <button onClick={xPNG} style={{padding:"4px 10px",background:"rgba(0,100,255,.1)",border:"1px solid rgba(0,100,255,.2)",color:"#0055cc",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>📤 Exportar todo</button>
+          <button onClick={()=>setLoadedParts([])} style={{padding:"4px 10px",background:"rgba(255,50,50,.1)",border:"1px solid rgba(255,50,50,.2)",color:"#cc2200",borderRadius:"6px",fontSize:"8px",fontWeight:700}}>✕ Vaciar</button>
+        </div>
+      </div>
+      {loadedParts.map((seg,idx)=>{
         const segMeas=anns.filter(a=>a.value!=null&&annInSeg(a,seg));
-        return<div style={{marginTop:"12px",padding:"12px",background:"var(--bg3)",borderRadius:"10px",border:`2px solid ${seg.color||C}`,display:"flex",gap:"14px",alignItems:"flex-start",flexWrap:"wrap"}}>
-          {/* Foto de la zona */}
-          <div style={{flexShrink:0,position:"relative"}}>
-            {img&&<img src={img} style={{
-              width:"140px",height:"100px",objectFit:"cover",
-              objectPosition:`${((seg.x1+seg.x2)/2)*100}% ${((seg.y1+seg.y2)/2)*100}%`,
-              borderRadius:"8px",border:`2px solid ${seg.color||C}`,
-              transform:`rotate(${rot2d}deg)`,transition:"transform .3s"
-            }}/>}
-            <div style={{position:"absolute",top:"4px",right:"4px",display:"flex",gap:"3px"}}>
-              <button onClick={()=>setRot2d(r=>(r-90+360)%360)} title="Rotar -90°"
-                style={{width:"24px",height:"24px",background:"rgba(0,0,0,.6)",border:"none",color:"#fff",borderRadius:"50%",fontSize:"11px",cursor:"pointer"}}>↶</button>
-              <button onClick={()=>setRot2d(r=>(r+90)%360)} title="Rotar +90°"
-                style={{width:"24px",height:"24px",background:"rgba(0,0,0,.6)",border:"none",color:"#fff",borderRadius:"50%",fontSize:"11px",cursor:"pointer"}}>↷</button>
+        const col=seg.color||C;
+        return<div key={seg.id} style={{background:"#fff",borderRadius:"12px",border:`2px solid ${col}`,boxShadow:`0 2px 12px ${col}22`,overflow:"hidden"}}>
+          <div style={{padding:"8px 12px",background:`${col}14`,display:"flex",alignItems:"center",gap:"8px",borderBottom:`1px solid ${col}33`,flexWrap:"wrap"}}>
+            <div style={{width:"22px",height:"22px",borderRadius:"50%",background:col,color:"#fff",fontSize:"11px",fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{idx+1}</div>
+            <div style={{flex:1,fontSize:"11px",fontWeight:800,color:"#1a1a1a"}}>{seg.name}</div>
+            <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
+              <button onClick={()=>setRot2d(r=>(r-90+360)%360)} style={{padding:"3px 8px",background:"rgba(0,0,0,.08)",border:"none",borderRadius:"5px",fontSize:"12px",cursor:"pointer"}}>↶</button>
+              <button onClick={()=>setRot2d(r=>(r+90)%360)} style={{padding:"3px 8px",background:"rgba(0,0,0,.08)",border:"none",borderRadius:"5px",fontSize:"12px",cursor:"pointer"}}>↷</button>
+              <button onClick={()=>{if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");c2.width=Math.round(im.width*(seg.x2-seg.x1));c2.height=Math.round(im.height*(seg.y2-seg.y1));c2.getContext("2d").drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);openZone(seg,c2.toDataURL("image/jpeg",.92));};im.src=img;}} style={{padding:"3px 9px",background:col,color:"#fff",border:"none",borderRadius:"5px",fontSize:"9px",fontWeight:700,cursor:"pointer"}}>🔍 Medir</button>
+              <button onClick={()=>{setScopeAsk("3d");setPart3DSel(new Set([seg.id]));}} style={{padding:"3px 9px",background:"rgba(100,50,255,.15)",border:"1px solid rgba(100,50,255,.3)",color:"#6633cc",borderRadius:"5px",fontSize:"9px",fontWeight:700,cursor:"pointer"}}>🎮 3D</button>
+              <button onClick={()=>{if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");c2.width=Math.round(im.width*(seg.x2-seg.x1));c2.height=Math.round(im.height*(seg.y2-seg.y1));c2.getContext("2d").drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);const a2=document.createElement("a");a2.href=c2.toDataURL("image/jpeg",.92);a2.download=`${seg.name.replace(/\s+/g,"_")}.jpg`;a2.click();};im.src=img;}} style={{padding:"3px 9px",background:"rgba(0,150,0,.1)",border:"1px solid rgba(0,150,0,.3)",color:"#006600",borderRadius:"5px",fontSize:"9px",fontWeight:700,cursor:"pointer"}}>💾 Exportar</button>
+              <button onClick={()=>setLoadedParts(prev=>prev.filter(p=>p.id!==seg.id))} style={{padding:"3px 7px",background:"rgba(255,50,50,.1)",border:"1px solid rgba(255,50,50,.25)",color:"#cc2200",borderRadius:"5px",fontSize:"11px",cursor:"pointer"}}>✕</button>
             </div>
           </div>
-          {/* Info y acciones */}
-          <div style={{flex:1,minWidth:"140px"}}>
-            <div style={{fontSize:"11px",fontWeight:800,color:seg.color||C,marginBottom:"4px"}}>{seg.name}</div>
-            <div style={{fontSize:"9px",color:"var(--txt2)",marginBottom:"8px"}}>
+          <div style={{display:"flex",gap:"12px",padding:"10px 12px",flexWrap:"wrap"}}>
+            {img&&<img src={img} style={{width:"160px",height:"120px",objectFit:"cover",objectPosition:`${((seg.x1+seg.x2)/2)*100}% ${((seg.y1+seg.y2)/2)*100}%`,borderRadius:"8px",border:`2px solid ${col}`,transform:`rotate(${rot2d}deg)`,transition:"transform .3s",flexShrink:0}}/>}
+            <div style={{flex:1,minWidth:"120px"}}>
+              <div style={{fontSize:"9px",fontWeight:700,color:"var(--txt2)",marginBottom:"5px"}}>MEDIDAS {segMeas.length>0?`(${segMeas.length})`:"— ninguna aún"}</div>
               {segMeas.length>0
-                ?segMeas.map(a=><div key={a.id} style={{display:"flex",gap:"4px",alignItems:"center"}}>
-                    <span style={{color:a.color,fontSize:"11px"}}>{a.icon}</span>
-                    <span>{a.title||a.type}: <b>{a.value} {a.unit}</b></span>
-                  </div>)
-                :<span style={{color:"#cc6600"}}>⚠ Sin medidas — abre la zona para medir</span>}
-            </div>
-            <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
-              <button onClick={()=>{if(!img)return;const im=new Image();im.crossOrigin="anonymous";im.onload=()=>{const c2=document.createElement("canvas");c2.width=Math.round(im.width*(seg.x2-seg.x1));c2.height=Math.round(im.height*(seg.y2-seg.y1));c2.getContext("2d").drawImage(im,im.width*seg.x1,im.height*seg.y1,c2.width,c2.height,0,0,c2.width,c2.height);openZone(seg,c2.toDataURL("image/jpeg",.92));};im.src=img;}}
-                style={{padding:"6px 12px",background:"linear-gradient(135deg,#0055cc,#0099ff)",color:"#fff",border:"none",borderRadius:"7px",fontSize:"9px",fontWeight:700,cursor:"pointer"}}>
-                🔍 Abrir y medir</button>
-              <button onClick={()=>{setScopeAsk("3d");setPart3DSel(new Set([seg.id]));}}
-                style={{padding:"6px 12px",background:"rgba(100,50,255,.15)",border:"1px solid rgba(100,50,255,.3)",color:"#6633cc",borderRadius:"7px",fontSize:"9px",fontWeight:700,cursor:"pointer"}}>
-                🎮 Ver en 3D</button>
-              <button onClick={()=>{if(window.confirm(`¿Eliminar la zona "${seg.name}"?`)){setSegs(s=>s.filter(x=>x.id!==seg.id));setPart2DSel(null);}}}
-                style={{padding:"6px 10px",background:"rgba(255,50,50,.1)",border:"1px solid rgba(255,50,50,.3)",color:"#cc2200",borderRadius:"7px",fontSize:"9px",fontWeight:700,cursor:"pointer"}}>
-                🗑</button>
+                ?<div style={{display:"flex",flexDirection:"column",gap:"3px",maxHeight:"100px",overflowY:"auto"}}>
+                  {segMeas.map(a=><div key={a.id} style={{display:"flex",alignItems:"center",gap:"5px",padding:"3px 6px",background:`${a.color}12`,borderRadius:"5px",fontSize:"9px"}}>
+                    <span style={{fontSize:"12px"}}>{a.icon||"●"}</span>
+                    <span style={{flex:1,color:"#333",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.title||a.type}</span>
+                    <span style={{fontWeight:800,color:a.color,flexShrink:0}}>{a.value} {a.unit}</span>
+                    <button onClick={()=>{setSelId(a.id);setMeasM({...a,_existing:true});setMIn({t:a.title||"",v:String(a.value),u:a.unit,ax:a.axis||""});setMeasTab("simple");}} style={{background:"none",border:"none",color:"#aaa",fontSize:"10px",cursor:"pointer"}}>✎</button>
+                  </div>)}
+                </div>
+                :<div style={{padding:"8px",background:"rgba(255,150,0,.08)",border:"1px dashed rgba(255,150,0,.3)",borderRadius:"7px",fontSize:"9px",color:"#cc6600",textAlign:"center"}}>Abre la zona con 🔍 Medir</div>}
+              <button onClick={()=>{const p={x:(seg.x1+seg.x2)/2,y:(seg.y1+seg.y2)/2};setMeasM({id:uid(),type:"dot",icon:"📏",title:seg.name,value:null,unit:"cm",axis:"",color:col,points:[p]});setMIn({t:seg.name,v:"",u:"cm",ax:""});setMeasTab("lados");}} style={{marginTop:"6px",width:"100%",padding:"5px",background:`${col}15`,border:`1px dashed ${col}`,color:col,borderRadius:"7px",fontSize:"9px",fontWeight:700,cursor:"pointer"}}>+ Añadir medida a {seg.name}</button>
             </div>
           </div>
         </div>;
-      })()}
+      })}
     </div>}
     <div ref={capRef}><View2D anns={anns} objName={objInfo?.name||pName} sc={scale} segs={segs} img={img||origImg} segSel={part3DSel} scope={viewScope}/>
     <ShareBar onPNG={xPNG} onPDF={xPDF} onWA={xWA} onEmail={xEmail} onLink={genLink} onDXF={xDXF} onCopy={xCopy}/></div>
