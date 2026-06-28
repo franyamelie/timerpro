@@ -5962,7 +5962,8 @@ async function descargarPlantillaVisual(){
   const worker=workers.find(w=>w.id===activeWorkerId)||{};
   const company=companies.find(c=>c.id===activeCompanyId)||{};
   const ttypes=(S.transportTypes||[{id:'coche',nombre:'Coche'},{id:'camion',nombre:'Camión'}]);
-  const sitiosExportados=JSON.stringify((S.sites||[]).map(s=>s.nombre||s.direccion||'').filter(Boolean));
+  const _sitiosRaw=await dbAll(ST.sites).catch(()=>S.sites||[]);
+  const sitiosExportados=JSON.stringify((_sitiosRaw||[]).map(s=>s.nombre||s.direccion||'').filter(Boolean));
 
   const html=`<!DOCTYPE html>
 <html lang="es">
