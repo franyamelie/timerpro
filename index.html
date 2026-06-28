@@ -1396,78 +1396,80 @@ function renderFichar(){
       );
     })(),
 
+
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'Ubicación'),
-      // Ubicacion Entrada
-      h('div',{class:'field'},
-        h('label',{},'ENTRADA — dirección, GPS o sitio guardado'),
-        h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap'}},
-          h('input',{type:'text',placeholder:'Calle, ciudad o coordenadas...',
-            value:locLabel(e.ubicacionEntrada),
-            on:{blur:ev=>{if(ev.target.value)fEntry.ubicacionEntrada=textToLoc(ev.target.value);}}}),
-          h('button',{class:'btn btn-gh btn-sm',style:{flexShrink:0},title:'Usar GPS',on:{click:()=>captureGPS('entrada')}},'📍'),
-          h('button',{class:'btn btn-b btn-sm',style:{flexShrink:0},title:'Elegir sitio guardado',
-            on:{click:()=>openSiteSelector('entrada')}
-          },'📋 Sitios')
-        ),
-        // Sitios guardados dropdown for entrada
-        S.siteSelector==='entrada'?h('div',{style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',marginTop:'.3rem',maxHeight:'180px',overflowY:'auto'}},
-          S.sites.length===0
-            ? h('div',{style:{padding:'.5rem',fontSize:'.78rem',color:'var(--ink3)'}},'Sin sitios guardados. Ve a la pestaña Sitios.')
-            : S.sites.map(s=>h('div',{
-                style:{display:'flex',alignItems:'center',gap:'.5rem',padding:'.5rem .7rem',borderBottom:'1px solid var(--brd)',cursor:'pointer'},
-                on:{click:()=>{
-                  fEntry.ubicacionEntrada = s.lat&&s.lng
-                    ? JSON.stringify({lat:s.lat,lng:s.lng,url:'https://www.google.com/maps?q='+s.lat+','+s.lng,label:s.nombre||s.direccion,acc:s.acc||0})
-                    : textToLoc(s.direccion||s.nombre);
-                  S.siteSelector=null; rerender();
-                }}
-              },
-              h('span',{style:{fontSize:'1rem'}},'📍'),
-              h('div',{},
-                h('div',{style:{fontWeight:700,fontSize:'.82rem'}},s.nombre),
-                h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},s.direccion||s.ciudad||'')
+      // Helper para renderizar un campo de ubicación con desplegable integrado
+      ...[
+        {tipo:'Entrada',key:'ubicacionEntrada',icon:'📍'},
+        {tipo:'Salida',key:'ubicacionSalida',icon:'🏁'}
+      ].map(({tipo,key,icon})=>
+        h('div',{class:'field',style:{marginBottom:'.8rem'}},
+          h('label',{},icon+' '+tipo.toUpperCase()),
+          // Input con datalist para autocompletado
+          h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',alignItems:'center'}},
+            h('div',{style:{flex:1,position:'relative'}},
+              h('input',{
+                type:'text',
+                id:'loc-input-'+tipo.toLowerCase(),
+                list:'sites-list-'+tipo.toLowerCase(),
+                placeholder:'Escribe o selecciona un sitio...',
+                value:locLabel(e[key]),
+                style:{width:'100%'},
+                on:{
+                  input:ev=>{
+                    // Buscar si coincide con un sitio guardado
+                    const val=ev.target.value;
+                    const site=S.sites.find(s=>s.nombre===val||(s.direccion||'')===val);
+                    if(site){
+                      fEntry[key]=site.lat&&site.lng
+                        ? JSON.stringify({lat:site.lat,lng:site.lng,url:'https://www.google.com/maps?q='+site.lat+','+site.lng,label:site.nombre||site.direccion,acc:site.acc||0})
+                        : textToLoc(site.direccion||site.nombre);
+                      rerender();
+                    }
+                  },
+                  blur:ev=>{
+                    const val=ev.target.value;
+                    if(!val){fEntry[key]='';return;}
+                    const site=S.sites.find(s=>s.nombre===val||(s.direccion||'')===val);
+                    if(site){
+                      fEntry[key]=site.lat&&site.lng
+                        ? JSON.stringify({lat:site.lat,lng:site.lng,url:'https://www.google.com/maps?q='+site.lat+','+site.lng,label:site.nombre||site.direccion,acc:site.acc||0})
+                        : textToLoc(site.direccion||site.nombre);
+                    } else {
+                      fEntry[key]=textToLoc(val);
+                    }
+                  }
+                }
+              }),
+              // Datalist con sitios guardados
+              h('datalist',{id:'sites-list-'+tipo.toLowerCase()},
+                ...(S.sites||[]).map(s=>h('option',{value:s.nombre},s.direccion||s.ciudad||''))
               )
-            ))
-        ):null,
-        e.ubicacionEntrada?h('div',{style:{marginTop:'.3rem'}},gpsDisplay(e.ubicacionEntrada)):null
-      ),
-      // Ubicacion Salida
-      h('div',{class:'field'},
-        h('label',{},'SALIDA — dirección, GPS o sitio guardado'),
-        h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap'}},
-          h('input',{type:'text',placeholder:'Calle, ciudad o coordenadas...',
-            value:locLabel(e.ubicacionSalida),
-            on:{blur:ev=>{if(ev.target.value)fEntry.ubicacionSalida=textToLoc(ev.target.value);}}}),
-          h('button',{class:'btn btn-gh btn-sm',style:{flexShrink:0},title:'Usar GPS',on:{click:()=>captureGPS('salida')}},'📍'),
-          h('button',{class:'btn btn-b btn-sm',style:{flexShrink:0},title:'Elegir sitio guardado',
-            on:{click:()=>openSiteSelector('salida')}
-          },'📋 Sitios')
-        ),
-        // Sitios guardados dropdown for salida
-        S.siteSelector==='salida'?h('div',{style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',marginTop:'.3rem',maxHeight:'180px',overflowY:'auto'}},
-          S.sites.length===0
-            ? h('div',{style:{padding:'.5rem',fontSize:'.78rem',color:'var(--ink3)'}},'Sin sitios guardados. Ve a la pestaña Sitios.')
-            : S.sites.map(s=>h('div',{
-                style:{display:'flex',alignItems:'center',gap:'.5rem',padding:'.5rem .7rem',borderBottom:'1px solid var(--brd)',cursor:'pointer'},
-                on:{click:()=>{
-                  fEntry.ubicacionSalida = s.lat&&s.lng
-                    ? JSON.stringify({lat:s.lat,lng:s.lng,url:'https://www.google.com/maps?q='+s.lat+','+s.lng,label:s.nombre||s.direccion,acc:s.acc||0})
-                    : textToLoc(s.direccion||s.nombre);
-                  S.siteSelector=null; rerender();
-                }}
-              },
-              h('span',{style:{fontSize:'1rem'}},'📍'),
-              h('div',{},
-                h('div',{style:{fontWeight:700,fontSize:'.82rem'}},s.nombre),
-                h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},s.direccion||s.ciudad||'')
-              )
-            ))
-        ):null,
-        e.ubicacionSalida?h('div',{style:{marginTop:'.3rem'}},gpsDisplay(e.ubicacionSalida)):null
+            ),
+            h('button',{class:'btn btn-gh btn-sm',style:{flexShrink:0},title:'Usar GPS actual',on:{click:()=>captureGPS(tipo.toLowerCase())}},'📍 GPS'),
+            // Botón para guardar ubicación actual como nuevo sitio
+            e[key]?h('button',{
+              class:'btn btn-g btn-sm',style:{flexShrink:0,fontSize:'.7rem'},
+              title:'Guardar esta ubicación como sitio',
+              on:{click:async()=>{
+                const nombre=prompt('Nombre para guardar este sitio:');
+                if(!nombre) return;
+                let loc={};try{loc=JSON.parse(e[key]);}catch(ex){}
+                const nuevo={...defSite,nombre,direccion:loc.label||locLabel(e[key]),lat:loc.lat||'',lng:loc.lng||'',acc:loc.acc||0};
+                const id=await dbPut(ST.sites,nuevo);
+                S.sites.push({...nuevo,id});
+                showAlert('Sitio "'+nombre+'" guardado ✓');
+                rerender();
+              }}
+            },'💾 Guardar sitio'):null
+          ),
+          // Vista previa del mapa si tiene coordenadas
+          e[key]?h('div',{style:{marginTop:'.3rem'}},gpsDisplay(e[key])):null
+        )
       ),
       h('p',{style:{fontSize:'.72rem',color:'var(--ink3)',marginTop:'.3rem'}},
-        '💡 Escribe la dirección directamente o pulsa 📍 para GPS (requiere HTTPS)'
+        '💡 Escribe el nombre de un sitio guardado o pulsa 📍 GPS para capturar la ubicación actual'
       )
     )
   ),
@@ -3388,6 +3390,19 @@ function renderSincronizar(){
       h('p',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.8rem',lineHeight:1.6}},
         'Sube una captura de pantalla del resumen de una jornada (WhatsApp, foto de pantalla...) y la IA reconocerá automáticamente todos los datos: horas, OTs, importes, notas, fichajes.'
       ),
+      h('button',{
+        class:'btn btn-gh btn-full',
+        style:{marginBottom:'.8rem',fontSize:'.82rem'},
+        on:{click:descargarPlantillaVisual}
+      },'📥 Descargar plantilla interactiva (rellenar y copiar JSON)'),
+      h('button',{
+        class:'btn btn-b btn-full',
+        style:{marginBottom:'.8rem',fontSize:'.82rem'},
+        on:{click:()=>{
+          const json=prompt('Pega aquí el JSON copiado desde la plantilla:');
+          if(json) importarPlantillaJSON(json);
+        }}
+      },'📋 Importar JSON de plantilla'),
       h('div',{
         style:{border:'2px dashed var(--acc)',borderRadius:'var(--r)',padding:'1.5rem',textAlign:'center',cursor:'pointer',color:'var(--acc)',background:'var(--acc-lt)'},
         on:{
@@ -5938,6 +5953,428 @@ Extrae los horarios de cada tarea (ej: 10:00 → 14:00). Si ves "OT 7941581076" 
   }catch(e){
     showAlert('Error al analizar: '+e.message,'err');
     console.error(e);
+  }
+}
+
+
+// ── PLANTILLA INTERACTIVA COMPLETA (HTML descargable con todos los campos) ──
+async function descargarPlantillaVisual(){
+  const worker=workers.find(w=>w.id===activeWorkerId)||{};
+  const company=companies.find(c=>c.id===activeCompanyId)||{};
+  const ttypes=(S.transportTypes||[{id:'coche',nombre:'Coche'},{id:'camion',nombre:'Camión'}]);
+  const sitiosExportados=JSON.stringify((S.sites||[]).map(s=>s.nombre||s.direccion||'').filter(Boolean));
+
+  const html=`<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Plantilla Jornada — TimerPro</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,Arial,sans-serif}
+body{background:#f1f5f9;color:#0f172a;min-height:100vh;padding:16px}
+.card{background:#fff;border-radius:12px;margin-bottom:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.hdr{background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:18px 20px}
+.hdr h1{font-size:18px;font-weight:900;margin-bottom:2px}
+.hdr .sub{font-size:12px;opacity:.7}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.kpi{background:rgba(255,255,255,.14);border-radius:8px;padding:10px;text-align:center}
+.kpi label{font-size:9px;opacity:.7;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px}
+.kpi input{font-size:18px;font-weight:900;background:transparent;border:none;border-bottom:2px solid rgba(255,255,255,.5);color:#fff;width:100%;text-align:center;outline:none;padding:2px 0}
+.kpi input::placeholder{color:rgba(255,255,255,.4)}
+.body{padding:14px 16px}
+.sec{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#64748b;border-bottom:2px solid #e2e8f0;padding-bottom:5px;margin:14px 0 8px;display:flex;align-items:center;gap:6px}
+.row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #f1f5f9}
+.row label{font-size:12px;color:#475569}
+.row .inp{display:flex;align-items:center;gap:6px}
+input[type=text],input[type=number],input[type=time],input[type=date],select,textarea{
+  background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:5px 8px;font-size:13px;color:#0f172a;outline:none;font-family:inherit
+}
+input[type=text]:focus,input[type=number]:focus,input[type=time]:focus,input[type=date]:focus,select:focus,textarea:focus{border-color:#22c55e}
+.fich-row{display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:5px}
+.fich-row span{color:#94a3b8;font-size:13px}
+.fich-row input{width:70px;text-align:center}
+.ot-card{background:#fefce8;border:1px solid #fef08a;border-radius:10px;padding:11px 13px;margin-bottom:8px}
+.ot-badge{background:#f59e0b;color:#1e293b;border-radius:5px;padding:2px 10px;font-size:10px;font-weight:800;letter-spacing:.04em;display:inline-block;margin-bottom:7px}
+.ot-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+.ot-times{display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:7px;border-top:2px solid #f59e0b}
+.ot-times label{font-size:11px;font-weight:700;color:#92400e}
+.ot-times input{width:75px}
+.horas-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:6px;align-items:center;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:12px}
+.horas-grid label{color:#475569}
+.horas-grid input{width:60px}
+.importe-badge{background:#dcfce7;color:#16a34a;border-radius:5px;padding:2px 6px;font-size:11px;font-weight:700;min-width:60px;text-align:right}
+.total-box{background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;border-radius:10px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;margin-top:14px}
+.total-label{font-size:11px;opacity:.7;text-transform:uppercase;letter-spacing:.08em}
+.total-val{font-size:26px;font-weight:900;color:#4ade80}
+.btn-import{background:#22c55e;color:#000;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:800;cursor:pointer;width:100%;margin-top:12px}
+.btn-img{background:#7c3aed;color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;width:100%;margin-top:6px}
+.btn-add{background:#e2e8f0;color:#475569;border:none;border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;margin-top:4px}
+.nota-area{width:100%;min-height:70px;resize:vertical;font-size:12px;margin-top:4px}
+.footer{text-align:center;font-size:10px;color:#94a3b8;margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0}
+.precio-row{display:flex;align-items:center;gap:4px;font-size:11px;color:#64748b}
+</style>
+</head>
+<body>
+<div class="card">
+<div class="hdr">
+  <div class="sub">${company.nombre||'Empresa'} · ${worker.nombre?worker.nombre+' '+worker.apellidos:'Trabajador'}${worker.dni?' · DNI: '+worker.dni:''}</div>
+  <h1>Jornada Laboral</h1>
+  <div class="kpis">
+    <div class="kpi">
+      <label>Fecha</label>
+      <input type="date" id="fecha" value="${today()}" oninput="calcTotal()">
+    </div>
+    <div class="kpi">
+      <label>Título de jornada</label>
+      <input type="text" id="titulo" placeholder="Ej: EN TRADEMA">
+    </div>
+  </div>
+</div>
+<div class="body">
+
+<!-- FICHAJES -->
+<div class="sec">⏱ Fichajes</div>
+<div id="fichajes">
+  <div class="fich-row">
+    <span>1.</span>
+    <input type="time" class="ent" placeholder="--:--">
+    <span>→</span>
+    <input type="time" class="sal" placeholder="--:--">
+    <input type="text" placeholder="Nota..." style="flex:1">
+  </div>
+  <div class="fich-row">
+    <span>2.</span>
+    <input type="time" class="ent" placeholder="--:--">
+    <span>→</span>
+    <input type="time" class="sal" placeholder="--:--">
+    <input type="text" placeholder="Nota..." style="flex:1">
+  </div>
+</div>
+<button class="btn-add" onclick="addFichaje()">➕ Añadir fichaje</button>
+
+<!-- HORAS E IMPORTES -->
+<div class="sec">🕐 Horas e Importes</div>
+<div style="padding:4px 0">
+  <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:6px;font-size:10px;font-weight:700;color:#94a3b8;padding:0 0 4px">
+    <span>Tipo</span><span style="text-align:center">Horas</span><span style="text-align:center">€/hora</span><span style="text-align:right">Importe</span>
+  </div>
+  ${[
+    {id:'norm',label:'Normales'},
+    {id:'ext',label:'Extra'},
+    {id:'noc',label:'Nocturnas'},
+    {id:'fes',label:'Festivas'}
+  ].map(t=>`<div class="horas-grid">
+    <label>${t.label}</label>
+    <input type="number" id="h_${t.id}" min="0" step="0.5" placeholder="0" oninput="calcTotal()" style="width:60px">
+    <div class="precio-row">
+      <input type="number" id="p_${t.id}" min="0" step="0.01" placeholder="0,00" oninput="calcTotal()" style="width:65px">
+      <span>€/h</span>
+    </div>
+    <span class="importe-badge" id="i_${t.id}">—</span>
+  </div>`).join('')}
+</div>
+
+<!-- DIETAS Y TRANSPORTE -->
+<div class="sec">🍽 Dietas y Transporte</div>
+<div class="row">
+  <label>Dieta</label>
+  <div class="inp">
+    <select id="dieta_sel" onchange="document.getElementById('dieta').value=this.value;calcTotal()">
+      <option value="">— €</option>
+      <option value="10">10 €</option>
+      <option value="12">12 €</option>
+      <option value="14">14 €</option>
+      <option value="15">15 €</option>
+      <option value="20">20 €</option>
+    </select>
+    <input type="number" id="dieta" min="0" step="0.01" placeholder="0" style="width:70px" oninput="calcTotal()">
+    <span style="font-size:12px;color:#64748b">€</span>
+  </div>
+</div>
+<div class="row">
+  <label>Transporte</label>
+  <div class="inp">
+    <select id="transp_tipo">
+      ${ttypes.map(t=>`<option value="${t.nombre}">${t.nombre}</option>`).join('')}
+    </select>
+    <select id="transp_sel" onchange="document.getElementById('transp').value=this.value;calcTotal()">
+      <option value="">— €</option>
+      <option value="4.6">4,60 €</option>
+      <option value="5">5 €</option>
+      <option value="10">10 €</option>
+    </select>
+    <input type="number" id="transp" min="0" step="0.01" placeholder="0" style="width:70px" oninput="calcTotal()">
+    <span style="font-size:12px;color:#64748b">€</span>
+  </div>
+</div>
+<div id="dietas-extra"></div>
+<button class="btn-add" onclick="addDietaExtra()">➕ Dieta extra</button>
+
+<!-- TAREAS / OT -->
+<div class="sec">🔧 Tareas / Órdenes de Trabajo</div>
+<div id="tareas">
+  ${[1,2,3].map(i=>`<div class="ot-card" id="ot_${i}">
+    <span class="ot-badge">OT</span>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+      <div>
+        <div style="font-size:10px;color:#92400e;margin-bottom:3px;font-weight:700">Número OT</div>
+        <input type="text" class="ot-num" placeholder="7941XXXXXX" maxlength="10" style="width:100%">
+      </div>
+      <div>
+        <div style="font-size:10px;color:#92400e;margin-bottom:3px;font-weight:700">Descripción</div>
+        <input type="text" class="ot-desc" placeholder="Descripción de la tarea" style="width:100%">
+      </div>
+    </div>
+    <div class="ot-times">
+      <label>🕐 Inicio:</label>
+      <input type="time" class="ot-ini">
+      <label>→ Fin:</label>
+      <input type="time" class="ot-fin">
+    </div>
+  </div>`).join('')}
+</div>
+<button class="btn-add" onclick="addOT()">➕ Añadir OT</button>
+
+<!-- NOTAS -->
+<div class="sec">📝 Notas</div>
+<textarea class="nota-area" id="notas" placeholder="Escribe aquí las notas de la jornada..."></textarea>
+
+<!-- UBICACIONES -->
+<div class="sec">📍 Ubicaciones</div>
+<div class="row">
+  <label>📍 Entrada</label>
+  <div style="position:relative;flex:1;margin-left:8px">
+    <input type="text" id="ubi_ent" placeholder="Escribe o selecciona sitio..." style="width:100%" autocomplete="off" oninput="save();mostrarSug('ent')" onfocus="mostrarSug('ent')" onblur="setTimeout(function(){ocultarSug('ent')},200)">
+    <div id="sug_ent" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:100;max-height:160px;overflow-y:auto"></div>
+  </div>
+</div>
+<div class="row" style="margin-top:8px">
+  <label>🏁 Salida</label>
+  <div style="position:relative;flex:1;margin-left:8px">
+    <input type="text" id="ubi_sal" placeholder="Escribe o selecciona sitio..." style="width:100%" autocomplete="off" oninput="save();mostrarSug('sal')" onfocus="mostrarSug('sal')" onblur="setTimeout(function(){ocultarSug('sal')},200)">
+    <div id="sug_sal" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:100;max-height:160px;overflow-y:auto"></div>
+  </div>
+</div>
+<p style="font-size:11px;color:#94a3b8;margin-top:6px">💡 Se muestran tus sitios guardados en TimerPro</p>
+
+<!-- TOTAL -->
+<div class="total-box">
+  <div>
+    <div class="total-label">Total día</div>
+    <div id="total_horas" style="font-size:12px;opacity:.6;margin-top:2px">0h</div>
+  </div>
+  <div class="total-val" id="total_val">0,00 €</div>
+</div>
+
+<!-- BOTONES -->
+<button class="btn-import" onclick="exportarJSON()">📲 Importar en TimerPro (copiar JSON)</button>
+<button class="btn-img" onclick="capturarImagen()">📸 Capturar como imagen para IA</button>
+
+<div class="footer">TimerPro · Rellena y pulsa "Importar en TimerPro" o fotografía para importar con IA</div>
+</div>
+</div>
+
+<script>
+var otCount=3;
+var dietaExtraCount=0;
+var fichajeCount=2;
+
+function addFichaje(){
+  fichajeCount++;
+  var div=document.createElement('div');
+  div.className='fich-row';
+  div.innerHTML='<span>'+fichajeCount+'.</span><input type="time" class="ent"><span>→</span><input type="time" class="sal"><input type="text" placeholder="Nota..." style="flex:1"><button onclick="this.parentElement.remove()" style="background:#fee2e2;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;color:#dc2626">✕</button>';
+  document.getElementById('fichajes').appendChild(div);
+}
+
+function addOT(){
+  otCount++;
+  var div=document.createElement('div');
+  div.className='ot-card';
+  div.innerHTML='<span class="ot-badge">OT</span><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><div><div style="font-size:10px;color:#92400e;margin-bottom:3px;font-weight:700">Número OT</div><input type="text" class="ot-num" placeholder="7941XXXXXX" maxlength="10" style="width:100%"></div><div><div style="font-size:10px;color:#92400e;margin-bottom:3px;font-weight:700">Descripción</div><input type="text" class="ot-desc" placeholder="Descripción" style="width:100%"></div></div><div class="ot-times"><label>🕐 Inicio:</label><input type="time" class="ot-ini"><label>→ Fin:</label><input type="time" class="ot-fin"></div><button onclick="this.parentElement.remove()" style="background:#fee2e2;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;color:#dc2626;margin-top:6px;width:100%">✕ Eliminar</button>';
+  document.getElementById('tareas').appendChild(div);
+}
+
+function addDietaExtra(){
+  dietaExtraCount++;
+  var div=document.createElement('div');
+  div.className='row';
+  div.style.marginTop='4px';
+  div.innerHTML='<input type="text" placeholder="Concepto dieta extra" class="dext-conc" style="flex:1"><input type="number" min="0" step="0.01" placeholder="0" class="dext-imp" style="width:70px;margin-left:6px" oninput="calcTotal()"><span style="font-size:12px;color:#64748b;margin-left:4px">€</span><button onclick="this.parentElement.remove();calcTotal()" style="background:#fee2e2;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;color:#dc2626;margin-left:4px">✕</button>';
+  document.getElementById('dietas-extra').appendChild(div);
+}
+
+function calcTotal(){
+  var tot=0,totH=0;
+  ['norm','ext','noc','fes'].forEach(function(t){
+    var h=parseFloat(document.getElementById('h_'+t).value)||0;
+    var p=parseFloat(document.getElementById('p_'+t).value)||0;
+    var imp=Math.round(h*p*100)/100;
+    totH+=h;tot+=imp;
+    document.getElementById('i_'+t).textContent=imp>0?(imp.toFixed(2).replace('.',',')+'€'):'—';
+  });
+  var dieta=parseFloat(document.getElementById('dieta').value)||0;
+  var transp=parseFloat(document.getElementById('transp').value)||0;
+  tot+=dieta+transp;
+  document.querySelectorAll('.dext-imp').forEach(function(el){tot+=parseFloat(el.value)||0;});
+  document.getElementById('total_val').textContent=tot.toFixed(2).replace('.',',')+' €';
+  document.getElementById('total_horas').textContent=totH>0?(Math.floor(totH)+'h'+(Math.round((totH%1)*60)>0?' '+Math.round((totH%1)*60)+'m':'')):'0h';
+}
+
+var SITIOS_TIMERPRO=${sitiosExportados};
+function getSitios(){
+  try{
+    var local=JSON.parse(localStorage.getItem('tp_sitios_plantilla')||'[]');
+    var merged=SITIOS_TIMERPRO.slice();
+    local.forEach(function(s){if(merged.indexOf(s)<0)merged.push(s);});
+    return merged;
+  }catch(e){return SITIOS_TIMERPRO||[];}
+}
+function guardarSitioLocal(nombre){
+  if(!nombre||nombre.length<2)return;
+  try{
+    var local=JSON.parse(localStorage.getItem('tp_sitios_plantilla')||'[]');
+    if(local.indexOf(nombre)<0){local.unshift(nombre);if(local.length>20)local=local.slice(0,20);localStorage.setItem('tp_sitios_plantilla',JSON.stringify(local));}
+  }catch(e){}
+}
+function mostrarSug(tipo){
+  var input=document.getElementById('ubi_'+tipo);
+  var sug=document.getElementById('sug_'+tipo);
+  var val=(input.value||'').toLowerCase();
+  var sitios=getSitios().filter(function(s){return !val||s.toLowerCase().indexOf(val)>=0;});
+  if(sitios.length===0){sug.style.display='none';return;}
+  sug.innerHTML=sitios.map(function(s){
+    return '<div onmousedown="selSitio(\''+tipo+'\',\''+s.replace(/'/g,"\\'")+'\')" style="padding:8px 12px;font-size:12px;cursor:pointer;border-bottom:1px solid #f1f5f9" onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background=''">'+s+'</div>';
+  }).join('');
+  sug.style.display='block';
+}
+function ocultarSug(tipo){document.getElementById('sug_'+tipo).style.display='none';}
+function selSitio(tipo,nombre){
+  document.getElementById('ubi_'+tipo).value=nombre;
+  ocultarSug(tipo);
+  save();
+}
+function exportarJSON(){
+  var fichajes=[];
+  document.querySelectorAll('#fichajes .fich-row').forEach(function(row,i){
+    var ents=row.querySelectorAll('input[type=time]');
+    var nota=row.querySelector('input[type=text]');
+    if(ents[0]&&(ents[0].value||ents[1].value)){
+      fichajes.push({entrada:ents[0].value||'',salida:ents[1].value||'',nota:nota?nota.value:'',_fid:Date.now()+i});
+    }
+  });
+  var tareas=[];
+  document.querySelectorAll('#tareas .ot-card').forEach(function(card){
+    var num=card.querySelector('.ot-num');var desc=card.querySelector('.ot-desc');
+    var ini=card.querySelector('.ot-ini');var fin=card.querySelector('.ot-fin');
+    if(num&&(num.value||desc.value)){
+      tareas.push({otNumero:(num.value||'').replace(/\\D/g,'').slice(0,10),titulo:desc?desc.value:'',horaInicio:ini?ini.value:'',horaFin:fin?fin.value:''});
+    }
+  });
+  var dietasExtra=[];
+  document.querySelectorAll('#dietas-extra .row').forEach(function(row){
+    var conc=row.querySelector('.dext-conc');var imp=row.querySelector('.dext-imp');
+    if(conc&&conc.value){dietasExtra.push({concepto:conc.value,importe:parseFloat(imp.value)||0});}
+  });
+  var data={
+    fecha:document.getElementById('fecha').value,
+    titulo:document.getElementById('titulo').value,
+    horasNormales:parseFloat(document.getElementById('h_norm').value)||0,
+    precioHoraNormal:parseFloat(document.getElementById('p_norm').value)||0,
+    importeNormales:Math.round((parseFloat(document.getElementById('h_norm').value)||0)*(parseFloat(document.getElementById('p_norm').value)||0)*100)/100,
+    horasExtra:parseFloat(document.getElementById('h_ext').value)||0,
+    precioHoraExtra:parseFloat(document.getElementById('p_ext').value)||0,
+    importeExtra:Math.round((parseFloat(document.getElementById('h_ext').value)||0)*(parseFloat(document.getElementById('p_ext').value)||0)*100)/100,
+    horasNocturnas:parseFloat(document.getElementById('h_noc').value)||0,
+    precioHoraNocturna:parseFloat(document.getElementById('p_noc').value)||0,
+    importeNocturnas:Math.round((parseFloat(document.getElementById('h_noc').value)||0)*(parseFloat(document.getElementById('p_noc').value)||0)*100)/100,
+    horasFestivas:parseFloat(document.getElementById('h_fes').value)||0,
+    precioHoraFestiva:parseFloat(document.getElementById('p_fes').value)||0,
+    importeFestivas:Math.round((parseFloat(document.getElementById('h_fes').value)||0)*(parseFloat(document.getElementById('p_fes').value)||0)*100)/100,
+    dieta:parseFloat(document.getElementById('dieta').value)||0,
+    transporte:parseFloat(document.getElementById('transp').value)||0,
+    _transportType:document.getElementById('transp_tipo').value,
+    dietasExtra:dietasExtra,
+    notas:document.getElementById('notas').value,
+    ubicacionEntrada:document.getElementById('ubi_ent').value,
+    ubicacionSalida:document.getElementById('ubi_sal').value,
+    fichajes:fichajes,
+    _plantillaTareas:tareas,
+    otrosConceptos:[]
+  };
+  var json=JSON.stringify(data);
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(json).then(function(){alert('✅ JSON copiado. Ve a TimerPro → Sincronizar → Importar plantilla y pégalo.');}).catch(function(){prompt('Copia este JSON y pégalo en TimerPro:',json);});
+  } else {
+    prompt('Copia este JSON y pégalo en TimerPro:',json);
+  }
+}
+
+function capturarImagen(){
+  alert('Haz una captura de pantalla de esta página (Ctrl+Shift+S en Windows o Cmd+Shift+4 en Mac) y súbela en TimerPro → Sincronizar → Importar imagen IA');
+}
+<\/script>
+</body>
+</html>`;
+
+  const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+  const fname='TimerPro_Plantilla_'+today()+'.html';
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=fname;
+  a.click();
+  showAlert('✅ Plantilla descargada — ábrela en el navegador y rellena todos los campos');
+}
+
+// ── IMPORTAR JSON DESDE PLANTILLA HTML ──
+async function importarPlantillaJSON(jsonStr){
+  try{
+    const data=JSON.parse(jsonStr);
+    if(!data.fecha) throw new Error('JSON no válido — falta la fecha');
+
+    // Rellenar fEntry con todos los campos
+    fEntry.fecha=data.fecha;
+    if(data.titulo) fEntry.titulo=data.titulo;
+    if(data.horasNormales) fEntry.horasNormales=data.horasNormales;
+    if(data.precioHoraNormal) fEntry.precioHoraNormal=data.precioHoraNormal;
+    if(data.importeNormales) fEntry.importeNormales=data.importeNormales;
+    if(data.horasExtra) fEntry.horasExtra=data.horasExtra;
+    if(data.precioHoraExtra) fEntry.precioHoraExtra=data.precioHoraExtra;
+    if(data.importeExtra) fEntry.importeExtra=data.importeExtra;
+    if(data.horasNocturnas) fEntry.horasNocturnas=data.horasNocturnas;
+    if(data.precioHoraNocturna) fEntry.precioHoraNocturna=data.precioHoraNocturna;
+    if(data.importeNocturnas) fEntry.importeNocturnas=data.importeNocturnas;
+    if(data.horasFestivas) fEntry.horasFestivas=data.horasFestivas;
+    if(data.precioHoraFestiva) fEntry.precioHoraFestiva=data.precioHoraFestiva;
+    if(data.importeFestivas) fEntry.importeFestivas=data.importeFestivas;
+    if(data.dieta) fEntry.dieta=data.dieta;
+    if(data.transporte) fEntry.transporte=data.transporte;
+    if(data._transportType) fEntry._transportType=data._transportType;
+    if(data.dietasExtra&&data.dietasExtra.length) fEntry.dietasExtra=data.dietasExtra;
+    if(data.notas) fEntry.notas=data.notas;
+    if(data.ubicacionEntrada) fEntry.ubicacionEntrada=textToLoc(data.ubicacionEntrada);
+    if(data.ubicacionSalida) fEntry.ubicacionSalida=textToLoc(data.ubicacionSalida);
+    if(data.fichajes&&data.fichajes.length){
+      fEntry.fichajes=data.fichajes.map(f=>({...defFichaje(),...f,_fid:Date.now()+Math.random()}));
+    }
+    if(data.otrosConceptos&&data.otrosConceptos.length) fEntry.otrosConceptos=data.otrosConceptos;
+
+    // Importar tareas si las hay
+    let nTareas=0;
+    for(const t of(data._plantillaTareas||[])){
+      if(!t.titulo&&!t.otNumero) continue;
+      const tarea={...defTask(data.fecha),titulo:t.titulo||'',otNumero:(t.otNumero||'').replace(/\D/g,'').slice(0,10),horaInicio:t.horaInicio||'',horaFin:t.horaFin||'',usaOT:!!(t.otNumero),fecha:data.fecha};
+      const id=await dbPut(ST.tasks,tarea);
+      S.tasks.push({...tarea,id});
+      nTareas++;
+    }
+
+    S.tab='fichar';
+    showAlert('✅ Plantilla importada: '+nTareas+' tareas y jornada del '+dlbl(data.fecha));
+    rerender();
+  }catch(e){
+    showAlert('Error importando: '+e.message,'err');
   }
 }
 
