@@ -6244,18 +6244,20 @@ function mostrarSug(tipo){
   var sug=document.getElementById('sug_'+tipo);
   var val=(input.value||'').toLowerCase();
   var sitios=getSitios().filter(function(s){return !val||s.toLowerCase().indexOf(val)>=0;});
-  if(sitios.length===0){sug.style.display='none';return;}
-  sug.innerHTML=sitios.map(function(s){
-    return '<div onmousedown="selSitio(\''+tipo+'\',\''+s.replace(/'/g,"\\'")+'\')" style="padding:8px 12px;font-size:12px;cursor:pointer;border-bottom:1px solid #f1f5f9" onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background=''">'+s+'</div>';
-  }).join('');
+  if(!sitios.length){sug.style.display='none';return;}
+  sug.innerHTML='';
+  sitios.forEach(function(s){
+    var d=document.createElement('div');
+    d.textContent=s;
+    d.style.cssText='padding:8px 12px;font-size:12px;cursor:pointer;border-bottom:1px solid #f1f5f9';
+    d.addEventListener('mousedown',function(e){e.preventDefault();input.value=s;sug.style.display='none';save();});
+    d.addEventListener('mouseover',function(){d.style.background='#f0fdf4';});
+    d.addEventListener('mouseout',function(){d.style.background='';});
+    sug.appendChild(d);
+  });
   sug.style.display='block';
 }
-function ocultarSug(tipo){document.getElementById('sug_'+tipo).style.display='none';}
-function selSitio(tipo,nombre){
-  document.getElementById('ubi_'+tipo).value=nombre;
-  ocultarSug(tipo);
-  save();
-}
+function ocultarSug(tipo){var el=document.getElementById('sug_'+tipo);if(el)el.style.display='none';}
 function exportarJSON(){
   var fichajes=[];
   document.querySelectorAll('#fichajes .fich-row').forEach(function(row,i){
