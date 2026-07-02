@@ -1835,7 +1835,8 @@ async function adjuntarTareaADia(t){
   if(!fecha) return;
   if(fecha === t.fecha){ showAlert('La tarea ya está en ese día','err'); return; }
   // COPIAR la tarea al nuevo día (no mover) para no perder la del día original
-  const nuevaTarea = {...t, id:undefined, fecha:fecha};
+  const nuevaTarea = {...t, fecha:fecha};
+  delete nuevaTarea.id;
   try{
     const newId = await dbPut(ST.tasks, nuevaTarea);
     S.tasks.push({...nuevaTarea, id:newId});
