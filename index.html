@@ -5170,7 +5170,7 @@ async function saveDraft(){
       const keep=finalized||draftEntry;
       for(const e of allForDate){
         if(e!==keep && e.id && e.id!==fEntry.id){
-          await dbDelete(ST.entries,e.id);
+          await dbDel(ST.entries,e.id);
           S.entries=S.entries.filter(x=>x.id!==e.id);
         }
       }
@@ -5426,7 +5426,7 @@ async function deduplicateEntries(){
     else seen[e.fecha]=true;
   });
   for(const id of toDelete){
-    await dbDelete(ST.entries,id);
+    await dbDel(ST.entries,id);
     S.entries=S.entries.filter(e=>e.id!==id);
   }
   if(toDelete.length) showAlert('Se eliminaron '+toDelete.length+' jornadas duplicadas');
