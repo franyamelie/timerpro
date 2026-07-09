@@ -283,6 +283,22 @@ const dbDel=(st,id)=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrit
 const dbClear=st=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrite'),r=t.objectStore(st).clear();r.onsuccess=()=>res();r.onerror=()=>rej(r.error);});
 
 // ── ESTADO GLOBAL ────────────────────────────────────────
+// ── TIPOS DE TAREA (dinámicos, guardados en localStorage) ──
+function getTaskTypes(){
+  try{
+    var saved=JSON.parse(localStorage.getItem('tp_task_types')||'null');
+    if(saved&&saved.length) return saved;
+  }catch(e){}
+  return [
+    {id:'ot',nombre:'O.T.',icono:'🔧',color:'#f59e0b'},
+    {id:'estral',nombre:'ESTRAL',icono:'⚡',color:'#7c3aed'}
+  ];
+}
+function saveTaskTypes(types){
+  localStorage.setItem('tp_task_types',JSON.stringify(types));
+}
+var taskTypes=getTaskTypes();
+
 const S = {
   tab:'fichar', dark:true,
   entries:[], tasks:[], sites:[], workorders:[], vehicles:[], settings:{},
@@ -311,7 +327,7 @@ const defEntry = () => ({
   entradaLocked:false, fotosGastos:[], timerDeduct:0
 });
 const defFichaje = () => ({_fid:Date.now(), entrada:'', salida:'', nota:'', editing:false, taskId:'', timerRunning:false, timerStart:null});
-const defTask = f => ({fecha:f||today(), titulo:'', horaInicio:nowTime(), horaFin:'', descripcion:'', siteId:'', workOrderId:'', otNumero:'', usaOT:false, fotos:[]});
+const defTask = f => ({fecha:f||today(), titulo:'', horaInicio:nowTime(), horaFin:'', descripcion:'', siteId:'', workOrderId:'', otNumero:'', usaOT:false, tipoTarea:'ot', fotos:[]});
 const defJourney = () => ({vehicleId:'', tipoManual:'coche', precioManual:0.19, origen:'', destino:'', km:0, horaInicio:nowTime(), horaFin:''});
 const defWorker = {nombre:'',apellidos:'',dni:'',cargo:'',departamento:'',email:'',telefono:'',numSS:'',fechaAlta:'',convenio:'',firma:'',foto:''};
 const defCompany = {nombre:'',cif:'',direccion:'',ciudad:'',cp:'',telefono:'',email:'',web:'',logo:''};
@@ -687,12 +703,14 @@ function renderNav(){
 }
 
 // ── TABS ─────────────────────────────────────────────────
-const TABS = [
+const TABS_BASE = [
   {id:'fichar',icon:'⏱',label:'Fichar'},
   {id:'tareas',icon:'📝',label:'Tareas'},
   {id:'calendario',icon:'📅',label:'Calendario'},
   {id:'sitios',icon:'📍',label:'Sitios'},
   {id:'ordenes',icon:'🔧',label:'O.T.'},
+];
+const TABS_END = [
   {id:'vehiculos',icon:'🚗',label:'Vehículos'},
   {id:'resumen',icon:'📊',label:'Resumen'},
   {id:'sincronizar',icon:'🔄',label:'Sincronizar'},
@@ -700,13 +718,22 @@ const TABS = [
   {id:'empresa',icon:'🏢',label:'Empresa'},
   {id:'ia',icon:'🤖',label:'IA'},
 ];
+function getTabs(){
+  // Tipos de tarea extra (todo excepto 'ot' que ya está como O.T.)
+  const extraTipos=taskTypes.filter(t=>t.id!=='ot').map(t=>({
+    id:'tipo_'+t.id, icon:t.icono, label:t.nombre, _tipoId:t.id
+  }));
+  return [...TABS_BASE,...extraTipos,...TABS_END];
+}
 function renderTabs(){
+  const TABS=getTabs();
   return h('div',{class:'tabs'},
-    ...TABS.map(t=>h('button',{class:'tab'+(S.tab===t.id?' active':''),'data-tabId':t.id,on:{click:()=>{
-        captureFormState();
-        S.tab=t.id;
-        rerender();
-        }}},
+    ...TABS.map(t=>h('button',{
+      class:'tab'+(S.tab===t.id?' active':''),
+      'data-tabId':t.id,
+      style:t._tipoId?{borderBottom:'2px solid '+(taskTypes.find(x=>x.id===t._tipoId)||{}).color}:{},
+      on:{click:()=>{captureFormState();S.tab=t.id;rerender();}}
+    },
       h('span',{class:'tab-icon'},t.icon),t.label
     ))
   );
@@ -726,7 +753,13 @@ function renderMain(){
     case 'trabajador': return renderTrabajador();
     case 'empresa':    return renderEmpresa();
     case 'ia':         return (typeof renderIAChat==='function'?renderIAChat():renderIAFallback());
-    default: return h('div',{},'');
+    default:
+      // Tabs de tipos de tarea dinámicos (tipo_estral, tipo_xxx...)
+      if(S.tab&&S.tab.startsWith('tipo_')){
+        const tipoId=S.tab.replace('tipo_','');
+        return renderTareasPorTipo(tipoId);
+      }
+      return h('div',{},'');
   }
 }
 
@@ -1356,8 +1389,7 @@ function renderFichar(){
       const dayTasks = S.tasks.filter(t => t.fecha === (e.fecha||today()));
       if(!dayTasks.length) return h('div',{class:'card',style:{cursor:'pointer'},
         on:{click:()=>{
-          fTask={...defTask(e.fecha||today())};editTaskId=null;
-          S.tab='tareas';rerender();
+          mostrarSelectorTipoTarea(e.fecha||today());
         }}
       },
         h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',color:'var(--ink2)',fontSize:'.82rem'}},
@@ -1368,10 +1400,11 @@ function renderFichar(){
       return h('div',{class:'card'},
         h('div',{class:'sec-title',style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'.5rem'}},
           h('span',{},'📝 Tareas del día ('+dayTasks.length+')'),
-          h('button',{class:'btn btn-b btn-sm',on:{click:()=>{
-            fTask={...defTask(e.fecha||today())};editTaskId=null;
-            S.tab='tareas';rerender();
-          }}},'+ Nueva')
+          h('div',{style:{display:'flex',gap:'.4rem'}},
+            h('button',{class:'btn btn-b btn-sm',on:{click:()=>{mostrarSelectorTipoTarea(e.fecha||today());}}},'+ Nueva'),
+            h('button',{class:'btn btn-gh btn-sm',style:{fontSize:'.7rem'},title:'Gestionar tipos de tarea',
+              on:{click:()=>{mostrarGestorTipos();}}},'⚙️')
+          )
         ),
         ...dayTasks.map(t=>h('div',{
           style:{padding:'.5rem 0',borderBottom:'1px solid var(--brd)',display:'flex',gap:'.5rem',alignItems:'flex-start',cursor:'pointer'},
@@ -1380,7 +1413,9 @@ function renderFichar(){
           h('div',{style:{flex:1}},
             h('div',{style:{fontWeight:700,fontSize:'.85rem',display:'flex',alignItems:'center',gap:'.3rem',flexWrap:'wrap'}},
               h('span',{style:{wordBreak:'break-word',whiteSpace:'normal'}},t.titulo||'Sin título'),
-              t.otNumero?h('span',{class:'badge badge-y',style:{fontSize:'.65rem',fontWeight:800}},'OT '+t.otNumero):null
+              t.otNumero?(()=>{const tp=taskTypes.find(x=>x.id===(t.tipoTarea||'ot'))||{nombre:'OT',color:'#f59e0b'};
+                return h('span',{class:'badge badge-y',style:{fontSize:'.65rem',fontWeight:800,background:tp.color,color:tp.id==='ot'?'#1e293b':'#fff'}},
+                  tp.icono+' '+tp.nombre+' '+t.otNumero);})():null
             ),
             t.horaInicio||t.horaFin
               ? h('div',{style:{fontSize:'.8rem',color:'#000000',fontWeight:800}},(t.horaInicio||'--')+' → '+(t.horaFin||'--'))
@@ -1744,24 +1779,26 @@ function renderTareas(){
           )
         ),
         h('div',{class:'field'},
-          h('label',{},'O.T.'),
-          h('div',{class:'toggle-row'},
-            h('span',{},'Usar O.T.'),
-            h('button',{class:'toggle'+(fTask.usaOT?' on':''),on:{click:()=>{fTask.usaOT=!fTask.usaOT;rerender();}}})
+          h('label',{},'TIPO DE TAREA'),
+          h('select',{
+            style:{borderLeft:'4px solid '+(taskTypes.find(t=>t.id===(fTask.tipoTarea||'ot'))||{color:'#f59e0b'}).color},
+            on:{change:ev=>{fTask.tipoTarea=ev.target.value;fTask.usaOT=true;rerender();}}
+          },
+            ...taskTypes.map(t=>h('option',{value:t.id,selected:t.id===(fTask.tipoTarea||'ot')?'':null},t.icono+' '+t.nombre))
           )
         )
       ),
-      fTask.usaOT ? h('div',{class:'grid-2'},
+      h('div',{class:'grid-2'},
         h('div',{class:'field'},
-          h('label',{},'O.T. DEL CATÁLOGO'),
+          h('label',{},(taskTypes.find(t=>t.id===(fTask.tipoTarea||'ot'))||{nombre:'O.T.'}).nombre+' DEL CATÁLOGO'),
           h('select',{on:{change:ev=>{fTask.workOrderId=ev.target.value;rerender();}}},
             ...woOpts.map(w=>h('option',{value:w.id,selected:w.id==fTask.workOrderId?'':null},
               w.id ? `[${w.codigo}] ${w.descripcion||''}` : w.codigo
             ))
           )
         ),
-        field('Nº O.T. (máx 10 dígitos)','text',fTask.otNumero,v=>{fTask.otNumero=v.replace(/\D/g,'').slice(0,10);},{maxlength:'10',pattern:'[0-9]*'})
-      ) : null,
+        field('Nº '+(taskTypes.find(t=>t.id===(fTask.tipoTarea||'ot'))||{nombre:'O.T.'}).nombre+' (máx 10 dígitos)','text',fTask.otNumero,v=>{fTask.otNumero=v.replace(/\D/g,'').slice(0,10);},{maxlength:'10',pattern:'[0-9]*'})
+      ),
       // Fotos
       h('div',{class:'field'},
         h('label',{},'FOTOS'),
@@ -1805,6 +1842,179 @@ function renderTareas(){
   );
 }
 
+
+// ── SELECTOR TIPO TAREA (dinámico) ────────────────────────
+function mostrarSelectorTipoTarea(fecha){
+  const overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem;overflow-y:auto';
+  const tipos=taskTypes;
+  const cols=Math.min(tipos.length,2);
+  let btns=tipos.map(t=>`
+    <button data-tipo="${t.id}" style="background:${t.color};color:${t.id==='ot'?'#1e293b':'#fff'};border:none;border-radius:10px;padding:1rem;font-size:.9rem;font-weight:800;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:.3rem;min-height:80px">
+      <span style="font-size:1.4rem">${t.icono}</span>
+      <span>${t.nombre}</span>
+    </button>`).join('');
+  overlay.innerHTML=`
+    <div style="background:var(--surf);border-radius:16px;padding:1.5rem;max-width:340px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+      <div style="font-weight:900;font-size:1.1rem;color:var(--ink);margin-bottom:.8rem;text-align:center">➕ Nueva Tarea</div>
+      <div style="font-size:.82rem;color:var(--ink2);text-align:center;margin-bottom:1rem">¿Qué tipo de tarea quieres añadir?</div>
+      <div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:.7rem;margin-bottom:.8rem">${btns}</div>
+      <button id="sel-nuevo-tipo" style="width:100%;background:var(--surf2);color:var(--ink);border:2px dashed var(--brd);border-radius:10px;padding:.7rem;cursor:pointer;font-size:.85rem;font-weight:700;margin-bottom:.6rem">➕ Crear nuevo tipo de tarea</button>
+      <button id="sel-cancel" style="width:100%;background:var(--surf3);color:var(--ink2);border:1px solid var(--brd);border-radius:8px;padding:.55rem;cursor:pointer;font-size:.82rem">Cancelar</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  // Click en tipo existente
+  overlay.querySelectorAll('[data-tipo]').forEach(function(btn){
+    btn.onclick=function(){
+      const tipoId=btn.getAttribute('data-tipo');
+      document.body.removeChild(overlay);
+      fTask={...defTask(fecha),tipoTarea:tipoId,usaOT:true};editTaskId=null;
+      S.tab='tareas';rerender();
+    };
+  });
+  // Crear nuevo tipo
+  document.getElementById('sel-nuevo-tipo').onclick=function(){
+    document.body.removeChild(overlay);
+    crearNuevoTipoTarea(fecha);
+  };
+  document.getElementById('sel-cancel').onclick=function(){document.body.removeChild(overlay);};
+}
+
+// Colores predefinidos para nuevos tipos
+var COLORES_TIPO=['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899','#14b8a6','#f59e0b'];
+var ICONOS_TIPO=['📌','🔩','🛠','⚙️','🔨','📐','🏗','🔌','💡','🪛','🔑','📦','🚧','🪚','🔬'];
+
+function crearNuevoTipoTarea(fecha){
+  const overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
+  overlay.innerHTML=`
+    <div style="background:var(--surf);border-radius:16px;padding:1.5rem;max-width:340px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+      <div style="font-weight:900;font-size:1rem;color:var(--ink);margin-bottom:1rem">🆕 Nuevo tipo de tarea</div>
+      <div style="margin-bottom:.8rem">
+        <label style="font-size:.78rem;font-weight:700;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em">Nombre del tipo</label>
+        <input id="tipo-nombre" type="text" placeholder="Ej: MANTENIMIENTO, GUARDIA..." maxlength="20"
+          style="width:100%;margin-top:.3rem;padding:.6rem;border-radius:8px;border:1px solid var(--brd);background:var(--surf2);color:var(--ink);font-size:.95rem;font-weight:700">
+      </div>
+      <div style="margin-bottom:.8rem">
+        <label style="font-size:.78rem;font-weight:700;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em">Color</label>
+        <div id="tipo-colores" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.4rem">
+          ${COLORES_TIPO.map((c,i)=>`<button data-color="${c}" style="width:28px;height:28px;background:${c};border:2px solid transparent;border-radius:6px;cursor:pointer;flex-shrink:0" title="${c}"></button>`).join('')}
+        </div>
+        <input id="tipo-color-val" type="hidden" value="${COLORES_TIPO[0]}">
+      </div>
+      <div style="margin-bottom:1rem">
+        <label style="font-size:.78rem;font-weight:700;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em">Icono</label>
+        <div id="tipo-iconos" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.4rem">
+          ${ICONOS_TIPO.map((ic,i)=>`<button data-icono="${ic}" style="width:32px;height:32px;font-size:1.1rem;border:2px solid ${i===0?'var(--acc)':'var(--brd)'};border-radius:6px;cursor:pointer;background:var(--surf2)">${ic}</button>`).join('')}
+        </div>
+        <input id="tipo-icono-val" type="hidden" value="${ICONOS_TIPO[0]}">
+      </div>
+      <div style="display:flex;gap:.6rem">
+        <button id="tipo-cancel" style="flex:1;background:var(--surf3);color:var(--ink2);border:1px solid var(--brd);border-radius:8px;padding:.65rem;cursor:pointer;font-size:.85rem">Cancelar</button>
+        <button id="tipo-ok" style="flex:2;background:var(--acc);color:#000;border:none;border-radius:8px;padding:.65rem;cursor:pointer;font-size:.9rem;font-weight:800">✅ Crear y usar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  // Seleccionar color
+  overlay.querySelectorAll('[data-color]').forEach(function(btn){
+    btn.onclick=function(){
+      overlay.querySelectorAll('[data-color]').forEach(function(b){b.style.border='2px solid transparent';});
+      btn.style.border='2px solid #fff';
+      document.getElementById('tipo-color-val').value=btn.getAttribute('data-color');
+    };
+  });
+  // Seleccionar icono
+  overlay.querySelectorAll('[data-icono]').forEach(function(btn){
+    btn.onclick=function(){
+      overlay.querySelectorAll('[data-icono]').forEach(function(b){b.style.border='2px solid var(--brd)';});
+      btn.style.border='2px solid var(--acc)';
+      document.getElementById('tipo-icono-val').value=btn.getAttribute('data-icono');
+    };
+  });
+  document.getElementById('tipo-cancel').onclick=function(){document.body.removeChild(overlay);mostrarSelectorTipoTarea(fecha);};
+  document.getElementById('tipo-ok').onclick=function(){
+    const nombre=document.getElementById('tipo-nombre').value.trim().toUpperCase();
+    if(!nombre){alert('Escribe un nombre para el tipo');return;}
+    const color=document.getElementById('tipo-color-val').value;
+    const icono=document.getElementById('tipo-icono-val').value;
+    const id=nombre.toLowerCase().replace(/[^a-z0-9]/g,'_');
+    if(taskTypes.find(t=>t.id===id)){alert('Ya existe un tipo con ese nombre');return;}
+    taskTypes.push({id,nombre,icono,color});
+    saveTaskTypes(taskTypes);
+    document.body.removeChild(overlay);
+    fTask={...defTask(fecha),tipoTarea:id,usaOT:true};editTaskId=null;
+    S.tab='tareas';rerender();
+    showAlert('Tipo "'+nombre+'" creado ✓');
+  };
+}
+
+// ── RENDER TAREAS POR TIPO (tab dinámico) ────────────────
+// ── GESTOR DE TIPOS DE TAREA ──────────────────────────────
+function mostrarGestorTipos(){
+  const overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
+  function renderContent(){
+    overlay.innerHTML=`
+      <div style="background:var(--surf);border-radius:16px;padding:1.5rem;max-width:340px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.5);max-height:80vh;overflow-y:auto">
+        <div style="font-weight:900;font-size:1rem;color:var(--ink);margin-bottom:1rem">⚙️ Tipos de tarea</div>
+        ${taskTypes.map(t=>`
+          <div style="display:flex;align-items:center;gap:.6rem;padding:.6rem 0;border-bottom:1px solid var(--brd)">
+            <span style="font-size:1.2rem">${t.icono}</span>
+            <span style="font-weight:700;color:${t.color};flex:1">${t.nombre}</span>
+            ${t.id!=='ot'?`<button data-del="${t.id}" style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:3px 10px;cursor:pointer;font-size:.75rem;font-weight:700">🗑 Eliminar</button>`:'<span style="font-size:.72rem;color:var(--ink3)">predefinido</span>'}
+          </div>`).join('')}
+        <button id="gestor-nuevo" style="width:100%;margin-top:.8rem;background:var(--surf2);color:var(--ink);border:2px dashed var(--brd);border-radius:8px;padding:.6rem;cursor:pointer;font-size:.85rem;font-weight:700">➕ Crear nuevo tipo</button>
+        <button id="gestor-cerrar" style="width:100%;margin-top:.5rem;background:var(--surf3);color:var(--ink2);border:1px solid var(--brd);border-radius:8px;padding:.55rem;cursor:pointer;font-size:.82rem">Cerrar</button>
+      </div>`;
+    overlay.querySelectorAll('[data-del]').forEach(function(btn){
+      btn.onclick=function(){
+        const id=btn.getAttribute('data-del');
+        const tipo=taskTypes.find(t=>t.id===id);
+        if(!confirm('¿Eliminar el tipo "'+tipo.nombre+'"?'))return;
+        taskTypes=taskTypes.filter(t=>t.id!==id);
+        saveTaskTypes(taskTypes);
+        if(S.tab==='tipo_'+id) S.tab='fichar';
+        rerender();
+        renderContent();
+      };
+    });
+    document.getElementById('gestor-nuevo').onclick=function(){
+      document.body.removeChild(overlay);
+      crearNuevoTipoTarea(today());
+    };
+    document.getElementById('gestor-cerrar').onclick=function(){document.body.removeChild(overlay);};
+  }
+  document.body.appendChild(overlay);
+  renderContent();
+}
+
+function renderTareasPorTipo(tipoId){
+  const tipo=taskTypes.find(t=>t.id===tipoId)||{nombre:tipoId,icono:'📌',color:'#64748b'};
+  const tareasDelTipo=(S.tasks||[]).filter(t=>t.tipoTarea===tipoId&&t.otNumero);
+  return h('div',{},
+    h('div',{class:'card',style:{borderLeft:'4px solid '+tipo.color}},
+      h('div',{class:'sec-title',style:{color:tipo.color}},tipo.icono+' '+tipo.nombre+' — '+tareasDelTipo.length+' tareas'),
+      h('button',{class:'btn btn-g btn-sm',style:{marginBottom:'.5rem'},
+        on:{click:()=>{fTask={...defTask(today()),tipoTarea:tipoId,usaOT:true};editTaskId=null;S.tab='tareas';rerender();}}
+      },'➕ Nueva tarea '+tipo.nombre),
+      h('button',{class:'btn btn-r btn-sm',style:{marginBottom:'.5rem',marginLeft:'.4rem'},
+        on:{click:()=>{
+          if(!confirm('¿Eliminar el tipo "'+tipo.nombre+'"? Las tareas existentes no se borran.'))return;
+          taskTypes=taskTypes.filter(t=>t.id!==tipoId);
+          saveTaskTypes(taskTypes);
+          S.tab='fichar';rerender();
+          showAlert('Tipo "'+tipo.nombre+'" eliminado');
+        }}
+      },'🗑 Eliminar tipo')
+    ),
+    tareasDelTipo.length===0
+      ? h('div',{class:'card',style:{color:'var(--ink3)',fontSize:'.85rem'}},tipo.icono+' Sin tareas '+tipo.nombre+' registradas aún')
+      : h('div',{},
+          ...tareasDelTipo.map(t=>renderTaskCard(t))
+        )
+  );
+}
+
 async function adjuntarTareaADia(t){
   // Show date picker modal instead of prompt
   const fecha = await new Promise(resolve => {
@@ -1814,7 +2024,7 @@ async function adjuntarTareaADia(t){
     box.style.cssText = 'background:var(--surf);border-radius:14px;padding:1.5rem;max-width:320px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.4)';
     box.innerHTML = '<div style="font-weight:800;font-size:1rem;color:var(--ink);margin-bottom:1rem">📅 Adjuntar tarea al día</div>'
       +'<div style="font-size:.85rem;color:var(--ink2);margin-bottom:.3rem">'+t.titulo+'</div>'
-      +'<div style="font-size:.8rem;color:var(--ink3);margin-bottom:.8rem">OT: '+t.otNumero+'</div>'
+      +'<div style="font-size:.8rem;color:var(--ink3);margin-bottom:.8rem">'+(taskTypes.find(function(x){return x.id===(t.tipoTarea||'ot');})||{nombre:'OT'}).nombre+': '+(t.otNumero||'')+' </div>'
       +'<input type="date" id="adj-date" value="'+(t.fecha||today())+'" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--brd);background:var(--surf2);color:var(--ink);font-size:1rem;margin-bottom:1rem">'
       +'<div style="display:flex;gap:.6rem;justify-content:flex-end">'
       +'<button id="adj-cancel" style="padding:.5rem 1rem;border-radius:8px;border:1px solid var(--brd);background:var(--surf3);color:var(--ink);cursor:pointer;font-weight:600">Cancelar</button>'
@@ -1881,7 +2091,7 @@ function renderTaskCard(t){
       site?h('span',{},`📍 ${site.nombre}`):'',
       wo?h('span',{class:'badge badge-y'},`🔧 ${wo.codigo}`):''
     ),
-    t.otNumero?h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.3rem'}},`Nº O.T.: ${t.otNumero}`):null,
+    t.otNumero?(()=>{const tp=taskTypes.find(x=>x.id===(t.tipoTarea||'ot'))||{nombre:'O.T.',color:'#f59e0b',icono:'🔧'};return h('div',{style:{fontSize:'.72rem',color:tp.color,marginBottom:'.3rem',fontWeight:700}},tp.icono+' '+tp.nombre+': '+t.otNumero);})():null,
     t.descripcion?h('div',{style:{fontSize:'.8rem',color:'var(--ink2)',marginBottom:'.4rem'},html:t.descripcion.replace(/<[^>]*>/g,'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&')}):null,
     (t.fotos||[]).length>0
       ? h('div',{class:'photo-grid'},...t.fotos.map(f=>h('img',{src:f,class:'photo-thumb'})))
@@ -3922,7 +4132,7 @@ function renderModalResumenDia(){
                   background:'#f59e0b',color:'#1e293b',borderRadius:'5px',
                   padding:'.15rem .6rem',fontSize:'.75rem',fontWeight:800,
                   letterSpacing:'.04em'
-                }},'OT '+t.otNumero)
+                }},( (taskTypes.find(x=>x.id===(t.tipoTarea||'ot'))||{nombre:'OT'}).nombre+' '+t.otNumero ))
               ):null,
               h('div',{style:{fontWeight:700,fontSize:'.85rem',color:'#1e293b',lineHeight:1.6}},
                 ...lineas.map(l=>h('div',{},l))
@@ -4064,7 +4274,7 @@ function shareResumen(method, conPrecios){
       const titulo = (t.titulo||'Sin título').replace(/<[^>]*>/g,'');
       const lineas = titulo.split('\n').map(l=>l.trim()).filter(Boolean);
       lineas.forEach((l,i)=>lines.push((i===0?'▸ ':  '  ')+l));
-      if(t.otNumero) lines.push('  📋 OT: '+t.otNumero);
+      if(t.otNumero){const _tp=taskTypes.find(x=>x.id===(t.tipoTarea||'ot'))||{icono:'📋',nombre:'OT'};lines.push('  '+_tp.icono+' '+_tp.nombre+': '+t.otNumero);}
       lines.push('');
     });
   }
@@ -4232,7 +4442,7 @@ function generarPDFResumen(conPrecios){
       const titulo = (t.titulo||'Sin título').replace(/<[^>]*>/g,'');
       const lineas = titulo.split('\n').map(l=>l.trim()).filter(Boolean);
       return `<div class="tarea-item">
-        ${t.otNumero?`<div class="ot-badge">OT ${t.otNumero}</div>`:''}
+        ${t.otNumero?(function(){var _tp=(typeof taskTypes!=='undefined'?taskTypes:[]).find(function(x){return x.id===(t.tipoTarea||'ot');})||{nombre:'OT',color:'#f59e0b'};return '<div class="ot-badge" style="background:'+_tp.color+';color:'+(_tp.id==='ot'?'#1e293b':'#fff')+'">'+_tp.nombre+' '+t.otNumero+'</div>';})():''}
         <div class="tarea-texto">${lineas.map(l=>`<div class="tarea-linea">${l}</div>`).join('')}</div>
         ${t.horaInicio?`<div class="tarea-hora">🕐 ${t.horaInicio}${t.horaFin?' → '+t.horaFin:''}</div>`:''}
       </div>`;
@@ -4431,7 +4641,7 @@ async function compartirComoImagen(conPrecios){
         var hf=t.horaFin||'';
         var horasHtml=(hi||hf)?'<div style="font-size:14px;font-weight:900;color:#000000;margin-top:6px;padding:4px 0;border-top:2px solid #f59e0b">'+(hi||'--')+(hf?' \u2192 '+hf:'')+'</div>':'';
         html += '<div style="background:#fefce8;border:1px solid #fef08a;border-radius:8px;padding:9px 12px;margin-bottom:5px">'
-          +(t.otNumero?'<div style="margin-bottom:5px"><span style="background:#f59e0b;color:#1e293b;border-radius:4px;padding:2px 9px;font-size:10px;font-weight:800">OT '+t.otNumero+'</span></div>':'')
+          +(t.otNumero?(function(){var _tp=taskTypes.find(function(x){return x.id===(t.tipoTarea||'ot');})||{nombre:'OT',color:'#f59e0b',icono:'🔧'};return '<div style="margin-bottom:5px"><span style="background:'+_tp.color+';color:'+(_tp.id==='ot'?'#1e293b':'#fff')+';border-radius:4px;padding:2px 9px;font-size:10px;font-weight:800">'+_tp.icono+' '+_tp.nombre+' '+t.otNumero+'</span></div>';})():'')
           +'<div style="font-weight:700;font-size:12px;line-height:1.6">'
           +lineas.map(function(l){return '<div>'+l+'</div>';}).join('')
           +'</div>'
