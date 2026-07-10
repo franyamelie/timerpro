@@ -4081,7 +4081,18 @@ function renderModalResumenDia(){
             h('div',{style:{fontSize:'1.4rem',fontWeight:900}},eur(totalI)),
             h('div',{style:{fontSize:'.68rem',opacity:.75,marginTop:'.1rem'}},'TOTAL A COBRAR')
           ):null
-        )
+        ),
+        // Horario entrada → salida
+        (()=>{
+          const hEnt=e.horaEntrada||e._horaInicioManual||(e.fichajes&&e.fichajes[0]?e.fichajes[0].entrada:'');
+          const hSal=e.horaSalida||e._horaFinManual||(e.fichajes&&e.fichajes.length>0?e.fichajes[e.fichajes.length-1].salida:'');
+          if(!hEnt&&!hSal) return null;
+          const desc=e.timerDeduct||0;
+          return h('div',{style:{background:'rgba(255,255,255,.1)',borderRadius:'8px',padding:'.6rem 1rem',marginTop:'.6rem',textAlign:'center'}},
+            h('div',{style:{fontSize:'1.1rem',fontWeight:900,letterSpacing:'.05em'}},(hEnt||'--')+' → '+(hSal||'--')),
+            h('div',{style:{fontSize:'.68rem',opacity:.75,marginTop:'.1rem'}},'HORARIO'+(desc>0?' (-'+desc+' min descanso)':''))
+          );
+        })()
       ),
 
       // Cuerpo
