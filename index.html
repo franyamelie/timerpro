@@ -323,7 +323,7 @@ const defEntry = () => ({
   fecha:today(), fichajes:[], horasNormales:0, precioHoraNormal:0, importeNormales:0,
   horasExtra:0, precioHoraExtra:0, importeExtra:0, horasNocturnas:0, precioHoraNocturna:0, importeNocturnas:0,
   horasFestivas:0, precioHoraFestiva:0, importeFestivas:0, dieta:0, dietasExtra:[], transporte:0,
-  otrosConceptos:[], notas:'', journeys:[], ubicacionEntrada:'', ubicacionSalida:'',
+  otrosConceptos:[], notas:'', journeys:[], ubicacionEntrada:'', ubicacionSalida:'', horaEntrada:'', horaSalida:'',
   entradaLocked:false, fotosGastos:[], timerDeduct:0
 });
 const defFichaje = () => ({_fid:Date.now(), entrada:'', salida:'', nota:'', editing:false, taskId:'', timerRunning:false, timerStart:null});
@@ -853,13 +853,10 @@ function renderDayCard(){
       ),
       h('div',{style:{display:'flex',gap:'.8rem',flexWrap:'wrap'}},[
         (()=>{
-          // Calcular hora entrada y salida total de los fichajes
-          // Usar fEntry como prioridad para horas manuales (puede tener datos más nuevos que S.entries)
-          const _hIni=fEntry._horaInicioManual||e._horaInicioManual||'';
-          const _hFin=fEntry._horaFinManual||timerEndManual||e._horaFinManual||'';
+          // Calcular hora entrada y salida — prioridad: fEntry > entrada guardada > fichajes
           const fichs=(e.fichajes||[]).filter(f=>f.entrada);
-          const priEnt=fichs.length>0?fichs[0].entrada:_hIni;
-          const ulSal=fichs.length>0?(fichs[fichs.length-1].salida||_hFin):_hFin;
+          const priEnt=fEntry.horaEntrada||e.horaEntrada||(fichs.length>0?fichs[0].entrada:'');
+          const ulSal=fEntry.horaSalida||e.horaSalida||(fichs.length>0?(fichs[fichs.length-1].salida||''):'');
           const desc=(e.timerDeduct||0);
           const hStr=horasT>0?horasT+'h':'';
           let rango='';
@@ -1034,68 +1031,71 @@ function renderFichar(){
           'min'
         )
       ),
-      // Manual start/end times
+      // ── HORA ENTRADA / SALIDA JORNADA (campos directos, se guardan inmediatamente) ──
       h('div',{class:'grid-2',style:{marginBottom:'.6rem'}},
         h('div',{class:'field',style:{margin:0}},
-          h('label',{},'HORA INICIO (manual o real)'),
+          h('label',{style:{color:'var(--acc)',fontWeight:800}},'🕐 HORA ENTRADA'),
           h('div',{style:{display:'flex',gap:'.3rem'}},
-            h('input',{type:'time',id:'timer-start-manual',
-              value:timerStart?new Date(timerStart).toTimeString().slice(0,5):'',
-              style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem .5rem',color:'var(--ink)',fontSize:'.85rem'},
-              on:{change:ev=>{
-                if(ev.target.value){
-                  const[h,m]=ev.target.value.split(':').map(Number);
-                  const d=new Date(); d.setHours(h,m,0,0);
-                  if(!timerRunning) timerStart=d.getTime()-timerElapsed*1000;
-                  fEntry._horaInicioManual=ev.target.value;
-                  scheduleDraftSave();
-                }
-              }}}),
-            h('button',{class:'btn btn-b btn-sm',title:'Abrir reloj',
-              style:{fontSize:'1.1rem',padding:'.3rem .5rem'},
+            h('input',{
+              type:'text',
+              id:'hora-entrada-jornada',
+              value:fEntry.horaEntrada||'',
+              maxlength:'5',
+              placeholder:'07:00',
+              style:{flex:1,background:'var(--surf2)',border:'2px solid var(--acc)',borderRadius:'var(--r2)',padding:'.5rem .6rem',color:'var(--ink)',fontSize:'1rem',fontWeight:700,textAlign:'center'},
+              on:{
+                input:ev=>{fEntry.horaEntrada=ev.target.value;},
+                blur:ev=>{fEntry.horaEntrada=ev.target.value;scheduleDraftSave();}
+              }
+            }),
+            h('button',{class:'btn btn-b btn-sm',style:{fontSize:'1.1rem',padding:'.3rem .5rem'},
               on:{click:()=>{
-                const cur=document.getElementById('timer-start-manual')?.value||'';
-                showClockPicker(cur,v=>{
-                  const[h,m]=v.split(':').map(Number);
-                  const d=new Date(); d.setHours(h,m,0,0);
-                  timerStart=d.getTime()-timerElapsed*1000;
-                  fEntry._horaInicioManual=v;
-                  const inp=document.getElementById('timer-start-manual');
-                  if(inp) inp.value=v;
+                showClockPicker(fEntry.horaEntrada||'',v=>{
+                  fEntry.horaEntrada=v;
                   scheduleDraftSave();
                   rerender();
                 });
               }}},'🕐'),
-            h('button',{class:'btn btn-gh btn-sm',title:'Poner hora actual',on:{click:()=>{
-              const now=new Date();
-              const inp=document.getElementById('timer-start-manual');
-              if(inp) inp.value=now.toTimeString().slice(0,5);
-              timerStart=Date.now()-timerElapsed*1000;
-              rerender();
-            }}},'Ahora')
+            h('button',{class:'btn btn-gh btn-sm',
+              on:{click:()=>{
+                const now=new Date();
+                fEntry.horaEntrada=pad(now.getHours())+':'+pad(now.getMinutes());
+                if(!timerRunning) timerStart=Date.now()-timerElapsed*1000;
+                scheduleDraftSave();
+                rerender();
+              }}},'Ahora')
           )
         ),
         h('div',{class:'field',style:{margin:0}},
-          h('label',{},'HORA FIN (al finalizar)'),
+          h('label',{style:{color:'#ef4444',fontWeight:800}},'🏁 HORA SALIDA'),
           h('div',{style:{display:'flex',gap:'.3rem',alignItems:'center'}},
-            h('input',{type:'text',id:'timer-end-manual',maxlength:'5',pattern:'[0-9]{2}:[0-9]{2}',
-              value:timerEndManual,
-              style:{flex:1,background:'var(--surf2)',border:'1.5px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem .5rem',color:'var(--ink)',fontSize:'.9rem'},
-              placeholder:'--:--',
-              on:{change:ev=>{timerEndManual=ev.target.value;fEntry._horaFinManual=ev.target.value;scheduleDraftSave();},input:ev=>{timerEndManual=ev.target.value;fEntry._horaFinManual=ev.target.value;}}})  ,
+            h('input',{
+              type:'text',
+              id:'hora-salida-jornada',
+              value:fEntry.horaSalida||'',
+              maxlength:'5',
+              placeholder:'15:00',
+              style:{flex:1,background:'var(--surf2)',border:'2px solid #ef4444',borderRadius:'var(--r2)',padding:'.5rem .6rem',color:'var(--ink)',fontSize:'1rem',fontWeight:700,textAlign:'center'},
+              on:{
+                input:ev=>{fEntry.horaSalida=ev.target.value;},
+                blur:ev=>{fEntry.horaSalida=ev.target.value;scheduleDraftSave();}
+              }
+            }),
             h('button',{class:'btn btn-b btn-sm',style:{fontSize:'1.1rem',padding:'.3rem .5rem'},
-              title:'Abrir reloj para hora fin',
               on:{click:()=>{
-                const cur=document.getElementById('timer-end-manual')?.value||'';
-                showClockPicker(cur,v=>{
-                  timerEndManual=v;
-                  fEntry._horaFinManual=v;
-                  const inp=document.getElementById('timer-end-manual');
-                  if(inp) inp.value=v;
+                showClockPicker(fEntry.horaSalida||'',v=>{
+                  fEntry.horaSalida=v;
                   scheduleDraftSave();
                   rerender();
                 });
-              }}},'🕐')
+              }}},'🕐'),
+            h('button',{class:'btn btn-gh btn-sm',
+              on:{click:()=>{
+                const now=new Date();
+                fEntry.horaSalida=pad(now.getHours())+':'+pad(now.getMinutes());
+                scheduleDraftSave();
+                rerender();
+              }}},'Ahora')
           )
         )
       ),
@@ -4557,6 +4557,7 @@ function generarPDFResumen(conPrecios){
   </div>
   <div class="kpis">
     <div class="kpi"><div class="kpi-val">${fmtH(totalH)}</div><div class="kpi-label">HORAS TRABAJADAS</div></div>
+    ${(e.horaEntrada||e._horaInicioManual)?`<div class="kpi"><div class="kpi-val" style="font-size:1rem">${e.horaEntrada||e._horaInicioManual||'--'} → ${e.horaSalida||e._horaFinManual||'--'}</div><div class="kpi-label">HORARIO</div></div>`:''}
     ${cp?`<div class="kpi"><div class="kpi-val">${eur(totalI)}</div><div class="kpi-label">TOTAL A COBRAR</div></div>`:''}
   </div>
 </div>
