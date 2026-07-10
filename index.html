@@ -854,9 +854,12 @@ function renderDayCard(){
       h('div',{style:{display:'flex',gap:'.8rem',flexWrap:'wrap'}},[
         (()=>{
           // Calcular hora entrada y salida total de los fichajes
+          // Usar fEntry como prioridad para horas manuales (puede tener datos más nuevos que S.entries)
+          const _hIni=fEntry._horaInicioManual||e._horaInicioManual||'';
+          const _hFin=fEntry._horaFinManual||timerEndManual||e._horaFinManual||'';
           const fichs=(e.fichajes||[]).filter(f=>f.entrada);
-          const priEnt=fichs.length>0?fichs[0].entrada:(e._horaInicioManual||'');
-          const ulSal=fichs.length>0?(fichs[fichs.length-1].salida||e._horaFinManual||''):(e._horaFinManual||'');
+          const priEnt=fichs.length>0?fichs[0].entrada:_hIni;
+          const ulSal=fichs.length>0?(fichs[fichs.length-1].salida||_hFin):_hFin;
           const desc=(e.timerDeduct||0);
           const hStr=horasT>0?horasT+'h':'';
           let rango='';
@@ -1056,8 +1059,10 @@ function renderFichar(){
                   const[h,m]=v.split(':').map(Number);
                   const d=new Date(); d.setHours(h,m,0,0);
                   timerStart=d.getTime()-timerElapsed*1000;
+                  fEntry._horaInicioManual=v;
                   const inp=document.getElementById('timer-start-manual');
                   if(inp) inp.value=v;
+                  scheduleDraftSave();
                   rerender();
                 });
               }}},'🕐'),
@@ -1073,7 +1078,7 @@ function renderFichar(){
         h('div',{class:'field',style:{margin:0}},
           h('label',{},'HORA FIN (al finalizar)'),
           h('div',{style:{display:'flex',gap:'.3rem',alignItems:'center'}},
-            h('input',{type:'time',id:'timer-end-manual',
+            h('input',{type:'text',id:'timer-end-manual',maxlength:'5',pattern:'[0-9]{2}:[0-9]{2}',
               value:timerEndManual,
               style:{flex:1,background:'var(--surf2)',border:'1.5px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem .5rem',color:'var(--ink)',fontSize:'.9rem'},
               placeholder:'--:--',
@@ -1083,8 +1088,12 @@ function renderFichar(){
               on:{click:()=>{
                 const cur=document.getElementById('timer-end-manual')?.value||'';
                 showClockPicker(cur,v=>{
+                  timerEndManual=v;
+                  fEntry._horaFinManual=v;
                   const inp=document.getElementById('timer-end-manual');
                   if(inp) inp.value=v;
+                  scheduleDraftSave();
+                  rerender();
                 });
               }}},'🕐')
           )
