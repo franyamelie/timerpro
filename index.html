@@ -487,16 +487,18 @@ function initFieldAreas(){
 // This is more reliable than virtual DOM events for critical form state
 function attachFichajeListeners(){
   requestAnimationFrame(()=>{
-    document.querySelectorAll('.fich-row').forEach((row,i)=>{
+    fEntry.fichajes.forEach((fj,i)=>{
       if(!fEntry.fichajes[i]) return;
-      const times=row.querySelectorAll('input[type="text"]'); // fichaje inputs are type=text
-      if(times[0]){
-        times[0].oninput=ev=>{ if(fEntry.fichajes[i]&&ev.target.value) fEntry.fichajes[i].entrada=ev.target.value; };
-        times[0].onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].entrada=ev.target.value; scheduleDraftSave(); } };
+      // Usar IDs únicos para evitar problemas con re-renders del DOM
+      const entEl=document.getElementById('fich-ent-'+fj._fid);
+      const salEl=document.getElementById('fich-sal-'+fj._fid);
+      if(entEl){
+        entEl.oninput=ev=>{ if(fEntry.fichajes[i]&&ev.target.value) fEntry.fichajes[i].entrada=ev.target.value; };
+        entEl.onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].entrada=ev.target.value; scheduleDraftSave(); } };
       }
-      if(times[1]){
-        times[1].oninput=ev=>{ if(fEntry.fichajes[i]&&ev.target.value) fEntry.fichajes[i].salida=ev.target.value; };
-        times[1].onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].salida=ev.target.value; scheduleDraftSave(); } };
+      if(salEl){
+        salEl.oninput=ev=>{ if(fEntry.fichajes[i]&&ev.target.value) fEntry.fichajes[i].salida=ev.target.value; };
+        salEl.onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].salida=ev.target.value; scheduleDraftSave(); } };
       }
       // Textarea for nota
       const nota=row.querySelector('textarea');
@@ -552,9 +554,11 @@ function captureFormState(){
     fichRows.forEach((row,i)=>{
       if(!fEntry.fichajes[i]) return;
       // Read text inputs in order: first=entrada, second=salida
-      const textInputs=Array.from(row.querySelectorAll('input[type="text"]'));
-      if(textInputs[0]&&textInputs[0].value) fEntry.fichajes[i].entrada=textInputs[0].value;
-      if(textInputs[1]&&textInputs[1].value) fEntry.fichajes[i].salida=textInputs[1].value;
+      // Usar IDs únicos para capturar valores con precisión
+      const entEl=document.getElementById('fich-ent-'+fEntry.fichajes[i]._fid);
+      const salEl=document.getElementById('fich-sal-'+fEntry.fichajes[i]._fid);
+      if(entEl&&entEl.value) fEntry.fichajes[i].entrada=entEl.value;
+      if(salEl&&salEl.value) fEntry.fichajes[i].salida=salEl.value;
       // Read nota from textarea only
       const notaEl=row.querySelector('textarea');
       if(notaEl) fEntry.fichajes[i].nota=notaEl.value||fEntry.fichajes[i].nota||'';
@@ -776,11 +780,12 @@ function autoCalcHorasFromFichajes(){
   if(!fEntry.fichajes || fEntry.fichajes.length===0) return;
   // Si ya hay horas normales o extras introducidas manualmente, no sobreescribir
   if(fEntry.horasNormales>0 || fEntry.horasExtra>0) return;
-  document.querySelectorAll('.fich-row').forEach((row,i)=>{
+  fEntry.fichajes.forEach((fj,i)=>{
     if(!fEntry.fichajes[i]) return;
-    const ti=Array.from(row.querySelectorAll('input[type="text"]'));
-    if(ti[0]&&ti[0].value) fEntry.fichajes[i].entrada=ti[0].value;
-    if(ti[1]&&ti[1].value) fEntry.fichajes[i].salida=ti[1].value;
+    const _eEl=document.getElementById('fich-ent-'+fj._fid);
+    const _sEl=document.getElementById('fich-sal-'+fj._fid);
+    if(_eEl&&_eEl.value) fEntry.fichajes[i].entrada=_eEl.value;
+    if(_sEl&&_sEl.value) fEntry.fichajes[i].salida=_sEl.value;
   });
   let totalMins=0;
   fEntry.fichajes.forEach(fj=>{
@@ -1575,13 +1580,12 @@ function renderFichar(){
                     const notasEl=document.getElementById('notas-editor');
                     if(notasEl&&notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
                     // Read inputs directly before snapshot
-                    document.querySelectorAll('.fich-row').forEach((row,i)=>{
+                    fEntry.fichajes.forEach((fj,i)=>{
                       if(!fEntry.fichajes[i]) return;
-                      const ti=Array.from(row.querySelectorAll('input[type="text"]'));
-                      if(ti[0]&&ti[0].value) fEntry.fichajes[i].entrada=ti[0].value;
-                      if(ti[1]&&ti[1].value) fEntry.fichajes[i].salida=ti[1].value;
-                      const nota=row.querySelector('textarea');
-                      if(nota) fEntry.fichajes[i].nota=nota.value||fEntry.fichajes[i].nota||'';
+                      const _eEl=document.getElementById('fich-ent-'+fj._fid);
+                      const _sEl=document.getElementById('fich-sal-'+fj._fid);
+                      if(_eEl&&_eEl.value) fEntry.fichajes[i].entrada=_eEl.value;
+                      if(_sEl&&_sEl.value) fEntry.fichajes[i].salida=_sEl.value;
                     });
                     const saved={...fEntry,fecha:en.fecha,id:en.id};
                     dbPut(ST.entries,{...saved,_draft:false}).then(()=>{
@@ -5613,13 +5617,12 @@ async function saveEntry(){
 
     // BULLETPROOF: read ALL fichaje times directly from DOM right before saving
     // Read ALL fichaje inputs directly before saving
-    document.querySelectorAll('.fich-row').forEach((row,i)=>{
+    fEntry.fichajes.forEach((fj,i)=>{
       if(!fEntry.fichajes[i]) return;
-      const ti=Array.from(row.querySelectorAll('input[type="text"]'));
-      if(ti[0]&&ti[0].value) fEntry.fichajes[i].entrada=ti[0].value;
-      if(ti[1]&&ti[1].value) fEntry.fichajes[i].salida=ti[1].value;
-      const nota=row.querySelector('textarea');
-      if(nota) fEntry.fichajes[i].nota=nota.value||fEntry.fichajes[i].nota||'';
+      const _eEl=document.getElementById('fich-ent-'+fj._fid);
+      const _sEl=document.getElementById('fich-sal-'+fj._fid);
+      if(_eEl&&_eEl.value) fEntry.fichajes[i].entrada=_eEl.value;
+      if(_sEl&&_sEl.value) fEntry.fichajes[i].salida=_sEl.value;
     });
     console.log('SAVE fichajes:', JSON.stringify((fEntry.fichajes||[]).map(f=>({e:f.entrada,s:f.salida}))));
     if(editingEntry&&fEntry.id){
