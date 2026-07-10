@@ -1077,7 +1077,7 @@ function renderFichar(){
               value:timerEndManual,
               style:{flex:1,background:'var(--surf2)',border:'1.5px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem .5rem',color:'var(--ink)',fontSize:'.9rem'},
               placeholder:'--:--',
-              on:{change:ev=>{timerEndManual=ev.target.value;fEntry._horaFinManual=ev.target.value;scheduleDraftSave();},input:ev=>{timerEndManual=ev.target.value;fEntry._horaFinManual=ev.target.value;}}}),
+              on:{change:ev=>{timerEndManual=ev.target.value;fEntry._horaFinManual=ev.target.value;scheduleDraftSave();},input:ev=>{timerEndManual=ev.target.value;fEntry._horaFinManual=ev.target.value;}}})  ,
             h('button',{class:'btn btn-b btn-sm',style:{fontSize:'1.1rem',padding:'.3rem .5rem'},
               title:'Abrir reloj para hora fin',
               on:{click:()=>{
