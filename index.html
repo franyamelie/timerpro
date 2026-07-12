@@ -2806,7 +2806,7 @@ function openExportModal(mode){
     if(_hasHNoc) filas+=`<tr><td>Horas nocturnas</td><td>${fh(hNoc)}</td>${cp?`<td>${eur2(e.precioHoraNocturna||0)}/h</td><td>${eur2(iNoc)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
     if(_hasHFes) filas+=`<tr><td>Horas festivas</td><td>${fh(hFes)}</td>${cp?`<td>${eur2(e.precioHoraFestiva||0)}/h</td><td>${eur2(iFes)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
     if(_hasDiet) filas+=`<tr><td>Dieta</td><td>1 × ${eur2(diet)}</td>${cp?`<td>${eur2(diet)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
-    if(_hasTC||_hasCam){const tt=(S.transportTypes||[]).find(t=>t.id===e._transportType);filas+=`<tr><td>Transporte${tt?' ('+tt.nombre+')':\'\';}</td><td>1 × ${eur2(transp)}</td>${cp?`<td>${eur2(transp)}</td>`:'<td colspan="2">✓</td>'}</tr>`;}
+    if(_hasTC||_hasCam){const _ttN=(S.transportTypes||[]).find(t=>t.id===e._transportType);const _tn=_ttN?' ('+_ttN.nombre+')':'';filas+=`<tr><td>Transporte${_tn}</td><td>1 × ${eur2(transp)}</td>${cp?'<td>'+eur2(transp)+'</td>':'<td colspan="2">✓</td>'}</tr>`;}
     if(_hasOtros)(e.otrosConceptos||[]).forEach(o=>{if(o.importe>0) filas+=`<tr><td>${o.concepto||'Otro'}</td><td>—</td>${cp?`<td>—</td><td>${eur2(o.importe)}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
     if(_hasViaj)(e.journeys||[]).forEach(j=>{if(j.precioManual>0) filas+=`<tr><td>Viaje</td><td>—</td>${cp?`<td>—</td><td>${eur2(j.precioManual)}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
 
