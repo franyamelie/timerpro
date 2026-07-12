@@ -2731,6 +2731,7 @@ function openExportModal(mode){
   const cp = mode==='con';
   const eur2 = v=>v>0?v.toFixed(2).replace('.',',')+' €':'—';
   const fh = h=>h>0?(h%1===0?h+'h':Math.floor(h)+'h '+Math.round((h%1)*60)+'m'):'—';
+  const fhd = h=>h>0?String(h).replace('.',',')+'h':'—';
   const worker = workers.find(w=>w.id===activeWorkerId)||{};
   const company = companies.find(c=>c.id===activeCompanyId)||{};
 
