@@ -2682,13 +2682,28 @@ function filterTasks(){
 // ── EXPORT FUNCTIONS ─────────────────────────────────────
 // ── RESUMEN: selección de jornadas (rango de fechas O días sueltos) ──
 function getResumenEntries(){
+  let base;
   if(S.resMode==='days'){
     const set=new Set(S.resDays||[]);
-    return S.entries.filter(e=>set.has(e.fecha)&&!e._draft).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    base=S.entries.filter(e=>set.has(e.fecha)&&!e._draft).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  } else {
+    const from=S.resFrom||firstDayOfMonth();
+    const to=S.resTo||today();
+    base=S.entries.filter(e=>e.fecha>=from&&e.fecha<=to&&!e._draft).sort((a,b)=>a.fecha.localeCompare(b.fecha));
   }
-  const from=S.resFrom||firstDayOfMonth();
-  const to=S.resTo||today();
-  return S.entries.filter(e=>e.fecha>=from&&e.fecha<=to&&!e._draft).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  const c=S.resConcepto||'all';
+  if(c==='all') return base;
+  return base.filter(e=>{
+    if(c==='hnormal') return (e.horasNormales||0)>0;
+    if(c==='hextra') return (e.horasExtra||0)>0;
+    if(c==='hnocturna') return (e.horasNocturnas||0)>0;
+    if(c==='hfestiva') return (e.horasFestivas||0)>0;
+    if(c==='dieta') return (e.dieta||0)>0||(e.dietasExtra||[]).length>0;
+    if(c==='coche') return (e._transportType==='coche')&&(e.transporte||0)>0;
+    if(c==='camion') return (e._transportType==='camion')&&(e.transporte||0)>0;
+    if(c==='otros') return (e.otrosConceptos||[]).length>0||(e.journeys||[]).length>0;
+    return true;
+  });
 }
 function resumenPeriodoLabel(){
   if(S.resMode==='days'){
@@ -2776,9 +2791,9 @@ function openExportModal(mode){
     if(hE>0) filas+=`<tr><td>Horas extra</td><td>${fh(hE)}</td>${cp?`<td>${eur2(e.precioHoraExtra||0)}/h</td><td>${eur2(iE)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
     if(hNoc>0) filas+=`<tr><td>Horas nocturnas</td><td>${fh(hNoc)}</td>${cp?`<td>${eur2(e.precioHoraNocturna||0)}/h</td><td>${eur2(iNoc)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
     if(hFes>0) filas+=`<tr><td>Horas festivas</td><td>${fh(hFes)}</td>${cp?`<td>${eur2(e.precioHoraFestiva||0)}/h</td><td>${eur2(iFes)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
-    if(dieta>0) filas+=`<tr><td>Dieta</td><td>—</td>${cp?`<td>—</td><td>${eur2(dieta)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
-    (e.dietasExtra||[]).forEach(d=>{if(d.importe>0) filas+=`<tr><td>${d.concepto||'Dieta extra'}</td><td>—</td>${cp?`<td>—</td><td>${eur2(d.importe)}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
-    if(transp>0){const tt=(S.transportTypes||[]).find(t=>t.id===e._transportType);filas+=`<tr><td>Transporte${tt?' ('+tt.nombre+')':''}</td><td>—</td>${cp?`<td>—</td><td>${eur2(transp)}</td>`:'<td colspan="2">✓</td>'}</tr>`;}
+    if(dieta>0) filas+=`<tr><td>Dieta</td><td>1 × ${eur2(dieta)}</td>${cp?`<td>${eur2(dieta)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
+    (e.dietasExtra||[]).forEach(d=>{if(d.importe>0) filas+=`<tr><td>${d.concepto||'Dieta extra'}</td><td>1 × ${eur2(d.importe)}</td>${cp?`<td>${eur2(d.importe)}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
+    if(transp>0){const tt=(S.transportTypes||[]).find(t=>t.id===e._transportType);filas+=`<tr><td>Transporte${tt?' ('+tt.nombre+')':''}</td><td>1 × ${eur2(transp)}</td>${cp?`<td>${eur2(transp)}</td>`:'<td colspan="2">✓</td>'}</tr>`;}
     (e.otrosConceptos||[]).forEach(o=>{if(o.importe>0) filas+=`<tr><td>${o.concepto||'Otro'}</td><td>—</td>${cp?`<td>—</td><td>${eur2(o.importe)}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
     (e.journeys||[]).forEach(j=>{if(j.precioManual>0) filas+=`<tr><td>Viaje</td><td>—</td>${cp?`<td>—</td><td>${eur2(j.precioManual)}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
 
@@ -2845,7 +2860,7 @@ function openExportModal(mode){
   </div>
   ${diasHtml}
   <div class="resumen">
-    <div class="resumen-head">RESUMEN TOTAL</div>
+    <div class="resumen-head">RESUMEN TOTAL <span style="font-size:.7rem;font-weight:400;opacity:.7">${from.split("-").reverse().join(".")} – ${to.split("-").reverse().join(".")}</span></div>
     <table>
       ${totHN>0?`<tr><td>Horas normales</td><td>${fhd(totHN)}</td>${cp?'<td>'+eur2(totIN)+'</td>':''}</tr>`:''}
       ${totHE>0?`<tr><td>Horas extra</td><td>${fhd(totHE)}</td>${cp?'<td>'+eur2(totIE)+'</td>':''}</tr>`:''}
@@ -3544,8 +3559,13 @@ function renderResumen(){
     otros: acc.otros+(e.otrosConceptos||[]).reduce((s,o)=>s+(o.importe||0),0),
     km: acc.km+(e.journeys||[]).reduce((s,j)=>s+(j.km||0),0),
     viajes: acc.viajes+(e.journeys||[]).reduce((s,j)=>s+(j.km||0)*(j.precioManual||0.19),0),
-    dias: acc.dias+1
-  }),{hn:0,he:0,hnoc:0,hfes:0,in:0,ie:0,inoc:0,ifes:0,diet:0,transp:0,otros:0,km:0,viajes:0,dias:0});
+    dias: acc.dias+1,
+    transpCoche: acc.transpCoche+((e._transportType==='coche')?e.transporte||0:0),
+    transpCamion: acc.transpCamion+((e._transportType==='camion')?e.transporte||0:0),
+    nCoche: acc.nCoche+((e._transportType==='coche'&&(e.transporte||0)>0)?1:0),
+    nCamion: acc.nCamion+((e._transportType==='camion'&&(e.transporte||0)>0)?1:0),
+    nDietas: acc.nDietas+((e.dieta||0)>0?1:0)
+  }),{hn:0,he:0,hnoc:0,hfes:0,in:0,ie:0,inoc:0,ifes:0,diet:0,transp:0,otros:0,km:0,viajes:0,dias:0,transpCoche:0,transpCamion:0,nCoche:0,nCamion:0,nDietas:0});
 
   const totalH = tot.hn+tot.he+tot.hnoc+tot.hfes;
   const totalI = tot.in+tot.ie+tot.inoc+tot.ifes+tot.diet+tot.transp+tot.otros+tot.viajes;
@@ -3650,8 +3670,12 @@ function renderResumen(){
           ['Horas extra', tot.ie,'#f59e0b'],
           ['Horas nocturnas', tot.inoc,'#6366f1'],
           ['Horas festivas', tot.ifes,'#ef4444'],
-          ['Dietas', tot.diet,'#06b6d4'],
-          ['Transporte', tot.transp,'#8b5cf6'],
+          ...(tot.diet>0?[
+            tot.nDietas>0?['Dietas ('+tot.nDietas+' jorn.)', tot.diet,'#06b6d4']:['Dietas', tot.diet,'#06b6d4']
+          ]:[]),
+          ...(tot.transpCoche>0?[['Transp. coche ('+tot.nCoche+' v.)', tot.transpCoche,'#8b5cf6']]:[]),
+          ...(tot.transpCamion>0?[['Transp. camión ('+tot.nCamion+' v.)', tot.transpCamion,'#7c3aed']]:[]),
+          ...(tot.transp-tot.transpCoche-tot.transpCamion>0?[['Transp. otros', tot.transp-tot.transpCoche-tot.transpCamion,'#a78bfa']]:[]),
           ['Viajes (km)', tot.viajes,'#f97316'],
           ['Otros', tot.otros,'#64748b']
         ].filter(([,v])=>v>0).map(([label,v,color])=>
