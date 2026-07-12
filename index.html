@@ -2730,7 +2730,8 @@ const CUSTOM_EXPORT_FIELDS = [
   {key:'firma',      label:'Firma del trabajador (solo PDF)', group:'Detalle'},
   {key:'importes',   label:'Precios e importes (€)',       group:'Económico'},
   {key:'dietas',     label:'Dietas',                       group:'Económico'},
-  {key:'transporte', label:'Transporte',                   group:'Económico'},
+  {key:'transpCoche', label:'Transporte coche',             group:'Económico'},
+  {key:'transpCamion',label:'Transporte camión',            group:'Económico'},
   {key:'otros',      label:'Otros conceptos',               group:'Económico'},
   {key:'viajes',     label:'Viajes / kilometraje',          group:'Económico'},
 ];
@@ -3206,7 +3207,7 @@ function openCustomExportHTML(fields){
   if(!entries.length){showAlert('No hay jornadas que exportar','err');return;}
   const anyField=fields.hNormales||fields.hExtra||fields.hNocturnas||fields.hFestivas||
     fields.fichajes||fields.notas||fields.ubicacion||fields.importes||
-    fields.dietas||fields.transporte||fields.otros||fields.viajes;
+    fields.dietas||fields.transpCoche||fields.transpCamion||fields.otros||fields.viajes;
   if(!anyField){showAlert('Selecciona al menos un dato a mostrar','err');return;}
 
   const worker=workers.find(w=>w.id===activeWorkerId)||{};
@@ -3232,11 +3233,13 @@ function openCustomExportHTML(fields){
     if(fields.hFestivas)totHFes+=hFes;
     if(fields.importes){totIN+=iN;totIE+=iE;totINoc+=iNoc;totIFes+=iFes;}
     if(fields.dietas)totD+=diet;
-    if(fields.transporte)totT+=transp;
+    if(fields.transpCoche&&e._transportType==='coche')totT+=transp;
+    if(fields.transpCamion&&e._transportType==='camion')totT+=transp;
+    if((fields.transpCoche||fields.transpCamion)){}// handled above
     if(fields.otros)totO+=otros;
     if(fields.viajes)totViaj+=viajes;
 
-    const totalDia=(fields.importes?(iN+iE+iNoc+iFes):0)+(fields.dietas?diet:0)+(fields.transporte?transp:0)+(fields.otros?otros:0)+(fields.viajes?viajes:0);
+    const totalDia=(fields.importes?(iN+iE+iNoc+iFes):0)+(fields.dietas?diet:0)+(((fields.transpCoche&&e._transportType==='coche')||(fields.transpCamion&&e._transportType==='camion'))?transp:0)+(fields.otros?otros:0)+(fields.viajes?viajes:0);
     const fichajes=fields.fichajes?(e.fichajes||[]).filter(f=>f.entrada||f.salida):[];
     const notasText=fields.notas?htmlToText(e.notas||''):'';
 
@@ -3246,7 +3249,8 @@ function openCustomExportHTML(fields){
     if(fields.hNocturnas&&hNoc>0)filas+=`<tr><td>Horas nocturnas</td><td>${fh(hNoc)}</td>${fields.importes?`<td>—</td><td>${eur2(iNoc)}</td>`:''}</tr>`;
     if(fields.hFestivas&&hFes>0)filas+=`<tr><td>Horas festivas</td><td>${fh(hFes)}</td>${fields.importes?`<td>—</td><td>${eur2(iFes)}</td>`:''}</tr>`;
     if(fields.dietas&&diet>0)filas+=`<tr><td>Dieta</td><td>—</td>${fields.importes?`<td>—</td><td>${eur2(diet)}</td>`:''}</tr>`;
-    if(fields.transporte&&transp>0){const tt=(S.transportTypes||[]).find(t=>t.id===e._transportType);filas+=`<tr><td>Transporte${tt?' ('+tt.nombre+')':''}</td><td>—</td>${fields.importes?`<td>—</td><td>${eur2(transp)}</td>`:''}</tr>`;}
+    const _tt=e._transportType;
+    if(transp>0&&((_tt==='coche'&&fields.transpCoche)||(_tt==='camion'&&fields.transpCamion))){const tt=(S.transportTypes||[]).find(t=>t.id===_tt);filas+=`<tr><td>Transporte${tt?' ('+tt.nombre+')':''}</td><td>1 × ${eur2(transp)}</td>${fields.importes?`<td>${eur2(transp)}</td>`:''}</tr>`;}
     if(fields.otros)(e.otrosConceptos||[]).forEach(o=>{if(+o.importe>0)filas+=`<tr><td>${o.concepto||'Otro'}</td><td>—</td>${fields.importes?`<td>—</td><td>${eur2(o.importe)}</td>`:''}</tr>`;});
     if(fields.viajes)(e.journeys||[]).forEach(j=>{if(+j.precioManual>0)filas+=`<tr><td>Viaje</td><td>—</td>${fields.importes?`<td>—</td><td>${eur2(j.precioManual)}</td>`:''}</tr>`;});
 
@@ -3324,7 +3328,7 @@ function openCustomExportHTML(fields){
       ${fields.hNocturnas&&totHNoc>0?`<tr><td>Horas nocturnas</td><td>${fh(totHNoc)}</td>${fields.importes?'<td>'+eur2(totINoc)+'</td>':''}</tr>`:''}
       ${fields.hFestivas&&totHFes>0?`<tr><td>Horas festivas</td><td>${fh(totHFes)}</td>${fields.importes?'<td>'+eur2(totIFes)+'</td>':''}</tr>`:''}
       ${fields.dietas&&totD>0?`<tr><td>Dietas</td><td>—</td>${fields.importes?'<td>'+eur2(totD)+'</td>':''}</tr>`:''}
-      ${fields.transporte&&totT>0?`<tr><td>Transporte</td><td>—</td>${fields.importes?'<td>'+eur2(totT)+'</td>':''}</tr>`:''}
+      ${(fields.transpCoche||fields.transpCamion)&&totT>0?`<tr><td>Transporte${fields.transpCoche&&fields.transpCamion?' (coche+camión)':fields.transpCoche?' (coche)':' (camión)'}</td><td>${nCoche+nCamion} viajes</td>${fields.importes?`<td>${eur2(totT)}</td>`:''}</tr>`:''}
       ${fields.otros&&totO>0?`<tr><td>Otros conceptos</td><td>—</td>${fields.importes?'<td>'+eur2(totO)+'</td>':''}</tr>`:''}
       ${fields.viajes&&totViaj>0?`<tr><td>Viajes</td><td>—</td>${fields.importes?'<td>'+eur2(totViaj)+'</td>':''}</tr>`:''}
       <tr class="gran-total"><td>TOTAL${fields.importes&&totTotal>0?' GENERAL':' HORAS'}</td><td>${fh(totH)}</td>${fields.importes&&totTotal>0?'<td>'+totTotal.toFixed(2).replace('.',',')+' €</td>':''}</tr>
@@ -3362,7 +3366,8 @@ async function exportCustomExcel(fields){
     if(fields.hNocturnas){headers.push('H.Nocturnas');if(fields.importes)headers.push('Imp.Nocturnas');}
     if(fields.hFestivas){headers.push('H.Festivas');if(fields.importes)headers.push('Imp.Festivas');}
     if(fields.dietas) headers.push('Dietas');
-    if(fields.transporte) headers.push('Transporte');
+    if(fields.transpCoche) headers.push('Transp. Coche');
+    if(fields.transpCamion) headers.push('Transp. Camión');
     if(fields.otros) headers.push('Otros conceptos');
     if(fields.viajes) headers.push('Viajes');
     if(fields.notas) headers.push('Notas');
@@ -3385,7 +3390,8 @@ async function exportCustomExcel(fields){
       if(fields.hNocturnas){row.push(+e.horasNocturnas||0);if(fields.importes)row.push(+e.importeNocturnas||0);}
       if(fields.hFestivas){row.push(+e.horasFestivas||0);if(fields.importes)row.push(+e.importeFestivas||0);}
       if(fields.dietas) row.push((+e.dieta||0)+((e.dietasExtra||[]).reduce((x,d)=>x+(+d.importe||0),0)));
-      if(fields.transporte) row.push(+e.transporte||0);
+      if(fields.transpCoche) row.push(e._transportType==='coche'?+e.transporte||0:0);
+      if(fields.transpCamion) row.push(e._transportType==='camion'?+e.transporte||0:0);
       if(fields.otros) row.push((e.otrosConceptos||[]).reduce((x,c)=>x+(+c.importe||0),0));
       if(fields.viajes) row.push((e.journeys||[]).reduce((x,j)=>x+(+j.precioManual||0),0));
       if(fields.notas) row.push(htmlToText(e.notas||''));
