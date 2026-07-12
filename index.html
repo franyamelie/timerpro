@@ -3497,9 +3497,11 @@ function renderDateModeCard(){
             S.resTo=last.toISOString().slice(0,10); rerender();
           }}},'Mes anterior')
         )
-  ),
-  // Filtro por concepto
-  h('div',{class:'card',style:{marginTop:'.5rem'}},
+  );
+}
+
+function renderConceptoFilter(){
+  return h('div',{class:'card',style:{marginTop:'.5rem'}},
     h('div',{class:'sec-title',style:{marginBottom:'.5rem'}},'Filtrar por concepto'),
     h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap'}},
       ...[
@@ -3517,7 +3519,6 @@ function renderDateModeCard(){
         on:{click:()=>{S.resConcepto=opt.id;rerender();}}
       },opt.label))
     )
-  )
   );
 }
 
@@ -3590,6 +3591,9 @@ function renderResumen(){
 
     // Date filter / Días sueltos
     renderDateModeCard(),
+
+    // Filtro por concepto
+    renderConceptoFilter(),
 
     entries.length===0
       ? h('div',{class:'card'},h('div',{class:'empty'},S.resMode==='days'?((S.resDays||[]).length===0?'Selecciona uno o varios días en el calendario':'Sin jornadas guardadas en los días seleccionados'):'Sin jornadas en este periodo'))
