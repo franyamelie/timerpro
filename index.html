@@ -2802,6 +2802,7 @@ function openExportModal(mode){
     const locS=e.ubicacionSalida?JSON.parse(e.ubicacionSalida).label||e.ubicacionSalida:'';
     const notasText=(e.notas||'').replace(/<[^>]*>/g,' ').trim();
 
+    if(!filas && !notasText) return;
     diasHtml+=`
     <div class="dia">
       <div class="dia-head">
@@ -3262,6 +3263,7 @@ function openCustomExportHTML(fields){
     }
 
     const thCols=fields.importes?'<th>Concepto</th><th>Horas</th><th>Precio</th><th>Importe</th>':'<th>Concepto</th><th>Horas</th>';
+    if(!filas) return;
 
     // Skip days with no relevant data for selected fields
     if(!filas && !locE && !locS && !(fields.notas&&(e.notas||'').trim())) return;
@@ -3284,7 +3286,7 @@ function openCustomExportHTML(fields){
   const totH=totHN+totHE+totHNoc+totHFes;
 
   const htmlContent=`<!DOCTYPE html><html><head><meta charset="UTF-8">
-  <title>Exportación personalizada TimerPro</title>
+  <title>Exportación personalizada TimerPro</title><script>function descargarHTML(){var b=new Blob([document.documentElement.outerHTML],{type:"text/html"});var a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="TimerPro_"+new Date().toISOString().slice(0,10)+".html";a.click();}</script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:Arial,sans-serif;font-size:12px;color:#1e293b;padding:20px}
@@ -3320,7 +3322,7 @@ function openCustomExportHTML(fields){
     </div>
     <div class="periodo">
       <strong>${resumenPeriodoLabel()}</strong><br>
-      <strong>${entries.length} jornadas</strong>
+      <strong>${entries.length} jornadas</strong><br><button onclick="descargarHTML()" style="margin-top:5px;background:#185FA5;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:10px;cursor:pointer">Descargar</button> <button onclick="window.print()" style="background:#333;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:10px;cursor:pointer">PDF</button>
     </div>
   </div>
   ${diasHtml}
@@ -3332,7 +3334,7 @@ function openCustomExportHTML(fields){
       ${fields.hNocturnas&&totHNoc>0?`<tr><td>Horas nocturnas</td><td>${fh(totHNoc)}</td>${fields.importes?'<td>'+eur2(totINoc)+'</td>':''}</tr>`:''}
       ${fields.hFestivas&&totHFes>0?`<tr><td>Horas festivas</td><td>${fh(totHFes)}</td>${fields.importes?'<td>'+eur2(totIFes)+'</td>':''}</tr>`:''}
       ${fields.dietas&&totD>0?`<tr><td>Dietas</td><td>—</td>${fields.importes?'<td>'+eur2(totD)+'</td>':''}</tr>`:''}
-      ${(fields.transpCoche||fields.transpCamion)&&totT>0?`<tr><td>Transporte${fields.transpCoche&&fields.transpCamion?' (coche+camión)':fields.transpCoche?' (coche)':' (camión)'}</td><td>${nCoche+nCamion} viajes</td>${fields.importes?`<td>${eur2(totT)}</td>`:''}</tr>`:''}
+      ${(fields.transpCoche||fields.transpCamion)&&totT>0?`<tr><td>Transporte${fields.transpCoche&&fields.transpCamion?' (coche+camión)':fields.transpCoche?' (coche)':' (camión)'}</td><td>${nCoche+nCamion} viajes</td><td><strong>${eur2(totT)}</strong></td></tr>`:''}
       ${fields.otros&&totO>0?`<tr><td>Otros conceptos</td><td>—</td>${fields.importes?'<td>'+eur2(totO)+'</td>':''}</tr>`:''}
       ${fields.viajes&&totViaj>0?`<tr><td>Viajes</td><td>—</td>${fields.importes?'<td>'+eur2(totViaj)+'</td>':''}</tr>`:''}
       <tr class="gran-total"><td>TOTAL${fields.importes&&totTotal>0?' GENERAL':' HORAS'}</td><td>${fh(totH)}</td>${fields.importes&&totTotal>0?'<td>'+totTotal.toFixed(2).replace('.',',')+' €</td>':''}</tr>
