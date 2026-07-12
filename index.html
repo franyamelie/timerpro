@@ -337,6 +337,14 @@ const defVehicle = {nombre:'',tipo:'coche',matricula:'',precioPorKm:0.19,notas:'
 
 // Formularios
 let fEntry = defEntry();
+// Apply saved defaults on startup (will be overwritten by localStorage restore)
+setTimeout(function(){
+  if(!fEntry.precioHoraNormal && S.precioHoraNormalDefault>0) fEntry.precioHoraNormal=S.precioHoraNormalDefault;
+  if(!fEntry.precioHoraExtra && S.precioHoraExtraDefault>0) fEntry.precioHoraExtra=S.precioHoraExtraDefault;
+  if(!fEntry.precioHoraNocturna && S.precioHoraNocturnaDefault>0) fEntry.precioHoraNocturna=S.precioHoraNocturnaDefault;
+  if(!fEntry.precioHoraFestiva && S.precioHoraFestivaDefault>0) fEntry.precioHoraFestiva=S.precioHoraFestivaDefault;
+  if(!fEntry.dieta && S.dietaDefault>0) fEntry.dieta=S.dietaDefault;
+},100);
 let _skipDomCapture = false; // prevent DOM contamination when switching days
 let fTask = defTask();
 let fWorker = {...defWorker};
@@ -1188,8 +1196,9 @@ function renderFichar(){
                 on:{click:ev=>{
                   ev.stopPropagation();
                   const key='precioHora'+tipo+'Default';
-                  const p=prompt('€/hora '+tipo+' por defecto:',S[key]||0);
-                  if(p!==null){S[key]=parseFloat(p)||0;localStorage.setItem(key,S[key]);showAlert('✅ '+tipo+': '+eur(S[key])+'/h');rerender();}
+                  showPriceModal('€/hora '+tipo+' por defecto',S[key]||0,function(val){
+                    S[key]=val;localStorage.setItem(key,S[key]);showAlert('✅ '+tipo+': '+eur(S[key])+'/h');rerender();
+                  });
                 }}
               },'⚙️')
             ),
@@ -1210,8 +1219,9 @@ function renderFichar(){
                 },
                 blur:ev=>{
                   const v=ev.target.value.replace(',','.');
-                  fEntry[hk]=parseFloat(v)||0;
-                  fEntry[ik]=Math.round(fEntry[hk]*(parseFloat(e[pk])||0)*100)/100;
+                  const h2=parseFloat(v)||0;
+                  fEntry[hk]=h2;
+                  fEntry[ik]=Math.round(h2*(parseFloat(e[pk])||0)*100)/100;
                   rerender();
                 }
               }})
@@ -1220,22 +1230,27 @@ function renderFichar(){
           h('div',{class:'field',style:{margin:0}},
             h('label',{},'€/HORA'),
             h('input',{type:'text',inputmode:'decimal',
-              value:precio||(S['precioHora'+tipo+'Default']&&!e[pk]?S['precioHora'+tipo+'Default']:precio)||'',placeholder:'0,00',
+              value:(precio>0?precio:(S['precioHora'+tipo+'Default']>0?S['precioHora'+tipo+'Default']:'')),placeholder:'0,00',
               on:{
                 input:ev=>{
-                  const v=ev.target.value.replace(',','.');
+                  // Don't parseFloat here - keep raw text so user can type decimals freely
+                  const raw=ev.target.value;
+                  const v=raw.replace(',','.');
                   const p2=parseFloat(v)||0;
-                  fEntry[pk]=p2;
+                  // Only update importe display, not fEntry.pk yet (avoids cursor reset)
                   const h2=parseFloat(e[hk])||0;
                   const c2=Math.round(h2*p2*100)/100;
-                  fEntry[ik]=c2;
                   const el=document.getElementById(dispId);
                   if(el){el.textContent=c2>0?eur(c2):'—';el.style.background=c2>0?'var(--acc-lt)':'var(--surf2)';el.style.color=c2>0?'var(--acc)':'var(--ink3)';}
+                  // Store tentative value (won't trigger rerender)
+                  fEntry[pk]=p2;
+                  fEntry[ik]=c2;
                 },
                 blur:ev=>{
                   const v=ev.target.value.replace(',','.');
-                  fEntry[pk]=parseFloat(v)||0;
-                  fEntry[ik]=Math.round((parseFloat(e[hk])||0)*fEntry[pk]*100)/100;
+                  const p2=parseFloat(v)||0;
+                  fEntry[pk]=p2;
+                  fEntry[ik]=Math.round((parseFloat(e[hk])||0)*p2*100)/100;
                   rerender();
                 }
               }})
@@ -1259,13 +1274,10 @@ function renderFichar(){
               title:'Precio dieta por defecto',
               style:{background:'none',border:'none',cursor:'pointer',fontSize:'.8rem',color:'var(--ink2)',padding:'0 .2rem'},
               on:{click:()=>{
-                const p=prompt('Precio dieta por defecto (€):',S.dietaDefault||0);
-                if(p!==null){
-                  S.dietaDefault=parseFloat(p)||0;
-                  localStorage.setItem('dietaDefault',S.dietaDefault);
-                  showAlert('✅ Precio dieta guardado: '+eur(S.dietaDefault));
-                  rerender();
-                }
+                showPriceModal('Precio dieta por defecto',S.dietaDefault||0,function(val){
+                  S.dietaDefault=val;localStorage.setItem('dietaDefault',S.dietaDefault);
+                  showAlert('✅ Precio dieta guardado: '+eur(S.dietaDefault));rerender();
+                });
               }}
             },'⚙️'),
             S.dietaDefault>0?h('button',{
@@ -2290,7 +2302,13 @@ function goToDay(ds){
     // notas come from DB entry
     editingEntry=true;
   } else {
-    fEntry={...defEntry(), fecha:ds};
+    fEntry={...defEntry(), fecha:ds,
+      precioHoraNormal:S.precioHoraNormalDefault||0,
+      precioHoraExtra:S.precioHoraExtraDefault||0,
+      precioHoraNocturna:S.precioHoraNocturnaDefault||0,
+      precioHoraFestiva:S.precioHoraFestivaDefault||0,
+      dieta:S.dietaDefault||0
+    };
     editingEntry=false;
   }
   selDate=null;
@@ -5311,7 +5329,7 @@ function fieldArea(label,val,cb,opts={}){
 
 function importeField(value, onChange){
   const val = Math.round((Number(value)||0)*100)/100;
-  const isManual = val>0 && !isStdAmount(val);
+  const isManual = val>0 && (!isStdAmount(val) || (val % 1 !== 0));
   // Round to nearest 0.50 for display
   const baseVal = isManual ? val : val;
 
@@ -5342,9 +5360,12 @@ function importeField(value, onChange){
     },'+0,50') : null,
     // Manual input
     isManual ? h('input',{
-      type:'number',min:'0',step:'0.01',value:val,
+      type:'text',inputmode:'decimal',min:'0',step:'0.01',value:val,
       style:{flex:'0 0 90px'},
-      on:{blur:ev=>{const v=(ev.target.value||'').replace(',','.');onChange(Math.round(parseFloat(v||0)*100)/100);rerender();}}
+      on:{
+        focus:ev=>{ev.target.select();},
+        blur:ev=>{const v=(ev.target.value||'').replace(',','.');onChange(Math.round(parseFloat(v||0)*100)/100);rerender();}
+      }
     }) : null,
     // Show exact amount badge if not standard
     val>0 ? h('span',{
@@ -5606,6 +5627,39 @@ async function captureGPS(tipo){
     },
     {enableHighAccuracy:true,timeout:15000,maximumAge:0}
   );
+}
+
+// ── MODAL DE PRECIO (reemplaza prompt() para decimales en móvil) ──
+function showPriceModal(titulo, valorActual, onConfirm){
+  // Remove any existing modal
+  var ex = document.getElementById('_price-modal');
+  if(ex) ex.remove();
+  var overlay = document.createElement('div');
+  overlay.id = '_price-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99999;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = '<div style="background:var(--surf,#1e1e1e);border-radius:14px;padding:1.5rem;max-width:300px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.5)">'
+    + '<div style="font-size:13px;font-weight:600;color:var(--ink,#fff);margin-bottom:.75rem">'+titulo+'</div>'
+    + '<input id="_price-input" type="number" inputmode="decimal" step="0.01" min="0" value="'+(valorActual||'')+'" placeholder="0.00"'
+    + ' style="width:100%;padding:.6rem .8rem;font-size:1.2rem;font-weight:700;border-radius:8px;border:2px solid var(--acc,#f59e0b);background:var(--surf2,#2a2a2a);color:var(--ink,#fff);margin-bottom:1rem;text-align:center">'
+    + '<div style="display:flex;gap:.5rem">'
+    + '<button id="_price-cancel" style="flex:1;padding:.6rem;border-radius:8px;border:1px solid #555;background:none;color:var(--ink,#fff);cursor:pointer;font-size:14px">Cancelar</button>'
+    + '<button id="_price-ok" style="flex:1;padding:.6rem;border-radius:8px;border:none;background:var(--acc,#f59e0b);color:#000;font-weight:700;cursor:pointer;font-size:14px">Guardar</button>'
+    + '</div></div>';
+  document.body.appendChild(overlay);
+  var inp = document.getElementById('_price-input');
+  inp.focus(); inp.select();
+  var close = function(){ overlay.remove(); };
+  document.getElementById('_price-cancel').onclick = close;
+  overlay.onclick = function(e){ if(e.target===overlay) close(); };
+  document.getElementById('_price-ok').onclick = function(){
+    var val = parseFloat(inp.value.replace(',','.'))||0;
+    close();
+    onConfirm(val);
+  };
+  inp.onkeydown = function(e){
+    if(e.key==='Enter'){ document.getElementById('_price-ok').click(); }
+    if(e.key==='Escape'){ close(); }
+  };
 }
 
 let _isSaving = false;
