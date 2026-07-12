@@ -3263,6 +3263,9 @@ function openCustomExportHTML(fields){
 
     const thCols=fields.importes?'<th>Concepto</th><th>Horas</th><th>Precio</th><th>Importe</th>':'<th>Concepto</th><th>Horas</th>';
 
+    // Skip days with no relevant data for selected fields
+    if(!filas && !locE && !locS && !(fields.notas&&(e.notas||'').trim())) return;
+
     diasHtml+=`
     <div class="dia">
       <div class="dia-head">
