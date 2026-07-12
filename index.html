@@ -3323,7 +3323,7 @@ function openCustomExportHTML(fields){
     </div>
     <div class="periodo">
       <strong>${resumenPeriodoLabel()}</strong><br>
-      <strong>${entries.length} jornadas</strong><br><button onclick="descargarHTML()" style="margin-top:5px;background:#185FA5;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:10px;cursor:pointer">Descargar</button> <button onclick="window.print()" style="background:#333;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:10px;cursor:pointer">PDF</button>
+      <strong>${entries.length} jornadas</strong><br><button onclick="window.print()" style="margin-top:6px;background:#185FA5;color:#fff;border:none;border-radius:6px;padding:5px 14px;font-size:11px;cursor:pointer;font-weight:600">🖨 PDF / Imprimir</button><br><button onclick="window.print()" style="margin-top:5px;background:#333;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:10px;cursor:pointer;font-weight:600">🖨 PDF</button>
     </div>
   </div>
   ${diasHtml}
@@ -3344,14 +3344,17 @@ function openCustomExportHTML(fields){
   ${fields.firma&&worker.firma?`<div style="margin-top:20px;padding-top:10px;border-top:1px solid #e2e8f0"><p style="font-size:11px;color:#64748b;margin-bottom:8px">FIRMA DEL TRABAJADOR</p><img src="${worker.firma}" style="max-height:80px;border:1px solid #e2e8f0"><p style="font-size:11px;color:#64748b;margin-top:4px">${worker.nombre||''} ${worker.apellidos||''}${worker.dni?' — DNI: '+worker.dni:''}</p></div>`:''}
   </body></html>`;
 
-  const w=window.open('','_blank','width=900,height=700');
-  if(!w){showAlert('Permite ventanas emergentes para exportar','err');return;}
-  w.document.write(htmlContent);
-  w.document.close();
-  setTimeout(()=>w.print(),800);
 
+  // Download HTML directly (no popup needed)
   const fname='TimerPro_Personalizado_'+resumenFileTag()+'.html';
   const blob=new Blob([htmlContent],{type:'text/html;charset=utf-8'});
+  const blobUrl=URL.createObjectURL(blob);
+
+  // Open in new tab for preview/print
+  const w=window.open(blobUrl,'_blank');
+  if(!w) showAlert('Permite ventanas emergentes para ver el informe','warn');
+
+  // Also trigger direct download
   dlDialog={blob,filename:fname,type:'html',title:'Guardar exportación personalizada'};
   S.modal='dl';rerender();
 }
