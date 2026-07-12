@@ -2787,16 +2787,28 @@ function openExportModal(mode){
     const tareas=(S.tasks||[]).filter(t=>t.fecha===e.fecha);
     const fichajes=(e.fichajes||[]).filter(f=>f.entrada&&f.salida);
     
+    // Skip entry if none of selected fields have relevant data
+    const _hasHN=fields.hNormales&&hN>0;
+    const _hasHE=fields.hExtra&&hE>0;
+    const _hasHNoc=fields.hNocturnas&&hNoc>0;
+    const _hasHFes=fields.hFestivas&&hFes>0;
+    const _hasDiet=fields.dietas&&(diet>0);
+    const _hasTC=fields.transpCoche&&e._transportType==='coche'&&transp>0;
+    const _hasCam=fields.transpCamion&&e._transportType==='camion'&&transp>0;
+    const _hasOtros=fields.otros&&(otros>0);
+    const _hasViaj=fields.viajes&&viajes>0;
+    const _anyData=_hasHN||_hasHE||_hasHNoc||_hasHFes||_hasDiet||_hasTC||_hasCam||_hasOtros||_hasViaj;
+    if(!_anyData) return; // skip this entry - nothing selected applies to it
+
     let filas='';
-    if(hN>0) filas+=`<tr><td>Horas normales</td><td>${fh(hN)}</td>${cp?`<td>${eur2(e.precioHoraNormal||0)}/h</td><td>${eur2(iN)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
-    if(hE>0) filas+=`<tr><td>Horas extra</td><td>${fh(hE)}</td>${cp?`<td>${eur2(e.precioHoraExtra||0)}/h</td><td>${eur2(iE)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
-    if(hNoc>0) filas+=`<tr><td>Horas nocturnas</td><td>${fh(hNoc)}</td>${cp?`<td>${eur2(e.precioHoraNocturna||0)}/h</td><td>${eur2(iNoc)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
-    if(hFes>0) filas+=`<tr><td>Horas festivas</td><td>${fh(hFes)}</td>${cp?`<td>${eur2(e.precioHoraFestiva||0)}/h</td><td>${eur2(iFes)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
-    if(dieta>0) filas+=`<tr><td>Dieta</td><td>1 × ${eur2(dieta)}</td>${cp?`<td>${eur2(dieta)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
-    (e.dietasExtra||[]).forEach(d=>{if(d.importe>0) filas+=`<tr><td>${d.concepto||'Dieta extra'}</td><td>1 × ${eur2(d.importe)}</td>${cp?`<td>${eur2(d.importe)}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
-    if(transp>0){const tt=(S.transportTypes||[]).find(t=>t.id===e._transportType);filas+=`<tr><td>Transporte${tt?' ('+tt.nombre+')':''}</td><td>1 × ${eur2(transp)}</td>${cp?`<td>${eur2(transp)}</td>`:'<td colspan="2">✓</td>'}</tr>`;}
-    (e.otrosConceptos||[]).forEach(o=>{if(o.importe>0) filas+=`<tr><td>${o.concepto||'Otro'}</td><td>—</td>${cp?`<td>—</td><td>${eur2(o.importe)}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
-    (e.journeys||[]).forEach(j=>{if(j.precioManual>0) filas+=`<tr><td>Viaje</td><td>—</td>${cp?`<td>—</td><td>${eur2(j.precioManual)}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
+    if(_hasHN)   filas+=`<tr><td>Horas normales</td><td>${fh(hN)}</td>${cp?`<td>${eur2(e.precioHoraNormal||0)}/h</td><td>${eur2(iN)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
+    if(_hasHE)   filas+=`<tr><td>Horas extra</td><td>${fh(hE)}</td>${cp?`<td>${eur2(e.precioHoraExtra||0)}/h</td><td>${eur2(iE)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
+    if(_hasHNoc) filas+=`<tr><td>Horas nocturnas</td><td>${fh(hNoc)}</td>${cp?`<td>${eur2(e.precioHoraNocturna||0)}/h</td><td>${eur2(iNoc)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
+    if(_hasHFes) filas+=`<tr><td>Horas festivas</td><td>${fh(hFes)}</td>${cp?`<td>${eur2(e.precioHoraFestiva||0)}/h</td><td>${eur2(iFes)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
+    if(_hasDiet) filas+=`<tr><td>Dieta</td><td>1 × ${eur2(diet)}</td>${cp?`<td>${eur2(diet)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
+    if(_hasTC||_hasCam){const tt=(S.transportTypes||[]).find(t=>t.id===e._transportType);filas+=`<tr><td>Transporte${tt?' ('+tt.nombre+')':\'\';}</td><td>1 × ${eur2(transp)}</td>${cp?`<td>${eur2(transp)}</td>`:'<td colspan="2">✓</td>'}</tr>`;}
+    if(_hasOtros)(e.otrosConceptos||[]).forEach(o=>{if(o.importe>0) filas+=`<tr><td>${o.concepto||'Otro'}</td><td>—</td>${cp?`<td>—</td><td>${eur2(o.importe)}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
+    if(_hasViaj)(e.journeys||[]).forEach(j=>{if(j.precioManual>0) filas+=`<tr><td>Viaje</td><td>—</td>${cp?`<td>—</td><td>${eur2(j.precioManual)}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
 
     const locE=e.ubicacionEntrada?JSON.parse(e.ubicacionEntrada).label||e.ubicacionEntrada:'';
     const locS=e.ubicacionSalida?JSON.parse(e.ubicacionSalida).label||e.ubicacionSalida:'';
@@ -3239,7 +3251,8 @@ function openCustomExportHTML(fields){
     if(fields.otros)totO+=otros;
     if(fields.viajes)totViaj+=viajes;
 
-    const totalDia=(fields.importes?(iN+iE+iNoc+iFes):0)+(fields.dietas?diet:0)+(((fields.transpCoche&&e._transportType==='coche')||(fields.transpCamion&&e._transportType==='camion'))?transp:0)+(fields.otros?otros:0)+(fields.viajes?viajes:0);
+    const _isTransp=(e._transportType==='coche'&&fields.transpCoche)||(e._transportType==='camion'&&fields.transpCamion);
+    const totalDia=(fields.importes?((fields.hNormales?iN:0)+(fields.hExtra?iE:0)+(fields.hNocturnas?iNoc:0)+(fields.hFestivas?iFes:0)):0)+(fields.dietas?diet:0)+(_isTransp?transp:0)+(fields.otros?otros:0)+(fields.viajes?viajes:0);
     const fichajes=fields.fichajes?(e.fichajes||[]).filter(f=>f.entrada||f.salida):[];
     const notasText=fields.notas?htmlToText(e.notas||''):'';
 
