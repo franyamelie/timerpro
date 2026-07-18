@@ -726,6 +726,7 @@ const TABS_BASE = [
   {id:'ordenes',icon:'🔧',label:'O.T.'},
 ];
 const TABS_END = [
+  {id:'tarifas',icon:'💶',label:'Tarifas'},
   {id:'vehiculos',icon:'🚗',label:'Vehículos'},
   {id:'resumen',icon:'📊',label:'Resumen'},
   {id:'sincronizar',icon:'🔄',label:'Sincronizar'},
@@ -767,6 +768,7 @@ function renderMain(){
     case 'sincronizar':return renderSincronizar();
     case 'trabajador': return renderTrabajador();
     case 'empresa':    return renderEmpresa();
+    case 'tarifas':    return renderTarifas();
     case 'ia':         return (typeof renderIAChat==='function'?renderIAChat():renderIAFallback());
     default:
       // Tabs de tipos de tarea dinámicos (tipo_estral, tipo_xxx...)
@@ -1169,6 +1171,15 @@ function renderFichar(){
         : null
     ),
 
+    // Auto-aplicar tarifas guardadas si los campos de precio están vacíos
+    (()=>{
+      const tar=getTarifas();
+      if(tar.precioNormal&&!fEntry.precioHoraNormal) {fEntry.precioHoraNormal=tar.precioNormal;}
+      if(tar.precioExtra&&!fEntry.precioHoraExtra) {fEntry.precioHoraExtra=tar.precioExtra;}
+      if(tar.precioNocturna&&!fEntry.precioHoraNocturna) {fEntry.precioHoraNocturna=tar.precioNocturna;}
+      if(tar.precioFestiva&&!fEntry.precioHoraFestiva) {fEntry.precioHoraFestiva=tar.precioFestiva;}
+      return null;
+    })(),
     // Horas e importes
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'Horas e Importes'),
@@ -1582,7 +1593,7 @@ function renderFichar(){
                 (en.tipoJornada||'').toLowerCase().includes(q)||
                 (en.tipoJornada||'').toLowerCase().includes(q);
             }).sort((a,b)=>b.fecha.localeCompare(a.fecha)).map(en=>
-              h('div',{class:'sum-row',style:{cursor:'pointer'},on:{click:()=>loadHistorial(en)}},
+              h('div',{class:'sum-row',style:{cursor:'pointer',borderLeft:en.fecha===fEntry.fecha?'3px solid var(--acc)':'',background:en.fecha===fEntry.fecha?'var(--acc-lt)':''},on:{click:()=>loadHistorial(en),dblclick:()=>loadHistorial(en)}},  
                 h('div',{},
                   h('div',{style:{fontWeight:700,fontSize:'.85rem'}},`${cap(wday(en.fecha))}, ${dlbl(en.fecha)}`),
                   h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},
@@ -2030,6 +2041,75 @@ function mostrarGestorTipos(){
   }
   document.body.appendChild(overlay);
   renderContent();
+}
+
+// ── TARIFAS ──────────────────────────────────────────────────
+function getTarifas(){
+  try{ return JSON.parse(localStorage.getItem('tp_tarifas')||'null')||{}; }catch(e){ return {}; }
+}
+function saveTarifas(t){ localStorage.setItem('tp_tarifas',JSON.stringify(t)); }
+function getTarifa(key,def){ return parseFloat(getTarifas()[key]||def||0); }
+
+var _tarifasEdit=null; // estado edición local
+
+function renderTarifas(){
+  const t=getTarifas();
+  if(!_tarifasEdit) _tarifasEdit={...t};
+  const campos=[
+    {key:'precioNormal',  label:'Hora Normal (€/h)',       placeholder:'10.50'},
+    {key:'precioExtra',   label:'Hora Extra (€/h)',         placeholder:'13.65'},
+    {key:'precioNocturna',label:'Hora Nocturna (€/h)',      placeholder:'13.65'},
+    {key:'precioFestiva', label:'Hora Festiva (€/h)',       placeholder:'13.65'},
+    {key:'dieta',         label:'Dieta (€)',                placeholder:'15.00'},
+    {key:'transporteCoche',label:'Viaje Coche (€)',         placeholder:'4.60'},
+    {key:'transporteCamion',label:'Viaje Camión (€)',       placeholder:'10.00'},
+    {key:'sueldoBase',    label:'Sueldo Base (€/mes)',      placeholder:'1600.00'},
+    {key:'guardia',       label:'Guardia (€/mes)',          placeholder:'550.00'},
+  ];
+  return h('div',{},
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'💶 TARIFAS ACTIVAS'),
+      h('p',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'1rem'}},
+        'Estas tarifas se aplicarán automáticamente al crear o editar una jornada.'
+      ),
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.8rem'}},
+        ...campos.map(c=>
+          h('div',{class:'field'},
+            h('label',{style:{fontSize:'.75rem',fontWeight:700,color:'var(--ink2)'}},c.label),
+            h('input',{
+              type:'number',min:'0',step:'0.01',
+              placeholder:c.placeholder,
+              value:_tarifasEdit[c.key]||'',
+              style:{width:'100%'},
+              on:{input:ev=>{_tarifasEdit[c.key]=ev.target.value;}}
+            })
+          )
+        )
+      ),
+      h('button',{
+        class:'btn btn-g btn-full',
+        style:{marginTop:'1rem',fontSize:'1rem',fontWeight:800},
+        on:{click:()=>{
+          const saved={};
+          Object.keys(_tarifasEdit).forEach(k=>{
+            if(_tarifasEdit[k]!==''&&_tarifasEdit[k]!==null) saved[k]=parseFloat(_tarifasEdit[k])||0;
+          });
+          saveTarifas(saved);
+          _tarifasEdit=null;
+          showAlert('✅ Tarifas guardadas correctamente');
+          rerender();
+        }}
+      },'💾 Guardar tarifas')
+    ),
+    h('div',{class:'card',style:{marginTop:'.8rem'}},
+      h('div',{class:'sec-title'},'ℹ️ USO AUTOMÁTICO'),
+      h('p',{style:{fontSize:'.82rem',color:'var(--ink2)',lineHeight:1.6}},
+        'Cuando rellenes las horas de una jornada, el precio por hora se tomará de estas tarifas automáticamente. '+
+        'La dieta y el transporte también se aplicarán si los activas en la jornada. '+
+        'Puedes cambiar las tarifas en cualquier momento y afectará a las jornadas nuevas.'
+      )
+    )
+  );
 }
 
 function renderTareasPorTipo(tipoId){
@@ -9581,12 +9661,14 @@ function _renderHistorial(){
   filtered.forEach(en=>{
     const h_=(en.horasNormales||0)+(en.horasExtra||0)+(en.horasNocturnas||0)+(en.horasFestivas||0);
     const fi=(en.fichajes||[]).length;
-    const imp=(en.importeNormales||0)+(en.importeExtra||0)+(en.dieta||0)+(en.transporte||0);
+    const imp=(en.importeNormales||0)+(en.importeExtra||0)+(en.importeNocturnas||0)+(en.importeFestivas||0)+(en.dieta||0)+(en.transporte||0)+((en.otrosConceptos||[]).reduce((a,b)=>a+(b.importe||0),0))+((en.dietasExtra||[]).reduce((a,b)=>a+(b.importe||0),0));
     let sitio=''; try{sitio=(JSON.parse(en.ubicacionEntrada||'{}').label||'').slice(0,18);}catch(e){}
     const row=document.createElement('div');
     row.className='sum-row';
     row.style.cssText='cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:.5rem .3rem;border-bottom:1px solid var(--brd)';
     row.onclick=()=>loadHistorial(en);
+    row.ondblclick=()=>loadHistorial(en);
+    if(en.fecha===fEntry.fecha) row.style.cssText+=';background:var(--acc-lt);border-left:3px solid var(--acc)';
     const info=document.createElement('div');
     const title=document.createElement('div');
     title.style.cssText='font-weight:700;font-size:.85rem';
