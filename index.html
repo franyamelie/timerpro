@@ -5114,27 +5114,44 @@ sendIAMsg._core = async function(userMsg){
       contents:geminiContents,
       generationConfig:{maxOutputTokens:800,temperature:0.7}
     });
-    // Detectar automáticamente el modelo disponible para esta key (se cachea)
+    // Buscar un modelo que funcione: probar candidatos hasta que uno responda (se cachea el bueno)
+    let res=null;
     let modelo=localStorage.getItem('gemini_model')||'';
-    if(!modelo){
-      const lm=await fetch('https://generativelanguage.googleapis.com/v1beta/models?key='+apiKey);
-      if(lm.ok){
-        const ml=await lm.json();
-        const disponibles=(ml.models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent')).map(m=>m.name.replace('models/',''));
-        // Preferir flash más nuevo, luego cualquier flash, luego cualquiera
-        modelo=disponibles.find(n=>n.includes('flash')&&!n.includes('lite')&&!n.includes('8b')&&!n.includes('image')&&!n.includes('tts'))
-          ||disponibles.find(n=>n.includes('flash')&&!n.includes('image')&&!n.includes('tts'))
-          ||disponibles.find(n=>!n.includes('image')&&!n.includes('tts')&&!n.includes('embed'))
-          ||'';
-        if(modelo) localStorage.setItem('gemini_model',modelo);
-      }
-      if(!modelo) modelo='gemini-flash-latest';
-    }
-    let res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+modelo+':generateContent?key='+apiKey,{
+    const probar=async(m)=>fetch('https://generativelanguage.googleapis.com/v1beta/models/'+m+':generateContent?key='+apiKey,{
       method:'POST',headers:{'Content-Type':'application/json'},body:_geminiBody
     });
-    // Si el modelo cacheado falla, limpiar caché para redetectar la próxima vez
-    if(res.status===404){localStorage.removeItem('gemini_model');}
+    if(modelo){
+      res=await probar(modelo);
+      if(!res.ok){localStorage.removeItem('gemini_model');modelo='';res=null;}
+    }
+    if(!modelo){
+      let candidatos=[];
+      try{
+        const lm=await fetch('https://generativelanguage.googleapis.com/v1beta/models?key='+apiKey);
+        if(lm.ok){
+          const ml=await lm.json();
+          candidatos=(ml.models||[])
+            .filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent'))
+            .map(m=>m.name.replace('models/',''))
+            .filter(n=>!n.includes('image')&&!n.includes('tts')&&!n.includes('embed')&&!n.includes('audio')&&!n.includes('exp'))
+            .sort((a,b)=>{
+              const va=parseFloat((a.match(/(\d+\.?\d*)/)||[0,0])[1])||0;
+              const vb=parseFloat((b.match(/(\d+\.?\d*)/)||[0,0])[1])||0;
+              if(vb!==va) return vb-va;
+              const fa=a.includes('flash')?1:0, fb=b.includes('flash')?1:0;
+              return fb-fa;
+            });
+        }
+      }catch(ex){}
+      if(candidatos.length===0) candidatos=['gemini-flash-latest','gemini-pro-latest'];
+      for(const cand of candidatos.slice(0,8)){
+        res=await probar(cand);
+        if(res.ok){modelo=cand;localStorage.setItem('gemini_model',cand);break;}
+      }
+      if(!res||!res.ok){
+        throw new Error('Ningún modelo Gemini funciona con tu key. Crea una key nueva en aistudio.google.com/apikey');
+      }
+    }
     if(!res.ok){
       // No borrar la key en errores — pueden ser temporales
       if(res.status===401||res.status===403){
@@ -6409,8 +6426,8 @@ Responde ÚNICAMENTE con un JSON válido sin texto adicional ni markdown:
 }
 Extrae los horarios de cada tarea (ej: 10:00 → 14:00). Si ves "OT 7941581076" extrae "7941581076".`;
 
-    const _modeloImg=localStorage.getItem('gemini_model')||'gemini-flash-latest';
-    const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+_modeloImg+':generateContent?key='+geminiKey,{
+    const _mImg=localStorage.getItem('gemini_model')||'gemini-flash-latest';
+    const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+_mImg+':generateContent?key='+geminiKey,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
