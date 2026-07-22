@@ -2761,11 +2761,20 @@ function filterTasks(){
 
 // ── EXPORT FUNCTIONS ─────────────────────────────────────
 // ── RESUMEN: selección de jornadas (rango de fechas O días sueltos) ──
+function applyResMonth(){
+  const v=S.resMonthVal; if(!v) return;
+  const [y,m]=v.split('-').map(Number);
+  S.resFrom=y+'-'+pad(m)+'-01';
+  const last=new Date(y,m,0);
+  S.resTo=last.toISOString().slice(0,10);
+}
 function getResumenEntries(){
   let base;
   if(S.resMode==='days'){
     const set=new Set(S.resDays||[]);
     base=S.entries.filter(e=>set.has(e.fecha)&&!e._draft).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  } else if(S.resMode==='total'){
+    base=S.entries.filter(e=>!e._draft).sort((a,b)=>a.fecha.localeCompare(b.fecha));
   } else {
     const from=S.resFrom||firstDayOfMonth();
     const to=S.resTo||today();
@@ -2790,11 +2799,23 @@ function resumenPeriodoLabel(){
     const n=(S.resDays||[]).length;
     return n>0?n+' día'+(n>1?'s':'')+' seleccionado'+(n>1?'s':''):'Sin días seleccionados';
   }
+  if(S.resMode==='total'){
+    const ents=(S.entries||[]).filter(e=>!e._draft).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    if(!ents.length) return 'Histórico completo';
+    return 'Histórico completo (Del '+dlbl(ents[0].fecha)+' al '+dlbl(ents[ents.length-1].fecha)+')';
+  }
+  if(S.resMode==='month'){
+    const v=S.resMonthVal||today().slice(0,7);
+    const [y,m]=v.split('-').map(Number);
+    return cap(MONTHS[m-1])+' de '+y;
+  }
   const from=S.resFrom||firstDayOfMonth(), to=S.resTo||today();
   return 'Del '+dlbl(from)+' al '+dlbl(to);
 }
 function resumenFileTag(){
   if(S.resMode==='days') return 'dias_sueltos';
+  if(S.resMode==='total') return 'total';
+  if(S.resMode==='month') return S.resMonthVal||today().slice(0,7);
   return (S.resFrom||firstDayOfMonth())+'_'+(S.resTo||today());
 }
 
@@ -3581,11 +3602,19 @@ function renderResDaysPicker(){
 function renderDateModeCard(){
   const from = S.resFrom||firstDayOfMonth();
   const to = S.resTo||today();
+  const modeLabel = S.resMode==='days'?'Días sueltos':S.resMode==='total'?'Total':S.resMode==='month'?'Por mes':'Rango de fechas';
   return h('div',{class:'card'},
     h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',flexWrap:'wrap'}},
-      h('div',{class:'sec-title',style:{margin:0,flex:1}},S.resMode==='days'?'Días sueltos':'Filtro de fechas'),
-      h('div',{style:{display:'flex',gap:'.3rem'}},
-        h('button',{class:'btn btn-sm '+(S.resMode!=='days'?'btn-g':'btn-gh'),on:{click:()=>{S.resMode='range';rerender();}}},'Rango'),
+      h('div',{class:'sec-title',style:{margin:0,flex:1}},modeLabel),
+      h('div',{style:{display:'flex',gap:'.3rem',flexWrap:'wrap'}},
+        h('button',{class:'btn btn-sm '+(S.resMode==='total'?'btn-g':'btn-gh'),on:{click:()=>{S.resMode='total';rerender();}}},'Total'),
+        h('button',{class:'btn btn-sm '+(S.resMode==='month'?'btn-g':'btn-gh'),on:{click:()=>{
+          S.resMode='month';
+          if(!S.resMonthVal){const d=new Date();S.resMonthVal=d.getFullYear()+'-'+pad(d.getMonth()+1);}
+          applyResMonth();
+          rerender();
+        }}},'Mes'),
+        h('button',{class:'btn btn-sm '+((!S.resMode||S.resMode==='range')?'btn-g':'btn-gh'),on:{click:()=>{S.resMode='range';rerender();}}},'Rango'),
         h('button',{class:'btn btn-sm '+(S.resMode==='days'?'btn-g':'btn-gh'),on:{click:()=>{
           S.resMode='days';
           if(S.resCalYear==null){const n2=new Date();S.resCalYear=n2.getFullYear();S.resCalMonth=n2.getMonth();}
@@ -3595,6 +3624,24 @@ function renderDateModeCard(){
     ),
     S.resMode==='days'
       ? renderResDaysPicker()
+      : S.resMode==='total'
+      ? h('div',{style:{fontSize:'.8rem',color:'var(--ink2)'}},'Mostrando todo el historial de jornadas guardadas.')
+      : S.resMode==='month'
+      ? h('div',{style:{display:'flex',gap:'.5rem',alignItems:'center',flexWrap:'wrap'}},
+          h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{
+            const [y,m]=(S.resMonthVal||today().slice(0,7)).split('-').map(Number);
+            let ny=y, nm=m-1; if(nm<1){nm=12;ny--;}
+            S.resMonthVal=ny+'-'+pad(nm); applyResMonth(); rerender();
+          }}},'◀'),
+          h('input',{type:'month',value:S.resMonthVal||today().slice(0,7),
+            style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
+            on:{change:ev=>{S.resMonthVal=ev.target.value;applyResMonth();rerender();}}}),
+          h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{
+            const [y,m]=(S.resMonthVal||today().slice(0,7)).split('-').map(Number);
+            let ny=y, nm=m+1; if(nm>12){nm=1;ny++;}
+            S.resMonthVal=ny+'-'+pad(nm); applyResMonth(); rerender();
+          }}},'▶')
+        )
       : h('div',{style:{display:'flex',gap:'.5rem',alignItems:'center',flexWrap:'wrap'}},
           h('input',{type:'date',value:from,style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
             on:{change:ev=>{S.resFrom=ev.target.value;rerender();}}}),
@@ -3630,6 +3677,134 @@ function renderConceptoFilter(){
         class:'btn btn-sm '+((S.resConcepto||'all')===opt.id?'btn-g':'btn-gh'),
         on:{click:()=>{S.resConcepto=opt.id;rerender();}}
       },opt.label))
+    )
+  );
+}
+
+// ── Cálculo compartido de liquidación (día a día + desglose por precio) ──
+function computeLiquidacion(entries){
+  let totHN=0,totHE=0,totHNoc=0,totHFes=0,totIN=0,totIE=0,totINoc=0,totIFes=0,totD=0,totT=0,totO=0,totViaj=0;
+  let totTranspCoche=0,totTranspCamion=0,totTranspOtro=0,nCoche=0,nCamion=0,nOtroTransp=0,nDietas=0;
+  const dietaPrecios={}, cochePrecio={}, camionPrecio={};
+  const dayRows=[];
+  entries.forEach(e=>{
+    const hN=e.horasNormales||0, hE=e.horasExtra||0, hNoc=e.horasNocturnas||0, hFes=e.horasFestivas||0;
+    const iN=e.importeNormales||0, iE=e.importeExtra||0, iNoc=e.importeNocturnas||0, iFes=e.importeFestivas||0;
+    const dieta=e.dieta||0, transp=e.transporte||0;
+    const tt=e._transportType||'';
+    let vCoche=0, vCamion=0, vOtro=0;
+    if(transp>0){
+      if(tt==='coche'){totTranspCoche+=transp;nCoche++;vCoche=transp;const pk=transp.toFixed(2);cochePrecio[pk]=(cochePrecio[pk]||0)+1;}
+      else if(tt==='camion'){totTranspCamion+=transp;nCamion++;vCamion=transp;const pk=transp.toFixed(2);camionPrecio[pk]=(camionPrecio[pk]||0)+1;}
+      else{totTranspOtro+=transp;nOtroTransp++;vOtro=transp;}
+    }
+    if(dieta>0){nDietas++;const pk=dieta.toFixed(2);dietaPrecios[pk]=(dietaPrecios[pk]||0)+1;}
+    const dietasE=(e.dietasExtra||[]).reduce((a,d)=>a+(d.importe||0),0);
+    const otros=(e.otrosConceptos||[]).reduce((a,o)=>a+(o.importe||0),0);
+    const viajes=(e.journeys||[]).reduce((a,j)=>a+(j.precioManual||0),0);
+    const total=iN+iE+iNoc+iFes+dieta+transp+dietasE+otros+viajes;
+    totHN+=hN;totHE+=hE;totHNoc+=hNoc;totHFes+=hFes;
+    totIN+=iN;totIE+=iE;totINoc+=iNoc;totIFes+=iFes;totD+=dieta+dietasE;totT+=transp;totO+=otros;totViaj+=viajes;
+    if(hN+hE+hNoc+hFes+dieta+dietasE+transp+otros+viajes>0){
+      dayRows.push({fecha:e.fecha,dieta:dieta+dietasE,hN,hE,hNoc,hFes,vCoche,vCamion,vOtro,otros:otros+viajes,total});
+    }
+  });
+  const totTotal=totIN+totIE+totINoc+totIFes+totD+totT+totO+totViaj;
+  return {dayRows,totHN,totHE,totHNoc,totHFes,totIN,totIE,totINoc,totIFes,totD,totT,totO,totViaj,
+    totTranspCoche,totTranspCamion,totTranspOtro,nCoche,nCamion,nOtroTransp,nDietas,
+    dietaPrecios,cochePrecio,camionPrecio,totTotal};
+}
+
+// ── Tabla visual "día a día" (estilo Parte Diario) para el propio Resumen ──
+function renderResumenDiasTable(entries){
+  if(!entries.length) return null;
+  const liq=computeLiquidacion(entries);
+  if(!liq.dayRows.length) return null;
+  const eur=v=>v>0?v.toFixed(2).replace('.',',')+'€':'—';
+  const fh=v=>v>0?(String(v).replace('.',',')+'h'):'—';
+  const cols=[
+    ['Fecha',''],['Dieta','dieta'],['H.norm','hN'],['H.extra','hE'],['H.noct','hNoc'],
+    ['H.fest','hFes'],['V.cam','vCamion'],['V.coch','vCoche'],['Otros','vOtro'],['Total','']
+  ];
+  const rowsHtml = liq.dayRows.map(d=>{
+    const fechaCorta = d.fecha.split('-').reverse().join('.');
+    return `<tr>
+      <td style="white-space:nowrap">${fechaCorta} <span style="color:var(--ink3);font-size:.68rem">${wday(d.fecha)}</span></td>
+      <td>${eur(d.dieta)}</td>
+      <td>${fh(d.hN)}</td>
+      <td>${fh(d.hE)}</td>
+      <td>${fh(d.hNoc)}</td>
+      <td>${fh(d.hFes)}</td>
+      <td>${eur(d.vCamion)}</td>
+      <td>${eur(d.vCoche)}</td>
+      <td>${eur(d.otros)}</td>
+      <td style="font-weight:700">${eur(d.total)}</td>
+    </tr>`;
+  }).join('');
+  const totalRow=`<tr style="font-weight:800;border-top:2px solid var(--brd)">
+    <td>TOTAL</td>
+    <td>${eur(liq.totD)}</td>
+    <td>${fh(liq.totHN)}</td>
+    <td>${fh(liq.totHE)}</td>
+    <td>${fh(liq.totHNoc)}</td>
+    <td>${fh(liq.totHFes)}</td>
+    <td>${eur(liq.totTranspCamion)}</td>
+    <td>${eur(liq.totTranspCoche)}</td>
+    <td>${eur(liq.totO+liq.totViaj+liq.totTranspOtro)}</td>
+    <td style="color:var(--acc)">${eur(liq.totTotal)}</td>
+  </tr>`;
+  const tableHtml = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.74rem;white-space:nowrap">
+    <thead><tr style="color:var(--ink2);text-align:left">${cols.map(([lbl])=>`<th style="padding:.3rem .5rem;border-bottom:1px solid var(--brd);font-weight:600">${lbl}</th>`).join('')}</tr></thead>
+    <tbody style="color:var(--ink)">${rowsHtml}${totalRow}</tbody>
+  </table></div>`;
+  return h('div',{class:'card'},
+    h('div',{class:'sec-title'},'Día a día'),
+    h('div',{html:tableHtml})
+  );
+}
+
+// ── Caja de "Liquidación" con desglose cantidad × precio (estilo Parte Diario) ──
+function renderLiquidacionCard(entries){
+  if(!entries.length) return null;
+  const liq=computeLiquidacion(entries);
+  if(liq.totTotal<=0 && liq.totHN+liq.totHE+liq.totHNoc+liq.totHFes<=0) return null;
+  const eur=v=>v.toFixed(2).replace('.',',')+' €';
+  const fh=v=>String(v).replace('.',',')+'h';
+  const lines=[];
+  if(liq.totHN>0) lines.push([fh(liq.totHN)+' normales',eur(liq.totIN)]);
+  if(liq.totHE>0) lines.push([fh(liq.totHE)+' extra',eur(liq.totIE)]);
+  if(liq.totHNoc>0) lines.push([fh(liq.totHNoc)+' nocturnas',eur(liq.totINoc)]);
+  if(liq.totHFes>0) lines.push([fh(liq.totHFes)+' festivas',eur(liq.totIFes)]);
+  if(liq.totD>0){
+    const keys=Object.keys(liq.dietaPrecios).map(Number).sort((a,b)=>b-a);
+    if(keys.length<=1 && liq.nDietas===Object.values(liq.dietaPrecios).reduce((a,b)=>a+b,0)){
+      keys.forEach(pr=>{const cnt=liq.dietaPrecios[pr.toFixed(2)];lines.push([cnt+' dieta'+(cnt>1?'s':'')+' × '+eur(pr),eur(cnt*pr)]);});
+      const extraDiff=liq.totD-keys.reduce((a,pr)=>a+pr*liq.dietaPrecios[pr.toFixed(2)],0);
+      if(extraDiff>0.01) lines.push(['Dietas extra',eur(extraDiff)]);
+    } else {
+      keys.forEach(pr=>{const cnt=liq.dietaPrecios[pr.toFixed(2)];lines.push([cnt+' dieta'+(cnt>1?'s':'')+' × '+eur(pr),eur(cnt*pr)]);});
+      lines.push(['Total dietas',eur(liq.totD)]);
+    }
+  }
+  if(liq.totTranspCamion>0){
+    const keys=Object.keys(liq.camionPrecio).map(Number).sort((a,b)=>b-a);
+    keys.forEach(pr=>{const cnt=liq.camionPrecio[pr.toFixed(2)];lines.push([cnt+' viaje'+(cnt>1?'s':'')+' camión × '+eur(pr),eur(cnt*pr)]);});
+  }
+  if(liq.totTranspCoche>0){
+    const keys=Object.keys(liq.cochePrecio).map(Number).sort((a,b)=>b-a);
+    keys.forEach(pr=>{const cnt=liq.cochePrecio[pr.toFixed(2)];lines.push([cnt+' viaje'+(cnt>1?'s':'')+' coche × '+eur(pr),eur(cnt*pr)]);});
+  }
+  if(liq.totTranspOtro>0) lines.push([liq.nOtroTransp+' viaje(s) otros',eur(liq.totTranspOtro)]);
+  if(liq.totO>0) lines.push(['Otros conceptos',eur(liq.totO)]);
+  if(liq.totViaj>0) lines.push(['Viajes',eur(liq.totViaj)]);
+
+  return h('div',{class:'card',style:{border:'1px solid var(--acc)',background:'var(--surf2)'}},
+    h('div',{class:'sec-title',style:{color:'var(--acc)'}},'Liquidación — '+resumenPeriodoLabel()),
+    ...lines.map(([label,val])=>h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.3rem 0',borderBottom:'1px solid var(--brd)',fontSize:'.82rem'}},
+      h('span',{},label),h('span',{style:{fontWeight:700}},val)
+    )),
+    h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.6rem 0 0',marginTop:'.3rem',fontWeight:800,fontSize:'1.05rem',color:'var(--acc)'}},
+      h('span',{},'TOTAL'),h('span',{},eur(liq.totTotal))
     )
   );
 }
@@ -3805,6 +3980,12 @@ function renderResumen(){
         ),
         barChart(weekArr.map(([,wd])=>({v:wd.h,c:'#22c55e',l:wd.label.replace('Sem ','')})),'v','c','l')
       ):null,
+
+      // Día a día (tabla visual, estilo Parte Diario)
+      renderResumenDiasTable(entries),
+
+      // Liquidación (desglose cantidad × precio, estilo Parte Diario)
+      renderLiquidacionCard(entries),
 
       // Export buttons
       h('div',{class:'card'},
