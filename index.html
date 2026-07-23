@@ -961,7 +961,7 @@ function renderFichar(){
     // Fecha
     h('div',{class:'card'},
       h('div',{class:'grid-2'},
-        field('Fecha','date',e.fecha,v=>{fEntry.fecha=v;rerender()}),
+        field('Fecha','date',e.fecha,v=>{if(v && v!==fEntry.fecha) goToDay(v);}),
         h('div',{class:'field'},
           h('label',{style:{display:'flex',alignItems:'center',gap:'.4rem',flexWrap:'wrap'}},'JORNADA',
             h('span',{
@@ -9529,7 +9529,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     // Load most recent entry on boot
     if(S.entries.length>0 && !editingEntry){
       const lastEntry=[...S.entries].sort((a,b)=>b.fecha.localeCompare(a.fecha))[0];
-      if(lastEntry){
+      if(lastEntry && lastEntry.fecha===today()){
         fEntry={...lastEntry,fichajes:[...(lastEntry.fichajes||[]).map(f=>({...f}))]};
         editingEntry=!!lastEntry.id;
       }
