@@ -300,7 +300,7 @@ function saveTaskTypes(types){
 var taskTypes=getTaskTypes();
 
 const S = {
-  tab:'fichar', dark:true,
+  tab:'fichar', dark:(localStorage.getItem('darkMode')==='1'),
   entries:[], tasks:[], sites:[], workorders:[], vehicles:[], settings:{},
   transportTypes:[{id:'coche',nombre:'Coche',precio:0},{id:'camion',nombre:'Camión',precio:0}],
   dietaDefault:0,
@@ -725,6 +725,7 @@ const TABS_BASE = [
   {id:'sitios',icon:'📍',label:'Sitios'},
   {id:'ordenes',icon:'🔧',label:'O.T.'},
 ];
+const GEMINI_ICON_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg" style="display:block"><defs><linearGradient id="gemGradNav" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#4285F4"/><stop offset="50%" stop-color="#9B72CB"/><stop offset="100%" stop-color="#D96570"/></linearGradient></defs><path d="M12 0C12 6.6 6.6 12 0 12C6.6 12 12 17.4 12 24C12 17.4 17.4 12 24 12C17.4 12 12 6.6 12 0Z" fill="url(#gemGradNav)"/></svg>';
 const TABS_END = [
   {id:'tarifas',icon:'💶',label:'Tarifas'},
   {id:'vehiculos',icon:'🚗',label:'Vehículos'},
@@ -750,7 +751,7 @@ function renderTabs(){
       style:t._tipoId?{borderBottom:'2px solid '+(taskTypes.find(x=>x.id===t._tipoId)||{}).color}:{},
       on:{click:()=>{captureFormState();S.tab=t.id;rerender();}}
     },
-      h('span',{class:'tab-icon'},t.icon),t.label
+      t.id==='ia' ? h('span',{class:'tab-icon',html:GEMINI_ICON_SVG}) : h('span',{class:'tab-icon'},t.icon),t.label
     ))
   );
 }
@@ -1409,22 +1410,17 @@ function renderFichar(){
           h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',textDecoration:'underline'},title:'Subrayado',
             on:{mousedown:ev=>{ev.preventDefault();document.execCommand('underline');}}},'S'),
           h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontSize:'.7rem'},title:'Limpiar formato',
-            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('removeFormat');}}},'✕ Formato')
+            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('removeFormat');}}},'✕ Formato'),
+          h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontSize:'.85rem'},title:'Deshacer',
+            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('undo');}}},'↶'),
+          h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontSize:'.85rem'},title:'Rehacer',
+            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('redo');}}},'↷')
         ),
         h('div',{
           id:'notas-editor',
           contenteditable:'true',
           html:fEntry.notas||'',
           spellcheck:true, lang:'es',
-          on:{keydown:ev=>{
-            if(ev.key==='Enter'){
-              setTimeout(()=>{
-                if(document.queryCommandState('bold')) document.execCommand('bold');
-                if(document.queryCommandState('underline')) document.execCommand('underline');
-                if(document.queryCommandState('italic')) document.execCommand('italic');
-              },10);
-            }
-          }},
           style:{
             minHeight:'80px',background:'var(--surf2)',border:'1px solid var(--brd)',
             borderRadius:'var(--r2)',padding:'.5rem .6rem',color:'var(--ink)',
@@ -1432,6 +1428,15 @@ function renderFichar(){
             boxSizing:'border-box'
           },
           on:{
+            keydown:ev=>{
+              if(ev.key==='Enter'){
+                setTimeout(()=>{
+                  if(document.queryCommandState('bold')) document.execCommand('bold');
+                  if(document.queryCommandState('underline')) document.execCommand('underline');
+                  if(document.queryCommandState('italic')) document.execCommand('italic');
+                },10);
+              }
+            },
             input:ev=>{fEntry.notas=ev.target.innerHTML;localStorage.setItem('notas_'+fEntry.fecha,ev.target.innerHTML);persistEntry();scheduleDraftSave();},
             keyup:ev=>{fEntry.notas=ev.target.innerHTML;}
           }
@@ -5192,7 +5197,7 @@ async function compartirComoImagen(conPrecios){
 
 function renderIAFallback(){
   return h('div',{class:'card',style:{textAlign:'center',padding:'2rem'}},
-    h('div',{style:{fontSize:'2rem',marginBottom:'1rem'}},'🤖'),
+    h('div',{style:{marginBottom:'1rem',display:'flex',justifyContent:'center'},html:GEMINI_ICON_SVG.replace('width="20" height="20"','width="36" height="36"')}),
     h('div',{style:{fontWeight:700,marginBottom:'.5rem'}},'Asistente IA'),
     h('div',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'1rem'}},'Powered by Google Gemini (gratis)'),
     h('div',{style:{fontSize:'.8rem',color:'var(--red)'}},'Error cargando. Recarga la página con Ctrl+Shift+R')
@@ -5206,7 +5211,7 @@ function renderIAChat(){
     h('div',{class:'card',style:{padding:'.6rem .8rem'}},
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
         h('div',{style:{flex:1}},
-          h('div',{style:{fontWeight:700,fontSize:'.9rem'}},'🤖 Asistente IA - TimerPro'),
+          h('div',{style:{fontWeight:700,fontSize:'.9rem'}},'✨ Asistente IA - TimerPro'),
           h('div',{style:{fontSize:'.68rem',color:localStorage.getItem('gemini_api_key')?'var(--acc)':'var(--red)',marginTop:'.1rem'}},
             localStorage.getItem('gemini_api_key')?'✓ API Key configurada':'✗ Sin API Key - escribe un mensaje para configurarla')
         ),
@@ -6222,7 +6227,13 @@ function loadHistorial(entry){
   timerDeduct=fEntry.timerDeduct||0; // restore this jornada's break minutes (restoreTimerForDay resets to 0)
   timerEndManual=fEntry._horaFinManual||'';
   rerender();
-  requestAnimationFrame(()=>{ _skipDomCapture=false; });
+  requestAnimationFrame(()=>{
+    _skipDomCapture=false;
+    const app=document.getElementById('app');
+    const m=app&&app.querySelector('main');
+    if(m) m.scrollTop=0;
+    window.scrollTo({top:0,behavior:'smooth'});
+  });
 }
 
 async function deleteEntry(id){
