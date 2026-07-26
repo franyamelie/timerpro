@@ -144,6 +144,10 @@ main{flex:1;overflow-y:auto;padding:1rem}
 .cal-day.holiday.worked::before{content:'★';position:absolute;top:1px;left:2px;font-size:.5rem;color:#dc2626;opacity:.6}
 .cal-day.vacation{background:rgba(234,179,8,.25);color:#b45309;font-weight:700;border:1.5px dashed rgba(234,179,8,.6)}
 .cal-day.vacation::after{content:'☀';position:absolute;bottom:1px;right:2px;font-size:.55rem;color:#b45309;opacity:.8}
+.cal-day.vacation.worked{background:linear-gradient(135deg,rgba(34,197,94,.28) 0 50%,rgba(234,179,8,.32) 50% 100%);color:#166534;border:1.5px dashed rgba(234,179,8,.8)}
+.cal-day.vacation.worked::after{content:'☀';position:absolute;bottom:1px;right:2px;font-size:.55rem;color:#b45309;opacity:1}
+.cal-day.pending{background:rgba(148,163,184,.14);border:1.5px dashed rgba(148,163,184,.45);color:var(--ink2)}
+.cal-day.pending::after{content:'?';position:absolute;bottom:1px;right:2px;font-size:.55rem;color:var(--ink3);opacity:.8}
 .cal-day.other-month{opacity:.3}
 .cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem}
 .cal-nav button{background:none;border:none;cursor:pointer;color:var(--ink);font-size:1.2rem;padding:.3rem}
@@ -2324,7 +2328,9 @@ function renderCalendario(){
           // Add ALL applicable classes
           if(isWorked) cls+=' worked';
           if(isHol) cls+=' holiday';
-          if(isVac && !isWorked) cls+=' vacation';
+          if(isVac) cls+=' vacation';
+          // Día laborable normal (no finde/festivo/vacaciones) sin jornada y ya pasado: marcar como pendiente
+          if(!isWorked && !isWeekend && !isHol && !isVac && ds<=today()) cls+=' pending';
           if(hasEntry||hasTasks) cls+=' has-e';
           return h('div',{class:cls,
             on:{
@@ -2336,7 +2342,7 @@ function renderCalendario(){
                 if(!isWorked) toggleVacacion(ds);
               }
             },
-            title:isHol?'Festivo nacional'+(isWorked?' (trabajado)':''):isVac?'Vacaciones (clic derecho para quitar)':'Clic derecho para marcar vacaciones'
+            title:isVac?('Vacaciones'+(isWorked?' (con jornada registrada)':'')+' — clic derecho para quitar'):isHol?'Festivo nacional'+(isWorked?' (trabajado)':''):'Clic derecho para marcar vacaciones'
           },cell.d);
         })
       )
@@ -2358,6 +2364,10 @@ function renderCalendario(){
       h('div',{style:{display:'flex',alignItems:'center',gap:'.3rem'}},
         h('div',{style:{width:'16px',height:'16px',borderRadius:'3px',background:'rgba(234,179,8,.25)',border:'1.5px dashed rgba(234,179,8,.6)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'.55rem',color:'#b45309'}},'☀'),
         h('span',{},'Vacaciones')
+      ),
+      h('div',{style:{display:'flex',alignItems:'center',gap:'.3rem'}},
+        h('div',{style:{width:'16px',height:'16px',borderRadius:'3px',background:'rgba(148,163,184,.14)',border:'1.5px dashed rgba(148,163,184,.45)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'.55rem',color:'var(--ink2)'}},'?'),
+        h('span',{},'Pendiente (sin jornada)')
       ),
       h('span',{style:{color:'var(--ink3)',marginLeft:'auto'}},'Clic derecho en dia = vacaciones')
     ),
@@ -3747,11 +3757,12 @@ function dateRangeArray(from,to){
   return out;
 }
 function dayTypeOf(ds,isWorked){
+  if(isVacacion(ds)) return isWorked?'worked-vacation':'vacation';
   if(isWorked) return 'worked';
-  if(isVacacion(ds)) return 'vacation';
   if(isHolidayES(ds)) return 'holiday';
   const dow=new Date(ds+'T12:00:00').getDay();
   if(dow===0||dow===6) return 'weekend';
+  if(ds<=today()) return 'pending';
   return 'normal';
 }
 
@@ -3810,12 +3821,16 @@ function renderResumenDiasTable(entries){
     holiday: 'background:rgba(239,68,68,.10)',
     weekend: 'background:rgba(239,68,68,.06)',
     vacation:'background:rgba(234,179,8,.12)',
+    'worked-vacation':'background:linear-gradient(90deg,rgba(34,197,94,.10),rgba(234,179,8,.14))',
+    pending: 'background:rgba(148,163,184,.08)',
     normal:  ''
   };
   const rowTag={
     holiday:' <span style="color:#dc2626;font-size:.65rem">★ festivo</span>',
     weekend:' <span style="color:#ef4444;font-size:.65rem">finde</span>',
     vacation:' <span style="color:#b45309;font-size:.65rem">☀ vac.</span>',
+    'worked-vacation':' <span style="color:#b45309;font-size:.65rem">☀ vac.</span>',
+    pending:' <span style="color:var(--ink3);font-size:.65rem">? pendiente</span>',
     worked:'', normal:''
   };
   const cols=[
