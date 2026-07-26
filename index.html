@@ -146,6 +146,9 @@ main{flex:1;overflow-y:auto;padding:1rem}
 .cal-day.vacation{background:rgba(234,179,8,.28)!important;color:#b45309!important;font-weight:700;border:1.5px solid rgba(234,179,8,.6)!important}
 .cal-day.vacation::before{content:''!important}
 .cal-day.vacation::after{content:'☀';position:absolute;bottom:1px;right:2px;font-size:.55rem;color:#b45309;opacity:.9}
+.cal-day.festivo-trabajado{background:rgba(34,197,94,.28);color:#16a34a;font-weight:700;border:1.5px solid rgba(34,197,94,.5)}
+.cal-day.festivo-trabajado::before{content:'★';position:absolute;top:1px;left:2px;font-size:.5rem;color:#dc2626}
+.cal-day.festivo-trabajado::after{content:'✓';position:absolute;bottom:1px;right:2px;font-size:.55rem;color:#16a34a;opacity:.8}
 .cal-day.other-month{opacity:.3}
 .cal-day.paint-target:hover{outline:2px solid #eab308;outline-offset:-2px}
 .cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem}
@@ -406,7 +409,23 @@ let filterTo = '';   // date range to (YYYY-MM-DD)
 let calYear = new Date().getFullYear(), calMonth = new Date().getMonth();
 let calView = 'month'; // 'month' or 'week'
 let selDate = today();
-let vacPaintMode = false; // true = modo "pintar vacaciones": un click en el día = marcar, clic derecho = quitar
+let paintMode = null; // null | 'trabajado'|'festivo'|'festivo_trabajado'|'vacaciones'|'pendiente' — modo de marcado activo en el calendario
+const TAG_LABELS = {
+  trabajado:'Trabajado', festivo:'Festivo', festivo_trabajado:'Festivo trabajado',
+  vacaciones:'Vacaciones', pendiente:'Pendiente (sin jornada)'
+};
+function renderTagChip(tag,icon,bg,border,color){
+  const active = paintMode===tag;
+  return h('button',{
+    class:'btn btn-sm '+(active?'btn-y':'btn-gh'),
+    style:{display:'flex',alignItems:'center',gap:'.3rem',padding:'.15rem .5rem',fontSize:'.72rem'},
+    title:'Pulsa para activar el modo de marcado "'+TAG_LABELS[tag]+'"',
+    on:{click:()=>{paintMode=(active?null:tag);if(paintMode)selDate=null;rerender();}}
+  },
+    h('div',{style:{width:'16px',height:'16px',borderRadius:'3px',background:bg,border:'1.5px solid '+border,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'.55rem',color:color}},icon),
+    h('span',{},TAG_LABELS[tag]+(active?' (activo)':''))
+  );
+}
 let dSearch = '', dFY = '', dFM = '';
 let histSearch = '';
 let templates = [];
@@ -2315,79 +2334,66 @@ function renderCalendario(){
           const hasTasks=S.tasks.some(t=>t.fecha===ds);
           const isToday=ds===today();
           const isSel=ds===selDate;
-          let cls='cal-day';
+          const tag=getDayTag(ds);
           const isWorked = hasEntry;
           const isHol = isHolidayES(ds);
-          const isVac = isVacacion(ds);
           const dow = new Date(ds+'T12:00:00').getDay(); // 0=Sun,6=Sat
           const isWeekend = dow===0||dow===6;
+          // Estado visual: la etiqueta manual (si existe) manda; si no, se calcula automáticamente
+          let statusClass;
+          if(tag==='trabajado') statusClass='worked';
+          else if(tag==='festivo') statusClass='holiday';
+          else if(tag==='festivo_trabajado') statusClass='festivo-trabajado';
+          else if(tag==='vacaciones') statusClass='vacation';
+          else if(tag==='pendiente') statusClass='pending';
+          else if(isWorked && isHol) statusClass='festivo-trabajado';
+          else if(isWorked) statusClass='worked';
+          else if(isHol) statusClass='holiday';
+          else if(isWeekend) statusClass='weekend-rest';
+          else statusClass='pending';
+          let cls='cal-day '+statusClass;
           if(isSel) cls+=' selected';
-          else if(isToday) cls+=' today';
-          // Weekends and holidays in red UNLESS worked
-          if((isWeekend||isHol) && !isWorked) cls+=' weekend-rest';
-          // Add ALL applicable classes
-          if(isWorked) cls+=' worked';
-          if(isHol) cls+=' holiday';
-          if(isVac) cls+=' vacation';
-          // Día laborable normal (no finde/festivo/vacaciones) sin jornada y ya pasado: marcar como pendiente
-          if(!isWorked && !isWeekend && !isHol && !isVac) cls+=' pending';
-          if(vacPaintMode) cls+=' paint-target';
+          if(isToday) cls+=' today';
+          if(paintMode) cls+=' paint-target';
           if(hasEntry||hasTasks) cls+=' has-e';
           return h('div',{class:cls,
             on:{
               click:()=>{
-                if(vacPaintMode){ markVacacion(ds); }
+                if(paintMode){ setDayTag(ds,paintMode); }
                 else { selDate=ds; rerender(); }
               },
               dblclick:()=>goToDay(ds),
               contextmenu:ev=>{
                 ev.preventDefault();
-                // Clic derecho = quitar vacaciones (siempre, un solo click)
-                unmarkVacacion(ds);
+                // Clic derecho = quitar la etiqueta manual (siempre, un solo click)
+                clearDayTag(ds);
               }
             },
-            title:vacPaintMode?'Click = marcar vacaciones · Clic derecho = quitar':(isVac?('Vacaciones'+(isWorked?' (con jornada registrada)':'')+' — clic derecho para quitar'):isHol?'Festivo nacional'+(isWorked?' (trabajado)':''):'Clic derecho para marcar vacaciones')
+            title:paintMode?('Click = marcar como '+TAG_LABELS[paintMode]+' · Clic derecho = quitar etiqueta'):(tag?('Etiqueta manual: '+TAG_LABELS[tag]+' — clic derecho para quitar'):'Elige una opción abajo y pulsa aquí para marcar · Clic derecho para quitar')
           },cell.d);
         })
       )
     ),
-    vacPaintMode?h('div',{style:{background:'rgba(234,179,8,.15)',border:'1px solid rgba(234,179,8,.5)',borderRadius:'var(--r2)',padding:'.5rem .7rem',fontSize:'.78rem',color:'#b45309',marginTop:'.5rem',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'.5rem'}},
-      h('span',{},'☀ Modo vacaciones activo — pulsa cualquier día para marcarlo, clic derecho para quitarlo'),
-      h('button',{class:'btn btn-sm btn-gh',on:{click:()=>{vacPaintMode=false;rerender();}}},'Salir')
+    paintMode?h('div',{style:{background:'rgba(234,179,8,.15)',border:'1px solid rgba(234,179,8,.5)',borderRadius:'var(--r2)',padding:'.5rem .7rem',fontSize:'.78rem',color:'#b45309',marginTop:'.5rem',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'.5rem'}},
+      h('span',{},'✎ Modo "'+TAG_LABELS[paintMode]+'" activo — pulsa cualquier día para marcarlo, clic derecho para quitarlo'),
+      h('button',{class:'btn btn-sm btn-gh',on:{click:()=>{paintMode=null;rerender();}}},'Salir')
     ):null,
-    // Leyenda mejorada
-    h('div',{style:{display:'flex',gap:'.6rem',flexWrap:'wrap',padding:'.6rem',background:'var(--surf2)',borderRadius:'var(--r2)',fontSize:'.72rem',marginTop:'.5rem'}},
-      h('div',{style:{display:'flex',alignItems:'center',gap:'.3rem'}},
-        h('div',{style:{width:'16px',height:'16px',borderRadius:'3px',background:'rgba(34,197,94,.28)',border:'1.5px solid rgba(34,197,94,.5)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'.55rem',color:'#16a34a'}},'✓'),
-        h('span',{},'Trabajado')
-      ),
-      h('div',{style:{display:'flex',alignItems:'center',gap:'.3rem'}},
-        h('div',{style:{width:'16px',height:'16px',borderRadius:'3px',background:'rgba(239,68,68,.18)',border:'1.5px solid rgba(239,68,68,.4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'.55rem',color:'#dc2626'}},'★'),
-        h('span',{},'Festivo')
-      ),
-      h('div',{style:{display:'flex',alignItems:'center',gap:'.3rem'}},
-        h('div',{style:{width:'16px',height:'16px',borderRadius:'3px',background:'rgba(34,197,94,.28)',border:'1.5px solid rgba(34,197,94,.5)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'.55rem',color:'#dc2626'}},'★'),
-        h('span',{style:{color:'#16a34a'}},'Festivo trabajado')
-      ),
-      h('button',{
-        class:'btn btn-sm '+(vacPaintMode?'btn-y':'btn-gh'),
-        style:{display:'flex',alignItems:'center',gap:'.3rem',padding:'.15rem .5rem',fontSize:'.72rem'},
-        title:'Pulsa para activar el modo de marcado de vacaciones',
-        on:{click:()=>{vacPaintMode=!vacPaintMode;if(vacPaintMode)selDate=null;rerender();}}
-      },
-        h('div',{style:{width:'16px',height:'16px',borderRadius:'3px',background:'rgba(234,179,8,.25)',border:'1.5px dashed rgba(234,179,8,.6)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'.55rem',color:'#b45309'}},'☀'),
-        h('span',{},'Vacaciones'+(vacPaintMode?' (activo)':''))
-      ),
-      h('div',{style:{display:'flex',alignItems:'center',gap:'.3rem'}},
-        h('div',{style:{width:'16px',height:'16px',borderRadius:'3px',background:'rgba(148,163,184,.14)',border:'1.5px dashed rgba(148,163,184,.45)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'.55rem',color:'var(--ink2)'}},'?'),
-        h('span',{},'Pendiente (sin jornada)')
-      ),
-      h('span',{style:{color:'var(--ink3)',marginLeft:'auto'}},vacPaintMode?'Modo vacaciones activo':'Pulsa "Vacaciones" para activar el marcado')
+    // Leyenda mejorada — cada opción es un botón que activa el modo de marcado
+    h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',padding:'.6rem',background:'var(--surf2)',borderRadius:'var(--r2)',fontSize:'.72rem',marginTop:'.5rem'}},
+      renderTagChip('trabajado','✓','rgba(34,197,94,.28)','rgba(34,197,94,.5)','#16a34a'),
+      renderTagChip('festivo','★','rgba(239,68,68,.18)','rgba(239,68,68,.4)','#dc2626'),
+      renderTagChip('festivo_trabajado','★','rgba(34,197,94,.28)','rgba(34,197,94,.5)','#16a34a'),
+      renderTagChip('vacaciones','☀','rgba(234,179,8,.25)','rgba(234,179,8,.6)','#b45309'),
+      renderTagChip('pendiente','?','rgba(148,163,184,.14)','rgba(148,163,184,.45)','var(--ink2)'),
+      h('span',{style:{color:'var(--ink3)',marginLeft:'auto'}},paintMode?'Modo activo: '+TAG_LABELS[paintMode]:'Pulsa una opción para activar el marcado')
     ),
 
-    // Marcar rango de vacaciones de una sola vez
+    // Marcar rango con la etiqueta activa (o vacaciones si no hay ninguna seleccionada) de una sola vez
     h('div',{class:'card'},
-      h('div',{class:'sec-title'},'☀ Marcar periodo de vacaciones'),
+      h('div',{class:'sec-title'},'✎ Marcar un periodo completo'),
+      h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.4rem'}},
+        'Se aplicará la opción seleccionada arriba ('+TAG_LABELS[paintMode||'vacaciones']+'). Elige otra pulsando su chip.'
+      ),
       h('div',{style:{display:'flex',gap:'.5rem',alignItems:'center',flexWrap:'wrap'}},
         h('input',{type:'date',value:S.vacFrom||today(),
           style:{flex:1,minWidth:'130px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
@@ -2400,18 +2406,20 @@ function renderCalendario(){
           const from=S.vacFrom||today(), to=S.vacTo||today();
           const days=dateRangeArray(from,to);
           if(!days.length) return;
-          days.forEach(ds=>{ if(!vacaciones.includes(ds)) vacaciones.push(ds); });
-          vacaciones.sort();
-          await saveVacaciones();
-          showAlert('☀ '+days.length+' día(s) marcados como vacaciones');
+          const tag=paintMode||'vacaciones';
+          days.forEach(ds=>{ dayTags[ds]=tag; });
+          await saveDayTags();
+          showAlert('✎ '+days.length+' día(s) marcados como '+TAG_LABELS[tag]);
           rerender();
         }}},'Marcar todo'),
         h('button',{class:'btn btn-gh btn-sm',on:{click:async()=>{
           const from=S.vacFrom||today(), to=S.vacTo||today();
-          const days=new Set(dateRangeArray(from,to));
-          vacaciones=vacaciones.filter(d=>!days.has(d));
-          await saveVacaciones();
-          showAlert('Vacaciones quitadas del periodo');
+          const days=dateRangeArray(from,to);
+          const cp={...dayTags};
+          days.forEach(ds=>{ delete cp[ds]; });
+          dayTags=cp;
+          await saveDayTags();
+          showAlert('Etiquetas quitadas del periodo');
           rerender();
         }}},'Quitar todo')
       )
@@ -3770,7 +3778,13 @@ function dateRangeArray(from,to){
   return out;
 }
 function dayTypeOf(ds,isWorked){
-  if(isVacacion(ds)) return 'vacation';
+  const tag=getDayTag(ds);
+  if(tag==='trabajado') return 'worked';
+  if(tag==='festivo') return 'holiday';
+  if(tag==='festivo_trabajado') return 'festivo-trabajado';
+  if(tag==='vacaciones') return 'vacation';
+  if(tag==='pendiente') return 'pending';
+  if(isWorked && isHolidayES(ds)) return 'festivo-trabajado';
   if(isWorked) return 'worked';
   if(isHolidayES(ds)) return 'holiday';
   const dow=new Date(ds+'T12:00:00').getDay();
@@ -3833,7 +3847,7 @@ function renderResumenDiasTable(entries){
     holiday: 'background:rgba(239,68,68,.10)',
     weekend: 'background:rgba(239,68,68,.06)',
     vacation:'background:rgba(234,179,8,.12)',
-    'worked-vacation':'background:linear-gradient(90deg,rgba(34,197,94,.10),rgba(234,179,8,.14))',
+    'festivo-trabajado':'background:rgba(34,197,94,.10)',
     pending: 'background:rgba(148,163,184,.08)',
     normal:  ''
   };
@@ -3841,7 +3855,7 @@ function renderResumenDiasTable(entries){
     holiday:' <span style="color:#dc2626;font-size:.65rem">★ festivo</span>',
     weekend:' <span style="color:#ef4444;font-size:.65rem">finde</span>',
     vacation:' <span style="color:#b45309;font-size:.65rem">☀ vac.</span>',
-    'worked-vacation':' <span style="color:#b45309;font-size:.65rem">☀ vac.</span>',
+    'festivo-trabajado':' <span style="color:#dc2626;font-size:.65rem">★ festivo trab.</span>',
     pending:' <span style="color:var(--ink3);font-size:.65rem">? pendiente</span>',
     worked:'', normal:''
   };
@@ -9492,8 +9506,9 @@ function emergencyExport(){
 }
 
 
-// ── FESTIVOS Y VACACIONES ────────────────────────────────
-let vacaciones = []; // array of 'YYYY-MM-DD' strings
+// ── FESTIVOS Y ETIQUETAS MANUALES POR DÍA ────────────────
+let vacaciones = []; // deprecated, se mantiene solo para migración de datos antiguos
+let dayTags = {}; // {'YYYY-MM-DD':'trabajado'|'festivo'|'festivo_trabajado'|'vacaciones'|'pendiente'}
 
 function isHolidayES(dateStr){
   // Festivos nacionales España (fijos)
@@ -9529,44 +9544,47 @@ function getEasterDate(y){
   return new Date(y,month-1,day);
 }
 
-function isVacacion(dateStr){ return vacaciones.includes(dateStr); }
+function getDayTag(dateStr){ return dayTags[dateStr]||null; }
+function isVacacion(dateStr){ return dayTags[dateStr]==='vacaciones'; }
 
 async function loadVacaciones(){
   const s=(await dbAll(ST.settings))[0]||{};
-  vacaciones = s.vacaciones||[];
+  dayTags = s.dayTags||{};
+  // Migración: sistema antiguo que solo guardaba un array de vacaciones
+  if(Object.keys(dayTags).length===0 && s.vacaciones && s.vacaciones.length){
+    s.vacaciones.forEach(ds=>{ dayTags[ds]='vacaciones'; });
+  }
 }
 
-async function saveVacaciones(){
+async function saveDayTags(){
   const s=(await dbAll(ST.settings))[0]||{};
-  await dbPut(ST.settings,{...s,id:1,vacaciones});
+  await dbPut(ST.settings,{...s,id:1,dayTags});
 }
-async function toggleVacacion(dateStr){
-  if(vacaciones.includes(dateStr)){
-    vacaciones=vacaciones.filter(d=>d!==dateStr);
-  } else {
-    vacaciones.push(dateStr);
-    vacaciones.sort();
-  }
-  await saveVacaciones();
+
+// setDayTag: marca un día con una etiqueta manual concreta (solo añade/sobrescribe, usado por el modo "pintar")
+async function setDayTag(dateStr,tag){
+  dayTags={...dayTags,[dateStr]:tag};
+  await saveDayTags();
   rerender();
 }
-// markVacacion: solo añade (usado por el modo "pintar" con un click)
-async function markVacacion(dateStr){
-  if(!vacaciones.includes(dateStr)){
-    vacaciones.push(dateStr);
-    vacaciones.sort();
-    await saveVacaciones();
+// clearDayTag: quita la etiqueta manual de un día (usado por clic derecho) → vuelve al estado automático
+async function clearDayTag(dateStr){
+  if(dayTags[dateStr]){
+    const cp={...dayTags};
+    delete cp[dateStr];
+    dayTags=cp;
+    await saveDayTags();
     rerender();
   }
 }
-// unmarkVacacion: solo quita (usado por clic derecho)
-async function unmarkVacacion(dateStr){
-  if(vacaciones.includes(dateStr)){
-    vacaciones=vacaciones.filter(d=>d!==dateStr);
-    await saveVacaciones();
-    rerender();
-  }
+// toggleVacacion: se mantiene por compatibilidad (usado por el botón del detalle del día)
+async function toggleVacacion(dateStr){
+  if(dayTags[dateStr]==='vacaciones') await clearDayTag(dateStr);
+  else await setDayTag(dateStr,'vacaciones');
 }
+// Compatibilidad con nombres anteriores
+async function markVacacion(dateStr){ await setDayTag(dateStr,'vacaciones'); }
+async function unmarkVacacion(dateStr){ await clearDayTag(dateStr); }
 
 // ── RELOJ ────────────────────────────────────────────────
 function startClock(){
