@@ -133,21 +133,19 @@ main{flex:1;overflow-y:auto;padding:1rem}
 .cal-dn{text-align:center;font-size:.65rem;color:var(--ink2);font-weight:700;padding:.3rem 0}
 .cal-day{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:var(--r2);cursor:pointer;font-size:.8rem;position:relative;background:var(--surf2);transition:background .15s}
 .cal-day:hover{background:var(--surf3)}
-.cal-day.today{background:var(--acc-lt);color:var(--acc);font-weight:700}
+.cal-day.today{box-shadow:0 0 0 2px var(--acc) inset;font-weight:700}
 .cal-day.selected{background:var(--acc);color:#000;font-weight:700}
 .cal-day.has-e::after{content:'';position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--acc)}
 .cal-day.worked{background:rgba(34,197,94,.28);color:#16a34a;font-weight:700;border:1.5px solid rgba(34,197,94,.5)}
 .cal-day.worked::after{content:'✓';position:absolute;bottom:1px;right:2px;font-size:.55rem;color:#16a34a;opacity:.8}
-.cal-day.weekend-rest{background:rgba(239,68,68,.1);color:#ef4444!important;border-color:rgba(239,68,68,.25)!important}.holiday{background:rgba(239,68,68,.18);color:#dc2626;font-weight:700;border:1.5px solid rgba(239,68,68,.4)}
+.cal-day.weekend-rest{background:rgba(239,68,68,.1);color:#ef4444!important;border-color:rgba(239,68,68,.25)!important}
+.cal-day.holiday{background:rgba(239,68,68,.18);color:#dc2626;font-weight:700;border:1.5px solid rgba(239,68,68,.4)}
 .cal-day.holiday::before{content:'★';position:absolute;top:1px;left:2px;font-size:.5rem;color:#dc2626}
-.cal-day.holiday.worked{background:rgba(34,197,94,.28);color:#16a34a;border:1.5px solid rgba(34,197,94,.5)}
-.cal-day.holiday.worked::before{content:'★';position:absolute;top:1px;left:2px;font-size:.5rem;color:#dc2626;opacity:.6}
-.cal-day.vacation{background:rgba(234,179,8,.25);color:#b45309;font-weight:700;border:1.5px dashed rgba(234,179,8,.6)}
-.cal-day.vacation::after{content:'☀';position:absolute;bottom:1px;right:2px;font-size:.55rem;color:#b45309;opacity:.8}
-.cal-day.vacation.worked{background:linear-gradient(135deg,rgba(34,197,94,.28) 0 50%,rgba(234,179,8,.32) 50% 100%);color:#166534;border:1.5px dashed rgba(234,179,8,.8)}
-.cal-day.vacation.worked::after{content:'☀';position:absolute;bottom:1px;right:2px;font-size:.55rem;color:#b45309;opacity:1}
 .cal-day.pending{background:rgba(148,163,184,.14);border:1.5px dashed rgba(148,163,184,.45);color:var(--ink2)}
 .cal-day.pending::after{content:'?';position:absolute;bottom:1px;right:2px;font-size:.55rem;color:var(--ink3);opacity:.8}
+.cal-day.vacation{background:rgba(234,179,8,.28)!important;color:#b45309!important;font-weight:700;border:1.5px solid rgba(234,179,8,.6)!important}
+.cal-day.vacation::before{content:''!important}
+.cal-day.vacation::after{content:'☀';position:absolute;bottom:1px;right:2px;font-size:.55rem;color:#b45309;opacity:.9}
 .cal-day.other-month{opacity:.3}
 .cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem}
 .cal-nav button{background:none;border:none;cursor:pointer;color:var(--ink);font-size:1.2rem;padding:.3rem}
@@ -2330,7 +2328,7 @@ function renderCalendario(){
           if(isHol) cls+=' holiday';
           if(isVac) cls+=' vacation';
           // Día laborable normal (no finde/festivo/vacaciones) sin jornada y ya pasado: marcar como pendiente
-          if(!isWorked && !isWeekend && !isHol && !isVac && ds<=today()) cls+=' pending';
+          if(!isWorked && !isWeekend && !isHol && !isVac) cls+=' pending';
           if(hasEntry||hasTasks) cls+=' has-e';
           return h('div',{class:cls,
             on:{
@@ -3757,13 +3755,12 @@ function dateRangeArray(from,to){
   return out;
 }
 function dayTypeOf(ds,isWorked){
-  if(isVacacion(ds)) return isWorked?'worked-vacation':'vacation';
+  if(isVacacion(ds)) return 'vacation';
   if(isWorked) return 'worked';
   if(isHolidayES(ds)) return 'holiday';
   const dow=new Date(ds+'T12:00:00').getDay();
   if(dow===0||dow===6) return 'weekend';
-  if(ds<=today()) return 'pending';
-  return 'normal';
+  return 'pending';
 }
 
 // ── Cálculo compartido de liquidación (día a día + desglose por precio) ──
