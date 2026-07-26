@@ -2362,6 +2362,38 @@ function renderCalendario(){
       h('span',{style:{color:'var(--ink3)',marginLeft:'auto'}},'Clic derecho en dia = vacaciones')
     ),
 
+    // Marcar rango de vacaciones de una sola vez
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'☀ Marcar periodo de vacaciones'),
+      h('div',{style:{display:'flex',gap:'.5rem',alignItems:'center',flexWrap:'wrap'}},
+        h('input',{type:'date',value:S.vacFrom||today(),
+          style:{flex:1,minWidth:'130px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
+          on:{change:ev=>{S.vacFrom=ev.target.value;}}}),
+        h('span',{style:{color:'var(--ink2)'}},'→'),
+        h('input',{type:'date',value:S.vacTo||today(),
+          style:{flex:1,minWidth:'130px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
+          on:{change:ev=>{S.vacTo=ev.target.value;}}}),
+        h('button',{class:'btn btn-y btn-sm',on:{click:async()=>{
+          const from=S.vacFrom||today(), to=S.vacTo||today();
+          const days=dateRangeArray(from,to);
+          if(!days.length) return;
+          days.forEach(ds=>{ if(!vacaciones.includes(ds)) vacaciones.push(ds); });
+          vacaciones.sort();
+          await saveVacaciones();
+          showAlert('☀ '+days.length+' día(s) marcados como vacaciones');
+          rerender();
+        }}},'Marcar todo'),
+        h('button',{class:'btn btn-gh btn-sm',on:{click:async()=>{
+          const from=S.vacFrom||today(), to=S.vacTo||today();
+          const days=new Set(dateRangeArray(from,to));
+          vacaciones=vacaciones.filter(d=>!days.has(d));
+          await saveVacaciones();
+          showAlert('Vacaciones quitadas del periodo');
+          rerender();
+        }}},'Quitar todo')
+      )
+    ),
+
     // Detalle del día seleccionado
     selDate?renderDayDetail(selDate):null
   );
@@ -2798,6 +2830,23 @@ function getResumenEntries(){
     if(c==='otros') return (e.otrosConceptos||[]).length>0||(e.journeys||[]).length>0;
     return true;
   });
+}
+// Devuelve TODAS las fechas del periodo seleccionado (incluidas las que no tienen jornada)
+function getResumenAllDates(){
+  if(S.resMode==='days'){
+    return [...(S.resDays||[])].sort();
+  }
+  let from,to;
+  if(S.resMode==='total'){
+    const ents=S.entries.filter(e=>!e._draft);
+    if(!ents.length) return [];
+    from=ents.reduce((m,e)=>e.fecha<m?e.fecha:m,ents[0].fecha);
+    to=today();
+  } else {
+    from=S.resFrom||firstDayOfMonth();
+    to=S.resTo||today();
+  }
+  return dateRangeArray(from,to);
 }
 function resumenPeriodoLabel(){
   if(S.resMode==='days'){
@@ -3686,17 +3735,40 @@ function renderConceptoFilter(){
   );
 }
 
+// ── Devuelve todas las fechas 'YYYY-MM-DD' entre from y to (inclusive) ──
+function dateRangeArray(from,to){
+  const out=[];
+  let d=new Date(from+'T12:00:00'), end=new Date(to+'T12:00:00');
+  if(isNaN(d)||isNaN(end)||d>end) return out;
+  while(d<=end){
+    out.push(d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()));
+    d.setDate(d.getDate()+1);
+  }
+  return out;
+}
+function dayTypeOf(ds,isWorked){
+  if(isWorked) return 'worked';
+  if(isVacacion(ds)) return 'vacation';
+  if(isHolidayES(ds)) return 'holiday';
+  const dow=new Date(ds+'T12:00:00').getDay();
+  if(dow===0||dow===6) return 'weekend';
+  return 'normal';
+}
+
 // ── Cálculo compartido de liquidación (día a día + desglose por precio) ──
-function computeLiquidacion(entries){
+// allDates: opcional, array de fechas a incluir (incluso sin jornada) para mostrar el periodo completo
+function computeLiquidacion(entries,allDates){
   let totHN=0,totHE=0,totHNoc=0,totHFes=0,totIN=0,totIE=0,totINoc=0,totIFes=0,totD=0,totT=0,totO=0,totViaj=0;
   let totTranspCoche=0,totTranspCamion=0,totTranspOtro=0,nCoche=0,nCamion=0,nOtroTransp=0,nDietas=0;
   const dietaPrecios={}, cochePrecio={}, camionPrecio={};
   const dayRows=[];
-  entries.forEach(e=>{
-    const hN=e.horasNormales||0, hE=e.horasExtra||0, hNoc=e.horasNocturnas||0, hFes=e.horasFestivas||0;
-    const iN=e.importeNormales||0, iE=e.importeExtra||0, iNoc=e.importeNocturnas||0, iFes=e.importeFestivas||0;
-    const dieta=e.dieta||0, transp=e.transporte||0;
-    const tt=e._transportType||'';
+  const byFecha={};
+  entries.forEach(e=>{byFecha[e.fecha]=e;});
+  const processDay=(fecha,e)=>{
+    const hN=(e&&e.horasNormales)||0, hE=(e&&e.horasExtra)||0, hNoc=(e&&e.horasNocturnas)||0, hFes=(e&&e.horasFestivas)||0;
+    const iN=(e&&e.importeNormales)||0, iE=(e&&e.importeExtra)||0, iNoc=(e&&e.importeNocturnas)||0, iFes=(e&&e.importeFestivas)||0;
+    const dieta=(e&&e.dieta)||0, transp=(e&&e.transporte)||0;
+    const tt=(e&&e._transportType)||'';
     let vCoche=0, vCamion=0, vOtro=0;
     if(transp>0){
       if(tt==='coche'){totTranspCoche+=transp;nCoche++;vCoche=transp;const pk=transp.toFixed(2);cochePrecio[pk]=(cochePrecio[pk]||0)+1;}
@@ -3704,16 +3776,21 @@ function computeLiquidacion(entries){
       else{totTranspOtro+=transp;nOtroTransp++;vOtro=transp;}
     }
     if(dieta>0){nDietas++;const pk=dieta.toFixed(2);dietaPrecios[pk]=(dietaPrecios[pk]||0)+1;}
-    const dietasE=(e.dietasExtra||[]).reduce((a,d)=>a+(d.importe||0),0);
-    const otros=(e.otrosConceptos||[]).reduce((a,o)=>a+(o.importe||0),0);
-    const viajes=(e.journeys||[]).reduce((a,j)=>a+(j.precioManual||0),0);
+    const dietasE=e?(e.dietasExtra||[]).reduce((a,d)=>a+(d.importe||0),0):0;
+    const otros=e?(e.otrosConceptos||[]).reduce((a,o)=>a+(o.importe||0),0):0;
+    const viajes=e?(e.journeys||[]).reduce((a,j)=>a+(j.precioManual||0),0):0;
     const total=iN+iE+iNoc+iFes+dieta+transp+dietasE+otros+viajes;
     totHN+=hN;totHE+=hE;totHNoc+=hNoc;totHFes+=hFes;
     totIN+=iN;totIE+=iE;totINoc+=iNoc;totIFes+=iFes;totD+=dieta+dietasE;totT+=transp;totO+=otros;totViaj+=viajes;
-    if(hN+hE+hNoc+hFes+dieta+dietasE+transp+otros+viajes>0){
-      dayRows.push({fecha:e.fecha,dieta:dieta+dietasE,hN,hE,hNoc,hFes,vCoche,vCamion,vOtro,otros:otros+viajes,total});
-    }
-  });
+    const hasData=hN+hE+hNoc+hFes+dieta+dietasE+transp+otros+viajes>0;
+    return {fecha,dieta:dieta+dietasE,hN,hE,hNoc,hFes,vCoche,vCamion,vOtro,otros:otros+viajes,total,hasData,
+      dayType:dayTypeOf(fecha,hasData)};
+  };
+  if(allDates && allDates.length){
+    allDates.forEach(fecha=>{ dayRows.push(processDay(fecha,byFecha[fecha])); });
+  } else {
+    entries.forEach(e=>{ const row=processDay(e.fecha,e); if(row.hasData) dayRows.push(row); });
+  }
   const totTotal=totIN+totIE+totINoc+totIFes+totD+totT+totO+totViaj;
   return {dayRows,totHN,totHE,totHNoc,totHFes,totIN,totIE,totINoc,totIFes,totD,totT,totO,totViaj,
     totTranspCoche,totTranspCamion,totTranspOtro,nCoche,nCamion,nOtroTransp,nDietas,
@@ -3722,19 +3799,33 @@ function computeLiquidacion(entries){
 
 // ── Tabla visual "día a día" (estilo Parte Diario) para el propio Resumen ──
 function renderResumenDiasTable(entries){
-  if(!entries.length) return null;
-  const liq=computeLiquidacion(entries);
+  const allDates=getResumenAllDates();
+  if(!allDates.length && !entries.length) return null;
+  const liq=computeLiquidacion(entries,allDates);
   if(!liq.dayRows.length) return null;
   const eur=v=>v>0?v.toFixed(2).replace('.',',')+'€':'—';
   const fh=v=>v>0?(String(v).replace('.',',')+'h'):'—';
+  const rowStyle={
+    worked:  'background:rgba(34,197,94,.10)',
+    holiday: 'background:rgba(239,68,68,.10)',
+    weekend: 'background:rgba(239,68,68,.06)',
+    vacation:'background:rgba(234,179,8,.12)',
+    normal:  ''
+  };
+  const rowTag={
+    holiday:' <span style="color:#dc2626;font-size:.65rem">★ festivo</span>',
+    weekend:' <span style="color:#ef4444;font-size:.65rem">finde</span>',
+    vacation:' <span style="color:#b45309;font-size:.65rem">☀ vac.</span>',
+    worked:'', normal:''
+  };
   const cols=[
     ['Fecha',''],['Dieta','dieta'],['H.norm','hN'],['H.extra','hE'],['H.noct','hNoc'],
     ['H.fest','hFes'],['V.cam','vCamion'],['V.coch','vCoche'],['Otros','vOtro'],['Total','']
   ];
   const rowsHtml = liq.dayRows.map(d=>{
     const fechaCorta = d.fecha.split('-').reverse().join('.');
-    return `<tr>
-      <td style="white-space:nowrap">${fechaCorta} <span style="color:var(--ink3);font-size:.68rem">${wday(d.fecha)}</span></td>
+    return `<tr style="${rowStyle[d.dayType]||''}">
+      <td style="white-space:nowrap">${fechaCorta} <span style="color:var(--ink3);font-size:.68rem">${wday(d.fecha)}</span>${rowTag[d.dayType]||''}</td>
       <td>${eur(d.dieta)}</td>
       <td>${fh(d.hN)}</td>
       <td>${fh(d.hE)}</td>
@@ -3743,7 +3834,7 @@ function renderResumenDiasTable(entries){
       <td>${eur(d.vCamion)}</td>
       <td>${eur(d.vCoche)}</td>
       <td>${eur(d.otros)}</td>
-      <td style="font-weight:700">${eur(d.total)}</td>
+      <td style="font-weight:700">${d.hasData?eur(d.total):'—'}</td>
     </tr>`;
   }).join('');
   const totalRow=`<tr style="font-weight:800;border-top:2px solid var(--brd)">
@@ -3764,6 +3855,9 @@ function renderResumenDiasTable(entries){
   </table></div>`;
   return h('div',{class:'card'},
     h('div',{class:'sec-title'},'Día a día'),
+    h('div',{style:{display:'flex',gap:'.6rem',flexWrap:'wrap',fontSize:'.68rem',color:'var(--ink2)',marginBottom:'.4rem'}},
+      h('span',{},'🟩 Trabajado'),h('span',{},'🟥 Finde/Festivo'),h('span',{},'🟨 Vacaciones'),h('span',{},'⬜ Sin jornada')
+    ),
     h('div',{html:tableHtml})
   );
 }
@@ -9415,6 +9509,10 @@ async function loadVacaciones(){
   vacaciones = s.vacaciones||[];
 }
 
+async function saveVacaciones(){
+  const s=(await dbAll(ST.settings))[0]||{};
+  await dbPut(ST.settings,{...s,id:1,vacaciones});
+}
 async function toggleVacacion(dateStr){
   if(vacaciones.includes(dateStr)){
     vacaciones=vacaciones.filter(d=>d!==dateStr);
@@ -9422,8 +9520,7 @@ async function toggleVacacion(dateStr){
     vacaciones.push(dateStr);
     vacaciones.sort();
   }
-  const s=(await dbAll(ST.settings))[0]||{};
-  await dbPut(ST.settings,{...s,id:1,vacaciones});
+  await saveVacaciones();
   rerender();
 }
 
