@@ -8744,6 +8744,7 @@ async function gdriveSaveData(data){
     companies: data.companies,
     activeWorkerId: data.activeWorkerId,
     activeCompanyId: data.activeCompanyId,
+    dayTags: data.dayTags||dayTags||{},
     exportedAt: new Date().toISOString()
   });
   const blob = new Blob([payload], {type:'application/json'});
