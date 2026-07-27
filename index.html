@@ -8884,6 +8884,7 @@ function buildSyncData(){
     sites:S.sites||[],
     workorders:S.workorders||[],
     vehicles:S.vehicles||[],
+    dayTags: dayTags||{},
 
 
     activeWorkerId, activeCompanyId,
@@ -8925,7 +8926,7 @@ async function importDriveData(d, verifyMode){
     const localEntryMap = {};
     S.entries.forEach(e=>{ if(e.fecha) localEntryMap[e.fecha]={fotosGastos:e.fotosGastos||[]}; });
 
-    await Promise.all(Object.values(ST).filter(s=>s!=='snapshots').map(s=>dbClear(s)));
+    await Promise.all(Object.values(ST).filter(s=>s!=='snapshots'&&s!=='settings').map(s=>dbClear(s)));
     for(const e of(d.entries||[])){
       // Restore fotosGastos from local if Drive stripped them
       const localE = localEntryMap[e.fecha]||{};
@@ -8951,6 +8952,9 @@ async function importDriveData(d, verifyMode){
     if(d.company) fCompany={...defCompany,...d.company, logo:d.company.logo||savedCompanyLogo};
     activeWorkerId=d.activeWorkerId||null;
     activeCompanyId=d.activeCompanyId||null;
+    // Restaurar vacaciones/festivos/etc. marcados a mano (día a día)
+    dayTags = d.dayTags||{};
+    await saveDayTags();
     await loadData();
     syncStatus='ok';
     lastSync=new Date().toLocaleTimeString('es-ES');
@@ -8994,8 +8998,11 @@ async function mergeDriveData(d){
     // Sort by date
     merged.sort((a,b)=>a.fecha.localeCompare(b.fecha));
 
+    // Fusionar etiquetas de días (vacaciones/festivo/etc.): unión de local + Drive, Drive gana en conflicto
+    const mergedTags = {...dayTags, ...(d.dayTags||{})};
+
     // Save merged data
-    const mergedData = {...d, entries: merged};
+    const mergedData = {...d, entries: merged, dayTags: mergedTags};
     await importDriveData(mergedData, false);
     showAlert('✅ Fusionado: '+merged.length+' jornadas totales');
 
@@ -9336,7 +9343,8 @@ async function createSnapshot(label=''){
       companies: [...companies],
       worker: {...fWorker},
       company: {...fCompany},
-      activeWorkerId, activeCompanyId
+      activeWorkerId, activeCompanyId,
+      dayTags: {...dayTags}
     };
     const snap = {
       createdAt: new Date().toISOString(),
@@ -9361,7 +9369,7 @@ async function createSnapshot(label=''){
 async function restoreSnapshot(snap){
   try{
     const data = JSON.parse(snap.data);
-    await Promise.all(Object.values(ST).filter(s=>s!=='snapshots').map(s=>dbClear(s)));
+    await Promise.all(Object.values(ST).filter(s=>s!=='snapshots'&&s!=='settings').map(s=>dbClear(s)));
     for(const e of(data.entries||[])) await dbPut(ST.entries,e);
     for(const t of(data.tasks||[])) await dbPut(ST.tasks,t);
     for(const s of(data.sites||[])) await dbPut(ST.sites,s);
@@ -9373,6 +9381,8 @@ async function restoreSnapshot(snap){
     if(data.company) fCompany={...defCompany,...data.company};
     activeWorkerId=data.activeWorkerId||null;
     activeCompanyId=data.activeCompanyId||null;
+    dayTags = data.dayTags||{};
+    await saveDayTags();
     await loadData();
     fEntry=defEntry();
     editingEntry=false;
