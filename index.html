@@ -376,6 +376,17 @@ function loadFTaskDraft(){
 function persistEntry(){
   try{ localStorage.setItem('_fEntry', JSON.stringify(fEntry)); }catch(e){}
 }
+// Lee el HTML actual del editor de notas y lo sincroniza con fEntry.notas + autoguardado.
+// Se usa tras cada comando de formato (execCommand) para no depender solo del evento 'input',
+// que puede no dispararse siempre justo después de aplicar negrita/cursiva/subrayado.
+function syncNotasFromEditor(){
+  const el=document.getElementById('notas-editor');
+  if(!el) return;
+  fEntry.notas=el.innerHTML;
+  localStorage.setItem('notas_'+fEntry.fecha, el.innerHTML);
+  persistEntry();
+  scheduleDraftSave();
+}
 function restoreEntry(){
   try{
     const saved = localStorage.getItem('_fEntry');
@@ -772,7 +783,7 @@ function renderTabs(){
       class:'tab'+(S.tab===t.id?' active':''),
       'data-tabId':t.id,
       style:t._tipoId?{borderBottom:'2px solid '+(taskTypes.find(x=>x.id===t._tipoId)||{}).color}:{},
-      on:{click:()=>{captureFormState();S.tab=t.id;rerender();}}
+      on:{click:()=>{captureFormState();saveDraft();S.tab=t.id;rerender();}}
     },
       t.id==='ia' ? h('span',{class:'tab-icon',html:GEMINI_ICON_SVG}) : h('span',{class:'tab-icon'},t.icon),t.label
     ))
@@ -1427,17 +1438,17 @@ function renderFichar(){
         h('label',{},'NOTAS DE JORNADA'),
         h('div',{style:{display:'flex',gap:'.3rem',marginBottom:'.3rem',flexWrap:'wrap'}},
           h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontWeight:'bold'},title:'Negrita',
-            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('bold');}}},'N'),
+            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('bold');syncNotasFromEditor();}}},'N'),
           h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontStyle:'italic'},title:'Cursiva',
-            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('italic');}}},'C'),
+            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('italic');syncNotasFromEditor();}}},'C'),
           h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',textDecoration:'underline'},title:'Subrayado',
-            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('underline');}}},'S'),
+            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('underline');syncNotasFromEditor();}}},'S'),
           h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontSize:'.7rem'},title:'Limpiar formato',
-            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('removeFormat');}}},'✕ Formato'),
+            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('removeFormat');syncNotasFromEditor();}}},'✕ Formato'),
           h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontSize:'.85rem'},title:'Deshacer',
-            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('undo');}}},'↶'),
+            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('undo');syncNotasFromEditor();}}},'↶'),
           h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontSize:'.85rem'},title:'Rehacer',
-            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('redo');}}},'↷')
+            on:{mousedown:ev=>{ev.preventDefault();document.execCommand('redo');syncNotasFromEditor();}}},'↷')
         ),
         h('div',{
           id:'notas-editor',
@@ -1457,11 +1468,13 @@ function renderFichar(){
                   if(document.queryCommandState('bold')) document.execCommand('bold');
                   if(document.queryCommandState('underline')) document.execCommand('underline');
                   if(document.queryCommandState('italic')) document.execCommand('italic');
+                  syncNotasFromEditor();
                 },10);
               }
             },
             input:ev=>{fEntry.notas=ev.target.innerHTML;localStorage.setItem('notas_'+fEntry.fecha,ev.target.innerHTML);persistEntry();scheduleDraftSave();},
-            keyup:ev=>{fEntry.notas=ev.target.innerHTML;}
+            keyup:ev=>{fEntry.notas=ev.target.innerHTML;},
+            blur:ev=>{syncNotasFromEditor();}
           }
         })
       )
@@ -2433,12 +2446,14 @@ function renderCalendario(){
 function goToDay(ds){
   // Save current day before switching
   try{
+    captureFormState();
     const notasEl=document.getElementById('notas-editor');
     if(notasEl && fEntry.fecha && notasEl.innerHTML.trim()){
       fEntry.notas=notasEl.innerHTML;
       localStorage.setItem('notas_'+fEntry.fecha, notasEl.innerHTML);
       persistEntry();
     }
+    saveDraft(); // autoguardado inmediato del día que se abandona (no esperar al debounce)
   }catch(e){}
   pauseAndSaveTimerForDay(); // save current day's timer
   localStorage.removeItem('_fEntry');
@@ -5983,54 +5998,52 @@ function captureFichajeFromDOM(){
   });
 }
 
+// Comprueba si la jornada actual tiene algún dato real (para no crear jornadas vacías al autoguardar)
+function entryHasData(e){
+  if(!e) return false;
+  if(e.id) return true; // ya es una jornada real existente: conservarla siempre
+  return !!(
+    (e.fichajes&&e.fichajes.some(f=>f.entrada||f.salida))
+    || (e.notas&&e.notas.replace(/<[^>]*>/g,'').trim())
+    || (+e.horasNormales||0) || (+e.horasExtra||0) || (+e.horasNocturnas||0) || (+e.horasFestivas||0)
+    || (+e.dieta||0) || (+e.transporte||0)
+    || (e.dietasExtra&&e.dietasExtra.length) || (e.otrosConceptos&&e.otrosConceptos.length) || (e.journeys&&e.journeys.length)
+    || e.ubicacionEntrada || e.ubicacionSalida || e.horaEntrada || e.horaSalida
+  );
+}
 async function saveDraft(){
-  // Capture all DOM values before saving draft
+  // Capture all DOM values before saving
   const notasEl=document.getElementById('notas-editor');
   if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
   // fEntry.fichajes maintained by input handlers
   if(!fEntry.fecha||_draftSaving) return;
+  if(!entryHasData(fEntry)) return; // no crear jornadas vacías por solo pasar por un día
   _draftSaving=true;
   try{
-    const draft={...fEntry,_draft:true,_savedAt:new Date().toISOString()};
-    // Find existing entries for this date
+    // Autoguardado: se guarda YA como jornada real (_draft:false), no oculta.
+    // Así cualquier cambio (horas, notas, dietas, viajes, etc.) queda guardado
+    // localmente al instante, sin depender de pulsar "Guardar" ni de subir a Drive.
+    const toSave={...fEntry,_draft:false,_savedAt:new Date().toISOString()};
+    // Elimina cualquier otra entrada duplicada para la misma fecha (con otro id)
     const allForDate=S.entries.filter(e=>e.fecha===fEntry.fecha);
-    const finalized=allForDate.find(e=>!e._draft && e.id===fEntry.id); // only match same id
-    const draftEntry=allForDate.find(e=>e._draft);
-    // Remove duplicate entries for same date (keep newest)
-    if(allForDate.length>1){
-      const keep=finalized||draftEntry;
-      for(const e of allForDate){
-        if(e!==keep && e.id && e.id!==fEntry.id){
-          await dbDel(ST.entries,e.id);
-          S.entries=S.entries.filter(x=>x.id!==e.id);
-        }
+    for(const e of allForDate){
+      if(e.id && e.id!==fEntry.id){
+        await dbDel(ST.entries,e.id);
+        S.entries=S.entries.filter(x=>x.id!==e.id);
       }
     }
     if(fEntry.id){
-      // Only update if entry is a draft - never overwrite finalized with draft
-      const existingEntry=S.entries.find(e=>e.id===fEntry.id);
-      if(existingEntry && !existingEntry._draft){
-        // Entry is finalized - skip draft save to avoid corruption
-      } else {
-        await dbPut(ST.entries,draft);
-        S.entries=S.entries.map(e=>e.id===fEntry.id?{...draft}:e);
-        if(!S.entries.find(e=>e.id===fEntry.id)) S.entries.push({...draft});
-      }
-    } else if(finalized){
-      // Don't overwrite a finalized entry with a draft
-      fEntry.id=finalized.id;
-    } else if(draftEntry){
-      draft.id=draftEntry.id;
-      fEntry.id=draftEntry.id;
-      await dbPut(ST.entries,draft);
-      S.entries=S.entries.map(e=>e.id===draftEntry.id?{...draft}:e);
+      await dbPut(ST.entries,toSave);
+      S.entries=S.entries.map(e=>e.id===fEntry.id?{...toSave}:e);
+      if(!S.entries.find(e=>e.id===fEntry.id)) S.entries.push({...toSave});
     } else {
-      const id=await dbPut(ST.entries,draft);
+      const id=await dbPut(ST.entries,toSave);
       fEntry.id=id;
-      S.entries.push({...draft,id});
+      S.entries.push({...toSave,id});
     }
+    editingEntry=true;
     localStorage.setItem('lastSave',new Date().toISOString());
-  }catch(e){console.warn('Draft save:',e);}
+  }catch(e){console.warn('Autoguardado:',e);}
   finally{_draftSaving=false;}
 }
 
@@ -6342,12 +6355,14 @@ function restoreTimerForDay(fecha){
 function loadHistorial(entry){
   // Save current day's notas before switching
   try{
+    captureFormState();
     const notasEl=document.getElementById('notas-editor');
     if(notasEl && fEntry.fecha && notasEl.innerHTML.trim()){
       fEntry.notas=notasEl.innerHTML;
       localStorage.setItem('notas_'+fEntry.fecha, notasEl.innerHTML);
       persistEntry();
     }
+    saveDraft(); // autoguardado inmediato del día que se abandona
   }catch(e){}
   pauseAndSaveTimerForDay(); // save current day's timer before switching
   // Clear stale _fEntry so restoreEntry can't merge old day's data
