@@ -349,7 +349,7 @@ setTimeout(function(){
   if(!fEntry.precioHoraExtra && S.precioHoraExtraDefault>0) fEntry.precioHoraExtra=S.precioHoraExtraDefault;
   if(!fEntry.precioHoraNocturna && S.precioHoraNocturnaDefault>0) fEntry.precioHoraNocturna=S.precioHoraNocturnaDefault;
   if(!fEntry.precioHoraFestiva && S.precioHoraFestivaDefault>0) fEntry.precioHoraFestiva=S.precioHoraFestivaDefault;
-  if(!fEntry.dieta && S.dietaDefault>0) fEntry.dieta=S.dietaDefault;
+  // NOTA: la dieta ya NO se auto-rellena; debe quedar en 0 y meterse manualmente cada día (usa el botón junto a DIETA para aplicar el precio guardado si quieres).
 },100);
 let _skipDomCapture = false; // prevent DOM contamination when switching days
 let fTask = defTask();
@@ -2469,8 +2469,8 @@ function goToDay(ds){
       precioHoraNormal:S.precioHoraNormalDefault||0,
       precioHoraExtra:S.precioHoraExtraDefault||0,
       precioHoraNocturna:S.precioHoraNocturnaDefault||0,
-      precioHoraFestiva:S.precioHoraFestivaDefault||0,
-      dieta:S.dietaDefault||0
+      precioHoraFestiva:S.precioHoraFestivaDefault||0
+      // dieta se queda en 0 por defecto (defEntry) — se mete manualmente cada día
     };
     editingEntry=false;
   }
@@ -3855,65 +3855,51 @@ function renderResumenDiasTable(entries){
   if(!allDates.length && !entries.length) return null;
   const liq=computeLiquidacion(entries,allDates);
   if(!liq.dayRows.length) return null;
-  const eur=v=>v>0?v.toFixed(2).replace('.',',')+'€':'—';
-  const fh=v=>v>0?(String(v).replace('.',',')+'h'):'—';
-  const rowStyle={
-    worked:  'background:rgba(34,197,94,.10)',
-    holiday: 'background:rgba(239,68,68,.10)',
-    weekend: 'background:rgba(239,68,68,.06)',
-    vacation:'background:rgba(234,179,8,.12)',
-    'festivo-trabajado':'background:rgba(34,197,94,.10)',
-    pending: 'background:rgba(148,163,184,.08)',
-    normal:  ''
+  const eur=v=>v>0?v.toFixed(2).replace('.',',')+'€':'';
+  const fh=v=>v>0?(String(v).replace('.',',')+'h'):'';
+  // Color del día de la semana según el tipo (igual que Parte Diario: solo el texto, sin fondos)
+  const wdayColor={
+    holiday:'#ef4444', weekend:'#ef4444', 'festivo-trabajado':'#ef4444',
+    vacation:'#eab308', pending:'var(--ink3)', worked:'var(--ink3)', normal:'var(--ink3)'
   };
-  const rowTag={
-    holiday:' <span style="color:#dc2626;font-size:.65rem">★ festivo</span>',
-    weekend:' <span style="color:#ef4444;font-size:.65rem">finde</span>',
-    vacation:' <span style="color:#b45309;font-size:.65rem">☀ vac.</span>',
-    'festivo-trabajado':' <span style="color:#dc2626;font-size:.65rem">★ festivo trab.</span>',
-    pending:' <span style="color:var(--ink3);font-size:.65rem">? pendiente</span>',
-    worked:'', normal:''
-  };
-  const cols=[
-    ['Fecha',''],['Dieta','dieta'],['H.norm','hN'],['H.extra','hE'],['H.noct','hNoc'],
-    ['H.fest','hFes'],['V.cam','vCamion'],['V.coch','vCoche'],['Otros','vOtro'],['Total','']
-  ];
+  const numTd = v => `<td style="padding:.55rem .7rem;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink)">${v||''}</td>`;
+  const cols=['Fecha','Dieta','H.norm','H.extra','H.noct','H.fest','V.cam','V.coch','Otros','Total'];
   const rowsHtml = liq.dayRows.map(d=>{
     const fechaCorta = d.fecha.split('-').reverse().join('.');
-    return `<tr style="${rowStyle[d.dayType]||''}">
-      <td style="white-space:nowrap">${fechaCorta} <span style="color:var(--ink3);font-size:.68rem">${wday(d.fecha)}</span>${rowTag[d.dayType]||''}</td>
-      <td>${eur(d.dieta)}</td>
-      <td>${fh(d.hN)}</td>
-      <td>${fh(d.hE)}</td>
-      <td>${fh(d.hNoc)}</td>
-      <td>${fh(d.hFes)}</td>
-      <td>${eur(d.vCamion)}</td>
-      <td>${eur(d.vCoche)}</td>
-      <td>${eur(d.otros)}</td>
-      <td style="font-weight:700">${d.hasData?eur(d.total):'—'}</td>
+    return `<tr style="border-bottom:1px solid var(--brd)">
+      <td style="padding:.55rem .7rem;white-space:nowrap;color:var(--ink)">${fechaCorta} <span style="color:${wdayColor[d.dayType]||'var(--ink3)'};font-weight:600">${wday(d.fecha)}</span></td>
+      ${numTd(eur(d.dieta))}
+      ${numTd(fh(d.hN))}
+      ${numTd(fh(d.hE))}
+      ${numTd(fh(d.hNoc))}
+      ${numTd(fh(d.hFes))}
+      ${numTd(eur(d.vCamion))}
+      ${numTd(eur(d.vCoche))}
+      ${numTd(eur(d.otros))}
+      <td style="padding:.55rem .7rem;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink)">${d.hasData?eur(d.total):''}</td>
     </tr>`;
   }).join('');
-  const totalRow=`<tr style="font-weight:800;border-top:2px solid var(--brd)">
-    <td>TOTAL</td>
-    <td>${eur(liq.totD)}</td>
-    <td>${fh(liq.totHN)}</td>
-    <td>${fh(liq.totHE)}</td>
-    <td>${fh(liq.totHNoc)}</td>
-    <td>${fh(liq.totHFes)}</td>
-    <td>${eur(liq.totTranspCamion)}</td>
-    <td>${eur(liq.totTranspCoche)}</td>
-    <td>${eur(liq.totO+liq.totViaj+liq.totTranspOtro)}</td>
-    <td style="color:var(--acc)">${eur(liq.totTotal)}</td>
+  const totalRow=`<tr style="font-weight:800;border-top:2px solid var(--brd);background:var(--surf2)">
+    <td style="padding:.6rem .7rem;color:var(--ink)">TOTAL</td>
+    ${numTd(eur(liq.totD))}
+    ${numTd(fh(liq.totHN))}
+    ${numTd(fh(liq.totHE))}
+    ${numTd(fh(liq.totHNoc))}
+    ${numTd(fh(liq.totHFes))}
+    ${numTd(eur(liq.totTranspCamion))}
+    ${numTd(eur(liq.totTranspCoche))}
+    ${numTd(eur(liq.totO+liq.totViaj+liq.totTranspOtro))}
+    <td style="padding:.6rem .7rem;text-align:right;color:var(--acc)">${eur(liq.totTotal)}</td>
   </tr>`;
-  const tableHtml = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.74rem;white-space:nowrap">
-    <thead><tr style="color:var(--ink2);text-align:left">${cols.map(([lbl])=>`<th style="padding:.3rem .5rem;border-bottom:1px solid var(--brd);font-weight:600">${lbl}</th>`).join('')}</tr></thead>
-    <tbody style="color:var(--ink)">${rowsHtml}${totalRow}</tbody>
+  const tableHtml = `<div style="overflow-x:auto;border-radius:var(--r2);border:1px solid var(--brd)"><table style="width:100%;border-collapse:collapse;font-size:.78rem">
+    <thead><tr style="color:var(--ink2);background:var(--surf2)">
+      <th style="padding:.55rem .7rem;text-align:left;font-weight:600;font-size:.72rem;border-bottom:1px solid var(--brd)">Fecha</th>
+      ${cols.slice(1).map(lbl=>`<th style="padding:.55rem .7rem;text-align:right;font-weight:600;font-size:.72rem;border-bottom:1px solid var(--brd);white-space:nowrap">${lbl}</th>`).join('')}
+    </tr></thead>
+    <tbody>${rowsHtml}${totalRow}</tbody>
   </table></div>`;
   return h('div',{class:'card'},
-    h('div',{class:'sec-title'},'Día a día'),
-    h('div',{style:{display:'flex',gap:'.6rem',flexWrap:'wrap',fontSize:'.68rem',color:'var(--ink2)',marginBottom:'.4rem'}},
-      h('span',{},'🟩 Trabajado'),h('span',{},'🟥 Finde/Festivo'),h('span',{},'🟨 Vacaciones'),h('span',{},'⬜ Sin jornada')
-    ),
+    h('div',{class:'sec-title',style:{marginBottom:'.7rem'}},'Día a día'),
     h('div',{html:tableHtml})
   );
 }
