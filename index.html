@@ -5980,7 +5980,7 @@ function scheduleDraftSave(){
   }, 1500);
 }
 
-let _draftSaving=false;
+let _draftSavingDates=new Set(); // fechas con un autoguardado en curso (evita colisiones sin bloquear otros días)
 // Read all fichaje text inputs from DOM into fEntry (shared helper)
 function captureFichajeFromDOM(){
   (fEntry.fichajes||[]).forEach((fj,i)=>{
@@ -6016,35 +6016,44 @@ async function saveDraft(){
   const notasEl=document.getElementById('notas-editor');
   if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
   // fEntry.fichajes maintained by input handlers
-  if(!fEntry.fecha||_draftSaving) return;
+  if(!fEntry.fecha) return;
   if(!entryHasData(fEntry)) return; // no crear jornadas vacías por solo pasar por un día
-  _draftSaving=true;
+  // IMPORTANTE: instantánea fija ANTES de cualquier await. fEntry es una variable
+  // global mutable y puede cambiar (cambio de día) mientras este guardado está en
+  // marcha; si leyéramos fEntry.fecha/id después de un await, se podría guardar
+  // bajo el día equivocado y crear duplicados/mezclar datos entre jornadas.
+  const fecha = fEntry.fecha;
+  if(_draftSavingDates.has(fecha)) return; // ya hay un guardado en curso para este día
+  _draftSavingDates.add(fecha);
+  const snapId = fEntry.id;
+  const toSave = {...fEntry,_draft:false,_savedAt:new Date().toISOString()};
   try{
-    // Autoguardado: se guarda YA como jornada real (_draft:false), no oculta.
-    // Así cualquier cambio (horas, notas, dietas, viajes, etc.) queda guardado
-    // localmente al instante, sin depender de pulsar "Guardar" ni de subir a Drive.
-    const toSave={...fEntry,_draft:false,_savedAt:new Date().toISOString()};
     // Elimina cualquier otra entrada duplicada para la misma fecha (con otro id)
-    const allForDate=S.entries.filter(e=>e.fecha===fEntry.fecha);
+    const allForDate=S.entries.filter(e=>e.fecha===fecha);
     for(const e of allForDate){
-      if(e.id && e.id!==fEntry.id){
+      if(e.id && e.id!==snapId){
         await dbDel(ST.entries,e.id);
         S.entries=S.entries.filter(x=>x.id!==e.id);
       }
     }
-    if(fEntry.id){
-      await dbPut(ST.entries,toSave);
-      S.entries=S.entries.map(e=>e.id===fEntry.id?{...toSave}:e);
-      if(!S.entries.find(e=>e.id===fEntry.id)) S.entries.push({...toSave});
+    let savedId = snapId;
+    if(snapId){
+      await dbPut(ST.entries,{...toSave,id:snapId});
+      S.entries=S.entries.map(e=>e.id===snapId?{...toSave,id:snapId}:e);
+      if(!S.entries.find(e=>e.id===snapId)) S.entries.push({...toSave,id:snapId});
     } else {
-      const id=await dbPut(ST.entries,toSave);
-      fEntry.id=id;
-      S.entries.push({...toSave,id});
+      savedId = await dbPut(ST.entries,toSave);
+      S.entries.push({...toSave,id:savedId});
     }
-    editingEntry=true;
+    // Solo tocar el fEntry activo (y asignarle su id) si seguimos en el mismo día;
+    // si el usuario ya navegó a otro día mientras se guardaba, no lo tocamos.
+    if(fEntry.fecha===fecha && !fEntry.id){
+      fEntry.id = savedId;
+      editingEntry = true;
+    }
     localStorage.setItem('lastSave',new Date().toISOString());
   }catch(e){console.warn('Autoguardado:',e);}
-  finally{_draftSaving=false;}
+  finally{_draftSavingDates.delete(fecha);}
 }
 
 function captureFormValues(){
@@ -6292,20 +6301,43 @@ async function saveEntry(){
   }catch(e){ _isSaving = false; showAlert(e.message,'err');}
 }
 
-// Clean up any existing duplicates
+// Limpia jornadas duplicadas por fecha, conservando SIEMPRE la más completa
+// (más fichajes, horas, notas, conceptos...), no simplemente la más reciente.
+// Esto es importante porque un guardado corrupto/vacío puede tener un id más
+// nuevo que la jornada real con los datos buenos.
+function _entryCompletenessScore(e){
+  let s=0;
+  s += (e.fichajes||[]).filter(f=>f.entrada||f.salida).length*10;
+  s += ((e.notas||'').replace(/<[^>]*>/g,'').trim().length>0)?5:0;
+  s += (+e.horasNormales||0)+(+e.horasExtra||0)+(+e.horasNocturnas||0)+(+e.horasFestivas||0);
+  s += (+e.dieta||0)>0?1:0;
+  s += (+e.transporte||0)>0?1:0;
+  s += (e.dietasExtra||[]).length + (e.otrosConceptos||[]).length + (e.journeys||[]).length;
+  s += (e.ubicacionEntrada||e.ubicacionSalida)?1:0;
+  return s;
+}
 async function deduplicateEntries(){
-  const seen={};
-  const toDelete=[];
-  S.entries.sort((a,b)=>b.id-a.id); // keep newest
+  const byFecha={};
   S.entries.forEach(e=>{
-    if(seen[e.fecha]) toDelete.push(e.id);
-    else seen[e.fecha]=true;
+    if(!byFecha[e.fecha]) byFecha[e.fecha]=[];
+    byFecha[e.fecha].push(e);
+  });
+  const toDelete=[];
+  Object.values(byFecha).forEach(list=>{
+    if(list.length<=1) return;
+    // Ordena por puntuación de "completitud" (más datos = mejor); en empate, el id más alto (más reciente)
+    list.sort((a,b)=>{
+      const diff=_entryCompletenessScore(b)-_entryCompletenessScore(a);
+      return diff!==0 ? diff : (b.id||0)-(a.id||0);
+    });
+    const keep=list[0];
+    list.slice(1).forEach(e=>{ if(e.id!==keep.id) toDelete.push(e.id); });
   });
   for(const id of toDelete){
     await dbDel(ST.entries,id);
     S.entries=S.entries.filter(e=>e.id!==id);
   }
-  if(toDelete.length) showAlert('Se eliminaron '+toDelete.length+' jornadas duplicadas');
+  if(toDelete.length) showAlert('Se combinaron '+toDelete.length+' jornada(s) duplicada(s), conservando la más completa de cada día');
 }
 
 function cancelEditing(){
