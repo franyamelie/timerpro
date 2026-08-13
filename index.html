@@ -1875,7 +1875,11 @@ function renderTareas(){
           )
         ),
         h('div',{class:'field'},
-          h('label',{},'TIPO DE TAREA'),
+          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'.4rem'}},
+            h('label',{style:{margin:0}},'TIPO DE TAREA'),
+            h('button',{class:'btn btn-gh btn-sm',style:{padding:'.1rem .4rem',fontSize:'.65rem',whiteSpace:'nowrap'},title:'Crear nuevo tipo de tarea sin perder lo escrito',
+              on:{click:()=>crearNuevoTipoTarea(fTask.fecha||today(),true)}},'➕ Nuevo')
+          ),
           h('select',{
             style:{borderLeft:'4px solid '+(taskTypes.find(t=>t.id===(fTask.tipoTarea||'ot'))||{color:'#f59e0b'}).color},
             on:{change:ev=>{fTask.tipoTarea=ev.target.value;fTask.usaOT=true;rerender();}}
@@ -1886,7 +1890,11 @@ function renderTareas(){
       ),
       h('div',{class:'grid-2'},
         h('div',{class:'field'},
-          h('label',{},(taskTypes.find(t=>t.id===(fTask.tipoTarea||'ot'))||{nombre:'O.T.'}).nombre+' DEL CATÁLOGO'),
+          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'.4rem'}},
+            h('label',{style:{margin:0}},(taskTypes.find(t=>t.id===(fTask.tipoTarea||'ot'))||{nombre:'O.T.'}).nombre+' DEL CATÁLOGO'),
+            h('button',{class:'btn btn-gh btn-sm',style:{padding:'.1rem .4rem',fontSize:'.65rem',whiteSpace:'nowrap'},title:'Crear nueva O.T. sin perder lo escrito',
+              on:{click:()=>crearNuevaOTRapida(id=>{fTask.workOrderId=id;})}},'➕ Nueva')
+          ),
           h('select',{on:{change:ev=>{fTask.workOrderId=ev.target.value;rerender();}}},
             ...woOpts.map(w=>h('option',{value:w.id,selected:w.id==fTask.workOrderId?'':null},
               w.id ? `[${w.codigo}] ${w.descripcion||''}` : w.codigo
@@ -1980,7 +1988,7 @@ function mostrarSelectorTipoTarea(fecha){
 var COLORES_TIPO=['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899','#14b8a6','#f59e0b'];
 var ICONOS_TIPO=['📌','🔩','🛠','⚙️','🔨','📐','🏗','🔌','💡','🪛','🔑','📦','🚧','🪚','🔬'];
 
-function crearNuevoTipoTarea(fecha){
+function crearNuevoTipoTarea(fecha, preserveTask){
   const overlay=document.createElement('div');
   overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
   overlay.innerHTML=`
@@ -2027,7 +2035,10 @@ function crearNuevoTipoTarea(fecha){
       document.getElementById('tipo-icono-val').value=btn.getAttribute('data-icono');
     };
   });
-  document.getElementById('tipo-cancel').onclick=function(){document.body.removeChild(overlay);mostrarSelectorTipoTarea(fecha);};
+  document.getElementById('tipo-cancel').onclick=function(){
+    document.body.removeChild(overlay);
+    if(!preserveTask) mostrarSelectorTipoTarea(fecha);
+  };
   document.getElementById('tipo-ok').onclick=function(){
     const nombre=document.getElementById('tipo-nombre').value.trim().toUpperCase();
     if(!nombre){alert('Escribe un nombre para el tipo');return;}
@@ -2038,9 +2049,61 @@ function crearNuevoTipoTarea(fecha){
     taskTypes.push({id,nombre,icono,color});
     saveTaskTypes(taskTypes);
     document.body.removeChild(overlay);
-    fTask={...defTask(fecha),tipoTarea:id,usaOT:true};editTaskId=null;
+    if(preserveTask){
+      // Mantiene todo lo que el usuario ya había escrito en la tarea en curso
+      fTask.tipoTarea=id; fTask.usaOT=true;
+    } else {
+      fTask={...defTask(fecha),tipoTarea:id,usaOT:true};editTaskId=null;
+    }
     S.tab='tareas';rerender();
     showAlert('Tipo "'+nombre+'" creado ✓');
+  };
+}
+
+// Crea una O.T. nueva desde cualquier formulario sin perder lo que ya se haya escrito.
+// onCreated(id) se llama con el id de la O.T. recién creada para asignarla al vuelo.
+function crearNuevaOTRapida(onCreated){
+  const overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
+  overlay.innerHTML=`
+    <div style="background:var(--surf);border-radius:16px;padding:1.5rem;max-width:340px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+      <div style="font-weight:900;font-size:1rem;color:var(--ink);margin-bottom:1rem">🆕 Nueva O.T.</div>
+      <div style="margin-bottom:.8rem">
+        <label style="font-size:.78rem;font-weight:700;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em">Código</label>
+        <input id="wo-codigo" type="text" placeholder="Ej: 7900140" maxlength="20"
+          style="width:100%;margin-top:.3rem;padding:.6rem;border-radius:8px;border:1px solid var(--brd);background:var(--surf2);color:var(--ink);font-size:.95rem;font-weight:700">
+      </div>
+      <div style="margin-bottom:.8rem">
+        <label style="font-size:.78rem;font-weight:700;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em">Descripción (opcional)</label>
+        <input id="wo-desc" type="text" placeholder="Descripción de la O.T."
+          style="width:100%;margin-top:.3rem;padding:.6rem;border-radius:8px;border:1px solid var(--brd);background:var(--surf2);color:var(--ink);font-size:.9rem">
+      </div>
+      <div style="margin-bottom:1rem">
+        <label style="font-size:.78rem;font-weight:700;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em">Cliente (opcional)</label>
+        <input id="wo-cliente" type="text" placeholder="Cliente"
+          style="width:100%;margin-top:.3rem;padding:.6rem;border-radius:8px;border:1px solid var(--brd);background:var(--surf2);color:var(--ink);font-size:.9rem">
+      </div>
+      <div style="display:flex;gap:.6rem">
+        <button id="wo-cancel" style="flex:1;background:var(--surf3);color:var(--ink2);border:1px solid var(--brd);border-radius:8px;padding:.65rem;cursor:pointer;font-size:.85rem">Cancelar</button>
+        <button id="wo-ok" style="flex:2;background:var(--acc);color:#000;border:none;border-radius:8px;padding:.65rem;cursor:pointer;font-size:.9rem;font-weight:800">✅ Crear y usar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById('wo-cancel').onclick=function(){document.body.removeChild(overlay);};
+  document.getElementById('wo-ok').onclick=async function(){
+    const codigo=document.getElementById('wo-codigo').value.trim();
+    if(!codigo){alert('El código es obligatorio');return;}
+    const descripcion=document.getElementById('wo-desc').value.trim();
+    const cliente=document.getElementById('wo-cliente').value.trim();
+    try{
+      const nuevaWO={codigo,descripcion,cliente,notas:''};
+      const id=await dbPut(ST.workorders,nuevaWO);
+      S.workorders.push({...nuevaWO,id});
+      document.body.removeChild(overlay);
+      showAlert('O.T. "'+codigo+'" creada ✓');
+      if(onCreated) onCreated(id);
+      rerender();
+    }catch(e){ alert('Error al crear la O.T.: '+e.message); }
   };
 }
 
