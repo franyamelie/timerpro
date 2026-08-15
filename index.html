@@ -543,7 +543,8 @@ function attachFichajeListeners(){
         salEl.onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].salida=ev.target.value; scheduleDraftSave(); } };
       }
       // Textarea for nota
-      const nota=row.querySelector('textarea');
+      const rowEl=document.getElementById('fich-row-'+fj._fid);
+      const nota=rowEl?rowEl.querySelector('textarea'):null;
       if(nota){
         nota.oninput=ev=>{ if(fEntry.fichajes[i]) fEntry.fichajes[i].nota=ev.target.value; };
         nota.onblur=ev=>{ if(fEntry.fichajes[i]){ fEntry.fichajes[i].nota=ev.target.value; scheduleDraftSave(); } };
@@ -1723,7 +1724,7 @@ function renderFichaje(fj,i){
     },'🕐')
   );
 
-  return h('div',{class:'fich-row',style:{flexDirection:'column',alignItems:'stretch',padding:'.6rem',gap:'.4rem'}},
+  return h('div',{class:'fich-row',id:'fich-row-'+fj._fid,style:{flexDirection:'column',alignItems:'stretch',padding:'.6rem',gap:'.4rem'}},
     // Row 1: numero + entrada + salida + duracion + timer + borrar
     h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',flexWrap:'wrap'}},
       h('span',{style:{fontSize:'.75rem',color:'var(--ink2)',minWidth:'16px',fontWeight:700}},i+1+'.'),
