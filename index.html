@@ -4691,26 +4691,32 @@ function renderModalResumenDia(){
       // Cuerpo
       h('div',{style:{padding:'1rem 1.4rem 1.4rem'}},
 
-        // Fichajes
-        (e.fichajes||[]).length>0 ? h('div',{},
-          sec('⏱','Fichajes'),
-          ...(e.fichajes||[]).map((f,i)=>h('div',{style:{
-            display:'flex',alignItems:'center',gap:'.6rem',
-            padding:'.5rem .7rem',marginBottom:'.4rem',
-            background:'#f8fafc',borderRadius:'8px',
-            border:'1px solid #e2e8f0'
-          }},
-            h('span',{style:{fontWeight:700,color:'#64748b',minWidth:'20px',fontSize:'.8rem'}},i+1+'.'),
-            h('span',{style:{fontWeight:700,fontSize:'1rem',color:'#0f172a',minWidth:'50px'}},f.entrada||'—'),
-            h('span',{style:{color:'#94a3b8',fontSize:'1.1rem'}},'→'),
-            h('span',{style:{fontWeight:700,fontSize:'1rem',color:'#0f172a',minWidth:'50px'}},f.salida||'—'),
-            f.entrada&&f.salida?h('span',{style:{
-              background:'#dcfce7',color:'#16a34a',borderRadius:'6px',
-              padding:'.2rem .5rem',fontSize:'.75rem',fontWeight:700,marginLeft:'auto'
-            }},(function(){var r=calcH(f.entrada,f.salida);var d=(e.fichajes||[]).length===1?(e.timerDeduct||timerDeduct||0)/60:0;return fmtH(Math.max(0,r-d));}())):null,
-            f.nota?h('span',{style:{fontSize:'.75rem',color:'#64748b',fontStyle:'italic',marginLeft:'.3rem'}},f.nota.slice(0,25)):null
-          ))
-        ) : null,
+        // Fichajes: la hora de entrada/salida principal siempre primero, y detrás cualquier fichaje adicional
+        (()=>{
+          const fichajesList=[];
+          if(e.horaEntrada||e.horaSalida) fichajesList.push({entrada:e.horaEntrada||'',salida:e.horaSalida||'',nota:''});
+          (e.fichajes||[]).forEach(f=>{ if(f.entrada||f.salida) fichajesList.push(f); });
+          if(!fichajesList.length) return null;
+          return h('div',{},
+            sec('⏱','Fichajes'),
+            ...fichajesList.map((f,i)=>h('div',{style:{
+              display:'flex',alignItems:'center',gap:'.6rem',
+              padding:'.5rem .7rem',marginBottom:'.4rem',
+              background:'#f8fafc',borderRadius:'8px',
+              border:'1px solid #e2e8f0'
+            }},
+              h('span',{style:{fontWeight:700,color:'#64748b',minWidth:'20px',fontSize:'.8rem'}},i+1+'.'),
+              h('span',{style:{fontWeight:700,fontSize:'1rem',color:'#0f172a',minWidth:'50px'}},f.entrada||'—'),
+              h('span',{style:{color:'#94a3b8',fontSize:'1.1rem'}},'→'),
+              h('span',{style:{fontWeight:700,fontSize:'1rem',color:'#0f172a',minWidth:'50px'}},f.salida||'—'),
+              f.entrada&&f.salida?h('span',{style:{
+                background:'#dcfce7',color:'#16a34a',borderRadius:'6px',
+                padding:'.2rem .5rem',fontSize:'.75rem',fontWeight:700,marginLeft:'auto'
+              }},(function(){var r=calcH(f.entrada,f.salida);var d=fichajesList.length===1?(e.timerDeduct||timerDeduct||0)/60:0;return fmtH(Math.max(0,r-d));}())):null,
+              f.nota?h('span',{style:{fontSize:'.75rem',color:'#64748b',fontStyle:'italic',marginLeft:'.3rem'}},f.nota.slice(0,25)):null
+            ))
+          );
+        })(),
 
         // Horas e importes
         totalH>0 ? h('div',{},
@@ -4773,33 +4779,7 @@ function renderModalResumenDia(){
               ):null,
               h('div',{style:{fontWeight:700,fontSize:'.85rem',color:'#1e293b',lineHeight:1.6}},
                 ...lineas.map(l=>h('div',{},l))
-              ),
-              (()=>{
-                const hi=t.horaInicio||'';
-                const hf=t.horaFin||'';
-                return h('div',{style:{marginTop:'.5rem',paddingTop:'.4rem',borderTop:'1px solid #fde68a',display:'flex',alignItems:'center',gap:'.5rem'}},
-                  hi||hf
-                    ? h('div',{style:{fontSize:'.85rem',color:'#000',fontWeight:800,flex:1}},(hi||'--')+(hf?' → '+hf:''))
-                    : h('div',{style:{fontSize:'.75rem',color:'#94a3b8',fontStyle:'italic',flex:1}},'Sin horario'),
-                  h('button',{
-                    style:{background:'#f59e0b',color:'#000',border:'none',borderRadius:'6px',padding:'.2rem .5rem',fontSize:'.7rem',fontWeight:700,cursor:'pointer',flexShrink:0},
-                    on:{click:()=>{
-                      const nh=prompt('Hora inicio (HH:MM):',hi||'');
-                      if(nh===null) return;
-                      const nf=prompt('Hora fin (HH:MM):',hf||'');
-                      if(nf===null) return;
-                      const idx=S.tasks.findIndex(x=>x.id===t.id);
-                      if(idx>=0){
-                        S.tasks[idx]={...S.tasks[idx],horaInicio:nh,horaFin:nf};
-                        dbPut(ST.tasks,S.tasks[idx]).then(()=>{
-                          showAlert('Horas guardadas ✓');
-                          rerender();
-                        });
-                      }
-                    }}
-                  },'✏️ Editar horas')
-                );
-              })()
+              )
             );
           })
         ):null,
