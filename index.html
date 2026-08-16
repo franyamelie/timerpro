@@ -4605,6 +4605,39 @@ function renderEmpresa(){
 // ══════════════════════════════════════════════════════════
 // MODAL
 // ══════════════════════════════════════════════════════════
+// Recordatorio de copia de seguridad tras guardar una jornada, para no depender
+// de acordarse manualmente de subir a Drive o exportar.
+function renderModalBackupReminder(){
+  const close=()=>{ S.modal=null; rerender(); };
+  return h('div',{
+    class:'modal-bg',
+    style:{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',
+      display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:'1rem'},
+    on:{click:ev=>{if(ev.target===ev.currentTarget) close();}}
+  },
+    h('div',{style:{
+      background:'var(--surf)',borderRadius:'16px',width:'100%',maxWidth:'360px',
+      padding:'1.5rem',boxShadow:'0 25px 60px rgba(0,0,0,.4)'
+    }},
+      h('div',{style:{fontSize:'1.8rem',textAlign:'center',marginBottom:'.5rem'}},'💾'),
+      h('div',{style:{fontWeight:900,fontSize:'1.05rem',textAlign:'center',color:'var(--ink)',marginBottom:'.3rem'}},'Jornada guardada'),
+      h('div',{style:{fontSize:'.82rem',textAlign:'center',color:'var(--ink2)',marginBottom:'1.2rem'}},'¿Quieres hacer copia de seguridad ahora, por si acaso?'),
+      h('button',{
+        class:'btn btn-g',style:{width:'100%',marginBottom:'.6rem',fontWeight:700},
+        on:{click:()=>{ close(); driveSync(); }}
+      },'☁️ Subir a Drive'),
+      h('button',{
+        class:'btn btn-gh',style:{width:'100%',marginBottom:'.6rem'},
+        on:{click:()=>{ close(); exportJSON(); }}
+      },'⬇️ Descargar copia JSON'),
+      h('button',{
+        class:'btn btn-gh',style:{width:'100%',color:'var(--ink3)'},
+        on:{click:close}
+      },'Ahora no')
+    )
+  );
+}
+
 function renderModalResumenDia(){
   const e = fEntry;
   const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
@@ -5590,6 +5623,7 @@ async function sendIAMsg(){
 
 
 function renderModal(){
+  if(S.modal==='backupReminder') return renderModalBackupReminder();
   if(S.modal==='ia') return renderModalIA();
   if(S.modal==='transportConfig') return renderModalTransportConfig();
     if(S.modal==='minicalendar') { S.modal=null; S.view='cal'; rerender(); return null; }
@@ -6330,6 +6364,7 @@ async function saveEntry(){
     saveLocalBackup();
     showAlert('Jornada guardada ✓');
     _isSaving = false;
+    S.modal='backupReminder';
     rerender();
   }catch(e){ _isSaving = false; showAlert(e.message,'err');}
 }
