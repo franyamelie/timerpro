@@ -8850,7 +8850,7 @@ async function gdriveEnsureToken(){
 async function gdriveFindFile(){
   const r = await fetch(
     'https://www.googleapis.com/drive/v3/files?q=name%3D%22'+GDRIVE_FILE_NAME+'%22+and+trashed%3Dfalse&fields=files(id,name)',
-    {headers: {'Authorization': 'Bearer '+gdriveToken}}
+    {headers: {'Authorization': 'Bearer '+gdriveToken}, cache: 'no-store'}
   );
   const d = await r.json();
   if(d.files && d.files.length > 0){
@@ -8912,8 +8912,9 @@ async function gdriveLoadData(){
   await gdriveEnsureToken();
   let fileId = gdriveFileId || await gdriveFindFile();
   if(!fileId) return null;
-  const r = await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media', {
-    headers: {'Authorization':'Bearer '+gdriveToken}
+  const r = await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media&_cb='+Date.now(), {
+    headers: {'Authorization':'Bearer '+gdriveToken},
+    cache: 'no-store'
   });
   if(!r.ok){
     if(r.status===401){
