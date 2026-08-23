@@ -305,6 +305,15 @@ function saveTaskTypes(types){
 }
 var taskTypes=getTaskTypes();
 
+// Reseteo único a modo claro: corrige dispositivos (ej. móvil) que quedaron
+// guardados en modo oscuro de pruebas anteriores. Se ejecuta solo una vez por
+// dispositivo; después, el usuario puede volver a activar el modo oscuro
+// manualmente si quiere, y esa elección ya se respeta con normalidad.
+if(!localStorage.getItem('themeForceLightV1')){
+  localStorage.setItem('darkMode','0');
+  localStorage.setItem('themeForceLightV1','1');
+}
+
 const S = {
   tab:'fichar', dark:(localStorage.getItem('darkMode')==='1'),
   entries:[], tasks:[], sites:[], workorders:[], vehicles:[], settings:{},
@@ -1666,7 +1675,10 @@ function renderFichar(){
                     const saved={...fEntry,fecha:en.fecha,id:en.id};
                     dbPut(ST.entries,{...saved,_draft:false}).then(()=>{
                       S.entries=S.entries.map(e=>e.id===en.id?{...saved}:e);
+                      localStorage.setItem('lastSave',new Date().toISOString());
+                      saveLocalBackup();
                       showAlert('Jornada guardada ✓');
+                      S.modal='backupReminder';
                       rerender();
                     });
                   }}},'💾'),
@@ -2610,8 +2622,11 @@ function renderDayDetail(ds){
               const e={...entry,_draft:false};
               await dbPut(ST.entries,e);
               S.entries=S.entries.map(x=>x.id===e.id?e:x);
+              localStorage.setItem('lastSave',new Date().toISOString());
+              saveLocalBackup();
               showAlert('✅ Jornada guardada');
               selDate=null;
+              S.modal='backupReminder';
               rerender();
             }}
           },'💾')
