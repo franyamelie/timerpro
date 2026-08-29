@@ -1006,7 +1006,14 @@ function renderFichar(){
     // Fecha
     h('div',{class:'card'},
       h('div',{class:'grid-2'},
-        field('Fecha','date',e.fecha,v=>{if(v && v!==fEntry.fecha) goToDay(v);}),
+        h('div',{class:'field'},
+          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'.4rem'}},
+            h('label',{style:{margin:0}},'Fecha'),
+            h('button',{class:'btn btn-gh btn-sm',style:{padding:'.1rem .4rem',fontSize:'.65rem',whiteSpace:'nowrap'},title:'Cambiar la fecha de esta jornada sin perder los datos ya metidos',
+              on:{click:()=>cambiarFechaJornada()}},'↔ Mover a otro día')
+          ),
+          h('input',{type:'date',value:e.fecha||'',on:{change:ev=>{if(ev.target.value && ev.target.value!==fEntry.fecha) goToDay(ev.target.value);}}})
+        ),
         h('div',{class:'field'},
           h('label',{style:{display:'flex',alignItems:'center',gap:'.4rem',flexWrap:'wrap'}},'JORNADA',
             h('span',{
@@ -2517,6 +2524,48 @@ function renderCalendario(){
     // Detalle del día seleccionado
     selDate?renderDayDetail(selDate):null
   );
+}
+
+// Mueve la jornada que se está editando (con TODOS sus datos ya metidos) a otra fecha,
+// en vez de tener que volver a empezar desde cero por haberse equivocado de día.
+function cambiarFechaJornada(){
+  const actual = fEntry.fecha;
+  const overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
+  overlay.innerHTML=`
+    <div style="background:var(--surf);border-radius:16px;padding:1.5rem;max-width:320px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+      <div style="font-weight:900;font-size:1rem;color:var(--ink);margin-bottom:.6rem">↔ Mover jornada a otro día</div>
+      <div style="font-size:.78rem;color:var(--ink2);margin-bottom:.8rem">Todo lo que hayas metido (horas, dietas, notas, tareas, viajes...) se moverá a la fecha que elijas. No hace falta volver a empezar.</div>
+      <input id="mv-fecha" type="date" value="${actual}" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--brd);background:var(--surf2);color:var(--ink);font-size:.95rem;margin-bottom:1rem;box-sizing:border-box">
+      <div style="display:flex;gap:.6rem">
+        <button id="mv-cancel" style="flex:1;background:var(--surf3);color:var(--ink2);border:1px solid var(--brd);border-radius:8px;padding:.65rem;cursor:pointer;font-size:.85rem">Cancelar</button>
+        <button id="mv-ok" style="flex:2;background:var(--acc);color:#000;border:none;border-radius:8px;padding:.65rem;cursor:pointer;font-size:.9rem;font-weight:800">✅ Mover</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById('mv-cancel').onclick=()=>document.body.removeChild(overlay);
+  document.getElementById('mv-ok').onclick=async()=>{
+    const nueva=document.getElementById('mv-fecha').value;
+    if(!nueva||nueva===actual){ document.body.removeChild(overlay); return; }
+    const existente=S.entries.find(x=>x.fecha===nueva && x.id!==fEntry.id);
+    const doMove=async()=>{
+      if(existente){
+        await dbDel(ST.entries, existente.id);
+        S.entries=S.entries.filter(x=>x.id!==existente.id);
+      }
+      fEntry.fecha=nueva;
+      await saveDraft(); // guarda ya bajo la nueva fecha, con el mismo id si ya lo tenía
+      showAlert('Jornada movida a '+dlbl(nueva)+' ✓');
+      selDate=null;
+      rerender();
+    };
+    document.body.removeChild(overlay);
+    if(existente){
+      ask('Ya existe una jornada guardada el '+dlbl(nueva)+'. ¿Quieres sustituirla por esta?', doMove);
+    } else {
+      await doMove();
+    }
+  };
 }
 
 function goToDay(ds){
