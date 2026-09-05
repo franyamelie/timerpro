@@ -4671,6 +4671,78 @@ function renderEmpresa(){
 // ══════════════════════════════════════════════════════════
 // Recordatorio de copia de seguridad tras guardar una jornada, para no depender
 // de acordarse manualmente de subir a Drive o exportar.
+// Aviso de seguridad: se muestra cuando subir o cargar desde Drive sustituiría
+// por completo el archivo y haría desaparecer días que solo existen en un
+// dispositivo (típico si se te olvidó sincronizar un día en el móvil o el PC).
+function renderModalSyncWarning(){
+  const info=syncWarningInfo;
+  if(!info) return null;
+  const isUpload = info.direction==='upload';
+  const dates=info.missingDates;
+  const shown=dates.slice(0,10);
+  return h('div',{
+    style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',
+      display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:'1rem'}
+  },
+    h('div',{style:{
+      background:'var(--surf)',borderRadius:'16px',padding:'1.5rem',
+      maxWidth:'380px',width:'100%',boxShadow:'0 25px 60px rgba(0,0,0,.4)'
+    }},
+      h('div',{style:{fontSize:'1.8rem',textAlign:'center',marginBottom:'.4rem'}},'⚠️'),
+      h('div',{style:{fontWeight:900,fontSize:'1.05rem',textAlign:'center',color:'var(--ink)',marginBottom:'.5rem'}},
+        isUpload ? '¡Cuidado! Vas a perder jornadas de Drive' : '¡Cuidado! Vas a perder jornadas de este dispositivo'),
+      h('div',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.6rem',textAlign:'center'}},
+        isUpload
+          ? 'Google Drive tiene '+dates.length+' día(s) que no están aquí. Si subes ahora, se perderán de Drive:'
+          : 'Este dispositivo tiene '+dates.length+' día(s) que no están en Drive. Si cargas ahora, se perderán de aquí:'
+      ),
+      h('div',{style:{maxHeight:'130px',overflowY:'auto',background:'var(--surf2)',borderRadius:'8px',padding:'.6rem .8rem',marginBottom:'1rem',fontSize:'.8rem',color:'var(--ink)'}},
+        ...shown.map(f=>h('div',{},dlbl(f))),
+        dates.length>shown.length?h('div',{style:{color:'var(--ink3)',marginTop:'.3rem'}},'y '+(dates.length-shown.length)+' más...'):null
+      ),
+      h('button',{class:'btn btn-g',style:{width:'100%',marginBottom:'.6rem',fontWeight:700},
+        on:{click:()=>{ isUpload?proceedMergeThenUpload():proceedMergeInsteadOfLoad(); }}
+      }, isUpload?'🔀 Fusionar y subir (recomendado)':'🔀 Fusionar en vez de cargar (recomendado)'),
+      h('button',{class:'btn btn-gh',style:{width:'100%',marginBottom:'.6rem',color:'#ef4444'},
+        on:{click:()=>{ isUpload?proceedUploadAnyway():proceedLoadAnyway(); }}
+      }, isUpload?'Subir de todas formas (se perderán)':'Cargar de todas formas (se perderán)'),
+      h('button',{class:'btn btn-gh',style:{width:'100%'},on:{click:cancelSyncWarning}},'Cancelar')
+    )
+  );
+}
+function cancelSyncWarning(){ syncWarningInfo=null; S.modal=null; rerender(); }
+async function proceedUploadAnyway(){
+  const info=syncWarningInfo; syncWarningInfo=null; S.modal=null; rerender();
+  if(!info) return;
+  _syncInProgress=true; syncStatus='syncing'; rerender();
+  try{
+    await gdriveSaveData(info.data);
+    _syncInProgress=false; syncStatus='ok';
+    lastSync=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+    localStorage.setItem('lastSync',lastSync);
+    localStorage.setItem('lastSave',new Date().toISOString());
+    localStorage.setItem('lastDriveLoad',Date.now().toString());
+    showAlert('✅ Guardado en Google Drive: '+S.entries.length+' jornadas');
+    rerender();
+  }catch(e){ _syncInProgress=false; syncStatus='err'; showAlert('Error Drive: '+e.message,'err'); rerender(); }
+}
+async function proceedMergeThenUpload(){
+  const info=syncWarningInfo; syncWarningInfo=null; S.modal=null; rerender();
+  if(!info) return;
+  await mergeDriveData(info.remoteData);
+  await driveSync(true); // ya fusionado localmente: sube sin repetir la comprobación
+}
+async function proceedLoadAnyway(){
+  const info=syncWarningInfo; syncWarningInfo=null; S.modal=null; rerender();
+  if(!info) return;
+  await importDriveData(info.data, info.verifyMode);
+}
+async function proceedMergeInsteadOfLoad(){
+  const info=syncWarningInfo; syncWarningInfo=null; S.modal=null; rerender();
+  if(!info) return;
+  await mergeDriveData(info.remoteData);
+}
+
 function renderModalBackupReminder(){
   const close=()=>{ S.modal=null; rerender(); };
   return h('div',{
@@ -5688,6 +5760,7 @@ async function sendIAMsg(){
 
 function renderModal(){
   if(S.modal==='backupReminder') return renderModalBackupReminder();
+  if(S.modal==='syncWarning') return renderModalSyncWarning();
   if(S.modal==='ia') return renderModalIA();
   if(S.modal==='transportConfig') return renderModalTransportConfig();
     if(S.modal==='minicalendar') { S.modal=null; S.view='cal'; rerender(); return null; }
@@ -8980,7 +9053,9 @@ async function gdriveLoadData(){
 }
 
 // Override driveSync and _doLoad to use Google Drive OAuth
-async function driveSync(){
+let syncWarningInfo = null; // {missingDates, direction, data, remoteData} para el modal de aviso
+
+async function driveSync(skipSafetyCheck){
   if(_syncInProgress) return;
   _syncInProgress = true;
   captureFormState();
@@ -8990,6 +9065,24 @@ async function driveSync(){
   syncStatus='syncing'; rerender();
   try{
     const data = await buildSyncDataWithPhotos();
+    // Comprobación de seguridad: si Drive tiene días que aquí no tenemos, avisar
+    // antes de subir (subir sustituye el archivo entero, y esos días se perderían).
+    if(!skipSafetyCheck){
+      let remoteData=null;
+      try{ remoteData = await gdriveLoadData(); }catch(e){ /* si falla, seguimos sin bloquear */ }
+      if(remoteData && remoteData.entries && remoteData.entries.length){
+        const localDates = new Set((data.entries||[]).map(e=>e.fecha));
+        const missing = remoteData.entries.filter(e=>!localDates.has(e.fecha)).map(e=>e.fecha).sort();
+        if(missing.length){
+          _syncInProgress=false;
+          syncStatus='ok';
+          syncWarningInfo={missingDates:missing, direction:'upload', data, remoteData};
+          S.modal='syncWarning';
+          rerender();
+          return;
+        }
+      }
+    }
     await gdriveSaveData(data);
     _syncInProgress = false;
     syncStatus='ok';
@@ -9007,7 +9100,7 @@ async function driveSync(){
   }
 }
 
-async function _doLoad(force, verifyMode, confirmMode){
+async function _doLoad(force, verifyMode, confirmMode, skipSafetyCheck){
   syncStatus='syncing'; rerender();
   try{
     const d = await gdriveLoadData();
@@ -9015,6 +9108,19 @@ async function _doLoad(force, verifyMode, confirmMode){
       syncStatus='ok';
       showAlert('Drive vacío — sube primero desde el PC','err');
       rerender(); return;
+    }
+    // Comprobación de seguridad: si aquí (local) hay días que Drive no tiene,
+    // avisar antes de cargar (cargar sustituye los datos locales enteros).
+    if(!skipSafetyCheck){
+      const remoteDates = new Set(d.entries.map(e=>e.fecha));
+      const missing = S.entries.filter(e=>!e._draft && !remoteDates.has(e.fecha)).map(e=>e.fecha).sort();
+      if(missing.length){
+        syncStatus='ok';
+        syncWarningInfo={missingDates:missing, direction:'download', data:d, remoteData:d, verifyMode};
+        S.modal='syncWarning';
+        rerender();
+        return;
+      }
     }
     await importDriveData(d, verifyMode);
   }catch(e){
