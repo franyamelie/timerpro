@@ -4844,8 +4844,8 @@ function renderModalResumenDia(){
             h('div',{style:{fontSize:'.68rem',opacity:.75,marginTop:'.1rem'}},'TOTAL A COBRAR')
           ):null
         ),
-        // Horario entrada → salida
-        (()=>{
+        // Horario entrada → salida (se puede ocultar con la preferencia de abajo)
+        mostrarHorarioResumen?(()=>{
           const hEnt=e.horaEntrada||e._horaInicioManual||(e.fichajes&&e.fichajes[0]?e.fichajes[0].entrada:'');
           const hSal=e.horaSalida||e._horaFinManual||(e.fichajes&&e.fichajes.length>0?e.fichajes[e.fichajes.length-1].salida:'');
           if(!hEnt&&!hSal) return null;
@@ -4854,7 +4854,7 @@ function renderModalResumenDia(){
             h('div',{style:{fontSize:'1.1rem',fontWeight:900,letterSpacing:'.05em'}},(hEnt||'--')+' → '+(hSal||'--')),
             h('div',{style:{fontSize:'.68rem',opacity:.75,marginTop:'.1rem'}},'HORARIO'+(desc>0?' (-'+desc+' min descanso)':''))
           );
-        })()
+        })():null
       ),
 
       // Cuerpo
@@ -4965,6 +4965,18 @@ function renderModalResumenDia(){
 
         // Share with/without prices toggle + buttons
         h('div',{style:{marginTop:'1rem'}},
+          h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',
+            background:'#f8fafc',borderRadius:'8px',padding:'.5rem .8rem',border:'1px solid #e2e8f0'}},
+            h('span',{style:{fontSize:'.82rem',color:'#475569',flex:1}},'Mostrar hora entrada/salida'),
+            h('button',{
+              style:{
+                background:mostrarHorarioResumen?'#22c55e':'#94a3b8',
+                color:'#fff',border:'none',borderRadius:'20px',
+                padding:'.25rem .7rem',cursor:'pointer',fontWeight:700,fontSize:'.78rem'
+              },
+              on:{click:()=>{mostrarHorarioResumen=!mostrarHorarioResumen;localStorage.setItem('mostrarHorarioResumen',mostrarHorarioResumen?'1':'0');rerender();}}
+            },mostrarHorarioResumen?'✓ Sí':'✗ No')
+          ),
           h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',
             background:'#f8fafc',borderRadius:'8px',padding:'.5rem .8rem',border:'1px solid #e2e8f0'}},
             h('span',{style:{fontSize:'.82rem',color:'#475569',flex:1}},'Incluir precios al compartir'),
@@ -9054,6 +9066,7 @@ async function gdriveLoadData(){
 
 // Override driveSync and _doLoad to use Google Drive OAuth
 let syncWarningInfo = null; // {missingDates, direction, data, remoteData} para el modal de aviso
+let mostrarHorarioResumen = localStorage.getItem('mostrarHorarioResumen')!=='0'; // por defecto, mostrar
 
 async function driveSync(skipSafetyCheck){
   if(_syncInProgress) return;
