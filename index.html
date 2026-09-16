@@ -248,7 +248,16 @@ const today = () => { const d=new Date(); return `${d.getFullYear()}-${pad(d.get
 const firstDayOfMonth = () => { const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-01`; };
 const nowTime = () => { const d=new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const fmtTime = t => t||'—';
-const calcH = (a,b) => { if(!a||!b)return 0; const [ah,am]=a.split(':').map(Number),[bh,bm]=b.split(':').map(Number); let d=(bh*60+bm)-(ah*60+am); if(d<0)d+=1440; return Math.round(d*100/60)/100; };
+const calcH = (a,b) => { if(!a||!b)return 0; const na=normalizeTimeStr(a), nb=normalizeTimeStr(b); if(!na||!nb) return 0; const [ah,am]=na.split(':').map(Number),[bh,bm]=nb.split(':').map(Number); let d=(bh*60+bm)-(ah*60+am); if(d<0)d+=1440; return Math.round(d*100/60)/100; };
+// Acepta "HH:MM" o "HH.MM" (punto en vez de dos puntos, error de tecleo habitual) y devuelve siempre "HH:MM"
+function normalizeTimeStr(s){
+  if(!s) return '';
+  const m = String(s).trim().replace('.',':').match(/^(\d{1,2}):(\d{1,2})$/);
+  if(!m) return '';
+  const h=parseInt(m[1],10), mi=parseInt(m[2],10);
+  if(isNaN(h)||isNaN(mi)||h>23||mi>59) return '';
+  return String(h).padStart(2,'0')+':'+String(mi).padStart(2,'0');
+}
 const fmtH = h => { if(!h)return '0h'; const hh=Math.floor(h),mm=Math.round((h-hh)*60); return hh>0&&mm>0?`${hh}h ${mm}m`:hh>0?`${hh}h`:`${mm}m`; };
 const eur = v => Number(v||0).toFixed(2).replace('.',',')+' €';
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -341,9 +350,9 @@ const defEntry = () => ({
   otrosConceptos:[], notas:'', journeys:[], ubicacionEntrada:'', ubicacionSalida:'', horaEntrada:'', horaSalida:'',
   entradaLocked:false, fotosGastos:[], timerDeduct:0
 });
-const defFichaje = () => ({_fid:Date.now(), entrada:'', salida:'', nota:'', editing:false, taskId:'', timerRunning:false, timerStart:null});
+const defFichaje = () => ({_fid:Date.now(), entrada:'', salida:'', nota:'', editing:false, taskId:'', dietaId:'', journeyId:'', timerRunning:false, timerStart:null});
 const defTask = f => ({fecha:f||today(), titulo:'', horaInicio:'', horaFin:'', descripcion:'', siteId:'', workOrderId:'', otNumero:'', usaOT:false, tipoTarea:'ot', fotos:[]});
-const defJourney = () => ({vehicleId:'', tipoManual:'coche', precioManual:0.19, origen:'', destino:'', km:0, horaInicio:nowTime(), horaFin:''});
+const defJourney = () => ({id:'j'+Date.now()+Math.random().toString(36).slice(2,7), vehicleId:'', tipoManual:'coche', precioManual:0.19, origen:'', destino:'', km:0, horaInicio:nowTime(), horaFin:''});
 const defWorker = {nombre:'',apellidos:'',dni:'',cargo:'',departamento:'',email:'',telefono:'',numSS:'',fechaAlta:'',convenio:'',firma:'',foto:''};
 const defCompany = {nombre:'',cif:'',direccion:'',ciudad:'',cp:'',telefono:'',email:'',web:'',logo:''};
 const defSite = {nombre:'',direccion:'',ciudad:'',telefono:'',notas:'',lat:'',lng:'',acc:0};
@@ -1404,7 +1413,7 @@ function renderFichar(){
           )
         )
       ),
-      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{fEntry.dietasExtra.push({concepto:'',importe:0});rerender()}}},'➕ Añadir dieta extra')
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{fEntry.dietasExtra.push({id:'d'+Date.now()+Math.random().toString(36).slice(2,7),concepto:'',importe:0});rerender()}}},'➕ Añadir dieta extra')
     ),
 
     // Fotos de tickets/gastos
@@ -1722,8 +1731,20 @@ function renderFichaje(fj,i){
       },
       on:{
         input:ev=>{ if(ev.target.value) fEntry.fichajes[i][field]=ev.target.value; },
-        blur:ev=>{ if(ev.target.value) fEntry.fichajes[i][field]=ev.target.value; scheduleDraftSave(); },
-        change:ev=>{ if(ev.target.value) fEntry.fichajes[i][field]=ev.target.value; scheduleDraftSave(); }
+        blur:ev=>{
+          let v=ev.target.value;
+          const norm=normalizeTimeStr(v);
+          if(norm){ v=norm; ev.target.value=norm; }
+          if(v) fEntry.fichajes[i][field]=v;
+          scheduleDraftSave();
+        },
+        change:ev=>{
+          let v=ev.target.value;
+          const norm=normalizeTimeStr(v);
+          if(norm){ v=norm; ev.target.value=norm; }
+          if(v) fEntry.fichajes[i][field]=v;
+          scheduleDraftSave();
+        }
       }
     }),
     // "Ahora" button - sets current time
@@ -1811,6 +1832,31 @@ function renderFichaje(fj,i){
         ))
       )
     ),
+    // Row 3: vincular a una dieta y/o un viaje concretos de esta jornada (opcional)
+    ((fEntry.dietasExtra||[]).length>0 || (fEntry.journeys||[]).length>0)
+      ? h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',flexWrap:'wrap'}},
+          (fEntry.dietasExtra||[]).length>0 ? h('select',{
+            style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
+                   padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.72rem',maxWidth:'150px'},
+            on:{change:ev=>{fEntry.fichajes[i].dietaId=ev.target.value;scheduleDraftSave();rerender();}}
+          },
+            h('option',{value:'',selected:!fj.dietaId},'☀ Sin dieta vinculada'),
+            ...fEntry.dietasExtra.map((d,di)=>h('option',{value:d.id||('idx'+di),selected:(d.id||('idx'+di))===(fj.dietaId||'')},
+              '☀ '+(d.concepto||'Dieta')+' ('+eur(d.importe||0)+')'
+            ))
+          ) : null,
+          (fEntry.journeys||[]).length>0 ? h('select',{
+            style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
+                   padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.72rem',maxWidth:'150px'},
+            on:{change:ev=>{fEntry.fichajes[i].journeyId=ev.target.value;scheduleDraftSave();rerender();}}
+          },
+            h('option',{value:'',selected:!fj.journeyId},'🚗 Sin viaje vinculado'),
+            ...fEntry.journeys.map((j,ji)=>h('option',{value:j.id||('idx'+ji),selected:(j.id||('idx'+ji))===(fj.journeyId||'')},
+              '🚗 '+(j.tipoManual==='camion'?'Camión':'Coche')+(j.destino?' → '+j.destino:'')
+            ))
+          ) : null
+        )
+      : null,
     ftimer.running
       ? h('div',{id:'fichaje-timer-'+fj._fid,style:{fontSize:'.72rem',color:'var(--acc)',fontWeight:700}},
           '⏱ En curso: '+formatTimer(ftimer.elapsed))
@@ -4868,22 +4914,34 @@ function renderModalResumenDia(){
           if(!fichajesList.length) return null;
           return h('div',{},
             sec('⏱','Fichajes'),
-            ...fichajesList.map((f,i)=>h('div',{style:{
-              display:'flex',alignItems:'center',gap:'.6rem',
-              padding:'.5rem .7rem',marginBottom:'.4rem',
-              background:'#f8fafc',borderRadius:'8px',
-              border:'1px solid #e2e8f0'
-            }},
-              h('span',{style:{fontWeight:700,color:'#64748b',minWidth:'20px',fontSize:'.8rem'}},i+1+'.'),
-              h('span',{style:{fontWeight:700,fontSize:'1rem',color:'#0f172a',minWidth:'50px'}},f.entrada||'—'),
-              h('span',{style:{color:'#94a3b8',fontSize:'1.1rem'}},'→'),
-              h('span',{style:{fontWeight:700,fontSize:'1rem',color:'#0f172a',minWidth:'50px'}},f.salida||'—'),
-              f.entrada&&f.salida?h('span',{style:{
-                background:'#dcfce7',color:'#16a34a',borderRadius:'6px',
-                padding:'.2rem .5rem',fontSize:'.75rem',fontWeight:700,marginLeft:'auto'
-              }},(function(){var r=calcH(f.entrada,f.salida);var d=fichajesList.length===1?(e.timerDeduct||timerDeduct||0)/60:0;return fmtH(Math.max(0,r-d));}())):null,
-              f.nota?h('span',{style:{fontSize:'.75rem',color:'#64748b',fontStyle:'italic',marginLeft:'.3rem'}},f.nota.slice(0,25)):null
-            ))
+            ...fichajesList.map((f,i)=>{
+              const linkedTask = f.taskId ? (S.tasks||[]).find(t=>t.id===f.taskId) : null;
+              const linkedDieta = f.dietaId ? (e.dietasExtra||[]).find((d,di)=>(d.id||('idx'+di))===f.dietaId) : null;
+              const linkedViaje = f.journeyId ? (e.journeys||[]).find(j=>j.id===f.journeyId) : null;
+              const hasExtras = linkedTask||linkedDieta||linkedViaje;
+              return h('div',{style:{
+                padding:'.5rem .7rem',marginBottom:'.4rem',
+                background:'#f8fafc',borderRadius:'8px',
+                border:'1px solid #e2e8f0'
+              }},
+                h('div',{style:{display:'flex',alignItems:'center',gap:'.6rem'}},
+                  h('span',{style:{fontWeight:700,color:'#64748b',minWidth:'20px',fontSize:'.8rem'}},i+1+'.'),
+                  h('span',{style:{fontWeight:700,fontSize:'1rem',color:'#0f172a',minWidth:'50px'}},f.entrada||'—'),
+                  h('span',{style:{color:'#94a3b8',fontSize:'1.1rem'}},'→'),
+                  h('span',{style:{fontWeight:700,fontSize:'1rem',color:'#0f172a',minWidth:'50px'}},f.salida||'—'),
+                  f.entrada&&f.salida?h('span',{style:{
+                    background:'#dcfce7',color:'#16a34a',borderRadius:'6px',
+                    padding:'.2rem .5rem',fontSize:'.75rem',fontWeight:700,marginLeft:'auto'
+                  }},(function(){var r=calcH(f.entrada,f.salida);var d=fichajesList.length===1?(e.timerDeduct||timerDeduct||0)/60:0;return fmtH(Math.max(0,r-d));}())):null,
+                  f.nota?h('span',{style:{fontSize:'.75rem',color:'#64748b',fontStyle:'italic',marginLeft:'.3rem'}},f.nota.slice(0,25)):null
+                ),
+                hasExtras?h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.35rem',paddingLeft:'1.7rem'}},
+                  linkedTask?h('span',{style:{fontSize:'.7rem',background:'#fef9c3',color:'#854d0e',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'🔧 '+(linkedTask.otNumero||'')+' '+(linkedTask.titulo||'').replace(/<[^>]*>/g,'').slice(0,20)):null,
+                  linkedDieta?h('span',{style:{fontSize:'.7rem',background:'#fef3c7',color:'#92400e',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'☀ '+(linkedDieta.concepto||'Dieta')+' '+eur(linkedDieta.importe||0)):null,
+                  linkedViaje?h('span',{style:{fontSize:'.7rem',background:'#dbeafe',color:'#1e40af',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'🚗 '+(linkedViaje.tipoManual==='camion'?'Camión':'Coche')+(linkedViaje.destino?' → '+linkedViaje.destino:'')):null
+                ):null
+              );
+            })
           );
         })():null,
 
@@ -5197,7 +5255,17 @@ function generarPDFResumen(conPrecios){
     </div>`;
 
   // Fichajes
-  const htmlFichajes = mostrarHorarioResumen ? seccion('⏱ FICHAJES', filas(e.fichajes||[], (f,i) => `
+  const htmlFichajes = mostrarHorarioResumen ? seccion('⏱ FICHAJES', filas(e.fichajes||[], (f,i) => {
+    const linkedTask = f.taskId ? (S.tasks||[]).find(t=>t.id===f.taskId) : null;
+    const linkedDieta = f.dietaId ? (e.dietasExtra||[]).find((d,di)=>(d.id||('idx'+di))===f.dietaId) : null;
+    const linkedViaje = f.journeyId ? (e.journeys||[]).find(j=>j.id===f.journeyId) : null;
+    const extras = (linkedTask||linkedDieta||linkedViaje) ? `
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;padding-left:26px">
+        ${linkedTask?`<span style="font-size:10px;background:#fef9c3;color:#854d0e;border-radius:5px;padding:2px 7px;font-weight:700">🔧 ${(linkedTask.otNumero||'')} ${(linkedTask.titulo||'').replace(/<[^>]*>/g,'').slice(0,20)}</span>`:''}
+        ${linkedDieta?`<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:5px;padding:2px 7px;font-weight:700">☀ ${(linkedDieta.concepto||'Dieta')} ${eur(linkedDieta.importe||0)}</span>`:''}
+        ${linkedViaje?`<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:5px;padding:2px 7px;font-weight:700">🚗 ${linkedViaje.tipoManual==='camion'?'Camión':'Coche'}${linkedViaje.destino?' → '+linkedViaje.destino:''}</span>`:''}
+      </div>` : '';
+    return `
     <div class="fichaje-row">
       <span class="fnum">${i+1}.</span>
       <span class="ftime">${f.entrada||'—'}</span>
@@ -5205,7 +5273,8 @@ function generarPDFResumen(conPrecios){
       <span class="ftime">${f.salida||'—'}</span>
       ${f.entrada&&f.salida?`<span class="fbadge">${fmtH(calcH(f.entrada,f.salida))}</span>`:''}
       ${f.nota?`<span class="fnota">${f.nota}</span>`:''}
-    </div>`)) : '';
+    </div>${extras}`;
+  })) : '';
 
   // Horas
   let htmlHoras = '';
@@ -5406,13 +5475,27 @@ async function compartirComoImagen(conPrecios){
         html += sec('⏱','FICHAJES');
         fichajesList.forEach(function(f,i){
           var dur = (f.entrada&&f.salida)?(function(){var raw=calcH(f.entrada,f.salida);var dec=fichajesList.length===1?(e.timerDeduct||0)/60:0;return '<span style="background:#dcfce7;color:#16a34a;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:auto">'+fmtH(Math.max(0,raw-dec))+'</span>';}()):'';;
-          html += '<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:4px">'
+          var linkedTask = f.taskId ? (S.tasks||[]).find(function(t){return t.id===f.taskId;}) : null;
+          var linkedDieta = f.dietaId ? (e.dietasExtra||[]).find(function(d,di){return (d.id||('idx'+di))===f.dietaId;}) : null;
+          var linkedViaje = f.journeyId ? (e.journeys||[]).find(function(j){return j.id===f.journeyId;}) : null;
+          var extrasHtml='';
+          if(linkedTask||linkedDieta||linkedViaje){
+            extrasHtml='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px;padding-left:26px">'
+              +(linkedTask?'<span style="font-size:10px;background:#fef9c3;color:#854d0e;border-radius:5px;padding:2px 7px;font-weight:700">🔧 '+(linkedTask.otNumero||'')+' '+(linkedTask.titulo||'').replace(/<[^>]*>/g,'').slice(0,20)+'</span>':'')
+              +(linkedDieta?'<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:5px;padding:2px 7px;font-weight:700">☀ '+(linkedDieta.concepto||'Dieta')+' '+eur(linkedDieta.importe||0)+'</span>':'')
+              +(linkedViaje?'<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:5px;padding:2px 7px;font-weight:700">🚗 '+(linkedViaje.tipoManual==='camion'?'Camión':'Coche')+(linkedViaje.destino?' → '+linkedViaje.destino:'')+'</span>':'')
+              +'</div>';
+          }
+          html += '<div style="padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:4px">'
+            +'<div style="display:flex;align-items:center;gap:6px">'
             +'<span style="color:#94a3b8;font-size:11px">'+(i+1)+'.</span>'
             +'<span style="font-weight:700;font-size:15px;min-width:46px">'+(f.entrada||'—')+'</span>'
             +'<span style="color:#94a3b8">→</span>'
             +'<span style="font-weight:700;font-size:15px;min-width:46px">'+(f.salida||'—')+'</span>'
             +dur
             +(f.nota?'<span style="font-size:11px;color:#64748b;font-style:italic">'+f.nota.slice(0,20)+'</span>':'')
+            +'</div>'
+            +extrasHtml
             +'</div>';
         });
       }
