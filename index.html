@@ -1356,10 +1356,34 @@ function renderFichar(){
               title:'Aplicar precio por defecto',
               style:{background:'var(--acc)',color:'#000',border:'none',borderRadius:'4px',
                 cursor:'pointer',fontSize:'.7rem',padding:'.1rem .4rem',fontWeight:700},
-              on:{click:()=>{fEntry.dieta=S.dietaDefault;rerender();}}
+              on:{click:()=>{
+                fEntry.dietaPrecioUnit=S.dietaDefault;
+                const q=fEntry.dietaCantidad||1;
+                fEntry.dieta=Math.round(q*S.dietaDefault*100)/100;
+                rerender();
+              }}
             },eur(S.dietaDefault)):null
           ),
-          importeField(e.dieta, v=>{fEntry.dieta=v;rerender()})
+          h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',marginBottom:'.3rem'}},
+            h('span',{style:{fontSize:'.7rem',color:'var(--ink2)'}},'Nº'),
+            h('input',{type:'number',min:'1',step:'1',value:fEntry.dietaCantidad||1,
+              style:{width:'46px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem',color:'var(--ink)',fontSize:'.85rem'},
+              on:{input:ev=>{
+                const q=Math.max(1,parseInt(ev.target.value)||1);
+                fEntry.dietaCantidad=q;
+                const unit=fEntry.dietaPrecioUnit!=null?fEntry.dietaPrecioUnit:e.dieta;
+                fEntry.dieta=Math.round(q*unit*100)/100;
+                rerender();
+              }}}),
+            h('span',{style:{color:'var(--ink3)',fontSize:'.75rem'}},'×')
+          ),
+          importeField(fEntry.dietaPrecioUnit!=null?fEntry.dietaPrecioUnit:e.dieta, v=>{
+            fEntry.dietaPrecioUnit=v;
+            const q=fEntry.dietaCantidad||1;
+            fEntry.dieta=Math.round(q*v*100)/100;
+            rerender();
+          }),
+          (fEntry.dietaCantidad||1)>1?h('div',{style:{marginTop:'.3rem',fontSize:'.78rem',fontWeight:700,color:'var(--acc)'}},'Total: '+eur(e.dieta)):null
         ),
         h('div',{class:'field'},
           h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',marginBottom:'.3rem'}},
@@ -1380,20 +1404,40 @@ function renderFichar(){
               },
               on:{click:()=>{
                 fEntry._transportType=tt.id;
-                if(tt.precio>0) fEntry.transporte=tt.precio;
+                if(tt.precio>0){
+                  fEntry.transportePrecioUnit=tt.precio;
+                  const q=fEntry.transporteCantidad||1;
+                  fEntry.transporte=Math.round(q*tt.precio*100)/100;
+                }
                 rerender();
                 _lsSave();
               }}
             },tt.nombre+(tt.precio>0?' ('+eur(tt.precio)+')':'')))
           ),
-          importeField(e.transporte, v=>{
-            fEntry.transporte=v;
+          h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',marginBottom:'.3rem'}},
+            h('span',{style:{fontSize:'.7rem',color:'var(--ink2)'}},'Nº'),
+            h('input',{type:'number',min:'1',step:'1',value:fEntry.transporteCantidad||1,
+              style:{width:'46px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem',color:'var(--ink)',fontSize:'.85rem'},
+              on:{input:ev=>{
+                const q=Math.max(1,parseInt(ev.target.value)||1);
+                fEntry.transporteCantidad=q;
+                const unit=fEntry.transportePrecioUnit!=null?fEntry.transportePrecioUnit:e.transporte;
+                fEntry.transporte=Math.round(q*unit*100)/100;
+                rerender();
+              }}}),
+            h('span',{style:{color:'var(--ink3)',fontSize:'.75rem'}},'×')
+          ),
+          importeField(fEntry.transportePrecioUnit!=null?fEntry.transportePrecioUnit:e.transporte, v=>{
+            fEntry.transportePrecioUnit=v;
+            const q=fEntry.transporteCantidad||1;
+            fEntry.transporte=Math.round(q*v*100)/100;
             if(fEntry._transportType){
               const _ti=S.transportTypes.findIndex(t=>t.id===fEntry._transportType);
               if(_ti>=0){S.transportTypes[_ti].precio=v;localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));}
             }
             rerender();
-          })
+          }),
+          (fEntry.transporteCantidad||1)>1?h('div',{style:{marginTop:'.3rem',fontSize:'.78rem',fontWeight:700,color:'var(--acc)'}},'Total: '+eur(e.transporte)):null
         )
       )
     ),
@@ -1833,25 +1877,32 @@ function renderFichaje(fj,i){
       )
     ),
     // Row 3: vincular a una dieta y/o un viaje concretos de esta jornada (opcional)
-    ((fEntry.dietasExtra||[]).length>0 || (fEntry.journeys||[]).length>0)
+    // Incluye tanto la dieta/transporte "base" del día como los que se hayan añadido como extra.
+    (((fEntry.dieta||0)>0) || (fEntry.dietasExtra||[]).length>0 || ((fEntry.transporte||0)>0) || (fEntry.journeys||[]).length>0)
       ? h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',flexWrap:'wrap'}},
-          (fEntry.dietasExtra||[]).length>0 ? h('select',{
+          (((fEntry.dieta||0)>0) || (fEntry.dietasExtra||[]).length>0) ? h('select',{
             style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
                    padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.72rem',maxWidth:'150px'},
             on:{change:ev=>{fEntry.fichajes[i].dietaId=ev.target.value;scheduleDraftSave();rerender();}}
           },
             h('option',{value:'',selected:!fj.dietaId},'☀ Sin dieta vinculada'),
-            ...fEntry.dietasExtra.map((d,di)=>h('option',{value:d.id||('idx'+di),selected:(d.id||('idx'+di))===(fj.dietaId||'')},
+            (fEntry.dieta||0)>0?h('option',{value:'base',selected:(fj.dietaId||'')==='base'},
+              '☀ Dieta'+((fEntry.dietaCantidad||1)>1?' x'+fEntry.dietaCantidad:'')+' ('+eur(fEntry.dieta)+')'
+            ):null,
+            ...(fEntry.dietasExtra||[]).map((d,di)=>h('option',{value:d.id||('idx'+di),selected:(d.id||('idx'+di))===(fj.dietaId||'')},
               '☀ '+(d.concepto||'Dieta')+' ('+eur(d.importe||0)+')'
             ))
           ) : null,
-          (fEntry.journeys||[]).length>0 ? h('select',{
+          (((fEntry.transporte||0)>0) || (fEntry.journeys||[]).length>0) ? h('select',{
             style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
                    padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.72rem',maxWidth:'150px'},
             on:{change:ev=>{fEntry.fichajes[i].journeyId=ev.target.value;scheduleDraftSave();rerender();}}
           },
             h('option',{value:'',selected:!fj.journeyId},'🚗 Sin viaje vinculado'),
-            ...fEntry.journeys.map((j,ji)=>h('option',{value:j.id||('idx'+ji),selected:(j.id||('idx'+ji))===(fj.journeyId||'')},
+            (fEntry.transporte||0)>0?h('option',{value:'base',selected:(fj.journeyId||'')==='base'},
+              '🚗 Transporte'+((fEntry.transporteCantidad||1)>1?' x'+fEntry.transporteCantidad:'')+' ('+eur(fEntry.transporte)+')'
+            ):null,
+            ...(fEntry.journeys||[]).map((j,ji)=>h('option',{value:j.id||('idx'+ji),selected:(j.id||('idx'+ji))===(fj.journeyId||'')},
               '🚗 '+(j.tipoManual==='camion'?'Camión':'Coche')+(j.destino?' → '+j.destino:'')
             ))
           ) : null
@@ -4831,6 +4882,10 @@ function renderModalResumenDia(){
     (S.vehicles.find(v=>v.id==j.vehicleId)?.precioPorKm||0):j.precioManual||0),0);
   const totalI = impHoras+impDietas+impTransp+impOtros+impViajes;
   const tareasDia = (S.tasks||[]).filter(t=> t.fecha && t.fecha === e.fecha);
+  // Visibilidad por jornada (independientes entre sí). Por defecto, todo visible.
+  const showHorario = e._showHorario!==false;
+  const showDietas = e._showDietas!==false;
+  const showViajes = e._showViajes!==false;
 
   const sec = (icon,title)=>h('div',{style:{
     display:'flex',alignItems:'center',gap:'.5rem',
@@ -4891,7 +4946,7 @@ function renderModalResumenDia(){
           ):null
         ),
         // Horario entrada → salida (se puede ocultar con la preferencia de abajo)
-        mostrarHorarioResumen?(()=>{
+        showHorario?(()=>{
           const hEnt=e.horaEntrada||e._horaInicioManual||(e.fichajes&&e.fichajes[0]?e.fichajes[0].entrada:'');
           const hSal=e.horaSalida||e._horaFinManual||(e.fichajes&&e.fichajes.length>0?e.fichajes[e.fichajes.length-1].salida:'');
           if(!hEnt&&!hSal) return null;
@@ -4907,7 +4962,7 @@ function renderModalResumenDia(){
       h('div',{style:{padding:'1rem 1.4rem 1.4rem'}},
 
         // Fichajes: la hora de entrada/salida principal siempre primero, y detrás cualquier fichaje adicional
-        mostrarHorarioResumen?(()=>{
+        showHorario?(()=>{
           const fichajesList=[];
           if(e.horaEntrada||e.horaSalida) fichajesList.push({entrada:e.horaEntrada||'',salida:e.horaSalida||'',nota:''});
           (e.fichajes||[]).forEach(f=>{ if(f.entrada||f.salida) fichajesList.push(f); });
@@ -4916,8 +4971,8 @@ function renderModalResumenDia(){
             sec('⏱','Fichajes'),
             ...fichajesList.map((f,i)=>{
               const linkedTask = f.taskId ? (S.tasks||[]).find(t=>t.id===f.taskId) : null;
-              const linkedDieta = f.dietaId ? (e.dietasExtra||[]).find((d,di)=>(d.id||('idx'+di))===f.dietaId) : null;
-              const linkedViaje = f.journeyId ? (e.journeys||[]).find(j=>j.id===f.journeyId) : null;
+              const linkedDieta = f.dietaId==='base' ? {concepto:'Dieta'+((e.dietaCantidad||1)>1?' x'+e.dietaCantidad:''),importe:e.dieta} : f.dietaId ? (e.dietasExtra||[]).find((d,di)=>(d.id||('idx'+di))===f.dietaId) : null;
+              const linkedViaje = f.journeyId==='base' ? {tipoManual:e._transportType==='camion'?'camion':'coche',destino:'',_isBase:true,_importe:e.transporte} : f.journeyId ? (e.journeys||[]).find(j=>j.id===f.journeyId) : null;
               const hasExtras = linkedTask||linkedDieta||linkedViaje;
               return h('div',{style:{
                 padding:'.5rem .7rem',marginBottom:'.4rem',
@@ -4932,13 +4987,13 @@ function renderModalResumenDia(){
                   f.entrada&&f.salida?h('span',{style:{
                     background:'#dcfce7',color:'#16a34a',borderRadius:'6px',
                     padding:'.2rem .5rem',fontSize:'.75rem',fontWeight:700,marginLeft:'auto'
-                  }},(function(){var r=calcH(f.entrada,f.salida);var d=fichajesList.length===1?(e.timerDeduct||timerDeduct||0)/60:0;return fmtH(Math.max(0,r-d));}())):null,
-                  f.nota?h('span',{style:{fontSize:'.75rem',color:'#64748b',fontStyle:'italic',marginLeft:'.3rem'}},f.nota.slice(0,25)):null
+                  }},(function(){var r=calcH(f.entrada,f.salida);var d=fichajesList.length===1?(e.timerDeduct||timerDeduct||0)/60:0;return fmtH(Math.max(0,r-d));}())):null
                 ),
+                f.nota?h('div',{style:{fontSize:'.78rem',color:'#475569',fontStyle:'italic',marginTop:'.3rem',paddingLeft:'1.7rem',lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}},f.nota):null,
                 hasExtras?h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.35rem',paddingLeft:'1.7rem'}},
                   linkedTask?h('span',{style:{fontSize:'.7rem',background:'#fef9c3',color:'#854d0e',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'🔧 '+(linkedTask.otNumero||'')+' '+(linkedTask.titulo||'').replace(/<[^>]*>/g,'').slice(0,20)):null,
                   linkedDieta?h('span',{style:{fontSize:'.7rem',background:'#fef3c7',color:'#92400e',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'☀ '+(linkedDieta.concepto||'Dieta')+' '+eur(linkedDieta.importe||0)):null,
-                  linkedViaje?h('span',{style:{fontSize:'.7rem',background:'#dbeafe',color:'#1e40af',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'🚗 '+(linkedViaje.tipoManual==='camion'?'Camión':'Coche')+(linkedViaje.destino?' → '+linkedViaje.destino:'')):null
+                  linkedViaje?h('span',{style:{fontSize:'.7rem',background:'#dbeafe',color:'#1e40af',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'🚗 '+(linkedViaje.tipoManual==='camion'?'Camión':'Coche')+(linkedViaje.destino?' → '+linkedViaje.destino:'')+(linkedViaje._isBase?' ('+eur(linkedViaje._importe)+')':'')):null
                 ):null
               );
             })
@@ -4958,16 +5013,12 @@ function renderModalResumenDia(){
           ):null
         ):null,
 
-        // Dietas y transporte
-        (e.dieta||0)+(e.transporte||0)+(e.dietasExtra||[]).length>0 ? h('div',{},
-          sec('🍽','Dietas y Transporte'),
+        // Dietas (independiente del transporte/viajes)
+        showDietas && ((e.dieta||0)>0 || (e.dietasExtra||[]).length>0) ? h('div',{},
+          sec('☀','Dietas'),
           (e.dieta||0)>0?row(
-            S._shareConPrecios===true?'Dieta':'1 Dieta',
+            S._shareConPrecios===true?('Dieta'+((e.dietaCantidad||1)>1?' x'+e.dietaCantidad:'')):('1 Dieta'+((e.dietaCantidad||1)>1?' x'+e.dietaCantidad:'')),
             S._shareConPrecios===true?eur(e.dieta):''
-          ):null,
-          (e.transporte||0)>0?row(
-            (function(){var tt=(S.transportTypes||[]).find(function(t){return t.id===e._transportType;});return 'Transporte'+(tt?' - '+tt.nombre:'');}()),
-            S._shareConPrecios===true?eur(e.transporte):''
           ):null,
           ...(e.dietasExtra||[]).map(d=>row(d.concepto||'Dieta extra', S._shareConPrecios===true?eur(d.importe||0):'✓'))
         ):null,
@@ -4978,9 +5029,13 @@ function renderModalResumenDia(){
           ...(e.otrosConceptos||[]).map(o=>row(o.concepto||'Concepto',eur(o.importe||0)))
         ):null,
 
-        // Viajes
-        (e.journeys||[]).length>0 ? h('div',{},
-          sec('🚗','Viajes'),
+        // Transporte y viajes (independiente de las dietas)
+        showViajes && ((e.transporte||0)>0 || (e.journeys||[]).length>0) ? h('div',{},
+          sec('🚗','Transporte y Viajes'),
+          (e.transporte||0)>0?row(
+            (function(){var tt=(S.transportTypes||[]).find(function(t){return t.id===e._transportType;});return 'Transporte'+(tt?' - '+tt.nombre:'')+((e.transporteCantidad||1)>1?' x'+e.transporteCantidad:'');}()),
+            S._shareConPrecios===true?eur(e.transporte):''
+          ):null,
           ...(e.journeys||[]).map(j=>row(
             (j.origen||'Origen')+(j.destino?' → '+j.destino:'')+(j.km?' ('+j.km+'km)':''),
             eur((j.km||0)*(j.vehicleId?(S.vehicles.find(v=>v.id==j.vehicleId)?.precioPorKm||0):j.precioManual||0))
@@ -5021,19 +5076,43 @@ function renderModalResumenDia(){
           },html:e.notas})
         ):null,
 
-        // Share with/without prices toggle + buttons
+        // Toggles de visibilidad por jornada (independientes, se guardan en esta jornada)
         h('div',{style:{marginTop:'1rem'}},
           h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',
             background:'#f8fafc',borderRadius:'8px',padding:'.5rem .8rem',border:'1px solid #e2e8f0'}},
             h('span',{style:{fontSize:'.82rem',color:'#475569',flex:1}},'Mostrar hora entrada/salida'),
             h('button',{
               style:{
-                background:mostrarHorarioResumen?'#22c55e':'#94a3b8',
+                background:showHorario?'#22c55e':'#94a3b8',
                 color:'#fff',border:'none',borderRadius:'20px',
                 padding:'.25rem .7rem',cursor:'pointer',fontWeight:700,fontSize:'.78rem'
               },
-              on:{click:()=>{mostrarHorarioResumen=!mostrarHorarioResumen;localStorage.setItem('mostrarHorarioResumen',mostrarHorarioResumen?'1':'0');rerender();}}
-            },mostrarHorarioResumen?'✓ Sí':'✗ No')
+              on:{click:()=>{fEntry._showHorario=!showHorario;scheduleDraftSave();rerender();}}
+            },showHorario?'✓ Sí':'✗ No')
+          ),
+          h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',
+            background:'#f8fafc',borderRadius:'8px',padding:'.5rem .8rem',border:'1px solid #e2e8f0'}},
+            h('span',{style:{fontSize:'.82rem',color:'#475569',flex:1}},'Mostrar dietas'),
+            h('button',{
+              style:{
+                background:showDietas?'#22c55e':'#94a3b8',
+                color:'#fff',border:'none',borderRadius:'20px',
+                padding:'.25rem .7rem',cursor:'pointer',fontWeight:700,fontSize:'.78rem'
+              },
+              on:{click:()=>{fEntry._showDietas=!showDietas;scheduleDraftSave();rerender();}}
+            },showDietas?'✓ Sí':'✗ No')
+          ),
+          h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',
+            background:'#f8fafc',borderRadius:'8px',padding:'.5rem .8rem',border:'1px solid #e2e8f0'}},
+            h('span',{style:{fontSize:'.82rem',color:'#475569',flex:1}},'Mostrar viajes/transporte'),
+            h('button',{
+              style:{
+                background:showViajes?'#22c55e':'#94a3b8',
+                color:'#fff',border:'none',borderRadius:'20px',
+                padding:'.25rem .7rem',cursor:'pointer',fontWeight:700,fontSize:'.78rem'
+              },
+              on:{click:()=>{fEntry._showViajes=!showViajes;scheduleDraftSave();rerender();}}
+            },showViajes?'✓ Sí':'✗ No')
           ),
           h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',
             background:'#f8fafc',borderRadius:'8px',padding:'.5rem .8rem',border:'1px solid #e2e8f0'}},
@@ -5255,24 +5334,26 @@ function generarPDFResumen(conPrecios){
     </div>`;
 
   // Fichajes
-  const htmlFichajes = mostrarHorarioResumen ? seccion('⏱ FICHAJES', filas(e.fichajes||[], (f,i) => {
+  const htmlFichajes = (e._showHorario!==false) ? seccion('⏱ FICHAJES', filas(e.fichajes||[], (f,i) => {
     const linkedTask = f.taskId ? (S.tasks||[]).find(t=>t.id===f.taskId) : null;
-    const linkedDieta = f.dietaId ? (e.dietasExtra||[]).find((d,di)=>(d.id||('idx'+di))===f.dietaId) : null;
-    const linkedViaje = f.journeyId ? (e.journeys||[]).find(j=>j.id===f.journeyId) : null;
+    const linkedDieta = f.dietaId==='base' ? {concepto:'Dieta'+((e.dietaCantidad||1)>1?' x'+e.dietaCantidad:''),importe:e.dieta} : f.dietaId ? (e.dietasExtra||[]).find((d,di)=>(d.id||('idx'+di))===f.dietaId) : null;
+    const linkedViaje = f.journeyId==='base' ? {tipoManual:e._transportType==='camion'?'camion':'coche',destino:'',_isBase:true,_importe:e.transporte} : f.journeyId ? (e.journeys||[]).find(j=>j.id===f.journeyId) : null;
     const extras = (linkedTask||linkedDieta||linkedViaje) ? `
       <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;padding-left:26px">
         ${linkedTask?`<span style="font-size:10px;background:#fef9c3;color:#854d0e;border-radius:5px;padding:2px 7px;font-weight:700">🔧 ${(linkedTask.otNumero||'')} ${(linkedTask.titulo||'').replace(/<[^>]*>/g,'').slice(0,20)}</span>`:''}
         ${linkedDieta?`<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:5px;padding:2px 7px;font-weight:700">☀ ${(linkedDieta.concepto||'Dieta')} ${eur(linkedDieta.importe||0)}</span>`:''}
-        ${linkedViaje?`<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:5px;padding:2px 7px;font-weight:700">🚗 ${linkedViaje.tipoManual==='camion'?'Camión':'Coche'}${linkedViaje.destino?' → '+linkedViaje.destino:''}</span>`:''}
+        ${linkedViaje?`<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:5px;padding:2px 7px;font-weight:700">🚗 ${linkedViaje.tipoManual==='camion'?'Camión':'Coche'}${linkedViaje.destino?' → '+linkedViaje.destino:''}${linkedViaje._isBase?' ('+eur(linkedViaje._importe)+')':''}</span>`:''}
       </div>` : '';
     return `
-    <div class="fichaje-row">
-      <span class="fnum">${i+1}.</span>
-      <span class="ftime">${f.entrada||'—'}</span>
-      <span class="farrow">→</span>
-      <span class="ftime">${f.salida||'—'}</span>
-      ${f.entrada&&f.salida?`<span class="fbadge">${fmtH(calcH(f.entrada,f.salida))}</span>`:''}
-      ${f.nota?`<span class="fnota">${f.nota}</span>`:''}
+    <div class="fichaje-row" style="flex-direction:column;align-items:stretch">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="fnum">${i+1}.</span>
+        <span class="ftime">${f.entrada||'—'}</span>
+        <span class="farrow">→</span>
+        <span class="ftime">${f.salida||'—'}</span>
+        ${f.entrada&&f.salida?`<span class="fbadge">${fmtH(calcH(f.entrada,f.salida))}</span>`:''}
+      </div>
+      ${f.nota?`<div class="fnota" style="margin-top:4px;padding-left:26px;line-height:1.5;white-space:pre-wrap;word-break:break-word">${f.nota}</div>`:''}
     </div>${extras}`;
   })) : '';
 
@@ -5288,15 +5369,27 @@ function generarPDFResumen(conPrecios){
     htmlHoras = seccion('🕐 HORAS E IMPORTES', rows);
   }
 
-  // Dietas y transporte
-  let dietaRows = '';
-  if(e.dieta>0) dietaRows += fila('Dieta', conPrecios?eur(e.dieta):'✓');
-  if(e.transporte>0){
-    const ttName = e._transportType?(S.transportTypes||[]).find(t=>t.id===e._transportType)?.nombre||'':'';
-    dietaRows += fila('Transporte'+(ttName?' ('+ttName+')':''), conPrecios?eur(e.transporte):'✓');
+  // Dietas (independiente del transporte/viajes)
+  let dietaOnlyRows = '';
+  if((e._showDietas!==false)){
+    if(e.dieta>0) dietaOnlyRows += fila('Dieta'+((e.dietaCantidad||1)>1?' x'+e.dietaCantidad:''), conPrecios?eur(e.dieta):'✓');
+    (e.dietasExtra||[]).forEach(d=>{ dietaOnlyRows += fila(d.concepto||'Dieta extra', conPrecios?eur(d.importe||0):'✓'); });
   }
-  (e.dietasExtra||[]).forEach(d=>{ dietaRows += fila(d.concepto||'Dieta extra', conPrecios?eur(d.importe||0):'✓'); });
-  const htmlDietas = dietaRows ? seccion('🍽 DIETAS Y TRANSPORTE', dietaRows) : '';
+  const htmlDietas = dietaOnlyRows ? seccion('☀ DIETAS', dietaOnlyRows) : '';
+
+  // Transporte y viajes (independiente de las dietas)
+  let transporteRows = '';
+  if((e._showViajes!==false)){
+    if(e.transporte>0){
+      const ttName = e._transportType?(S.transportTypes||[]).find(t=>t.id===e._transportType)?.nombre||'':'';
+      transporteRows += fila('Transporte'+(ttName?' ('+ttName+')':'')+((e.transporteCantidad||1)>1?' x'+e.transporteCantidad:''), conPrecios?eur(e.transporte):'✓');
+    }
+    (e.journeys||[]).forEach(j=>{
+      const imp=(j.km||0)*(j.vehicleId?(S.vehicles.find(v=>v.id==j.vehicleId)?.precioPorKm||0):j.precioManual||0);
+      transporteRows += fila((j.origen||'Origen')+(j.destino?' → '+j.destino:'')+(j.km?' ('+j.km+'km)':''), conPrecios?eur(imp):'✓');
+    });
+  }
+  const htmlTransporte = transporteRows ? seccion('🚗 TRANSPORTE Y VIAJES', transporteRows) : '';
 
   // Otros
   let otrosRows = (e.otrosConceptos||[]).map(o=>fila(o.concepto||'Concepto', conPrecios?eur(o.importe||0):'✓')).join('');
@@ -5391,7 +5484,7 @@ function generarPDFResumen(conPrecios){
   </div>
   <div class="kpis">
     <div class="kpi"><div class="kpi-val">${fmtH(totalH)}</div><div class="kpi-label">HORAS TRABAJADAS</div></div>
-    ${(mostrarHorarioResumen&&(e.horaEntrada||e._horaInicioManual))?`<div class="kpi"><div class="kpi-val" style="font-size:1rem">${e.horaEntrada||e._horaInicioManual||'--'} → ${e.horaSalida||e._horaFinManual||'--'}</div><div class="kpi-label">HORARIO</div></div>`:''}
+    ${((e._showHorario!==false)&&(e.horaEntrada||e._horaInicioManual))?`<div class="kpi"><div class="kpi-val" style="font-size:1rem">${e.horaEntrada||e._horaInicioManual||'--'} → ${e.horaSalida||e._horaFinManual||'--'}</div><div class="kpi-label">HORARIO</div></div>`:''}
     ${cp?`<div class="kpi"><div class="kpi-val">${eur(totalI)}</div><div class="kpi-label">TOTAL A COBRAR</div></div>`:''}
   </div>
 </div>
@@ -5399,6 +5492,7 @@ function generarPDFResumen(conPrecios){
   ${htmlFichajes}
   ${htmlHoras}
   ${htmlDietas}
+  ${htmlTransporte}
   ${htmlOtros}
   ${htmlTareas}
   ${htmlNotas}
@@ -5463,7 +5557,7 @@ async function compartirComoImagen(conPrecios){
     var row = function(l,v){return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:13px"><span style="color:#475569">'+l+'</span><span style="font-weight:700">'+v+'</span></div>';};
 
     // Fichajes: la hora de entrada/salida principal siempre primero, y detrás cualquier fichaje adicional que se haya añadido
-    if(mostrarHorarioResumen){
+    if(e._showHorario!==false){
       var fichajesList = [];
       if(e.horaEntrada || e.horaSalida){
         fichajesList.push({entrada:e.horaEntrada||'', salida:e.horaSalida||'', nota:''});
@@ -5476,14 +5570,14 @@ async function compartirComoImagen(conPrecios){
         fichajesList.forEach(function(f,i){
           var dur = (f.entrada&&f.salida)?(function(){var raw=calcH(f.entrada,f.salida);var dec=fichajesList.length===1?(e.timerDeduct||0)/60:0;return '<span style="background:#dcfce7;color:#16a34a;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:auto">'+fmtH(Math.max(0,raw-dec))+'</span>';}()):'';;
           var linkedTask = f.taskId ? (S.tasks||[]).find(function(t){return t.id===f.taskId;}) : null;
-          var linkedDieta = f.dietaId ? (e.dietasExtra||[]).find(function(d,di){return (d.id||('idx'+di))===f.dietaId;}) : null;
-          var linkedViaje = f.journeyId ? (e.journeys||[]).find(function(j){return j.id===f.journeyId;}) : null;
+          var linkedDieta = f.dietaId==='base' ? {concepto:'Dieta'+((e.dietaCantidad||1)>1?' x'+e.dietaCantidad:''),importe:e.dieta} : f.dietaId ? (e.dietasExtra||[]).find(function(d,di){return (d.id||('idx'+di))===f.dietaId;}) : null;
+          var linkedViaje = f.journeyId==='base' ? {tipoManual:e._transportType==='camion'?'camion':'coche',destino:'',_isBase:true,_importe:e.transporte} : f.journeyId ? (e.journeys||[]).find(function(j){return j.id===f.journeyId;}) : null;
           var extrasHtml='';
           if(linkedTask||linkedDieta||linkedViaje){
             extrasHtml='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px;padding-left:26px">'
               +(linkedTask?'<span style="font-size:10px;background:#fef9c3;color:#854d0e;border-radius:5px;padding:2px 7px;font-weight:700">🔧 '+(linkedTask.otNumero||'')+' '+(linkedTask.titulo||'').replace(/<[^>]*>/g,'').slice(0,20)+'</span>':'')
               +(linkedDieta?'<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:5px;padding:2px 7px;font-weight:700">☀ '+(linkedDieta.concepto||'Dieta')+' '+eur(linkedDieta.importe||0)+'</span>':'')
-              +(linkedViaje?'<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:5px;padding:2px 7px;font-weight:700">🚗 '+(linkedViaje.tipoManual==='camion'?'Camión':'Coche')+(linkedViaje.destino?' → '+linkedViaje.destino:'')+'</span>':'')
+              +(linkedViaje?'<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:5px;padding:2px 7px;font-weight:700">🚗 '+(linkedViaje.tipoManual==='camion'?'Camión':'Coche')+(linkedViaje.destino?' → '+linkedViaje.destino:'')+(linkedViaje._isBase?' ('+eur(linkedViaje._importe)+')':'')+'</span>':'')
               +'</div>';
           }
           html += '<div style="padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:4px">'
@@ -5493,8 +5587,8 @@ async function compartirComoImagen(conPrecios){
             +'<span style="color:#94a3b8">→</span>'
             +'<span style="font-weight:700;font-size:15px;min-width:46px">'+(f.salida||'—')+'</span>'
             +dur
-            +(f.nota?'<span style="font-size:11px;color:#64748b;font-style:italic">'+f.nota.slice(0,20)+'</span>':'')
             +'</div>'
+            +(f.nota?'<div style="font-size:11px;color:#475569;font-style:italic;margin-top:4px;padding-left:26px;line-height:1.5;white-space:pre-wrap;word-break:break-word">'+f.nota+'</div>':'')
             +extrasHtml
             +'</div>';
         });
@@ -5510,16 +5604,25 @@ async function compartirComoImagen(conPrecios){
       if(e.horasFestivas>0) html += row('Festivas', e.horasFestivas+'h'+(cp?' × '+eur(e.precioHoraFestiva||0)+' = '+eur((e.horasFestivas||0)*(e.precioHoraFestiva||0)):''));
     }
 
-    // Dietas y transporte
-    if((e.dieta||0)+(e.transporte||0)>0){
-      html += sec('🍽','DIETAS Y TRANSPORTE');
-      if(e.dieta>0) html += row('Dieta', cp?eur(e.dieta):'✓');
+    // Dietas (independiente del transporte/viajes)
+    if((e._showDietas!==false) && ((e.dieta||0)>0 || (e.dietasExtra||[]).length>0)){
+      html += sec('☀','DIETAS');
+      if(e.dieta>0) html += row('Dieta'+((e.dietaCantidad||1)>1?' x'+e.dietaCantidad:''), cp?eur(e.dieta):'✓');
+      (e.dietasExtra||[]).forEach(function(d){ html += row(d.concepto||'Dieta extra', cp?eur(d.importe||0):'✓'); });
+    }
+
+    // Transporte y viajes (independiente de las dietas)
+    if((e._showViajes!==false) && ((e.transporte||0)>0 || (e.journeys||[]).length>0)){
+      html += sec('🚗','TRANSPORTE Y VIAJES');
       if(e.transporte>0){
         var ttName='';
         try{ var tt=(S.transportTypes||[]).find(function(t){return t.id===e._transportType;}); if(tt)ttName=tt.nombre; }catch(ex){}
-        html += row('Transporte'+(ttName?' — '+ttName:''), cp?eur(e.transporte):'✓');
+        html += row('Transporte'+(ttName?' — '+ttName:'')+((e.transporteCantidad||1)>1?' x'+e.transporteCantidad:''), cp?eur(e.transporte):'✓');
       }
-      (e.dietasExtra||[]).forEach(function(d){ html += row(d.concepto||'Dieta extra', cp?eur(d.importe||0):'✓'); });
+      (e.journeys||[]).forEach(function(j){
+        var imp=(j.km||0)*(j.vehicleId?(S.vehicles.find(function(v){return v.id==j.vehicleId;})?.precioPorKm||0):j.precioManual||0);
+        html += row((j.origen||'Origen')+(j.destino?' → '+j.destino:'')+(j.km?' ('+j.km+'km)':''), cp?eur(imp):'✓');
+      });
     }
 
     // Tareas con OT
@@ -9151,7 +9254,6 @@ async function gdriveLoadData(){
 
 // Override driveSync and _doLoad to use Google Drive OAuth
 let syncWarningInfo = null; // {missingDates, direction, data, remoteData} para el modal de aviso
-let mostrarHorarioResumen = localStorage.getItem('mostrarHorarioResumen')!=='0'; // por defecto, mostrar
 
 async function driveSync(skipSafetyCheck){
   if(_syncInProgress) return;
