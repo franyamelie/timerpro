@@ -1321,7 +1321,7 @@ function renderFichar(){
         },'📊 Resumen')
       ),
       e.fichajes.length>1
-        ? e.fichajes.map((fj,i)=>renderFichajeSummaryRow(fj,i))
+        ? e.fichajes.map((fj,i)=>i===0?null:renderFichajeSummaryRow(fj,i))
         : e.fichajes.map((fj,i)=>renderFichaje(fj,i)),
       h('button',{class:'btn btn-gh btn-sm',style:{marginTop:'.3rem'},on:{click:addFichaje}},'➕ Añadir fichaje'),
       e.fichajes.length>0&&e.fichajes[0].entrada
@@ -5551,20 +5551,31 @@ function renderModalResumenDia(){
         })():null,
 
         // Notas: cada título de fichaje con sus tareas/OT y descripción, bien
-        // diferenciado uno de otro (para saber SIEMPRE a qué fichaje pertenece)
+        // diferenciado uno de otro (para saber SIEMPRE a qué fichaje pertenece).
+        // El fichaje 1 ES la pantalla principal: si no tiene datos propios,
+        // se usan los campos de la jornada (título/notas/tareas del día).
         showHorario?(()=>{
           const fichajesList=[];
           if((e.horaEntrada||e.horaSalida) && !(e.fichajes||[]).some(f=>f.entrada===e.horaEntrada && f.salida===e.horaSalida)) fichajesList.push({entrada:e.horaEntrada||'',salida:e.horaSalida||'',nota:''});
           (e.fichajes||[]).forEach(f=>{ if(f.entrada||f.salida) fichajesList.push(f); });
-          const conNotas=fichajesList.filter(f=>{
-            const lt=f.taskId?(S.tasks||[]).find(t=>t.id===f.taskId):null;
-            return f.titulo||lt||f.nota;
+          const idsClaimed=new Set(fichajesList.slice(1).map(f=>f.taskId).filter(Boolean));
+          const tareasFichaje1=tareasDia.filter(t=>!idsClaimed.has(t.id));
+          const conNotas=fichajesList.filter((f,i)=>{
+            const esF1=i===0;
+            const tit=f.titulo||(esF1?e.titulo:'');
+            const nota=f.nota||(esF1?e.notas:'');
+            const tareas=f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?tareasFichaje1:[]);
+            return tit||nota||tareas.length>0;
           });
           if(!conNotas.length) return null;
           return h('div',{},
             sec('📝','Notas'),
-            ...conNotas.map((f,i)=>{
-              const linkedTask = f.taskId ? (S.tasks||[]).find(t=>t.id===f.taskId) : null;
+            ...conNotas.map((f,fi)=>{
+              const i=fichajesList.indexOf(f);
+              const esF1=i===0;
+              const titulo=f.titulo||(esF1?e.titulo:'');
+              const nota=f.nota||(esF1?e.notas:'');
+              const linkedTasks=f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?tareasFichaje1:[]);
               const linkedDieta = f.dietaId==='base' ? {concepto:'Dieta'+((e.dietaCantidad||1)>1?' x'+e.dietaCantidad:''),importe:e.dieta} : f.dietaId ? (e.dietasExtra||[]).find((d,di)=>(d.id||('idx'+di))===f.dietaId) : null;
               const linkedViaje = f.journeyId==='base' ? {tipoManual:e._transportType==='camion'?'camion':'coche',destino:'',_isBase:true,_importe:e.transporte} : f.journeyId ? (e.journeys||[]).find(j=>j.id===f.journeyId) : null;
               return h('div',{style:{
@@ -5573,12 +5584,12 @@ function renderModalResumenDia(){
               }},
                 h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',flexWrap:'wrap',marginBottom:'.3rem'}},
                   h('span',{style:{fontSize:'.7rem',color:'#94a3b8',fontWeight:700}},(f.entrada||'—')+' → '+(f.salida||'—')),
-                  f.titulo?h('span',{style:{fontSize:'.92rem',fontWeight:800,color:'#0f172a'},html:f.titulo}):h('span',{style:{fontSize:'.8rem',color:'#94a3b8',fontStyle:'italic'}},'(sin título)')
+                  titulo?h('span',{style:{fontSize:'.92rem',fontWeight:800,color:'#0f172a'},html:titulo}):h('span',{style:{fontSize:'.8rem',color:'#94a3b8',fontStyle:'italic'}},'(sin título)')
                 ),
-                linkedTask?h('div',{style:{fontSize:'.78rem',color:'#0f172a',fontWeight:700,marginTop:'.2rem'}},
-                  '🔧 '+(linkedTask.otNumero?'O.T. '+linkedTask.otNumero+' — ':'')+(linkedTask.titulo||'').replace(/<[^>]*>/g,'')
-                ):null,
-                f.nota?h('div',{style:{fontSize:'.78rem',color:'#475569',lineHeight:1.5,wordBreak:'break-word',marginTop:'.2rem'},html:f.nota}):null,
+                ...linkedTasks.map(lt=>h('div',{style:{fontSize:'.78rem',color:'#0f172a',fontWeight:700,marginTop:'.2rem'}},
+                  '🔧 '+(lt.otNumero?'O.T. '+lt.otNumero+' — ':'')+(lt.titulo||'').replace(/<[^>]*>/g,'')
+                )),
+                nota?h('div',{style:{fontSize:'.78rem',color:'#475569',lineHeight:1.5,wordBreak:'break-word',marginTop:'.2rem'},html:nota}):null,
                 (linkedDieta||linkedViaje)?h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.35rem'}},
                   linkedDieta?h('span',{style:{fontSize:'.7rem',background:'#fef3c7',color:'#92400e',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'☀ '+(linkedDieta.concepto||'Dieta')+' '+eur(linkedDieta.importe||0)):null,
                   linkedViaje?h('span',{style:{fontSize:'.7rem',background:'#dbeafe',color:'#1e40af',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'🚗 '+(linkedViaje.tipoManual==='camion'?'Camión':'Coche')+(linkedViaje.destino?' → '+linkedViaje.destino:'')+(linkedViaje._isBase?' ('+eur(linkedViaje._importe)+')':'')):null
@@ -5785,7 +5796,7 @@ function shareResumen(method, conPrecios){
   if((e.fichajes||[]).length>0){
     lines.push('⏱ HORARIO:');
     (e.fichajes||[]).forEach((f,i)=>{
-      const tit = (f.titulo||'').replace(/<[^>]*>/g,'').trim();
+      const tit = (f.titulo||(i===0?e.titulo:'')||'').replace(/<[^>]*>/g,'').trim();
       let l = (i+1)+'. '+(f.entrada||'—')+' → '+(f.salida||'—');
       if(f.entrada&&f.salida) l += '  ('+fmtH(calcH(f.entrada,f.salida))+')';
       if(tit) l += '  '+tit;
@@ -5793,24 +5804,32 @@ function shareResumen(method, conPrecios){
     });
   }
 
-  // Notas: título de cada fichaje con su tarea/OT y descripción debajo, agrupado
-  const fichajesConNotas = (e.fichajes||[]).filter(f=>{
-    const lt = f.taskId ? (S.tasks||[]).find(t=>t.id===f.taskId) : null;
-    return (f.titulo||'').trim() || lt || (f.nota||'').trim();
+  // Notas: título de cada fichaje con su tarea/OT y descripción debajo, agrupado.
+  // El fichaje 1 ES la pantalla principal: si no tiene datos propios, se usan
+  // los campos de la jornada (título/notas/tareas del día no reclamadas por otros).
+  const idsClaimadas = new Set((e.fichajes||[]).slice(1).map(f=>f.taskId).filter(Boolean));
+  const tareasFichaje1txt = tareasDia.filter(t=>!idsClaimadas.has(t.id));
+  const fichajesConNotas = (e.fichajes||[]).filter((f,i)=>{
+    const esF1=i===0;
+    const tit=(f.titulo||(esF1?e.titulo:'')||'').trim();
+    const nota=(f.nota||(esF1?e.notas:'')||'').trim();
+    const tks=f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?tareasFichaje1txt:[]);
+    return tit||nota||tks.length>0;
   });
   if(fichajesConNotas.length>0){
     lines.push('');
     lines.push('📝 NOTAS:');
     fichajesConNotas.forEach(f=>{
-      const tit = (f.titulo||'').replace(/<[^>]*>/g,'').trim();
-      const nota = (f.nota||'').replace(/<[^>]*>/g,'').trim();
-      const linkedTask = f.taskId ? (S.tasks||[]).find(t=>t.id===f.taskId) : null;
+      const esF1=(e.fichajes||[]).indexOf(f)===0;
+      const tit = (f.titulo||(esF1?e.titulo:'')||'').replace(/<[^>]*>/g,'').trim();
+      const nota = (f.nota||(esF1?e.notas:'')||'').replace(/<[^>]*>/g,'').trim();
+      const linkedTasks = f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?tareasFichaje1txt:[]);
       lines.push('▸ '+(f.entrada||'—')+' → '+(f.salida||'—')+'  '+(tit||'(sin título)'));
-      if(linkedTask){
+      linkedTasks.forEach(linkedTask=>{
         const titulo=(linkedTask.titulo||'').replace(/<[^>]*>/g,'').trim();
         const _tp=taskTypes.find(x=>x.id===(linkedTask.tipoTarea||'ot'))||{icono:'🔧',nombre:'OT'};
         lines.push('   '+_tp.icono+' '+(linkedTask.otNumero?_tp.nombre+' '+linkedTask.otNumero+' — ':'')+titulo);
-      }
+      });
       if(nota) lines.push('   '+nota);
       lines.push('');
     });
@@ -5968,9 +5987,20 @@ function generarPDFResumen(conPrecios){
     const lst=[];
     if((e.horaEntrada||e.horaSalida) && !(e.fichajes||[]).some(f=>f.entrada===e.horaEntrada && f.salida===e.horaSalida)) lst.push({entrada:e.horaEntrada||'',salida:e.horaSalida||'',nota:''});
     (e.fichajes||[]).forEach(f=>{ if(f.entrada||f.salida) lst.push(f); });
-    return lst.filter(f=>{const lt=f.taskId?(S.tasks||[]).find(t=>t.id===f.taskId):null; return f.titulo||lt||f.nota;});
-  })(), f => {
-    const linkedTask = f.taskId ? (S.tasks||[]).find(t=>t.id===f.taskId) : null;
+    const idsClaimed=new Set(lst.slice(1).map(f=>f.taskId).filter(Boolean));
+    const tareasFichaje1=tareasDia.filter(t=>!idsClaimed.has(t.id));
+    return lst.filter((f,i)=>{
+      const esF1=i===0;
+      const tit=f.titulo||(esF1?e.titulo:'');
+      const nota=f.nota||(esF1?e.notas:'');
+      const tareas=f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?tareasFichaje1:[]);
+      return tit||nota||tareas.length>0;
+    }).map((f,fi,arr)=>({f,esF1:lst.indexOf(f)===0,tareasFichaje1}));
+  })(), item => {
+    const f=item.f, esF1=item.esF1;
+    const titulo=f.titulo||(esF1?e.titulo:'');
+    const nota=f.nota||(esF1?e.notas:'');
+    const linkedTasks=f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?item.tareasFichaje1:[]);
     const linkedDieta = f.dietaId==='base' ? {concepto:'Dieta'+((e.dietaCantidad||1)>1?' x'+e.dietaCantidad:''),importe:e.dieta} : f.dietaId ? (e.dietasExtra||[]).find((d,di)=>(d.id||('idx'+di))===f.dietaId) : null;
     const linkedViaje = f.journeyId==='base' ? {tipoManual:e._transportType==='camion'?'camion':'coche',destino:'',_isBase:true,_importe:e.transporte} : f.journeyId ? (e.journeys||[]).find(j=>j.id===f.journeyId) : null;
     const extras = (linkedDieta||linkedViaje) ? `
@@ -5978,12 +6008,13 @@ function generarPDFResumen(conPrecios){
         ${linkedDieta?`<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:5px;padding:2px 7px;font-weight:700">☀ ${(linkedDieta.concepto||'Dieta')} ${eur(linkedDieta.importe||0)}</span>`:''}
         ${linkedViaje?`<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:5px;padding:2px 7px;font-weight:700">🚗 ${linkedViaje.tipoManual==='camion'?'Camión':'Coche'}${linkedViaje.destino?' → '+linkedViaje.destino:''}${linkedViaje._isBase?' ('+eur(linkedViaje._importe)+')':''}</span>`:''}
       </div>` : '';
+    const tareasHtml = linkedTasks.map(lt=>`<div style="font-size:12px;color:#0f172a;font-weight:700;margin-top:3px">🔧 ${lt.otNumero?'O.T. '+lt.otNumero+' — ':''}${(lt.titulo||'').replace(/<[^>]*>/g,'')}</div>`).join('');
     return `
     <div style="padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:6px">
       <div style="font-size:10px;color:#94a3b8;font-weight:700">${f.entrada||'—'} → ${f.salida||'—'}</div>
-      ${f.titulo?`<div style="font-size:13px;font-weight:800;color:#0f172a">${f.titulo}</div>`:'<div style="font-size:11px;color:#94a3b8;font-style:italic">(sin título)</div>'}
-      ${linkedTask?`<div style="font-size:12px;color:#0f172a;font-weight:700;margin-top:3px">🔧 ${linkedTask.otNumero?'O.T. '+linkedTask.otNumero+' — ':''}${(linkedTask.titulo||'').replace(/<[^>]*>/g,'')}</div>`:''}
-      ${f.nota?`<div style="font-size:12px;color:#475569;line-height:1.5;word-break:break-word;margin-top:3px">${f.nota}</div>`:''}
+      ${titulo?`<div style="font-size:13px;font-weight:800;color:#0f172a">${titulo}</div>`:'<div style="font-size:11px;color:#94a3b8;font-style:italic">(sin título)</div>'}
+      ${tareasHtml}
+      ${nota?`<div style="font-size:12px;color:#475569;line-height:1.5;word-break:break-word;margin-top:3px">${nota}</div>`:''}
       ${extras}
     </div>`;
   })) : '';
@@ -6214,14 +6245,23 @@ async function compartirComoImagen(conPrecios){
             +'</div>';
         });
         // Notas: título de cada fichaje con sus tareas/OT y descripción debajo, agrupado
-        var fichajesConNotas = fichajesList.filter(function(f){
-          var lt = f.taskId ? (S.tasks||[]).find(function(t){return t.id===f.taskId;}) : null;
-          return f.titulo||lt||f.nota;
+        var idsClaimed1 = {};
+        fichajesList.slice(1).forEach(function(f){ if(f.taskId) idsClaimed1[f.taskId]=true; });
+        var tareasFichaje1 = tareas.filter(function(t){ return !idsClaimed1[t.id]; });
+        var fichajesConNotas = fichajesList.filter(function(f,i){
+          var esF1 = i===0;
+          var tit = f.titulo||(esF1?e.titulo:'');
+          var nota = f.nota||(esF1?e.notas:'');
+          var tks = f.taskId ? [(S.tasks||[]).find(function(t){return t.id===f.taskId;})].filter(Boolean) : (esF1?tareasFichaje1:[]);
+          return tit||nota||tks.length>0;
         });
         if(fichajesConNotas.length>0){
           html += sec('📝','NOTAS');
           fichajesConNotas.forEach(function(f){
-            var linkedTask = f.taskId ? (S.tasks||[]).find(function(t){return t.id===f.taskId;}) : null;
+            var esF1 = fichajesList.indexOf(f)===0;
+            var titulo = f.titulo||(esF1?e.titulo:'');
+            var nota = f.nota||(esF1?e.notas:'');
+            var linkedTasks = f.taskId ? [(S.tasks||[]).find(function(t){return t.id===f.taskId;})].filter(Boolean) : (esF1?tareasFichaje1:[]);
             var linkedDieta = f.dietaId==='base' ? {concepto:'Dieta'+((e.dietaCantidad||1)>1?' x'+e.dietaCantidad:''),importe:e.dieta} : f.dietaId ? (e.dietasExtra||[]).find(function(d,di){return (d.id||('idx'+di))===f.dietaId;}) : null;
             var linkedViaje = f.journeyId==='base' ? {tipoManual:e._transportType==='camion'?'camion':'coche',destino:'',_isBase:true,_importe:e.transporte} : f.journeyId ? (e.journeys||[]).find(function(j){return j.id===f.journeyId;}) : null;
             var extrasHtml='';
@@ -6231,11 +6271,12 @@ async function compartirComoImagen(conPrecios){
                 +(linkedViaje?'<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:5px;padding:2px 7px;font-weight:700">🚗 '+(linkedViaje.tipoManual==='camion'?'Camión':'Coche')+(linkedViaje.destino?' → '+linkedViaje.destino:'')+(linkedViaje._isBase?' ('+eur(linkedViaje._importe)+')':'')+'</span>':'')
                 +'</div>';
             }
+            var tareasHtml = linkedTasks.map(function(lt){return '<div style="font-size:12px;color:#0f172a;font-weight:700;margin-top:3px">🔧 '+(lt.otNumero?'O.T. '+lt.otNumero+' — ':'')+(lt.titulo||'').replace(/<[^>]*>/g,'')+'</div>';}).join('');
             html += '<div style="padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:4px">'
               +'<div style="font-size:10px;color:#94a3b8;font-weight:700">'+(f.entrada||'—')+' → '+(f.salida||'—')+'</div>'
-              +(f.titulo?'<span style="font-size:14px;font-weight:800;color:#0f172a">'+f.titulo+'</span>':'<span style="font-size:12px;color:#94a3b8;font-style:italic">(sin título)</span>')
-              +(linkedTask?'<div style="font-size:12px;color:#0f172a;font-weight:700;margin-top:3px">🔧 '+(linkedTask.otNumero?'O.T. '+linkedTask.otNumero+' — ':'')+(linkedTask.titulo||'').replace(/<[^>]*>/g,'')+'</div>':'')
-              +(f.nota?'<div style="font-size:12px;color:#475569;line-height:1.5;word-break:break-word;margin-top:3px">'+f.nota+'</div>':'')
+              +(titulo?'<span style="font-size:14px;font-weight:800;color:#0f172a">'+titulo+'</span>':'<span style="font-size:12px;color:#94a3b8;font-style:italic">(sin título)</span>')
+              +tareasHtml
+              +(nota?'<div style="font-size:12px;color:#475569;line-height:1.5;word-break:break-word;margin-top:3px">'+nota+'</div>':'')
               +extrasHtml
               +'</div>';
           });
