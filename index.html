@@ -1399,20 +1399,9 @@ function renderFichar(){
       if(tar.precioFestiva&&!fEntry.precioHoraFestiva) {fEntry.precioHoraFestiva=tar.precioFestiva;}
       return null;
     })(),
-    // Horas e importes (solo si hay 1 fichaje o menos; con 2+ cada uno se edita en su propia pantalla)
-    (fEntry.fichajes||[]).length<=1 ? h('div',{class:'card',id:'horas-importes-card'},
-      // Selector de fichaje: solo aparece si hay 2 o más fichajes en el día.
-      // Cada uno se edita de forma independiente (horas, dieta, transporte, descanso).
-      (fEntry.fichajes||[]).length>1 ? h('div',{style:{marginBottom:'.8rem'}},
-        h('div',{style:{fontSize:'.68rem',fontWeight:700,color:'var(--ink3)',textTransform:'uppercase',marginBottom:'.4rem'}},'Editando fichaje:'),
-        h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap'}},
-          ...fEntry.fichajes.map((fj,fi)=>h('button',{
-            class:'btn btn-sm '+(fi===Math.min(fichajeSeleccionado,fEntry.fichajes.length-1)?'btn-g':'btn-gh'),
-            style:{fontWeight:700},
-            on:{click:()=>{fichajeSeleccionado=fi;rerender();}}
-          },(fi+1)+'. '+(fj.entrada||'--')+'→'+(fj.salida||'--')+(fj.titulo?' · '+fj.titulo:'')))
-        )
-      ) : null,
+    // Horas e importes del fichaje 1 (la pantalla principal). Con 2+ fichajes,
+    // los siguientes se editan en su propia pantalla desde el listado de abajo.
+    h('div',{class:'card',id:'horas-importes-card'},
       h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
         h('div',{class:'sec-title',style:{margin:0}},'Horas e Importes'),
         histButtons('horas',
@@ -1432,7 +1421,7 @@ function renderFichar(){
         const pk='precioHora'+tipo;
         const hk='horas'+tipo;
         const ik='importe'+tipo;
-        const at=getActiveTarget();
+        const at=getFichaje1Target();
         const horas=parseFloat(at[hk])||0;
         const precio=parseFloat(e[pk])||0;
         const calc=Math.round(horas*precio*100)/100;
@@ -1460,7 +1449,7 @@ function renderFichar(){
                   // Update state without rerender (avoids resetting cursor/value)
                   const v=ev.target.value.replace(',','.');
                   const h2=parseFloat(v)||0;
-                  getActiveTarget()[hk]=h2;
+                  getFichaje1Target()[hk]=h2;
                   recomputeDayAggregates();
                   const p2=parseFloat(e[pk])||0;
                   fEntry[ik]=Math.round((fEntry[hk]||0)*p2*100)/100;
@@ -1472,7 +1461,7 @@ function renderFichar(){
                 blur:ev=>{
                   const v=ev.target.value.replace(',','.');
                   const h2=parseFloat(v)||0;
-                  getActiveTarget()[hk]=h2;
+                  getFichaje1Target()[hk]=h2;
                   recomputeDayAggregates();
                   fEntry[ik]=Math.round((fEntry[hk]||0)*(parseFloat(e[pk])||0)*100)/100;
                   scheduleDraftSave();
@@ -1545,7 +1534,7 @@ function renderFichar(){
               style:{background:'var(--acc)',color:'#000',border:'none',borderRadius:'4px',
                 cursor:'pointer',fontSize:'.7rem',padding:'.1rem .4rem',fontWeight:700},
               on:{click:()=>{
-                const at=getActiveTarget();
+                const at=getFichaje1Target();
                 at.dietaPrecioUnit=S.dietaDefault;
                 const q=at.dietaCantidad||1;
                 at.dieta=Math.round(q*S.dietaDefault*100)/100;
@@ -1561,10 +1550,10 @@ function renderFichar(){
           ),
           h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',marginBottom:'.3rem'}},
             h('span',{style:{fontSize:'.7rem',color:'var(--ink2)'}},'Nº'),
-            h('input',{type:'number',min:'1',step:'1',value:getActiveTarget().dietaCantidad||1,
+            h('input',{type:'number',min:'1',step:'1',value:getFichaje1Target().dietaCantidad||1,
               style:{width:'46px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem',color:'var(--ink)',fontSize:'.85rem'},
               on:{input:ev=>{
-                const at=getActiveTarget();
+                const at=getFichaje1Target();
                 const q=Math.max(1,parseInt(ev.target.value)||1);
                 at.dietaCantidad=q;
                 const unit=at.dietaPrecioUnit!=null?at.dietaPrecioUnit:at.dieta;
@@ -1576,8 +1565,8 @@ function renderFichar(){
               }}),
             h('span',{style:{color:'var(--ink3)',fontSize:'.75rem'}},'×')
           ),
-          importeField(getActiveTarget().dietaPrecioUnit!=null?getActiveTarget().dietaPrecioUnit:getActiveTarget().dieta, v=>{
-            const at=getActiveTarget();
+          importeField(getFichaje1Target().dietaPrecioUnit!=null?getFichaje1Target().dietaPrecioUnit:getFichaje1Target().dieta, v=>{
+            const at=getFichaje1Target();
             at.dietaPrecioUnit=v;
             const q=at.dietaCantidad||1;
             at.dieta=Math.round(q*v*100)/100;
@@ -1585,7 +1574,7 @@ function renderFichar(){
             histPush('dieta',()=>({dieta:fEntry.dieta,dietaCantidad:fEntry.dietaCantidad,dietaPrecioUnit:fEntry.dietaPrecioUnit}));
             rerender();
           }),
-          (getActiveTarget().dietaCantidad||1)>1?h('div',{style:{marginTop:'.3rem',fontSize:'.78rem',fontWeight:700,color:'var(--acc)'}},'Total: '+eur(getActiveTarget().dieta)):null
+          (getFichaje1Target().dietaCantidad||1)>1?h('div',{style:{marginTop:'.3rem',fontSize:'.78rem',fontWeight:700,color:'var(--acc)'}},'Total: '+eur(getFichaje1Target().dieta)):null
         ),
         h('div',{class:'field'},
           h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',marginBottom:'.3rem'}},
@@ -1603,13 +1592,13 @@ function renderFichar(){
           h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',flexWrap:'wrap',marginBottom:'.3rem'}},
             ...(S.transportTypes||[]).map(tt=>h('button',{
               style:{
-                background: getActiveTarget()._transportType===tt.id?'var(--acc)':'var(--surf2)',
-                color: getActiveTarget()._transportType===tt.id?'#000':'var(--ink)',
+                background: getFichaje1Target()._transportType===tt.id?'var(--acc)':'var(--surf2)',
+                color: getFichaje1Target()._transportType===tt.id?'#000':'var(--ink)',
                 border:'1px solid var(--brd)',borderRadius:'6px',
                 padding:'.25rem .6rem',cursor:'pointer',fontSize:'.75rem',fontWeight:600
               },
               on:{click:()=>{
-                const at=getActiveTarget();
+                const at=getFichaje1Target();
                 at._transportType=tt.id;
                 if(tt.precio>0){
                   at.transportePrecioUnit=tt.precio;
@@ -1625,10 +1614,10 @@ function renderFichar(){
           ),
           h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',marginBottom:'.3rem'}},
             h('span',{style:{fontSize:'.7rem',color:'var(--ink2)'}},'Nº'),
-            h('input',{type:'number',min:'1',step:'1',value:getActiveTarget().transporteCantidad||1,
+            h('input',{type:'number',min:'1',step:'1',value:getFichaje1Target().transporteCantidad||1,
               style:{width:'46px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem',color:'var(--ink)',fontSize:'.85rem'},
               on:{input:ev=>{
-                const at=getActiveTarget();
+                const at=getFichaje1Target();
                 const q=Math.max(1,parseInt(ev.target.value)||1);
                 at.transporteCantidad=q;
                 const unit=at.transportePrecioUnit!=null?at.transportePrecioUnit:at.transporte;
@@ -1640,8 +1629,8 @@ function renderFichar(){
               }}),
             h('span',{style:{color:'var(--ink3)',fontSize:'.75rem'}},'×')
           ),
-          importeField(getActiveTarget().transportePrecioUnit!=null?getActiveTarget().transportePrecioUnit:getActiveTarget().transporte, v=>{
-            const at=getActiveTarget();
+          importeField(getFichaje1Target().transportePrecioUnit!=null?getFichaje1Target().transportePrecioUnit:getFichaje1Target().transporte, v=>{
+            const at=getFichaje1Target();
             at.transportePrecioUnit=v;
             const q=at.transporteCantidad||1;
             at.transporte=Math.round(q*v*100)/100;
@@ -1653,10 +1642,10 @@ function renderFichar(){
             histPush('transporte',()=>({transporte:fEntry.transporte,transporteCantidad:fEntry.transporteCantidad,transportePrecioUnit:fEntry.transportePrecioUnit,_transportType:fEntry._transportType}));
             rerender();
           }),
-          (getActiveTarget().transporteCantidad||1)>1?h('div',{style:{marginTop:'.3rem',fontSize:'.78rem',fontWeight:700,color:'var(--acc)'}},'Total: '+eur(getActiveTarget().transporte)):null
+          (getFichaje1Target().transporteCantidad||1)>1?h('div',{style:{marginTop:'.3rem',fontSize:'.78rem',fontWeight:700,color:'var(--acc)'}},'Total: '+eur(getFichaje1Target().transporte)):null
         )
       )
-    ) : null,
+    ),
 
     // Dietas extra
     h('div',{class:'card'},
@@ -3357,6 +3346,14 @@ function getActiveTarget(){
     const idx=Math.min(fichajeSeleccionado, fEntry.fichajes.length-1);
     return fEntry.fichajes[idx];
   }
+  return fEntry;
+}
+// La pantalla principal (Horas/Dieta/Transporte de arriba) ES el fichaje 1,
+// siempre — nunca depende de qué fichaje esté seleccionado en las pantallas
+// de detalle. Con 0 o 1 fichajes, sus datos siguen viviendo en fEntry (aún no
+// migrados); con 2+, el fichaje 1 ya tiene sus propios campos.
+function getFichaje1Target(){
+  if(fEntry.fichajes && fEntry.fichajes.length>=2) return fEntry.fichajes[0];
   return fEntry;
 }
 function recomputeDayAggregates(){
