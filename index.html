@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260918-4'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260918-6'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -5722,8 +5722,10 @@ function renderModalResumenDia(){
           if(!fichajesList.length) return null;
           return h('div',{},
             sec('⏱','Horario'),
-            ...fichajesList.map((f,i)=>
-              h('div',{style:{
+            ...fichajesList.map((f,i)=>{
+              const esF1t=i===0;
+              const titF=esF1t?e.titulo:f.titulo;
+              return h('div',{style:{
                 padding:'.5rem .7rem',marginBottom:'.4rem',
                 background:'#f8fafc',borderRadius:'8px',
                 border:'1px solid #e2e8f0'
@@ -5733,14 +5735,14 @@ function renderModalResumenDia(){
                   h('span',{style:{fontWeight:700,fontSize:'1rem',color:'#0f172a',minWidth:'50px'}},f.entrada||'—'),
                   h('span',{style:{color:'#94a3b8',fontSize:'1.1rem'}},'→'),
                   h('span',{style:{fontWeight:700,fontSize:'1rem',color:'#0f172a',minWidth:'50px'}},f.salida||'—'),
-                  f.titulo?h('span',{style:{fontSize:'.88rem',fontWeight:800,color:'#0f172a'},html:f.titulo}):null,
+                  titF?h('span',{style:{fontSize:'.88rem',fontWeight:600,color:'#0f172a'},html:titF}):null,
                   f.entrada&&f.salida?h('span',{style:{
                     background:'#dcfce7',color:'#16a34a',borderRadius:'6px',
                     padding:'.2rem .5rem',fontSize:'.75rem',fontWeight:700,marginLeft:'auto'
                   }},(function(){var r=calcH(f.entrada,f.salida);var d=fichajesList.length===1?(e.timerDeduct||timerDeduct||0)/60:(f.descanso||0)/60;return fmtH(Math.max(0,r-d));}())):null
                 )
-              )
-            )
+              );
+            })
           );
         })():null,
 
@@ -5780,7 +5782,7 @@ function renderModalResumenDia(){
               }},
                 h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',flexWrap:'wrap',marginBottom:'.3rem'}},
                   h('span',{style:{fontSize:'.7rem',color:'#94a3b8',fontWeight:700}},(f.entrada||'—')+' → '+(f.salida||'—')),
-                  titulo?h('span',{style:{fontSize:'.92rem',fontWeight:800,color:'#0f172a'},html:titulo}):h('span',{style:{fontSize:'.8rem',color:'#94a3b8',fontStyle:'italic'}},'(sin título)')
+                  titulo?h('span',{style:{fontSize:'.92rem',fontWeight:600,color:'#0f172a'},html:titulo}):h('span',{style:{fontSize:'.8rem',color:'#94a3b8',fontStyle:'italic'}},'(sin título)')
                 ),
                 ...linkedTasks.map(lt=>h('div',{style:{fontSize:'.78rem',color:'#0f172a',fontWeight:700,marginTop:'.2rem'}},
                   '🔧 '+(lt.otNumero?'O.T. '+lt.otNumero+' — ':'')+(lt.titulo||'').replace(/<[^>]*>/g,'')
@@ -6177,13 +6179,15 @@ function generarPDFResumen(conPrecios){
 
   // Fichajes
   const htmlFichajes = (e._showHorario!==false) ? seccion('⏱ FICHAJES', filas(e.fichajes||[], (f,i) => {
+    const esF1p=i===0;
+    const titP=esF1p?e.titulo:f.titulo;
     return `
     <div class="fichaje-row">
       <span class="fnum">${i+1}.</span>
       <span class="ftime">${f.entrada||'—'}</span>
       <span class="farrow">→</span>
       <span class="ftime">${f.salida||'—'}</span>
-      ${f.titulo?`<span style="font-size:13px;font-weight:800;color:#0f172a">${f.titulo}</span>`:''}
+      ${titP?`<span style="font-size:13px;font-weight:600;color:#0f172a">${titP}</span>`:''}
       ${f.entrada&&f.salida?`<span class="fbadge">${fmtH(Math.max(0,calcH(f.entrada,f.salida)-((e.fichajes||[]).length===1?(e.timerDeduct||0)/60:(f.descanso||0)/60)))}</span>`:''}
     </div>`;
   })) : '';
@@ -6221,7 +6225,7 @@ function generarPDFResumen(conPrecios){
     return `
     <div style="padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:6px">
       <div style="font-size:10px;color:#94a3b8;font-weight:700">${f.entrada||'—'} → ${f.salida||'—'}</div>
-      ${titulo?`<div style="font-size:13px;font-weight:800;color:#0f172a">${titulo}</div>`:'<div style="font-size:11px;color:#94a3b8;font-style:italic">(sin título)</div>'}
+      ${titulo?`<div style="font-size:13px;font-weight:600;color:#0f172a">${titulo}</div>`:'<div style="font-size:11px;color:#94a3b8;font-style:italic">(sin título)</div>'}
       ${tareasHtml}
       ${nota?`<div style="font-size:12px;color:#475569;line-height:1.5;word-break:break-word;margin-top:3px">${nota}</div>`:''}
       ${extras}
@@ -6442,6 +6446,8 @@ async function compartirComoImagen(conPrecios){
       if(fichajesList.length>0){
         html += sec('⏱','HORARIO');
         fichajesList.forEach(function(f,i){
+          var esF1i=i===0;
+          var titI=esF1i?e.titulo:f.titulo;
           var dur = (f.entrada&&f.salida)?(function(){var raw=calcH(f.entrada,f.salida);var dec=fichajesList.length===1?(e.timerDeduct||0)/60:(f.descanso||0)/60;return '<span style="background:#dcfce7;color:#16a34a;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:auto">'+fmtH(Math.max(0,raw-dec))+'</span>';}()):'';;
           html += '<div style="padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:4px">'
             +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
@@ -6449,7 +6455,7 @@ async function compartirComoImagen(conPrecios){
             +'<span style="font-weight:700;font-size:15px;min-width:46px">'+(f.entrada||'—')+'</span>'
             +'<span style="color:#94a3b8">→</span>'
             +'<span style="font-weight:700;font-size:15px;min-width:46px">'+(f.salida||'—')+'</span>'
-            +(f.titulo?'<span style="font-size:14px;font-weight:800;color:#0f172a">'+f.titulo+'</span>':'')
+            +(titI?'<span style="font-size:14px;font-weight:600;color:#0f172a">'+titI+'</span>':'')
             +dur
             +'</div>'
             +'</div>';
@@ -6487,7 +6493,7 @@ async function compartirComoImagen(conPrecios){
             var tareasHtml = linkedTasks.map(function(lt){return '<div style="font-size:12px;color:#0f172a;font-weight:700;margin-top:3px">🔧 '+(lt.otNumero?'O.T. '+lt.otNumero+' — ':'')+(lt.titulo||'').replace(/<[^>]*>/g,'')+'</div>';}).join('');
             html += '<div style="padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:4px">'
               +'<div style="font-size:10px;color:#94a3b8;font-weight:700">'+(f.entrada||'—')+' → '+(f.salida||'—')+'</div>'
-              +(titulo?'<span style="font-size:14px;font-weight:800;color:#0f172a">'+titulo+'</span>':'<span style="font-size:12px;color:#94a3b8;font-style:italic">(sin título)</span>')
+              +(titulo?'<span style="font-size:14px;font-weight:600;color:#0f172a">'+titulo+'</span>':'<span style="font-size:12px;color:#94a3b8;font-style:italic">(sin título)</span>')
               +tareasHtml
               +(nota?'<div style="font-size:12px;color:#475569;line-height:1.5;word-break:break-word;margin-top:3px">'+nota+'</div>':'')
               +extrasHtml
@@ -11620,26 +11626,55 @@ const _captureFormState_orig = captureFormState;
 window.captureFormState = function(){
   _captureFormState_orig();
   const tEl = document.getElementById('jornada-titulo-input');
-  if(tEl){ fEntry.titulo = tEl.value; if(fEntry.fichajes&&fEntry.fichajes.length>=2) fEntry.fichajes[0].titulo=tEl.value; }
+  if(tEl){ fEntry.titulo = tEl.innerHTML; if(fEntry.fichajes&&fEntry.fichajes.length>=2) fEntry.fichajes[0].titulo=tEl.innerHTML; }
 };
+
+function syncTituloJornadaFromEditor(){
+  const el=document.getElementById('jornada-titulo-input');
+  if(!el) return;
+  fEntry.titulo=el.innerHTML;
+  if(fEntry.fichajes&&fEntry.fichajes.length>=2) fEntry.fichajes[0].titulo=el.innerHTML;
+  scheduleDraftSave();
+}
 
 // Add titulo field to renderFichar via patching the card rendering
 // We do this by overriding renderDayCard to show titulo
 const _renderDayCard_orig = renderDayCard;
 window.renderDayCard = function(){
-  // Add a titulo input before the day card
+  // Add a titulo input before the day card — editor con formato (N/C/S),
+  // igual que Notas de Jornada, para poder elegir negrita/cursiva/subrayado
   const titleField = h('div',{class:'card',style:{padding:'.6rem 1rem',marginBottom:'.4rem'}},
     h('div',{class:'field',style:{margin:0}},
       h('label',{},'TÍTULO DE JORNADA'),
-      h('input',{
-        type:'text',
+      h('div',{style:{display:'flex',gap:'.3rem',marginBottom:'.3rem',flexWrap:'wrap'}},
+        h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontWeight:'bold'},title:'Negrita',
+          on:{mousedown:ev=>{ev.preventDefault();document.execCommand('bold');syncTituloJornadaFromEditor();}}},'N'),
+        h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontStyle:'italic'},title:'Cursiva',
+          on:{mousedown:ev=>{ev.preventDefault();document.execCommand('italic');syncTituloJornadaFromEditor();}}},'C'),
+        h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',textDecoration:'underline'},title:'Subrayado',
+          on:{mousedown:ev=>{ev.preventDefault();document.execCommand('underline');syncTituloJornadaFromEditor();}}},'S'),
+        h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontSize:'.7rem'},title:'Limpiar formato',
+          on:{mousedown:ev=>{ev.preventDefault();document.execCommand('removeFormat');syncTituloJornadaFromEditor();}}},'✕ Formato'),
+        h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontSize:'.85rem'},title:'Deshacer',
+          on:{mousedown:ev=>{ev.preventDefault();document.execCommand('undo');syncTituloJornadaFromEditor();}}},'↶'),
+        h('button',{class:'btn btn-gh btn-sm',style:{padding:'.2rem .6rem',fontSize:'.85rem'},title:'Rehacer',
+          on:{mousedown:ev=>{ev.preventDefault();document.execCommand('redo');syncTituloJornadaFromEditor();}}},'↷')
+      ),
+      h('div',{
         id:'jornada-titulo-input',
+        contenteditable:'true',
+        html:fEntry.titulo||'',
+        spellcheck:true, lang:'es',
         placeholder:'Ej: Turno mañana, Guardia, Formación...',
-        value:fEntry.titulo||'',
-        style:{fontSize:'.9rem'},
+        style:{
+          fontSize:'.9rem',minHeight:'32px',background:'var(--surf2)',border:'1px solid var(--brd)',
+          borderRadius:'var(--r2)',padding:'.4rem .5rem',color:'var(--ink)',outline:'none',wordBreak:'break-word',
+          boxSizing:'border-box'
+        },
         on:{
-          input:ev=>{fEntry.titulo=ev.target.value;if(fEntry.fichajes&&fEntry.fichajes.length>=2)fEntry.fichajes[0].titulo=ev.target.value;},
-          blur:ev=>{fEntry.titulo=ev.target.value;if(fEntry.fichajes&&fEntry.fichajes.length>=2)fEntry.fichajes[0].titulo=ev.target.value;scheduleDraftSave();}
+          input:ev=>{fEntry.titulo=ev.target.innerHTML;if(fEntry.fichajes&&fEntry.fichajes.length>=2)fEntry.fichajes[0].titulo=ev.target.innerHTML;},
+          keyup:ev=>{fEntry.titulo=ev.target.innerHTML;if(fEntry.fichajes&&fEntry.fichajes.length>=2)fEntry.fichajes[0].titulo=ev.target.innerHTML;},
+          blur:ev=>{syncTituloJornadaFromEditor();}
         }
       })
     )
