@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260918-2'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260918-3'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1415,12 +1415,7 @@ function renderFichar(){
     h('div',{class:'card',id:'horas-importes-card'},
       h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
         h('div',{class:'sec-title',style:{margin:0}},'Horas e Importes'),
-        histButtons('horas',
-          ()=>({horasNormales:fEntry.horasNormales,horasExtra:fEntry.horasExtra,horasNocturnas:fEntry.horasNocturnas,horasFestivas:fEntry.horasFestivas,
-                precioHoraNormal:fEntry.precioHoraNormal,precioHoraExtra:fEntry.precioHoraExtra,precioHoraNocturna:fEntry.precioHoraNocturna,precioHoraFestiva:fEntry.precioHoraFestiva,
-                importeNormales:fEntry.importeNormales,importeExtra:fEntry.importeExtra,importeNocturnas:fEntry.importeNocturnas,importeFestivas:fEntry.importeFestivas}),
-          v=>Object.assign(fEntry,v)
-        ,'f1')
+        histButtons('horas', snapHorasF1, setHorasF1,'f1')
       ),
       // Header row
       h('div',{style:{display:'grid',gridTemplateColumns:'2fr 2fr 1fr',gap:'.4rem',marginBottom:'.3rem'}},
@@ -1478,9 +1473,7 @@ function renderFichar(){
                   recomputeDayAggregates();
                   fEntry[ik]=Math.round((fEntry[hk]||0)*(parseFloat(e[pk])||0)*100)/100;
                   scheduleDraftSave();
-                  histPush('horas',()=>({horasNormales:fEntry.horasNormales,horasExtra:fEntry.horasExtra,horasNocturnas:fEntry.horasNocturnas,horasFestivas:fEntry.horasFestivas,
-                        precioHoraNormal:fEntry.precioHoraNormal,precioHoraExtra:fEntry.precioHoraExtra,precioHoraNocturna:fEntry.precioHoraNocturna,precioHoraFestiva:fEntry.precioHoraFestiva,
-                        importeNormales:fEntry.importeNormales,importeExtra:fEntry.importeExtra,importeNocturnas:fEntry.importeNocturnas,importeFestivas:fEntry.importeFestivas}),'f1');
+                  histPush('horas', snapHorasF1, 'f1');
                   rerender();
                 }
               }})
@@ -1511,9 +1504,7 @@ function renderFichar(){
                   fEntry[pk]=p2;
                   fEntry['_precio'+tipo+'Manual']=true;
                   fEntry[ik]=Math.round((parseFloat(e[hk])||0)*p2*100)/100;
-                  histPush('horas',()=>({horasNormales:fEntry.horasNormales,horasExtra:fEntry.horasExtra,horasNocturnas:fEntry.horasNocturnas,horasFestivas:fEntry.horasFestivas,
-                        precioHoraNormal:fEntry.precioHoraNormal,precioHoraExtra:fEntry.precioHoraExtra,precioHoraNocturna:fEntry.precioHoraNocturna,precioHoraFestiva:fEntry.precioHoraFestiva,
-                        importeNormales:fEntry.importeNormales,importeExtra:fEntry.importeExtra,importeNocturnas:fEntry.importeNocturnas,importeFestivas:fEntry.importeFestivas}),'f1');
+                  histPush('horas', snapHorasF1, 'f1');
                   rerender();
                 }
               }})
@@ -1553,14 +1544,11 @@ function renderFichar(){
                 const q=at.dietaCantidad||1;
                 at.dieta=Math.round(q*S.dietaDefault*100)/100;
                 recomputeDayAggregates();
-                histPush('dieta',()=>({dieta:fEntry.dieta,dietaCantidad:fEntry.dietaCantidad,dietaPrecioUnit:fEntry.dietaPrecioUnit}),'f1');
+                histPush('dieta', snapDietaF1, 'f1');
                 rerender();
               }}
             },eur(S.dietaDefault)):null,
-            h('span',{style:{marginLeft:'auto'}},histButtons('dieta',
-              ()=>({dieta:fEntry.dieta,dietaCantidad:fEntry.dietaCantidad,dietaPrecioUnit:fEntry.dietaPrecioUnit}),
-              v=>Object.assign(fEntry,v)
-            ,'f1'))
+            h('span',{style:{marginLeft:'auto'}},histButtons('dieta', snapDietaF1, setDietaF1,'f1'))
           ),
           h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',marginBottom:'.3rem'}},
             h('span',{style:{fontSize:'.7rem',color:'var(--ink2)'}},'Nº'),
@@ -1575,7 +1563,7 @@ function renderFichar(){
                 recomputeDayAggregates();
                 rerender();
               },
-              blur:()=>{histPush('dieta',()=>({dieta:fEntry.dieta,dietaCantidad:fEntry.dietaCantidad,dietaPrecioUnit:fEntry.dietaPrecioUnit}),'f1');}
+              blur:()=>{histPush('dieta', snapDietaF1, 'f1');}
               }}),
             h('span',{style:{color:'var(--ink3)',fontSize:'.75rem'}},'×')
           ),
@@ -1585,7 +1573,7 @@ function renderFichar(){
             const q=at.dietaCantidad||1;
             at.dieta=Math.round(q*v*100)/100;
             recomputeDayAggregates();
-            histPush('dieta',()=>({dieta:fEntry.dieta,dietaCantidad:fEntry.dietaCantidad,dietaPrecioUnit:fEntry.dietaPrecioUnit}),'f1');
+            histPush('dieta', snapDietaF1, 'f1');
             rerender();
           }),
           (getFichaje1Target().dietaCantidad||1)>1?h('div',{style:{marginTop:'.3rem',fontSize:'.78rem',fontWeight:700,color:'var(--acc)'}},'Total: '+eur(getFichaje1Target().dieta)):null
@@ -1598,10 +1586,7 @@ function renderFichar(){
               style:{background:'none',border:'none',cursor:'pointer',fontSize:'.8rem',color:'var(--ink2)',padding:'0 .2rem'},
               on:{click:()=>{S.modal='transportConfig';rerender();}}
             },'⚙️'),
-            h('span',{style:{marginLeft:'auto'}},histButtons('transporte',
-              ()=>({transporte:fEntry.transporte,transporteCantidad:fEntry.transporteCantidad,transportePrecioUnit:fEntry.transportePrecioUnit,_transportType:fEntry._transportType}),
-              v=>Object.assign(fEntry,v)
-            ,'f1'))
+            h('span',{style:{marginLeft:'auto'}},histButtons('transporte', snapTransporteF1, setTransporteF1,'f1'))
           ),
           h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',flexWrap:'wrap',marginBottom:'.3rem'}},
             ...(S.transportTypes||[]).map(tt=>h('button',{
@@ -1620,7 +1605,7 @@ function renderFichar(){
                   at.transporte=Math.round(q*tt.precio*100)/100;
                 }
                 recomputeDayAggregates();
-                histPush('transporte',()=>({transporte:fEntry.transporte,transporteCantidad:fEntry.transporteCantidad,transportePrecioUnit:fEntry.transportePrecioUnit,_transportType:fEntry._transportType}),'f1');
+                histPush('transporte', snapTransporteF1, 'f1');
                 rerender();
                 _lsSave();
               }}
@@ -1639,7 +1624,7 @@ function renderFichar(){
                 recomputeDayAggregates();
                 rerender();
               },
-              blur:()=>{histPush('transporte',()=>({transporte:fEntry.transporte,transporteCantidad:fEntry.transporteCantidad,transportePrecioUnit:fEntry.transportePrecioUnit,_transportType:fEntry._transportType}),'f1');}
+              blur:()=>{histPush('transporte', snapTransporteF1, 'f1');}
               }}),
             h('span',{style:{color:'var(--ink3)',fontSize:'.75rem'}},'×')
           ),
@@ -1653,7 +1638,7 @@ function renderFichar(){
               if(_ti>=0){S.transportTypes[_ti].precio=v;localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));}
             }
             recomputeDayAggregates();
-            histPush('transporte',()=>({transporte:fEntry.transporte,transporteCantidad:fEntry.transporteCantidad,transportePrecioUnit:fEntry.transportePrecioUnit,_transportType:fEntry._transportType}),'f1');
+            histPush('transporte', snapTransporteF1, 'f1');
             rerender();
           }),
           (getFichaje1Target().transporteCantidad||1)>1?h('div',{style:{marginTop:'.3rem',fontSize:'.78rem',fontWeight:700,color:'var(--acc)'}},'Total: '+eur(getFichaje1Target().transporte)):null
@@ -3370,6 +3355,32 @@ function getFichaje1Target(){
   if(fEntry.fichajes && fEntry.fichajes.length>=2) return fEntry.fichajes[0];
   return fEntry;
 }
+// Snapshots para el historial (↶ ↷) de Horas/Dieta/Transporte del fichaje 1.
+// OJO: deben leer/escribir siempre sobre getFichaje1Target(), nunca sobre
+// fEntry directamente — cuando hay 2+ fichajes, fEntry.dieta/horasNormales/etc
+// son el AGREGADO del día (recalculado por recomputeDayAggregates), no el
+// valor editable del fichaje 1. Si el historial tocara fEntry directamente,
+// el deshacer no tendría ningún efecto visible en la pantalla.
+function snapHorasF1(){
+  const t=getFichaje1Target();
+  return {horasNormales:t.horasNormales,horasExtra:t.horasExtra,horasNocturnas:t.horasNocturnas,horasFestivas:t.horasFestivas,
+          precioHoraNormal:fEntry.precioHoraNormal,precioHoraExtra:fEntry.precioHoraExtra,precioHoraNocturna:fEntry.precioHoraNocturna,precioHoraFestiva:fEntry.precioHoraFestiva};
+}
+function setHorasF1(v){
+  const t=getFichaje1Target();
+  Object.assign(t,{horasNormales:v.horasNormales,horasExtra:v.horasExtra,horasNocturnas:v.horasNocturnas,horasFestivas:v.horasFestivas});
+  Object.assign(fEntry,{precioHoraNormal:v.precioHoraNormal,precioHoraExtra:v.precioHoraExtra,precioHoraNocturna:v.precioHoraNocturna,precioHoraFestiva:v.precioHoraFestiva});
+}
+function snapDietaF1(){
+  const t=getFichaje1Target();
+  return {dieta:t.dieta,dietaCantidad:t.dietaCantidad,dietaPrecioUnit:t.dietaPrecioUnit};
+}
+function setDietaF1(v){ Object.assign(getFichaje1Target(),v); }
+function snapTransporteF1(){
+  const t=getFichaje1Target();
+  return {transporte:t.transporte,transporteCantidad:t.transporteCantidad,transportePrecioUnit:t.transportePrecioUnit,_transportType:t._transportType};
+}
+function setTransporteF1(v){ Object.assign(getFichaje1Target(),v); }
 function recomputeDayAggregates(){
   if(!fEntry.fichajes || fEntry.fichajes.length<=1) return; // sin cambios en el caso normal
   let hn=0,he=0,hnoc=0,hf=0,di=0,tr=0;
