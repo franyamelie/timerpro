@@ -350,7 +350,7 @@ const defEntry = () => ({
   otrosConceptos:[], notas:'', journeys:[], ubicacionEntrada:'', ubicacionSalida:'', horaEntrada:'', horaSalida:'',
   entradaLocked:false, fotosGastos:[], timerDeduct:0
 });
-const defFichaje = () => ({_fid:Date.now(), entrada:'', salida:'', nota:'', editing:false, taskId:'', dietaId:'', journeyId:'', timerRunning:false, timerStart:null});
+const defFichaje = () => ({_fid:Date.now(), entrada:'', salida:'', titulo:'', nota:'', editing:false, taskId:'', dietaId:'', journeyId:'', timerRunning:false, timerStart:null});
 const defTask = f => ({fecha:f||today(), titulo:'', horaInicio:'', horaFin:'', descripcion:'', siteId:'', workOrderId:'', otNumero:'', usaOT:false, tipoTarea:'ot', fotos:[]});
 const defJourney = () => ({id:'j'+Date.now()+Math.random().toString(36).slice(2,7), vehicleId:'', tipoManual:'coche', precioManual:0.19, origen:'', destino:'', km:0, horaInicio:nowTime(), horaFin:''});
 const defWorker = {nombre:'',apellidos:'',dni:'',cargo:'',departamento:'',email:'',telefono:'',numSS:'',fechaAlta:'',convenio:'',firma:'',foto:''};
@@ -1852,7 +1852,22 @@ function renderFichaje(fj,i){
           scheduleDraftSave(); rerender();
         }}},'✕')
     ),
-    // Row 2: nota + tarea asociada
+    // Row 2: título (dónde he estado) + tarea asociada
+    h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center'}},
+      h('input',{
+        type:'text', spellcheck:true, lang:'es',
+        placeholder:'Título (ej: En Tradema, En Valoriza...)',
+        value:fj.titulo||'',
+        style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',
+               borderRadius:'var(--r2)',padding:'.35rem .5rem',color:'var(--ink)',
+               fontSize:'.82rem',fontWeight:700},
+        on:{
+          input:ev=>{fEntry.fichajes[i].titulo=ev.target.value;},
+          blur:ev=>{fEntry.fichajes[i].titulo=ev.target.value;scheduleDraftSave();}
+        }
+      })
+    ),
+    // Row 3: nota + tarea asociada
     h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center'}},
       h('textarea',{
         spellcheck:true,lang:'es',rows:1,
@@ -4989,7 +5004,10 @@ function renderModalResumenDia(){
                     padding:'.2rem .5rem',fontSize:'.75rem',fontWeight:700,marginLeft:'auto'
                   }},(function(){var r=calcH(f.entrada,f.salida);var d=fichajesList.length===1?(e.timerDeduct||timerDeduct||0)/60:0;return fmtH(Math.max(0,r-d));}())):null
                 ),
-                f.nota?h('div',{style:{fontSize:'.78rem',color:'#475569',fontStyle:'italic',marginTop:'.3rem',paddingLeft:'1.7rem',lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}},f.nota):null,
+                (f.titulo||f.nota)?h('div',{style:{marginTop:'.3rem',paddingLeft:'1.7rem'}},
+                  f.titulo?h('div',{style:{fontSize:'.8rem',fontWeight:700,color:'#1e293b',textDecoration:'underline'}},f.titulo+':'):null,
+                  f.nota?h('div',{style:{fontSize:'.78rem',color:'#475569',lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word',marginTop:f.titulo?'.15rem':0}},f.nota):null
+                ):null,
                 hasExtras?h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.35rem',paddingLeft:'1.7rem'}},
                   linkedTask?h('span',{style:{fontSize:'.7rem',background:'#fef9c3',color:'#854d0e',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'🔧 '+(linkedTask.otNumero||'')+' '+(linkedTask.titulo||'').replace(/<[^>]*>/g,'').slice(0,20)):null,
                   linkedDieta?h('span',{style:{fontSize:'.7rem',background:'#fef3c7',color:'#92400e',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'☀ '+(linkedDieta.concepto||'Dieta')+' '+eur(linkedDieta.importe||0)):null,
@@ -5353,7 +5371,8 @@ function generarPDFResumen(conPrecios){
         <span class="ftime">${f.salida||'—'}</span>
         ${f.entrada&&f.salida?`<span class="fbadge">${fmtH(calcH(f.entrada,f.salida))}</span>`:''}
       </div>
-      ${f.nota?`<div class="fnota" style="margin-top:4px;padding-left:26px;line-height:1.5;white-space:pre-wrap;word-break:break-word">${f.nota}</div>`:''}
+      ${f.titulo?`<div style="margin-top:4px;padding-left:26px;font-size:12px;font-weight:700;color:#1e293b;text-decoration:underline">${f.titulo}:</div>`:''}
+      ${f.nota?`<div class="fnota" style="margin-top:${f.titulo?'2px':'4px'};padding-left:26px;line-height:1.5;white-space:pre-wrap;word-break:break-word">${f.nota}</div>`:''}
     </div>${extras}`;
   })) : '';
 
@@ -5588,7 +5607,10 @@ async function compartirComoImagen(conPrecios){
             +'<span style="font-weight:700;font-size:15px;min-width:46px">'+(f.salida||'—')+'</span>'
             +dur
             +'</div>'
-            +(f.nota?'<div style="font-size:11px;color:#475569;font-style:italic;margin-top:4px;padding-left:26px;line-height:1.5;white-space:pre-wrap;word-break:break-word">'+f.nota+'</div>':'')
+            +((f.titulo||f.nota)?('<div style="margin-top:4px;padding-left:26px">'
+               +(f.titulo?'<div style="font-size:12px;font-weight:700;color:#1e293b;text-decoration:underline">'+f.titulo+':</div>':'')
+               +(f.nota?'<div style="font-size:11px;color:#475569;line-height:1.5;white-space:pre-wrap;word-break:break-word;margin-top:'+(f.titulo?'2px':'0')+'">'+f.nota+'</div>':'')
+               +'</div>') : '')
             +extrasHtml
             +'</div>';
         });
