@@ -873,14 +873,26 @@ function migrarFichajeBaseSiHaceFalta(){
   if(!(fEntry.horaEntrada||fEntry.horaSalida)) return;
   const yaExiste=(fEntry.fichajes||[]).some(f=>f.entrada===fEntry.horaEntrada && f.salida===fEntry.horaSalida);
   if(yaExiste) return;
+  const habiaOtroFichajeYa=(fEntry.fichajes||[]).length>0;
   const f0=defFichaje();
   f0.entrada=fEntry.horaEntrada||'';
   f0.salida=fEntry.horaSalida||'';
-  ['horasNormales','horasExtra','horasNocturnas','horasFestivas',
-   'dieta','dietaCantidad','dietaPrecioUnit',
-   'transporte','transporteCantidad','transportePrecioUnit','_transportType'
-  ].forEach(k=>{ if(fEntry[k]!=null && fEntry[k]!==0 && fEntry[k]!=='') f0[k]=fEntry[k]; });
-  if(fEntry.timerDeduct) f0.descanso=fEntry.timerDeduct;
+  // El título y la descripción de la jornada SIEMPRE pertenecen a este primer
+  // horario (son el "Título de jornada" y "Notas de jornada" de la pantalla
+  // principal, que es justo la ventana de este primer fichaje).
+  if(fEntry.titulo) f0.titulo=fEntry.titulo;
+  if(fEntry.notas) f0.nota=fEntry.notas;
+  // OJO: las horas/dieta/transporte del día SOLO pertenecen a este nuevo
+  // fichaje si no había ya otro fichaje real guardado. Si ya existía uno,
+  // esos campos del día eran en realidad los de ESE fichaje (por cómo se
+  // editan cuando solo hay 1), y copiarlos aquí duplicaría o mezclaría datos.
+  if(!habiaOtroFichajeYa){
+    ['horasNormales','horasExtra','horasNocturnas','horasFestivas',
+     'dieta','dietaCantidad','dietaPrecioUnit',
+     'transporte','transporteCantidad','transportePrecioUnit','_transportType'
+    ].forEach(k=>{ if(fEntry[k]!=null && fEntry[k]!==0 && fEntry[k]!=='') f0[k]=fEntry[k]; });
+    if(fEntry.timerDeduct) f0.descanso=fEntry.timerDeduct;
+  }
   fEntry.fichajes=[f0, ...(fEntry.fichajes||[])]; // va primero cronológicamente
   fEntry.horaEntrada=''; fEntry.horaSalida='';
   recomputeDayAggregates();
@@ -907,6 +919,21 @@ function autoCalcHorasFromFichajes(){
       const mins=Math.max(0,calcH(fj.entrada,fj.salida)*60-(fj.descanso||0));
       if(mins>0) fj.horasNormales=Math.round(mins*100/60)/100;
     });
+    // Tope de 8h normales por jornada: si la suma de horas auto-calculadas como
+    // "normales" supera las 8h del día, el exceso pasa a hora extra (se resta
+    // del/de los fichaje/s que hacen superar el tope, en orden cronológico).
+    let acumNormales=0;
+    fEntry.fichajes.forEach(fj=>{
+      if(!fj.horasNormales) return;
+      const cap=Math.max(0, 8-acumNormales);
+      const usados=fj.horasNormales;
+      acumNormales+=usados;
+      if(usados>cap){
+        const extra=Math.round((usados-cap)*100)/100;
+        fj.horasNormales=Math.round(cap*100)/100;
+        fj.horasExtra=Math.round(((fj.horasExtra||0)+extra)*100)/100;
+      }
+    });
     recomputeDayAggregates();
     return;
   }
@@ -919,9 +946,15 @@ function autoCalcHorasFromFichajes(){
   if(totalMins===0) return;
   const netMins=Math.max(0,totalMins-timerDeduct);
   const netHours=Math.round(netMins*100/60)/100;
-  fEntry.horasNormales=netHours;
+  // Tope de 8h normales/jornada: el resto es hora extra
+  const normalesFinal=Math.min(8,netHours);
+  const extraFinal=Math.round((netHours-normalesFinal)*100)/100;
+  fEntry.horasNormales=normalesFinal;
+  if(extraFinal>0) fEntry.horasExtra=extraFinal;
   if(fEntry.precioHoraNormal>0)
-    fEntry.importeNormales=Math.round(netHours*fEntry.precioHoraNormal*100)/100;
+    fEntry.importeNormales=Math.round(normalesFinal*fEntry.precioHoraNormal*100)/100;
+  if(extraFinal>0 && fEntry.precioHoraExtra>0)
+    fEntry.importeExtra=Math.round(extraFinal*fEntry.precioHoraExtra*100)/100;
 }
 
 
@@ -5402,6 +5435,10 @@ function renderModalResumenDia(){
     (S.vehicles.find(v=>v.id==j.vehicleId)?.precioPorKm||0):j.precioManual||0),0);
   const totalI = impHoras+impDietas+impTransp+impOtros+impViajes;
   const tareasDia = (S.tasks||[]).filter(t=> t.fecha && t.fecha === e.fecha);
+  // Cuando hay más de 1 fichaje real, las tareas y notas YA se muestran agrupadas
+  // dentro de cada fichaje (arriba). Mostrarlas también sueltas aquí duplicaría
+  // la información sin decir a qué fichaje pertenecen — se ocultan en ese caso.
+  const multiFichajes = (e.fichajes||[]).length>1;
   // Visibilidad por jornada (independientes entre sí). Por defecto, todo visible.
   const showHorario = e._showHorario!==false;
   const showDietas = e._showDietas!==false;
@@ -5569,8 +5606,8 @@ function renderModalResumenDia(){
           ))
         ):null,
 
-        // Tareas
-        tareasDia.length>0 ? h('div',{},
+        // Tareas (solo sueltas si hay 1 fichaje o ninguno; con varios, ya salen dentro de cada uno)
+        (!multiFichajes && tareasDia.length>0) ? h('div',{},
           sec('🔧','Tareas / O.T.'),
           ...tareasDia.map(t=>{
             const titulo=(t.titulo||'Sin título').replace(/<[^>]*>/g,'');
@@ -5593,8 +5630,8 @@ function renderModalResumenDia(){
           })
         ):null,
 
-        // Notas
-        e.notas?h('div',{},
+        // Notas (solo sueltas si hay 1 fichaje o ninguno; con varios, ya sale la de cada uno)
+        (!multiFichajes && e.notas)?h('div',{},
           sec('📝','Notas'),
           h('div',{style:{
             background:'#f8fafc',borderRadius:'8px',padding:'.7rem .9rem',
@@ -5713,23 +5750,33 @@ function shareResumen(method, conPrecios){
   const impOtros = (e.otrosConceptos||[]).reduce((s,o)=>s+(o.importe||0),0);
   const totalI = impHoras+impDietas+impTransp+impOtros;
   const tareasDia = S.tasks.filter(t=>t.fecha===e.fecha);
+  const multiFichajes = (e.fichajes||[]).length>1;
 
   let lines = [];
   lines.push('📋 JORNADA — '+dlbl(e.fecha).toUpperCase());
   lines.push('─────────────────────────');
 
-  // Fichajes
+  // Fichajes (con su título y tareas propias debajo, bien diferenciados)
   if((e.fichajes||[]).length>0){
     (e.fichajes||[]).forEach((f,i)=>{
+      const tit = (f.titulo||'').replace(/<[^>]*>/g,'').trim();
+      const nota = (f.nota||'').replace(/<[^>]*>/g,'').trim();
+      const linkedTask = f.taskId ? (S.tasks||[]).find(t=>t.id===f.taskId) : null;
       let l = '⏱ '+(f.entrada||'—')+' → '+(f.salida||'—');
       if(f.entrada&&f.salida) l += '  ('+fmtH(calcH(f.entrada,f.salida))+')';
-      if(f.nota) l += '\n   '+f.nota;
+      if(tit) l += '  '+tit;
+      if(linkedTask){
+        const titulo=(linkedTask.titulo||'').replace(/<[^>]*>/g,'').trim();
+        const _tp=taskTypes.find(x=>x.id===(linkedTask.tipoTarea||'ot'))||{icono:'🔧',nombre:'OT'};
+        l += '\n   '+_tp.icono+' '+(linkedTask.otNumero?_tp.nombre+' '+linkedTask.otNumero+' — ':'')+titulo;
+      }
+      if(nota) l += '\n   '+nota;
       lines.push(l);
     });
   }
 
-  // Tareas - each description line by line, OT clear
-  if(tareasDia.length>0){
+  // Tareas sueltas — solo si hay 1 fichaje o ninguno (con varios, ya salen dentro de cada uno)
+  if(!multiFichajes && tareasDia.length>0){
     lines.push('');
     lines.push('🔧 TAREAS:');
     tareasDia.forEach(t=>{
@@ -5843,6 +5890,7 @@ function generarPDFResumen(conPrecios){
   const impOtros = (e.otrosConceptos||[]).reduce((s,o)=>s+(o.importe||0),0);
   const totalI = impHoras+impDietas+impTransp+impOtros;
   const tareasDia = S.tasks.filter(t=>t.fecha===e.fecha);
+  const multiFichajes = (e.fichajes||[]).length>1;
   const trabajador = (S.workers||[])[0]||{};
   const empresa = (S.companies||[])[0]||{};
 
@@ -5929,7 +5977,7 @@ function generarPDFResumen(conPrecios){
 
   // Tareas con OT - full text, line by line
   let htmlTareas = '';
-  if(tareasDia.length>0){
+  if(!multiFichajes && tareasDia.length>0){
     const tareasHtml = filas(tareasDia, t => {
       const titulo = (t.titulo||'Sin título').replace(/<[^>]*>/g,'');
       const lineas = titulo.split('\n').map(l=>l.trim()).filter(Boolean);
@@ -5944,7 +5992,7 @@ function generarPDFResumen(conPrecios){
 
   // Notas
   let htmlNotas = '';
-  if(e.notas){
+  if(!multiFichajes && e.notas){
     // Preserve HTML formatting in PDF
     const notasHtml = e.notas
       .replace(/<b>/gi,'<strong>').replace(/<\/b>/gi,'<\/strong>')
@@ -6060,6 +6108,7 @@ async function compartirComoImagen(conPrecios){
       +(e.dietasExtra||[]).reduce(function(s,d){return s+(d.importe||0);},0)
       +(e.otrosConceptos||[]).reduce(function(s,o){return s+(o.importe||0);},0);
     const tareas = (S.tasks||[]).filter(function(t){return t.fecha===e.fecha;});
+    const multiFichajes = (e.fichajes||[]).length>1;
 
     // Build HTML string
     var kpis = '<div style="display:grid;grid-template-columns:'+(cp?'1fr 1fr':'1fr')+';gap:8px;margin-top:12px">'
@@ -6164,8 +6213,8 @@ async function compartirComoImagen(conPrecios){
       });
     }
 
-    // Tareas con OT
-    if(tareas.length>0){
+    // Tareas con OT (solo si hay 1 fichaje o ninguno; con varios ya salen dentro de cada uno)
+    if(!multiFichajes && tareas.length>0){
       html += sec('🔧','TAREAS / O.T.');
       tareas.forEach(function(t){
         var titulo=(t.titulo||'').replace(/<[^>]*>/g,'');
@@ -6179,8 +6228,8 @@ async function compartirComoImagen(conPrecios){
       });
     }
 
-    // Notas
-    if(e.notas){
+    // Notas (solo si hay 1 fichaje o ninguno; con varios ya sale la de cada uno)
+    if(!multiFichajes && e.notas){
       html += sec('📝','NOTAS')
         +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:12px;color:#334155;line-height:1.7">'
         +e.notas+'</div>';
