@@ -405,6 +405,7 @@ function syncNotasFromEditor(){
   const el=document.getElementById('notas-editor');
   if(!el) return;
   fEntry.notas=el.innerHTML;
+  if(fEntry.fichajes && fEntry.fichajes.length>=2) fEntry.fichajes[0].nota=el.innerHTML;
   localStorage.setItem('notas_'+fEntry.fecha, el.innerHTML);
   persistEntry();
   scheduleDraftSave();
@@ -868,35 +869,40 @@ function renderMain(){
 // por jornada y por fichaje (para no mezclar el historial de una jornada/
 // fichaje con el de otra).
 const _hist = {};
-function histKey(base){
-  const fi = (fEntry.fichajes&&fEntry.fichajes.length>1) ? fichajeSeleccionado : '';
-  return (fEntry.fecha||'')+'|'+fi+'|'+base;
+// scope identifica de forma EXPLÍCITA a qué entidad pertenece el historial
+// (p.ej. 'f1' para el fichaje 1 en la pantalla principal, 'f2' para el
+// fichaje de índice 1 en su propia pantalla de detalle, etc). Antes se
+// intentaba deducir con la variable global fichajeSeleccionado, pero esa
+// variable cambia al navegar a otras pantallas y rompía la pila de deshacer/
+// rehacer — con scope explícito la clave es siempre estable y correcta.
+function histKey(base,scope){
+  return (fEntry.fecha||'')+'|'+(scope||'')+'|'+base;
 }
 // Se llama nada más renderizar la sección, para asegurar que existe un punto
 // de partida en el historial (el valor tal cual estaba al abrir la jornada).
-function histInit(base, getVal){
-  const key=histKey(base);
+function histInit(base, getVal, scope){
+  const key=histKey(base,scope);
   if(!_hist[key]) _hist[key]={stack:[JSON.stringify(getVal())],pos:0};
 }
 // Se llama al terminar de editar (blur/cambio) para registrar el nuevo valor.
-function histPush(base, getVal){
-  const key=histKey(base);
+function histPush(base, getVal, scope){
+  const key=histKey(base,scope);
   const json=JSON.stringify(getVal());
   if(!_hist[key]) _hist[key]={stack:[json],pos:0};
   const hobj=_hist[key];
   if(hobj.stack[hobj.pos]===json) return;
   hobj.stack=hobj.stack.slice(0,hobj.pos+1);
   hobj.stack.push(json);
-  if(hobj.stack.length>25) hobj.stack.shift(); else hobj.pos++;
+  if(hobj.stack.length>25) hobj.stack.shift();
   hobj.pos=hobj.stack.length-1;
 }
-function histCan(base,dir){
-  const hobj=_hist[histKey(base)];
+function histCan(base,dir,scope){
+  const hobj=_hist[histKey(base,scope)];
   if(!hobj) return false;
   return dir<0 ? hobj.pos>0 : hobj.pos<hobj.stack.length-1;
 }
-function histGo(base,dir,setVal){
-  const hobj=_hist[histKey(base)];
+function histGo(base,dir,setVal,scope){
+  const hobj=_hist[histKey(base,scope)];
   if(!hobj) return;
   const np=hobj.pos+dir;
   if(np<0||np>=hobj.stack.length) return;
@@ -908,15 +914,16 @@ function histGo(base,dir,setVal){
 }
 // Botones ↶ ↷ para una sección. base: clave de la sección ('horas','dieta',...).
 // getVal/setVal: cómo leer/escribir el snapshot completo de esa sección.
-function histButtons(base, getVal, setVal){
-  histInit(base, getVal);
+// scope: identifica de forma explícita a qué fichaje/entidad pertenece.
+function histButtons(base, getVal, setVal, scope){
+  histInit(base, getVal, scope);
   return h('div',{style:{display:'flex',gap:'.2rem'}},
-    h('button',{class:'btn btn-gh btn-sm',style:{padding:'.15rem .5rem',fontSize:'.8rem',opacity:histCan(base,-1)?1:.35},
+    h('button',{class:'btn btn-gh btn-sm',style:{padding:'.15rem .5rem',fontSize:'.8rem',opacity:histCan(base,-1,scope)?1:.35},
       title:'Deshacer',
-      on:{mousedown:ev=>{ev.preventDefault();if(histCan(base,-1))histGo(base,-1,setVal);}}},'↶'),
-    h('button',{class:'btn btn-gh btn-sm',style:{padding:'.15rem .5rem',fontSize:'.8rem',opacity:histCan(base,1)?1:.35},
+      on:{mousedown:ev=>{ev.preventDefault();if(histCan(base,-1,scope))histGo(base,-1,setVal,scope);}}},'↶'),
+    h('button',{class:'btn btn-gh btn-sm',style:{padding:'.15rem .5rem',fontSize:'.8rem',opacity:histCan(base,1,scope)?1:.35},
       title:'Rehacer',
-      on:{mousedown:ev=>{ev.preventDefault();if(histCan(base,1))histGo(base,1,setVal);}}},'↷')
+      on:{mousedown:ev=>{ev.preventDefault();if(histCan(base,1,scope))histGo(base,1,setVal,scope);}}},'↷')
   );
 }
 
@@ -967,13 +974,13 @@ function autoCalcHorasFromFichajes(){
     if(_sEl&&_sEl.value) fEntry.fichajes[i].salida=_sEl.value;
   });
   if(fEntry.fichajes.length>1){
-    // Con varios fichajes: si alguno tiene horario pero ninguna hora especificada
-    // todavía (normales/extra/nocturnas/festivas a 0), se le calculan solas como
-    // normales a partir de su propio horario, descontando su descanso.
+    // Con varios fichajes: si alguno tiene horario pero nunca se han tocado
+    // sus horas a mano, se le calculan solas como normales a partir de su
+    // propio horario, descontando su descanso. Si el usuario ya las editó
+    // (aunque sea para dejarlas a 0), no se vuelven a tocar nunca.
     fEntry.fichajes.forEach(fj=>{
       if(!fj.entrada||!fj.salida) return;
-      const yaTiene=(fj.horasNormales||0)+(fj.horasExtra||0)+(fj.horasNocturnas||0)+(fj.horasFestivas||0);
-      if(yaTiene>0) return;
+      if(fj._horasManual) return;
       const mins=Math.max(0,calcH(fj.entrada,fj.salida)*60-(fj.descanso||0));
       if(mins>0) fj.horasNormales=Math.round(mins*100/60)/100;
     });
@@ -995,8 +1002,9 @@ function autoCalcHorasFromFichajes(){
     recomputeDayAggregates();
     return;
   }
-  // Si ya hay horas normales o extras introducidas manualmente, no sobreescribir
-  if(fEntry.horasNormales>0 || fEntry.horasExtra>0) return;
+  // Si el usuario ya editó las horas a mano (aunque sea para dejarlas a 0),
+  // no se vuelven a recalcular nunca en esta jornada.
+  if(fEntry._horasManual) return;
   let totalMins=0;
   fEntry.fichajes.forEach(fj=>{
     if(fj.entrada&&fj.salida) totalMins+=calcH(fj.entrada,fj.salida)*60;
@@ -1390,13 +1398,15 @@ function renderFichar(){
         : null
     ),
 
-    // Auto-aplicar tarifas guardadas si los campos de precio están vacíos
+    // Auto-aplicar tarifas guardadas la primera vez (solo si el precio nunca
+    // se ha tocado a mano — si el usuario lo pone a 0 a propósito, se respeta
+    // para siempre en esta jornada, sin volver a sobreescribirlo)
     (()=>{
       const tar=getTarifas();
-      if(tar.precioNormal&&!fEntry.precioHoraNormal) {fEntry.precioHoraNormal=tar.precioNormal;}
-      if(tar.precioExtra&&!fEntry.precioHoraExtra) {fEntry.precioHoraExtra=tar.precioExtra;}
-      if(tar.precioNocturna&&!fEntry.precioHoraNocturna) {fEntry.precioHoraNocturna=tar.precioNocturna;}
-      if(tar.precioFestiva&&!fEntry.precioHoraFestiva) {fEntry.precioHoraFestiva=tar.precioFestiva;}
+      if(tar.precioNormal&&!fEntry.precioHoraNormal&&!fEntry._precioNormalManual) {fEntry.precioHoraNormal=tar.precioNormal;}
+      if(tar.precioExtra&&!fEntry.precioHoraExtra&&!fEntry._precioExtraManual) {fEntry.precioHoraExtra=tar.precioExtra;}
+      if(tar.precioNocturna&&!fEntry.precioHoraNocturna&&!fEntry._precioNocturnaManual) {fEntry.precioHoraNocturna=tar.precioNocturna;}
+      if(tar.precioFestiva&&!fEntry.precioHoraFestiva&&!fEntry._precioFestivaManual) {fEntry.precioHoraFestiva=tar.precioFestiva;}
       return null;
     })(),
     // Horas e importes del fichaje 1 (la pantalla principal). Con 2+ fichajes,
@@ -1409,7 +1419,7 @@ function renderFichar(){
                 precioHoraNormal:fEntry.precioHoraNormal,precioHoraExtra:fEntry.precioHoraExtra,precioHoraNocturna:fEntry.precioHoraNocturna,precioHoraFestiva:fEntry.precioHoraFestiva,
                 importeNormales:fEntry.importeNormales,importeExtra:fEntry.importeExtra,importeNocturnas:fEntry.importeNocturnas,importeFestivas:fEntry.importeFestivas}),
           v=>Object.assign(fEntry,v)
-        )
+        ,'f1')
       ),
       // Header row
       h('div',{style:{display:'grid',gridTemplateColumns:'2fr 2fr 1fr',gap:'.4rem',marginBottom:'.3rem'}},
@@ -1461,13 +1471,15 @@ function renderFichar(){
                 blur:ev=>{
                   const v=ev.target.value.replace(',','.');
                   const h2=parseFloat(v)||0;
-                  getFichaje1Target()[hk]=h2;
+                  const t1=getFichaje1Target();
+                  t1[hk]=h2;
+                  t1._horasManual=true;
                   recomputeDayAggregates();
                   fEntry[ik]=Math.round((fEntry[hk]||0)*(parseFloat(e[pk])||0)*100)/100;
                   scheduleDraftSave();
                   histPush('horas',()=>({horasNormales:fEntry.horasNormales,horasExtra:fEntry.horasExtra,horasNocturnas:fEntry.horasNocturnas,horasFestivas:fEntry.horasFestivas,
                         precioHoraNormal:fEntry.precioHoraNormal,precioHoraExtra:fEntry.precioHoraExtra,precioHoraNocturna:fEntry.precioHoraNocturna,precioHoraFestiva:fEntry.precioHoraFestiva,
-                        importeNormales:fEntry.importeNormales,importeExtra:fEntry.importeExtra,importeNocturnas:fEntry.importeNocturnas,importeFestivas:fEntry.importeFestivas}));
+                        importeNormales:fEntry.importeNormales,importeExtra:fEntry.importeExtra,importeNocturnas:fEntry.importeNocturnas,importeFestivas:fEntry.importeFestivas}),'f1');
                   rerender();
                 }
               }})
@@ -1496,10 +1508,11 @@ function renderFichar(){
                   const v=ev.target.value.replace(',','.');
                   const p2=parseFloat(v)||0;
                   fEntry[pk]=p2;
+                  fEntry['_precio'+tipo+'Manual']=true;
                   fEntry[ik]=Math.round((parseFloat(e[hk])||0)*p2*100)/100;
                   histPush('horas',()=>({horasNormales:fEntry.horasNormales,horasExtra:fEntry.horasExtra,horasNocturnas:fEntry.horasNocturnas,horasFestivas:fEntry.horasFestivas,
                         precioHoraNormal:fEntry.precioHoraNormal,precioHoraExtra:fEntry.precioHoraExtra,precioHoraNocturna:fEntry.precioHoraNocturna,precioHoraFestiva:fEntry.precioHoraFestiva,
-                        importeNormales:fEntry.importeNormales,importeExtra:fEntry.importeExtra,importeNocturnas:fEntry.importeNocturnas,importeFestivas:fEntry.importeFestivas}));
+                        importeNormales:fEntry.importeNormales,importeExtra:fEntry.importeExtra,importeNocturnas:fEntry.importeNocturnas,importeFestivas:fEntry.importeFestivas}),'f1');
                   rerender();
                 }
               }})
@@ -1539,14 +1552,14 @@ function renderFichar(){
                 const q=at.dietaCantidad||1;
                 at.dieta=Math.round(q*S.dietaDefault*100)/100;
                 recomputeDayAggregates();
-                histPush('dieta',()=>({dieta:fEntry.dieta,dietaCantidad:fEntry.dietaCantidad,dietaPrecioUnit:fEntry.dietaPrecioUnit}));
+                histPush('dieta',()=>({dieta:fEntry.dieta,dietaCantidad:fEntry.dietaCantidad,dietaPrecioUnit:fEntry.dietaPrecioUnit}),'f1');
                 rerender();
               }}
             },eur(S.dietaDefault)):null,
             h('span',{style:{marginLeft:'auto'}},histButtons('dieta',
               ()=>({dieta:fEntry.dieta,dietaCantidad:fEntry.dietaCantidad,dietaPrecioUnit:fEntry.dietaPrecioUnit}),
               v=>Object.assign(fEntry,v)
-            ))
+            ,'f1'))
           ),
           h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',marginBottom:'.3rem'}},
             h('span',{style:{fontSize:'.7rem',color:'var(--ink2)'}},'Nº'),
@@ -1561,7 +1574,7 @@ function renderFichar(){
                 recomputeDayAggregates();
                 rerender();
               },
-              blur:()=>{histPush('dieta',()=>({dieta:fEntry.dieta,dietaCantidad:fEntry.dietaCantidad,dietaPrecioUnit:fEntry.dietaPrecioUnit}));}
+              blur:()=>{histPush('dieta',()=>({dieta:fEntry.dieta,dietaCantidad:fEntry.dietaCantidad,dietaPrecioUnit:fEntry.dietaPrecioUnit}),'f1');}
               }}),
             h('span',{style:{color:'var(--ink3)',fontSize:'.75rem'}},'×')
           ),
@@ -1571,7 +1584,7 @@ function renderFichar(){
             const q=at.dietaCantidad||1;
             at.dieta=Math.round(q*v*100)/100;
             recomputeDayAggregates();
-            histPush('dieta',()=>({dieta:fEntry.dieta,dietaCantidad:fEntry.dietaCantidad,dietaPrecioUnit:fEntry.dietaPrecioUnit}));
+            histPush('dieta',()=>({dieta:fEntry.dieta,dietaCantidad:fEntry.dietaCantidad,dietaPrecioUnit:fEntry.dietaPrecioUnit}),'f1');
             rerender();
           }),
           (getFichaje1Target().dietaCantidad||1)>1?h('div',{style:{marginTop:'.3rem',fontSize:'.78rem',fontWeight:700,color:'var(--acc)'}},'Total: '+eur(getFichaje1Target().dieta)):null
@@ -1587,7 +1600,7 @@ function renderFichar(){
             h('span',{style:{marginLeft:'auto'}},histButtons('transporte',
               ()=>({transporte:fEntry.transporte,transporteCantidad:fEntry.transporteCantidad,transportePrecioUnit:fEntry.transportePrecioUnit,_transportType:fEntry._transportType}),
               v=>Object.assign(fEntry,v)
-            ))
+            ,'f1'))
           ),
           h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',flexWrap:'wrap',marginBottom:'.3rem'}},
             ...(S.transportTypes||[]).map(tt=>h('button',{
@@ -1606,7 +1619,7 @@ function renderFichar(){
                   at.transporte=Math.round(q*tt.precio*100)/100;
                 }
                 recomputeDayAggregates();
-                histPush('transporte',()=>({transporte:fEntry.transporte,transporteCantidad:fEntry.transporteCantidad,transportePrecioUnit:fEntry.transportePrecioUnit,_transportType:fEntry._transportType}));
+                histPush('transporte',()=>({transporte:fEntry.transporte,transporteCantidad:fEntry.transporteCantidad,transportePrecioUnit:fEntry.transportePrecioUnit,_transportType:fEntry._transportType}),'f1');
                 rerender();
                 _lsSave();
               }}
@@ -1625,7 +1638,7 @@ function renderFichar(){
                 recomputeDayAggregates();
                 rerender();
               },
-              blur:()=>{histPush('transporte',()=>({transporte:fEntry.transporte,transporteCantidad:fEntry.transporteCantidad,transportePrecioUnit:fEntry.transportePrecioUnit,_transportType:fEntry._transportType}));}
+              blur:()=>{histPush('transporte',()=>({transporte:fEntry.transporte,transporteCantidad:fEntry.transporteCantidad,transportePrecioUnit:fEntry.transportePrecioUnit,_transportType:fEntry._transportType}),'f1');}
               }}),
             h('span',{style:{color:'var(--ink3)',fontSize:'.75rem'}},'×')
           ),
@@ -1639,7 +1652,7 @@ function renderFichar(){
               if(_ti>=0){S.transportTypes[_ti].precio=v;localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));}
             }
             recomputeDayAggregates();
-            histPush('transporte',()=>({transporte:fEntry.transporte,transporteCantidad:fEntry.transporteCantidad,transportePrecioUnit:fEntry.transportePrecioUnit,_transportType:fEntry._transportType}));
+            histPush('transporte',()=>({transporte:fEntry.transporte,transporteCantidad:fEntry.transporteCantidad,transportePrecioUnit:fEntry.transportePrecioUnit,_transportType:fEntry._transportType}),'f1');
             rerender();
           }),
           (getFichaje1Target().transporteCantidad||1)>1?h('div',{style:{marginTop:'.3rem',fontSize:'.78rem',fontWeight:700,color:'var(--acc)'}},'Total: '+eur(getFichaje1Target().transporte)):null
@@ -1651,7 +1664,7 @@ function renderFichar(){
     h('div',{class:'card'},
       h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
         h('div',{class:'sec-title',style:{margin:0}},'Dietas Extra'),
-        histButtons('dietasExtra',()=>fEntry.dietasExtra||[],v=>{fEntry.dietasExtra=v;})
+        histButtons('dietasExtra',()=>fEntry.dietasExtra||[],v=>{fEntry.dietasExtra=v;},'f1')
       ),
       ...(e.dietasExtra||[]).map((d,i)=>
         h('div',{class:'grid-2',style:{marginBottom:'.4rem'}},
@@ -1660,19 +1673,19 @@ function renderFichar(){
             h('input',{type:'text',value:d.concepto||'',
               on:{
                 input:ev=>{fEntry.dietasExtra[i].concepto=ev.target.value;},
-                blur:ev=>{fEntry.dietasExtra[i].concepto=ev.target.value;scheduleDraftSave();histPush('dietasExtra',()=>fEntry.dietasExtra||[]);}
+                blur:ev=>{fEntry.dietasExtra[i].concepto=ev.target.value;scheduleDraftSave();histPush('dietasExtra',()=>fEntry.dietasExtra||[],'f1');}
               }})
           ),
           h('div',{class:'field'},
             h('label',{},'IMPORTE'),
             h('div',{class:'imp-wrap'},
-              importeField(d.importe,v=>{fEntry.dietasExtra[i].importe=v;histPush('dietasExtra',()=>fEntry.dietasExtra||[]);rerender()}),
-              h('button',{class:'btn btn-r btn-sm',on:{click:()=>{fEntry.dietasExtra.splice(i,1);histPush('dietasExtra',()=>fEntry.dietasExtra||[]);rerender()}}},'✕')
+              importeField(d.importe,v=>{fEntry.dietasExtra[i].importe=v;histPush('dietasExtra',()=>fEntry.dietasExtra||[],'f1');rerender()}),
+              h('button',{class:'btn btn-r btn-sm',on:{click:()=>{fEntry.dietasExtra.splice(i,1);histPush('dietasExtra',()=>fEntry.dietasExtra||[],'f1');rerender()}}},'✕')
             )
           )
         )
       ),
-      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{fEntry.dietasExtra.push({id:'d'+Date.now()+Math.random().toString(36).slice(2,7),concepto:'',importe:0});histPush('dietasExtra',()=>fEntry.dietasExtra||[]);rerender()}}},'➕ Añadir dieta extra')
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{fEntry.dietasExtra.push({id:'d'+Date.now()+Math.random().toString(36).slice(2,7),concepto:'',importe:0});histPush('dietasExtra',()=>fEntry.dietasExtra||[],'f1');rerender()}}},'➕ Añadir dieta extra')
     ),
 
     // Fotos de tickets/gastos
@@ -1696,7 +1709,7 @@ function renderFichar(){
     h('div',{class:'card'},
       h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
         h('div',{class:'sec-title',style:{margin:0}},'Otros Conceptos'),
-        histButtons('otrosConceptos',()=>fEntry.otrosConceptos||[],v=>{fEntry.otrosConceptos=v;})
+        histButtons('otrosConceptos',()=>fEntry.otrosConceptos||[],v=>{fEntry.otrosConceptos=v;},'f1')
       ),
       ...(e.otrosConceptos||[]).map((c,i)=>
         h('div',{class:'grid-2',style:{marginBottom:'.4rem'}},
@@ -1705,29 +1718,29 @@ function renderFichar(){
             h('input',{type:'text',value:c.concepto||'',
               on:{
                 input:ev=>{fEntry.otrosConceptos[i].concepto=ev.target.value;},
-                blur:ev=>{fEntry.otrosConceptos[i].concepto=ev.target.value;scheduleDraftSave();histPush('otrosConceptos',()=>fEntry.otrosConceptos||[]);}
+                blur:ev=>{fEntry.otrosConceptos[i].concepto=ev.target.value;scheduleDraftSave();histPush('otrosConceptos',()=>fEntry.otrosConceptos||[],'f1');}
               }})
           ),
           h('div',{class:'field'},
             h('label',{},'IMPORTE'),
             h('div',{class:'imp-wrap'},
-              importeField(c.importe,v=>{fEntry.otrosConceptos[i].importe=v;histPush('otrosConceptos',()=>fEntry.otrosConceptos||[]);rerender()}),
-              h('button',{class:'btn btn-r btn-sm',on:{click:()=>{fEntry.otrosConceptos.splice(i,1);histPush('otrosConceptos',()=>fEntry.otrosConceptos||[]);rerender()}}},'✕')
+              importeField(c.importe,v=>{fEntry.otrosConceptos[i].importe=v;histPush('otrosConceptos',()=>fEntry.otrosConceptos||[],'f1');rerender()}),
+              h('button',{class:'btn btn-r btn-sm',on:{click:()=>{fEntry.otrosConceptos.splice(i,1);histPush('otrosConceptos',()=>fEntry.otrosConceptos||[],'f1');rerender()}}},'✕')
             )
           )
         )
       ),
-      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{fEntry.otrosConceptos.push({concepto:'',importe:0});histPush('otrosConceptos',()=>fEntry.otrosConceptos||[]);rerender()}}},'➕ Añadir concepto')
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{fEntry.otrosConceptos.push({concepto:'',importe:0});histPush('otrosConceptos',()=>fEntry.otrosConceptos||[],'f1');rerender()}}},'➕ Añadir concepto')
     ),
 
     // Viajes
     h('div',{class:'card'},
       h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
         h('div',{class:'sec-title',style:{margin:0}},'Viajes'),
-        histButtons('journeys',()=>fEntry.journeys||[],v=>{fEntry.journeys=v;})
+        histButtons('journeys',()=>fEntry.journeys||[],v=>{fEntry.journeys=v;},'f1')
       ),
       ...(e.journeys||[]).map((j,i)=>renderJourney(j,i,'entry')),
-      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{fEntry.journeys.push(defJourney());histPush('journeys',()=>fEntry.journeys||[]);rerender()}}},'🚗 Añadir viaje')
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{fEntry.journeys.push(defJourney());histPush('journeys',()=>fEntry.journeys||[],'f1');rerender()}}},'🚗 Añadir viaje')
     ),
 
     // Notas
@@ -1770,8 +1783,8 @@ function renderFichar(){
                 },10);
               }
             },
-            input:ev=>{fEntry.notas=ev.target.innerHTML;localStorage.setItem('notas_'+fEntry.fecha,ev.target.innerHTML);persistEntry();scheduleDraftSave();},
-            keyup:ev=>{fEntry.notas=ev.target.innerHTML;},
+            input:ev=>{fEntry.notas=ev.target.innerHTML;if(fEntry.fichajes&&fEntry.fichajes.length>=2)fEntry.fichajes[0].nota=ev.target.innerHTML;localStorage.setItem('notas_'+fEntry.fecha,ev.target.innerHTML);persistEntry();scheduleDraftSave();},
+            keyup:ev=>{fEntry.notas=ev.target.innerHTML;if(fEntry.fichajes&&fEntry.fichajes.length>=2)fEntry.fichajes[0].nota=ev.target.innerHTML;},
             blur:ev=>{syncNotasFromEditor();}
           }
         })
@@ -2144,7 +2157,7 @@ function renderFichajeDetailScreen(idx){
                 precioHoraNormal:fEntry.precioHoraNormal,precioHoraExtra:fEntry.precioHoraExtra,precioHoraNocturna:fEntry.precioHoraNocturna,precioHoraFestiva:fEntry.precioHoraFestiva}),
           v=>{Object.assign(fj,{horasNormales:v.horasNormales,horasExtra:v.horasExtra,horasNocturnas:v.horasNocturnas,horasFestivas:v.horasFestivas});
               Object.assign(fEntry,{precioHoraNormal:v.precioHoraNormal,precioHoraExtra:v.precioHoraExtra,precioHoraNocturna:v.precioHoraNocturna,precioHoraFestiva:v.precioHoraFestiva});}
-        )
+        ,'f'+idx)
       ),
       h('div',{style:{display:'grid',gridTemplateColumns:'2fr 2fr 1fr',gap:'.4rem',marginBottom:'.3rem'}},
         h('div',{style:{fontSize:'.65rem',fontWeight:700,color:'var(--ink3)',textTransform:'uppercase'}},'HORAS × PRECIO/H'),
@@ -2156,21 +2169,21 @@ function renderFichajeDetailScreen(idx){
         const horas=parseFloat(fj[hk])||0;
         const precio=parseFloat(fEntry[pk])||0;
         const pushHist=()=>histPush('horasFich',()=>({horasNormales:fj.horasNormales,horasExtra:fj.horasExtra,horasNocturnas:fj.horasNocturnas,horasFestivas:fj.horasFestivas,
-                precioHoraNormal:fEntry.precioHoraNormal,precioHoraExtra:fEntry.precioHoraExtra,precioHoraNocturna:fEntry.precioHoraNocturna,precioHoraFestiva:fEntry.precioHoraFestiva}));
+                precioHoraNormal:fEntry.precioHoraNormal,precioHoraExtra:fEntry.precioHoraExtra,precioHoraNocturna:fEntry.precioHoraNocturna,precioHoraFestiva:fEntry.precioHoraFestiva}),'f'+idx);
         return h('div',{style:{display:'grid',gridTemplateColumns:'1fr auto 1fr auto',gap:'.4rem',alignItems:'center',marginBottom:'.5rem'}},
           h('div',{class:'field',style:{margin:0}},
             h('label',{style:{margin:0}},tipo.toUpperCase()),
             h('input',{type:'text',inputmode:'decimal',value:horas||'',placeholder:'0',
               on:{
                 input:ev=>{ const v=(ev.target.value||'').replace(',','.'); fj[hk]=parseFloat(v)||0; recomputeDayAggregates(); },
-                blur:ev=>{ const v=(ev.target.value||'').replace(',','.'); fj[hk]=parseFloat(v)||0; recomputeDayAggregates(); scheduleDraftSave(); pushHist(); rerender(); }
+                blur:ev=>{ const v=(ev.target.value||'').replace(',','.'); fj[hk]=parseFloat(v)||0; fj._horasManual=true; recomputeDayAggregates(); scheduleDraftSave(); pushHist(); rerender(); }
               }})
           ),
           h('div',{style:{color:'var(--ink3)',fontSize:'1.2rem',marginTop:'1rem'}},'×'),
           h('div',{class:'field',style:{margin:0}},
             h('label',{},'€/HORA'),
             h('input',{type:'text',inputmode:'decimal',value:precio||'',placeholder:'0,00',
-              on:{blur:ev=>{ const v=(ev.target.value||'').replace(',','.'); fEntry[pk]=parseFloat(v)||0; recomputeDayAggregates(); scheduleDraftSave(); pushHist(); rerender(); }}})
+              on:{blur:ev=>{ const v=(ev.target.value||'').replace(',','.'); fEntry[pk]=parseFloat(v)||0; fEntry['_precio'+tipo+'Manual']=true; recomputeDayAggregates(); scheduleDraftSave(); pushHist(); rerender(); }}})
           ),
           h('div',{style:{textAlign:'right',fontWeight:700,fontSize:'.85rem',color:(horas*precio)>0?'var(--acc)':'var(--ink3)',marginTop:'1rem'}},
             eur(Math.round(horas*precio*100)/100)
@@ -2183,7 +2196,7 @@ function renderFichajeDetailScreen(idx){
     h('div',{class:'card'},
       h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'.2rem'}},
         h('div',{class:'sec-title',style:{margin:0}},'Dieta de este fichaje'),
-        histButtons('dietaFich',()=>({dieta:fj.dieta,dietaCantidad:fj.dietaCantidad,dietaPrecioUnit:fj.dietaPrecioUnit}),v=>Object.assign(fj,v))
+        histButtons('dietaFich',()=>({dieta:fj.dieta,dietaCantidad:fj.dietaCantidad,dietaPrecioUnit:fj.dietaPrecioUnit}),v=>Object.assign(fj,v),'f'+idx)
       ),
       h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',marginBottom:'.4rem'}},
         h('span',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'Nº'),
@@ -2196,7 +2209,7 @@ function renderFichajeDetailScreen(idx){
             fj.dieta=Math.round(q*unit*100)/100;
             recomputeDayAggregates(); scheduleDraftSave(); rerender();
           },
-          blur:()=>histPush('dietaFich',()=>({dieta:fj.dieta,dietaCantidad:fj.dietaCantidad,dietaPrecioUnit:fj.dietaPrecioUnit}))
+          blur:()=>histPush('dietaFich',()=>({dieta:fj.dieta,dietaCantidad:fj.dietaCantidad,dietaPrecioUnit:fj.dietaPrecioUnit}),'f'+idx)
           }}),
         h('span',{style:{color:'var(--ink3)'}},'×'),
         importeField(fj.dietaPrecioUnit!=null?fj.dietaPrecioUnit:fj.dieta, v=>{
@@ -2204,7 +2217,7 @@ function renderFichajeDetailScreen(idx){
           const q=fj.dietaCantidad||1;
           fj.dieta=Math.round(q*v*100)/100;
           recomputeDayAggregates(); scheduleDraftSave();
-          histPush('dietaFich',()=>({dieta:fj.dieta,dietaCantidad:fj.dietaCantidad,dietaPrecioUnit:fj.dietaPrecioUnit}));
+          histPush('dietaFich',()=>({dieta:fj.dieta,dietaCantidad:fj.dietaCantidad,dietaPrecioUnit:fj.dietaPrecioUnit}),'f'+idx);
           rerender();
         }),
         S.dietaDefault>0?h('button',{class:'btn btn-gh btn-sm',title:'Aplicar precio de dieta por defecto',
@@ -2213,7 +2226,7 @@ function renderFichajeDetailScreen(idx){
             const q=fj.dietaCantidad||1;
             fj.dieta=Math.round(q*S.dietaDefault*100)/100;
             recomputeDayAggregates(); scheduleDraftSave();
-            histPush('dietaFich',()=>({dieta:fj.dieta,dietaCantidad:fj.dietaCantidad,dietaPrecioUnit:fj.dietaPrecioUnit}));
+            histPush('dietaFich',()=>({dieta:fj.dieta,dietaCantidad:fj.dietaCantidad,dietaPrecioUnit:fj.dietaPrecioUnit}),'f'+idx);
             rerender();
           }}},eur(S.dietaDefault)):null
       ),
@@ -2224,7 +2237,7 @@ function renderFichajeDetailScreen(idx){
     h('div',{class:'card'},
       h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'.2rem'}},
         h('div',{class:'sec-title',style:{margin:0}},'Transporte de este fichaje'),
-        histButtons('transporteFich',()=>({transporte:fj.transporte,transporteCantidad:fj.transporteCantidad,transportePrecioUnit:fj.transportePrecioUnit,_transportType:fj._transportType}),v=>Object.assign(fj,v))
+        histButtons('transporteFich',()=>({transporte:fj.transporte,transporteCantidad:fj.transporteCantidad,transportePrecioUnit:fj.transportePrecioUnit,_transportType:fj._transportType}),v=>Object.assign(fj,v),'f'+idx)
       ),
       h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',flexWrap:'wrap',marginBottom:'.4rem'}},
         ...(S.transportTypes||[]).map(tt=>h('button',{
@@ -2241,7 +2254,7 @@ function renderFichajeDetailScreen(idx){
               fj.transporte=Math.round(q*tt.precio*100)/100;
             }
             recomputeDayAggregates(); scheduleDraftSave();
-            histPush('transporteFich',()=>({transporte:fj.transporte,transporteCantidad:fj.transporteCantidad,transportePrecioUnit:fj.transportePrecioUnit,_transportType:fj._transportType}));
+            histPush('transporteFich',()=>({transporte:fj.transporte,transporteCantidad:fj.transporteCantidad,transportePrecioUnit:fj.transportePrecioUnit,_transportType:fj._transportType}),'f'+idx);
             rerender();
           }}
         },tt.nombre+(tt.precio>0?' ('+eur(tt.precio)+')':'')))
@@ -2257,7 +2270,7 @@ function renderFichajeDetailScreen(idx){
             fj.transporte=Math.round(q*unit*100)/100;
             recomputeDayAggregates(); scheduleDraftSave(); rerender();
           },
-          blur:()=>histPush('transporteFich',()=>({transporte:fj.transporte,transporteCantidad:fj.transporteCantidad,transportePrecioUnit:fj.transportePrecioUnit,_transportType:fj._transportType}))
+          blur:()=>histPush('transporteFich',()=>({transporte:fj.transporte,transporteCantidad:fj.transporteCantidad,transportePrecioUnit:fj.transportePrecioUnit,_transportType:fj._transportType}),'f'+idx)
           }}),
         h('span',{style:{color:'var(--ink3)'}},'×'),
         importeField(fj.transportePrecioUnit!=null?fj.transportePrecioUnit:fj.transporte, v=>{
@@ -2265,7 +2278,7 @@ function renderFichajeDetailScreen(idx){
           const q=fj.transporteCantidad||1;
           fj.transporte=Math.round(q*v*100)/100;
           recomputeDayAggregates(); scheduleDraftSave();
-          histPush('transporteFich',()=>({transporte:fj.transporte,transporteCantidad:fj.transporteCantidad,transportePrecioUnit:fj.transportePrecioUnit,_transportType:fj._transportType}));
+          histPush('transporteFich',()=>({transporte:fj.transporte,transporteCantidad:fj.transporteCantidad,transportePrecioUnit:fj.transportePrecioUnit,_transportType:fj._transportType}),'f'+idx);
           rerender();
         })
       ),
@@ -2276,7 +2289,7 @@ function renderFichajeDetailScreen(idx){
     h('div',{class:'card'},
       h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
         h('div',{class:'sec-title',style:{margin:0}},'Otros Conceptos de este fichaje'),
-        histButtons('otrosConceptosFich',()=>fj.otrosConceptos||[],v=>{fj.otrosConceptos=v;})
+        histButtons('otrosConceptosFich',()=>fj.otrosConceptos||[],v=>{fj.otrosConceptos=v;},'f'+idx)
       ),
       ...(fj.otrosConceptos||[]).map((o,oi)=>
         h('div',{class:'grid-2',style:{marginBottom:'.4rem'}},
@@ -2284,20 +2297,20 @@ function renderFichajeDetailScreen(idx){
             h('label',{},'Concepto'),
             h('input',{type:'text',value:o.concepto||'',
               style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
-              on:{blur:ev=>{fj.otrosConceptos[oi].concepto=ev.target.value;scheduleDraftSave();histPush('otrosConceptosFich',()=>fj.otrosConceptos||[]);}}})
+              on:{blur:ev=>{fj.otrosConceptos[oi].concepto=ev.target.value;scheduleDraftSave();histPush('otrosConceptosFich',()=>fj.otrosConceptos||[],'f'+idx);}}})
           ),
           h('div',{class:'field'},
             h('label',{},'IMPORTE'),
             h('div',{class:'imp-wrap'},
-              importeField(o.importe,v=>{fj.otrosConceptos[oi].importe=v;recomputeDayAggregates();scheduleDraftSave();histPush('otrosConceptosFich',()=>fj.otrosConceptos||[]);rerender();}),
-              h('button',{class:'btn btn-r btn-sm',on:{click:()=>{fj.otrosConceptos.splice(oi,1);recomputeDayAggregates();scheduleDraftSave();histPush('otrosConceptosFich',()=>fj.otrosConceptos||[]);rerender();}}},'✕')
+              importeField(o.importe,v=>{fj.otrosConceptos[oi].importe=v;recomputeDayAggregates();scheduleDraftSave();histPush('otrosConceptosFich',()=>fj.otrosConceptos||[],'f'+idx);rerender();}),
+              h('button',{class:'btn btn-r btn-sm',on:{click:()=>{fj.otrosConceptos.splice(oi,1);recomputeDayAggregates();scheduleDraftSave();histPush('otrosConceptosFich',()=>fj.otrosConceptos||[],'f'+idx);rerender();}}},'✕')
             )
           )
         )
       ),
       h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{
         fj.otrosConceptos.push({id:'o'+Date.now()+Math.random().toString(36).slice(2,7),concepto:'',importe:0,_fichajeOrigen:fj._fid});
-        scheduleDraftSave(); histPush('otrosConceptosFich',()=>fj.otrosConceptos||[]); rerender();
+        scheduleDraftSave(); histPush('otrosConceptosFich',()=>fj.otrosConceptos||[],'f'+idx); rerender();
       }}},'➕ Añadir concepto')
     ),
 
@@ -2305,21 +2318,21 @@ function renderFichajeDetailScreen(idx){
     h('div',{class:'card'},
       h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
         h('div',{class:'sec-title',style:{margin:0}},'Viajes de este fichaje'),
-        histButtons('journeysFich',()=>fj.journeys||[],v=>{fj.journeys=v;})
+        histButtons('journeysFich',()=>fj.journeys||[],v=>{fj.journeys=v;},'f'+idx)
       ),
       ...(fj.journeys||[]).map((j,ji)=>
         h('div',{style:{border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.6rem',marginBottom:'.5rem'}},
           h('div',{class:'grid-2',style:{marginBottom:'.4rem'}},
-            field('Origen','text',j.origen,v=>{fj.journeys[ji].origen=v;},{},'',()=>histPush('journeysFich',()=>fj.journeys||[])),
-            field('Destino','text',j.destino,v=>{fj.journeys[ji].destino=v;},{},'',()=>histPush('journeysFich',()=>fj.journeys||[]))
+            field('Origen','text',j.origen,v=>{fj.journeys[ji].origen=v;},{},'',()=>histPush('journeysFich',()=>fj.journeys||[],'f'+idx)),
+            field('Destino','text',j.destino,v=>{fj.journeys[ji].destino=v;},{},'',()=>histPush('journeysFich',()=>fj.journeys||[],'f'+idx))
           ),
           h('div',{class:'grid-2'},
-            field('Km','number',j.km,v=>{fj.journeys[ji].km=parseFloat(v)||0;},{},'',()=>histPush('journeysFich',()=>fj.journeys||[])),
+            field('Km','number',j.km,v=>{fj.journeys[ji].km=parseFloat(v)||0;},{},'',()=>histPush('journeysFich',()=>fj.journeys||[],'f'+idx)),
             h('div',{class:'field'},
               h('label',{},'Precio manual €'),
               h('div',{class:'imp-wrap'},
-                importeField(j.precioManual,v=>{fj.journeys[ji].precioManual=v;recomputeDayAggregates();scheduleDraftSave();histPush('journeysFich',()=>fj.journeys||[]);rerender();}),
-                h('button',{class:'btn btn-r btn-sm',on:{click:()=>{fj.journeys.splice(ji,1);recomputeDayAggregates();scheduleDraftSave();histPush('journeysFich',()=>fj.journeys||[]);rerender();}}},'✕')
+                importeField(j.precioManual,v=>{fj.journeys[ji].precioManual=v;recomputeDayAggregates();scheduleDraftSave();histPush('journeysFich',()=>fj.journeys||[],'f'+idx);rerender();}),
+                h('button',{class:'btn btn-r btn-sm',on:{click:()=>{fj.journeys.splice(ji,1);recomputeDayAggregates();scheduleDraftSave();histPush('journeysFich',()=>fj.journeys||[],'f'+idx);rerender();}}},'✕')
               )
             )
           )
@@ -2327,7 +2340,7 @@ function renderFichajeDetailScreen(idx){
       ),
       h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{
         fj.journeys.push({id:'j'+Date.now()+Math.random().toString(36).slice(2,7),vehicleId:'',tipoManual:'coche',precioManual:0,origen:'',destino:'',km:0,_fichajeOrigen:fj._fid});
-        scheduleDraftSave(); histPush('journeysFich',()=>fj.journeys||[]); rerender();
+        scheduleDraftSave(); histPush('journeysFich',()=>fj.journeys||[],'f'+idx); rerender();
       }}},'➕ Añadir viaje')
     ),
 
@@ -2624,7 +2637,7 @@ function renderJourney(j,i,ctx){
       : null,
     h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'.3rem'}},
       h('span',{class:'badge badge-b'},`Coste: ${eur(coste)}`),
-      h('button',{class:'btn btn-r btn-sm',on:{click:()=>{if(ctx==='entry'){fEntry.journeys.splice(i,1);histPush('journeys',()=>fEntry.journeys||[]);}else fTask.journeys.splice(i,1);rerender();}}},'✕')
+      h('button',{class:'btn btn-r btn-sm',on:{click:()=>{if(ctx==='entry'){fEntry.journeys.splice(i,1);histPush('journeys',()=>fEntry.journeys||[],'f1');}else fTask.journeys.splice(i,1);rerender();}}},'✕')
     )
   );
 }
@@ -5745,8 +5758,8 @@ function renderModalResumenDia(){
               const titulo=f.titulo||(esF1?e.titulo:'');
               const nota=f.nota||(esF1?e.notas:'');
               const linkedTasks=f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?tareasFichaje1:[]);
-              const linkedDieta = f.dietaId==='base' ? {concepto:'Dieta'+((e.dietaCantidad||1)>1?' x'+e.dietaCantidad:''),importe:e.dieta} : f.dietaId ? (e.dietasExtra||[]).find((d,di)=>(d.id||('idx'+di))===f.dietaId) : null;
-              const linkedViaje = f.journeyId==='base' ? {tipoManual:e._transportType==='camion'?'camion':'coche',destino:'',_isBase:true,_importe:e.transporte} : f.journeyId ? (e.journeys||[]).find(j=>j.id===f.journeyId) : null;
+              const misDietas=(f.dieta||0)>0?[{concepto:'Dieta'+((f.dietaCantidad||1)>1?' x'+f.dietaCantidad:''),importe:f.dieta}]:[];
+              const misViajes=(f.journeys||[]).filter(j=>(j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino);
               return h('div',{style:{
                 padding:'.6rem .8rem',marginBottom:'.5rem',
                 background:'#f8fafc',borderRadius:'8px',border:'1px solid #e2e8f0'
@@ -5759,9 +5772,9 @@ function renderModalResumenDia(){
                   '🔧 '+(lt.otNumero?'O.T. '+lt.otNumero+' — ':'')+(lt.titulo||'').replace(/<[^>]*>/g,'')
                 )),
                 nota?h('div',{style:{fontSize:'.78rem',color:'#475569',lineHeight:1.5,wordBreak:'break-word',marginTop:'.2rem'},html:nota}):null,
-                (linkedDieta||linkedViaje)?h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.35rem'}},
-                  linkedDieta?h('span',{style:{fontSize:'.7rem',background:'#fef3c7',color:'#92400e',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'☀ '+(linkedDieta.concepto||'Dieta')+' '+eur(linkedDieta.importe||0)):null,
-                  linkedViaje?h('span',{style:{fontSize:'.7rem',background:'#dbeafe',color:'#1e40af',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'🚗 '+(linkedViaje.tipoManual==='camion'?'Camión':'Coche')+(linkedViaje.destino?' → '+linkedViaje.destino:'')+(linkedViaje._isBase?' ('+eur(linkedViaje._importe)+')':'')):null
+                (misDietas.length||misViajes.length)?h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.35rem'}},
+                  ...misDietas.map(d=>h('span',{style:{fontSize:'.7rem',background:'#fef3c7',color:'#92400e',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'☀ '+(d.concepto||'Dieta')+' '+eur(d.importe||0))),
+                  ...misViajes.map(j=>h('span',{style:{fontSize:'.7rem',background:'#dbeafe',color:'#1e40af',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'🚗 '+(j.origen||'')+(j.destino?' → '+j.destino:'')+(j.km?' ('+j.km+'km)':'')+((j.precioManual||0)>0?' '+eur(j.precioManual):'')))
                 ):null
               );
             })
@@ -6000,6 +6013,10 @@ function shareResumen(method, conPrecios){
         lines.push('   '+_tp.icono+' '+(linkedTask.otNumero?_tp.nombre+' '+linkedTask.otNumero+' — ':'')+titulo);
       });
       if(nota) lines.push('   '+nota);
+      const misDietasTxt=(f.dieta||0)>0?[{concepto:'Dieta'+((f.dietaCantidad||1)>1?' x'+f.dietaCantidad:''),importe:f.dieta}]:[];
+      const misViajesTxt=(f.journeys||[]).filter(j=>(j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino);
+      misDietasTxt.forEach(d=>lines.push('   ☀ '+(d.concepto||'Dieta')+' '+eur(d.importe||0)));
+      misViajesTxt.forEach(j=>lines.push('   🚗 '+(j.origen||'')+(j.destino?' → '+j.destino:'')+(j.km?' ('+j.km+'km)':'')+((j.precioManual||0)>0?' '+eur(j.precioManual):'')));
       lines.push('');
     });
   }
@@ -6170,12 +6187,12 @@ function generarPDFResumen(conPrecios){
     const titulo=f.titulo||(esF1?e.titulo:'');
     const nota=f.nota||(esF1?e.notas:'');
     const linkedTasks=f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?item.tareasFichaje1:[]);
-    const linkedDieta = f.dietaId==='base' ? {concepto:'Dieta'+((e.dietaCantidad||1)>1?' x'+e.dietaCantidad:''),importe:e.dieta} : f.dietaId ? (e.dietasExtra||[]).find((d,di)=>(d.id||('idx'+di))===f.dietaId) : null;
-    const linkedViaje = f.journeyId==='base' ? {tipoManual:e._transportType==='camion'?'camion':'coche',destino:'',_isBase:true,_importe:e.transporte} : f.journeyId ? (e.journeys||[]).find(j=>j.id===f.journeyId) : null;
-    const extras = (linkedDieta||linkedViaje) ? `
+    const misDietas=(f.dieta||0)>0?[{concepto:'Dieta'+((f.dietaCantidad||1)>1?' x'+f.dietaCantidad:''),importe:f.dieta}]:[];
+    const misViajes=(f.journeys||[]).filter(j=>(j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino);
+    const extras = (misDietas.length||misViajes.length) ? `
       <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">
-        ${linkedDieta?`<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:5px;padding:2px 7px;font-weight:700">☀ ${(linkedDieta.concepto||'Dieta')} ${eur(linkedDieta.importe||0)}</span>`:''}
-        ${linkedViaje?`<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:5px;padding:2px 7px;font-weight:700">🚗 ${linkedViaje.tipoManual==='camion'?'Camión':'Coche'}${linkedViaje.destino?' → '+linkedViaje.destino:''}${linkedViaje._isBase?' ('+eur(linkedViaje._importe)+')':''}</span>`:''}
+        ${misDietas.map(d=>`<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:5px;padding:2px 7px;font-weight:700">☀ ${(d.concepto||'Dieta')} ${eur(d.importe||0)}</span>`).join('')}
+        ${misViajes.map(j=>`<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:5px;padding:2px 7px;font-weight:700">🚗 ${j.origen||''}${j.destino?' → '+j.destino:''}${j.km?' ('+j.km+'km)':''}${(j.precioManual||0)>0?' '+eur(j.precioManual):''}</span>`).join('')}
       </div>` : '';
     const tareasHtml = linkedTasks.map(lt=>`<div style="font-size:12px;color:#0f172a;font-weight:700;margin-top:3px">🔧 ${lt.otNumero?'O.T. '+lt.otNumero+' — ':''}${(lt.titulo||'').replace(/<[^>]*>/g,'')}</div>`).join('');
     return `
@@ -6431,13 +6448,13 @@ async function compartirComoImagen(conPrecios){
             var titulo = f.titulo||(esF1?e.titulo:'');
             var nota = f.nota||(esF1?e.notas:'');
             var linkedTasks = f.taskId ? [(S.tasks||[]).find(function(t){return t.id===f.taskId;})].filter(Boolean) : (esF1?tareasFichaje1:[]);
-            var linkedDieta = f.dietaId==='base' ? {concepto:'Dieta'+((e.dietaCantidad||1)>1?' x'+e.dietaCantidad:''),importe:e.dieta} : f.dietaId ? (e.dietasExtra||[]).find(function(d,di){return (d.id||('idx'+di))===f.dietaId;}) : null;
-            var linkedViaje = f.journeyId==='base' ? {tipoManual:e._transportType==='camion'?'camion':'coche',destino:'',_isBase:true,_importe:e.transporte} : f.journeyId ? (e.journeys||[]).find(function(j){return j.id===f.journeyId;}) : null;
+            var misDietas = (f.dieta||0)>0 ? [{concepto:'Dieta'+((f.dietaCantidad||1)>1?' x'+f.dietaCantidad:''),importe:f.dieta}] : [];
+            var misViajes = (f.journeys||[]).filter(function(j){return (j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino;});
             var extrasHtml='';
-            if(linkedDieta||linkedViaje){
+            if(misDietas.length||misViajes.length){
               extrasHtml='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">'
-                +(linkedDieta?'<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:5px;padding:2px 7px;font-weight:700">☀ '+(linkedDieta.concepto||'Dieta')+' '+eur(linkedDieta.importe||0)+'</span>':'')
-                +(linkedViaje?'<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:5px;padding:2px 7px;font-weight:700">🚗 '+(linkedViaje.tipoManual==='camion'?'Camión':'Coche')+(linkedViaje.destino?' → '+linkedViaje.destino:'')+(linkedViaje._isBase?' ('+eur(linkedViaje._importe)+')':'')+'</span>':'')
+                +misDietas.map(function(d){return '<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:5px;padding:2px 7px;font-weight:700">☀ '+(d.concepto||'Dieta')+' '+eur(d.importe||0)+'</span>';}).join('')
+                +misViajes.map(function(j){return '<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:5px;padding:2px 7px;font-weight:700">🚗 '+(j.origen||'')+(j.destino?' → '+j.destino:'')+(j.km?' ('+j.km+'km)':'')+((j.precioManual||0)>0?' '+eur(j.precioManual):'')+'</span>';}).join('')
                 +'</div>';
             }
             var tareasHtml = linkedTasks.map(function(lt){return '<div style="font-size:12px;color:#0f172a;font-weight:700;margin-top:3px">🔧 '+(lt.otNumero?'O.T. '+lt.otNumero+' — ':'')+(lt.titulo||'').replace(/<[^>]*>/g,'')+'</div>';}).join('');
@@ -11575,7 +11592,7 @@ const _captureFormState_orig = captureFormState;
 window.captureFormState = function(){
   _captureFormState_orig();
   const tEl = document.getElementById('jornada-titulo-input');
-  if(tEl) fEntry.titulo = tEl.value;
+  if(tEl){ fEntry.titulo = tEl.value; if(fEntry.fichajes&&fEntry.fichajes.length>=2) fEntry.fichajes[0].titulo=tEl.value; }
 };
 
 // Add titulo field to renderFichar via patching the card rendering
@@ -11593,8 +11610,8 @@ window.renderDayCard = function(){
         value:fEntry.titulo||'',
         style:{fontSize:'.9rem'},
         on:{
-          input:ev=>{fEntry.titulo=ev.target.value;},
-          blur:ev=>{fEntry.titulo=ev.target.value;scheduleDraftSave();}
+          input:ev=>{fEntry.titulo=ev.target.value;if(fEntry.fichajes&&fEntry.fichajes.length>=2)fEntry.fichajes[0].titulo=ev.target.value;},
+          blur:ev=>{fEntry.titulo=ev.target.value;if(fEntry.fichajes&&fEntry.fichajes.length>=2)fEntry.fichajes[0].titulo=ev.target.value;scheduleDraftSave();}
         }
       })
     )
