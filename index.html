@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260918-3'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260918-4'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -5756,10 +5756,11 @@ function renderModalResumenDia(){
           const tareasFichaje1=tareasDia.filter(t=>!idsClaimed.has(t.id));
           const conNotas=fichajesList.filter((f,i)=>{
             const esF1=i===0;
-            const tit=f.titulo||(esF1?e.titulo:'');
-            const nota=f.nota||(esF1?e.notas:'');
+            const tit=(esF1?e.titulo:f.titulo);
+            const nota=(esF1?e.notas:f.nota);
             const tareas=f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?tareasFichaje1:[]);
-            return tit||nota||tareas.length>0;
+            const tieneExtras=(f.dieta||0)>0||(f.transporte||0)>0||(f.journeys||[]).some(j=>(j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino);
+            return tit||nota||tareas.length>0||tieneExtras;
           });
           if(!conNotas.length) return null;
           return h('div',{},
@@ -5767,10 +5768,11 @@ function renderModalResumenDia(){
             ...conNotas.map((f,fi)=>{
               const i=fichajesList.indexOf(f);
               const esF1=i===0;
-              const titulo=f.titulo||(esF1?e.titulo:'');
-              const nota=f.nota||(esF1?e.notas:'');
+              const titulo=(esF1?e.titulo:f.titulo);
+              const nota=(esF1?e.notas:f.nota);
               const linkedTasks=f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?tareasFichaje1:[]);
               const misDietas=(f.dieta||0)>0?[{concepto:'Dieta'+((f.dietaCantidad||1)>1?' x'+f.dietaCantidad:''),importe:f.dieta}]:[];
+              const misTransporte=(f.transporte||0)>0?[{tipo:((S.transportTypes||[]).find(t=>t.id===f._transportType)||{}).nombre||'Transporte',importe:f.transporte}]:[];
               const misViajes=(f.journeys||[]).filter(j=>(j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino);
               return h('div',{style:{
                 padding:'.6rem .8rem',marginBottom:'.5rem',
@@ -5784,8 +5786,9 @@ function renderModalResumenDia(){
                   '🔧 '+(lt.otNumero?'O.T. '+lt.otNumero+' — ':'')+(lt.titulo||'').replace(/<[^>]*>/g,'')
                 )),
                 nota?h('div',{style:{fontSize:'.78rem',color:'#475569',lineHeight:1.5,wordBreak:'break-word',marginTop:'.2rem'},html:nota}):null,
-                (misDietas.length||misViajes.length)?h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.35rem'}},
+                (misDietas.length||misTransporte.length||misViajes.length)?h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.35rem'}},
                   ...misDietas.map(d=>h('span',{style:{fontSize:'.7rem',background:'#fef3c7',color:'#92400e',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'☀ '+(d.concepto||'Dieta')+' '+eur(d.importe||0))),
+                  ...misTransporte.map(t=>h('span',{style:{fontSize:'.7rem',background:'#dcfce7',color:'#166534',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'🚗 '+t.tipo+' '+eur(t.importe||0))),
                   ...misViajes.map(j=>h('span',{style:{fontSize:'.7rem',background:'#dbeafe',color:'#1e40af',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'🚗 '+(j.origen||'')+(j.destino?' → '+j.destino:'')+(j.km?' ('+j.km+'km)':'')+((j.precioManual||0)>0?' '+eur(j.precioManual):'')))
                 ):null
               );
@@ -5822,8 +5825,10 @@ function renderModalResumenDia(){
           ...(e.otrosConceptos||[]).map(o=>row(o.concepto||'Concepto',eur(o.importe||0)))
         ):null,
 
-        // Transporte y viajes (independiente de las dietas)
-        showViajes && ((e.transporte||0)>0 || (e.journeys||[]).length>0) ? h('div',{},
+        // Transporte y viajes del día (solo si NO hay fichajes; con fichajes,
+        // el transporte de cada uno ya sale en Notas — mostrarlo aquí también
+        // mezclaría tipos distintos como si fuera uno solo)
+        showViajes && !multiFichajes && ((e.transporte||0)>0 || (e.journeys||[]).length>0) ? h('div',{},
           sec('🚗','Transporte y Viajes'),
           (e.transporte||0)>0?row(
             (function(){var tt=(S.transportTypes||[]).find(function(t){return t.id===e._transportType;});return 'Transporte'+(tt?' - '+tt.nombre:'')+((e.transporteCantidad||1)>1?' x'+e.transporteCantidad:'');}()),
@@ -6005,18 +6010,19 @@ function shareResumen(method, conPrecios){
   const tareasFichaje1txt = tareasDia.filter(t=>!idsClaimadas.has(t.id));
   const fichajesConNotas = (e.fichajes||[]).filter((f,i)=>{
     const esF1=i===0;
-    const tit=(f.titulo||(esF1?e.titulo:'')||'').trim();
-    const nota=(f.nota||(esF1?e.notas:'')||'').trim();
+    const tit=((esF1?e.titulo:f.titulo)||'').trim();
+    const nota=((esF1?e.notas:f.nota)||'').trim();
     const tks=f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?tareasFichaje1txt:[]);
-    return tit||nota||tks.length>0;
+    const tieneExtras=(f.dieta||0)>0||(f.transporte||0)>0||(f.journeys||[]).some(j=>(j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino);
+    return tit||nota||tks.length>0||tieneExtras;
   });
   if(fichajesConNotas.length>0){
     lines.push('');
     lines.push('📝 NOTAS:');
     fichajesConNotas.forEach(f=>{
       const esF1=(e.fichajes||[]).indexOf(f)===0;
-      const tit = (f.titulo||(esF1?e.titulo:'')||'').replace(/<[^>]*>/g,'').trim();
-      const nota = (f.nota||(esF1?e.notas:'')||'').replace(/<[^>]*>/g,'').trim();
+      const tit = ((esF1?e.titulo:f.titulo)||'').replace(/<[^>]*>/g,'').trim();
+      const nota = ((esF1?e.notas:f.nota)||'').replace(/<[^>]*>/g,'').trim();
       const linkedTasks = f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?tareasFichaje1txt:[]);
       lines.push('▸ '+(f.entrada||'—')+' → '+(f.salida||'—')+'  '+(tit||'(sin título)'));
       linkedTasks.forEach(linkedTask=>{
@@ -6026,8 +6032,10 @@ function shareResumen(method, conPrecios){
       });
       if(nota) lines.push('   '+nota);
       const misDietasTxt=(f.dieta||0)>0?[{concepto:'Dieta'+((f.dietaCantidad||1)>1?' x'+f.dietaCantidad:''),importe:f.dieta}]:[];
+      const misTransporteTxt=(f.transporte||0)>0?[{tipo:((S.transportTypes||[]).find(t=>t.id===f._transportType)||{}).nombre||'Transporte',importe:f.transporte}]:[];
       const misViajesTxt=(f.journeys||[]).filter(j=>(j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino);
       misDietasTxt.forEach(d=>lines.push('   ☀ '+(d.concepto||'Dieta')+' '+eur(d.importe||0)));
+      misTransporteTxt.forEach(t=>lines.push('   🚗 '+t.tipo+' '+eur(t.importe||0)));
       misViajesTxt.forEach(j=>lines.push('   🚗 '+(j.origen||'')+(j.destino?' → '+j.destino:'')+(j.km?' ('+j.km+'km)':'')+((j.precioManual||0)>0?' '+eur(j.precioManual):'')));
       lines.push('');
     });
@@ -6189,21 +6197,24 @@ function generarPDFResumen(conPrecios){
     const tareasFichaje1=tareasDia.filter(t=>!idsClaimed.has(t.id));
     return lst.filter((f,i)=>{
       const esF1=i===0;
-      const tit=f.titulo||(esF1?e.titulo:'');
-      const nota=f.nota||(esF1?e.notas:'');
+      const tit=(esF1?e.titulo:f.titulo);
+      const nota=(esF1?e.notas:f.nota);
       const tareas=f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?tareasFichaje1:[]);
-      return tit||nota||tareas.length>0;
+      const tieneExtras=(f.dieta||0)>0||(f.transporte||0)>0||(f.journeys||[]).some(j=>(j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino);
+      return tit||nota||tareas.length>0||tieneExtras;
     }).map((f,fi,arr)=>({f,esF1:lst.indexOf(f)===0,tareasFichaje1}));
   })(), item => {
     const f=item.f, esF1=item.esF1;
-    const titulo=f.titulo||(esF1?e.titulo:'');
-    const nota=f.nota||(esF1?e.notas:'');
+    const titulo=(esF1?e.titulo:f.titulo);
+    const nota=(esF1?e.notas:f.nota);
     const linkedTasks=f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?item.tareasFichaje1:[]);
     const misDietas=(f.dieta||0)>0?[{concepto:'Dieta'+((f.dietaCantidad||1)>1?' x'+f.dietaCantidad:''),importe:f.dieta}]:[];
+    const misTransporte=(f.transporte||0)>0?[{tipo:((S.transportTypes||[]).find(t=>t.id===f._transportType)||{}).nombre||'Transporte',importe:f.transporte}]:[];
     const misViajes=(f.journeys||[]).filter(j=>(j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino);
-    const extras = (misDietas.length||misViajes.length) ? `
+    const extras = (misDietas.length||misTransporte.length||misViajes.length) ? `
       <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">
         ${misDietas.map(d=>`<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:5px;padding:2px 7px;font-weight:700">☀ ${(d.concepto||'Dieta')} ${eur(d.importe||0)}</span>`).join('')}
+        ${misTransporte.map(t=>`<span style="font-size:10px;background:#dcfce7;color:#166534;border-radius:5px;padding:2px 7px;font-weight:700">🚗 ${t.tipo} ${eur(t.importe||0)}</span>`).join('')}
         ${misViajes.map(j=>`<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:5px;padding:2px 7px;font-weight:700">🚗 ${j.origen||''}${j.destino?' → '+j.destino:''}${j.km?' ('+j.km+'km)':''}${(j.precioManual||0)>0?' '+eur(j.precioManual):''}</span>`).join('')}
       </div>` : '';
     const tareasHtml = linkedTasks.map(lt=>`<div style="font-size:12px;color:#0f172a;font-weight:700;margin-top:3px">🔧 ${lt.otNumero?'O.T. '+lt.otNumero+' — ':''}${(lt.titulo||'').replace(/<[^>]*>/g,'')}</div>`).join('');
@@ -6237,9 +6248,10 @@ function generarPDFResumen(conPrecios){
   }
   const htmlDietas = dietaOnlyRows ? seccion('☀ DIETAS', dietaOnlyRows) : '';
 
-  // Transporte y viajes (independiente de las dietas)
+  // Transporte y viajes del día (solo si NO hay fichajes; con fichajes, el
+  // transporte de cada uno ya sale en Notas)
   let transporteRows = '';
-  if((e._showViajes!==false)){
+  if((e._showViajes!==false) && !multiFichajes){
     if(e.transporte>0){
       const ttName = e._transportType?(S.transportTypes||[]).find(t=>t.id===e._transportType)?.nombre||'':'';
       transporteRows += fila('Transporte'+(ttName?' ('+ttName+')':'')+((e.transporteCantidad||1)>1?' x'+e.transporteCantidad:''), conPrecios?eur(e.transporte):'✓');
@@ -6448,24 +6460,27 @@ async function compartirComoImagen(conPrecios){
         var tareasFichaje1 = tareas.filter(function(t){ return !idsClaimed1[t.id]; });
         var fichajesConNotas = fichajesList.filter(function(f,i){
           var esF1 = i===0;
-          var tit = f.titulo||(esF1?e.titulo:'');
-          var nota = f.nota||(esF1?e.notas:'');
+          var tit = (esF1?e.titulo:f.titulo);
+          var nota = (esF1?e.notas:f.nota);
           var tks = f.taskId ? [(S.tasks||[]).find(function(t){return t.id===f.taskId;})].filter(Boolean) : (esF1?tareasFichaje1:[]);
-          return tit||nota||tks.length>0;
+          var tieneExtras = (f.dieta||0)>0||(f.transporte||0)>0||(f.journeys||[]).some(function(j){return (j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino;});
+          return tit||nota||tks.length>0||tieneExtras;
         });
         if(fichajesConNotas.length>0){
           html += sec('📝','NOTAS');
           fichajesConNotas.forEach(function(f){
             var esF1 = fichajesList.indexOf(f)===0;
-            var titulo = f.titulo||(esF1?e.titulo:'');
-            var nota = f.nota||(esF1?e.notas:'');
+            var titulo = (esF1?e.titulo:f.titulo);
+            var nota = (esF1?e.notas:f.nota);
             var linkedTasks = f.taskId ? [(S.tasks||[]).find(function(t){return t.id===f.taskId;})].filter(Boolean) : (esF1?tareasFichaje1:[]);
             var misDietas = (f.dieta||0)>0 ? [{concepto:'Dieta'+((f.dietaCantidad||1)>1?' x'+f.dietaCantidad:''),importe:f.dieta}] : [];
+            var misTransporte = (f.transporte||0)>0 ? [{tipo:((S.transportTypes||[]).find(function(t){return t.id===f._transportType;})||{}).nombre||'Transporte',importe:f.transporte}] : [];
             var misViajes = (f.journeys||[]).filter(function(j){return (j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino;});
             var extrasHtml='';
-            if(misDietas.length||misViajes.length){
+            if(misDietas.length||misTransporte.length||misViajes.length){
               extrasHtml='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">'
                 +misDietas.map(function(d){return '<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:5px;padding:2px 7px;font-weight:700">☀ '+(d.concepto||'Dieta')+' '+eur(d.importe||0)+'</span>';}).join('')
+                +misTransporte.map(function(t){return '<span style="font-size:10px;background:#dcfce7;color:#166534;border-radius:5px;padding:2px 7px;font-weight:700">🚗 '+t.tipo+' '+eur(t.importe||0)+'</span>';}).join('')
                 +misViajes.map(function(j){return '<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:5px;padding:2px 7px;font-weight:700">🚗 '+(j.origen||'')+(j.destino?' → '+j.destino:'')+(j.km?' ('+j.km+'km)':'')+((j.precioManual||0)>0?' '+eur(j.precioManual):'')+'</span>';}).join('')
                 +'</div>';
             }
@@ -6498,8 +6513,9 @@ async function compartirComoImagen(conPrecios){
       (e.dietasExtra||[]).forEach(function(d){ html += row(d.concepto||'Dieta extra', cp?eur(d.importe||0):'✓'); });
     }
 
-    // Transporte y viajes (independiente de las dietas)
-    if((e._showViajes!==false) && ((e.transporte||0)>0 || (e.journeys||[]).length>0)){
+    // Transporte y viajes del día (solo si NO hay fichajes; con fichajes, el
+    // transporte de cada uno ya sale en Notas)
+    if((e._showViajes!==false) && !multiFichajes && ((e.transporte||0)>0 || (e.journeys||[]).length>0)){
       html += sec('🚗','TRANSPORTE Y VIAJES');
       if(e.transporte>0){
         var ttName='';
