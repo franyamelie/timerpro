@@ -350,7 +350,11 @@ const defEntry = () => ({
   otrosConceptos:[], notas:'', journeys:[], ubicacionEntrada:'', ubicacionSalida:'', horaEntrada:'', horaSalida:'',
   entradaLocked:false, fotosGastos:[], timerDeduct:0
 });
-const defFichaje = () => ({_fid:Date.now(), entrada:'', salida:'', titulo:'', nota:'', editing:false, taskId:'', dietaId:'', journeyId:'', timerRunning:false, timerStart:null});
+const defFichaje = () => ({_fid:Date.now(), entrada:'', salida:'', titulo:'', nota:'', editing:false, taskId:'', dietaId:'', journeyId:'', timerRunning:false, timerStart:null,
+  horasNormales:0, horasExtra:0, horasNocturnas:0, horasFestivas:0,
+  dieta:0, dietaCantidad:1, dietaPrecioUnit:0,
+  transporte:0, transporteCantidad:1, transportePrecioUnit:0, _transportType:'',
+  descanso:0});
 const defTask = f => ({fecha:f||today(), titulo:'', horaInicio:'', horaFin:'', descripcion:'', siteId:'', workOrderId:'', otNumero:'', usaOT:false, tipoTarea:'ot', fotos:[]});
 const defJourney = () => ({id:'j'+Date.now()+Math.random().toString(36).slice(2,7), vehicleId:'', tipoManual:'coche', precioManual:0.19, origen:'', destino:'', km:0, horaInicio:nowTime(), horaFin:''});
 const defWorker = {nombre:'',apellidos:'',dni:'',cargo:'',departamento:'',email:'',telefono:'',numSS:'',fechaAlta:'',convenio:'',firma:'',foto:''};
@@ -1243,6 +1247,18 @@ function renderFichar(){
     })(),
     // Horas e importes
     h('div',{class:'card'},
+      // Selector de fichaje: solo aparece si hay 2 o más fichajes en el día.
+      // Cada uno se edita de forma independiente (horas, dieta, transporte, descanso).
+      (fEntry.fichajes||[]).length>1 ? h('div',{style:{marginBottom:'.8rem'}},
+        h('div',{style:{fontSize:'.68rem',fontWeight:700,color:'var(--ink3)',textTransform:'uppercase',marginBottom:'.4rem'}},'Editando fichaje:'),
+        h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap'}},
+          ...fEntry.fichajes.map((fj,fi)=>h('button',{
+            class:'btn btn-sm '+(fi===Math.min(fichajeSeleccionado,fEntry.fichajes.length-1)?'btn-g':'btn-gh'),
+            style:{fontWeight:700},
+            on:{click:()=>{fichajeSeleccionado=fi;rerender();}}
+          },(fi+1)+'. '+(fj.entrada||'--')+'→'+(fj.salida||'--')+(fj.titulo?' · '+fj.titulo:'')))
+        )
+      ) : null,
       h('div',{class:'sec-title'},'Horas e Importes'),
       // Header row
       h('div',{style:{display:'grid',gridTemplateColumns:'2fr 2fr 1fr',gap:'.4rem',marginBottom:'.3rem'}},
@@ -1254,7 +1270,8 @@ function renderFichar(){
         const pk='precioHora'+tipo;
         const hk='horas'+tipo;
         const ik='importe'+tipo;
-        const horas=parseFloat(e[hk])||0;
+        const at=getActiveTarget();
+        const horas=parseFloat(at[hk])||0;
         const precio=parseFloat(e[pk])||0;
         const calc=Math.round(horas*precio*100)/100;
         const dispId='imp-'+tipo.toLowerCase();
@@ -1281,10 +1298,11 @@ function renderFichar(){
                   // Update state without rerender (avoids resetting cursor/value)
                   const v=ev.target.value.replace(',','.');
                   const h2=parseFloat(v)||0;
-                  fEntry[hk]=h2;
+                  getActiveTarget()[hk]=h2;
+                  recomputeDayAggregates();
                   const p2=parseFloat(e[pk])||0;
-                  const c2=Math.round(h2*p2*100)/100;
-                  fEntry[ik]=c2;
+                  fEntry[ik]=Math.round((fEntry[hk]||0)*p2*100)/100;
+                  const c2=fEntry[ik];
                   // Update display directly
                   const el=document.getElementById(dispId);
                   if(el){el.textContent=c2>0?eur(c2):'—';el.style.background=c2>0?'var(--acc-lt)':'var(--surf2)';el.style.color=c2>0?'var(--acc)':'var(--ink3)';}
@@ -1292,8 +1310,10 @@ function renderFichar(){
                 blur:ev=>{
                   const v=ev.target.value.replace(',','.');
                   const h2=parseFloat(v)||0;
-                  fEntry[hk]=h2;
-                  fEntry[ik]=Math.round(h2*(parseFloat(e[pk])||0)*100)/100;
+                  getActiveTarget()[hk]=h2;
+                  recomputeDayAggregates();
+                  fEntry[ik]=Math.round((fEntry[hk]||0)*(parseFloat(e[pk])||0)*100)/100;
+                  scheduleDraftSave();
                   rerender();
                 }
               }})
@@ -1357,33 +1377,39 @@ function renderFichar(){
               style:{background:'var(--acc)',color:'#000',border:'none',borderRadius:'4px',
                 cursor:'pointer',fontSize:'.7rem',padding:'.1rem .4rem',fontWeight:700},
               on:{click:()=>{
-                fEntry.dietaPrecioUnit=S.dietaDefault;
-                const q=fEntry.dietaCantidad||1;
-                fEntry.dieta=Math.round(q*S.dietaDefault*100)/100;
+                const at=getActiveTarget();
+                at.dietaPrecioUnit=S.dietaDefault;
+                const q=at.dietaCantidad||1;
+                at.dieta=Math.round(q*S.dietaDefault*100)/100;
+                recomputeDayAggregates();
                 rerender();
               }}
             },eur(S.dietaDefault)):null
           ),
           h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',marginBottom:'.3rem'}},
             h('span',{style:{fontSize:'.7rem',color:'var(--ink2)'}},'Nº'),
-            h('input',{type:'number',min:'1',step:'1',value:fEntry.dietaCantidad||1,
+            h('input',{type:'number',min:'1',step:'1',value:getActiveTarget().dietaCantidad||1,
               style:{width:'46px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem',color:'var(--ink)',fontSize:'.85rem'},
               on:{input:ev=>{
+                const at=getActiveTarget();
                 const q=Math.max(1,parseInt(ev.target.value)||1);
-                fEntry.dietaCantidad=q;
-                const unit=fEntry.dietaPrecioUnit!=null?fEntry.dietaPrecioUnit:e.dieta;
-                fEntry.dieta=Math.round(q*unit*100)/100;
+                at.dietaCantidad=q;
+                const unit=at.dietaPrecioUnit!=null?at.dietaPrecioUnit:at.dieta;
+                at.dieta=Math.round(q*unit*100)/100;
+                recomputeDayAggregates();
                 rerender();
               }}}),
             h('span',{style:{color:'var(--ink3)',fontSize:'.75rem'}},'×')
           ),
-          importeField(fEntry.dietaPrecioUnit!=null?fEntry.dietaPrecioUnit:e.dieta, v=>{
-            fEntry.dietaPrecioUnit=v;
-            const q=fEntry.dietaCantidad||1;
-            fEntry.dieta=Math.round(q*v*100)/100;
+          importeField(getActiveTarget().dietaPrecioUnit!=null?getActiveTarget().dietaPrecioUnit:getActiveTarget().dieta, v=>{
+            const at=getActiveTarget();
+            at.dietaPrecioUnit=v;
+            const q=at.dietaCantidad||1;
+            at.dieta=Math.round(q*v*100)/100;
+            recomputeDayAggregates();
             rerender();
           }),
-          (fEntry.dietaCantidad||1)>1?h('div',{style:{marginTop:'.3rem',fontSize:'.78rem',fontWeight:700,color:'var(--acc)'}},'Total: '+eur(e.dieta)):null
+          (getActiveTarget().dietaCantidad||1)>1?h('div',{style:{marginTop:'.3rem',fontSize:'.78rem',fontWeight:700,color:'var(--acc)'}},'Total: '+eur(getActiveTarget().dieta)):null
         ),
         h('div',{class:'field'},
           h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',marginBottom:'.3rem'}},
@@ -1397,18 +1423,20 @@ function renderFichar(){
           h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',flexWrap:'wrap',marginBottom:'.3rem'}},
             ...(S.transportTypes||[]).map(tt=>h('button',{
               style:{
-                background: fEntry._transportType===tt.id?'var(--acc)':'var(--surf2)',
-                color: fEntry._transportType===tt.id?'#000':'var(--ink)',
+                background: getActiveTarget()._transportType===tt.id?'var(--acc)':'var(--surf2)',
+                color: getActiveTarget()._transportType===tt.id?'#000':'var(--ink)',
                 border:'1px solid var(--brd)',borderRadius:'6px',
                 padding:'.25rem .6rem',cursor:'pointer',fontSize:'.75rem',fontWeight:600
               },
               on:{click:()=>{
-                fEntry._transportType=tt.id;
+                const at=getActiveTarget();
+                at._transportType=tt.id;
                 if(tt.precio>0){
-                  fEntry.transportePrecioUnit=tt.precio;
-                  const q=fEntry.transporteCantidad||1;
-                  fEntry.transporte=Math.round(q*tt.precio*100)/100;
+                  at.transportePrecioUnit=tt.precio;
+                  const q=at.transporteCantidad||1;
+                  at.transporte=Math.round(q*tt.precio*100)/100;
                 }
+                recomputeDayAggregates();
                 rerender();
                 _lsSave();
               }}
@@ -1416,28 +1444,32 @@ function renderFichar(){
           ),
           h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',marginBottom:'.3rem'}},
             h('span',{style:{fontSize:'.7rem',color:'var(--ink2)'}},'Nº'),
-            h('input',{type:'number',min:'1',step:'1',value:fEntry.transporteCantidad||1,
+            h('input',{type:'number',min:'1',step:'1',value:getActiveTarget().transporteCantidad||1,
               style:{width:'46px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem',color:'var(--ink)',fontSize:'.85rem'},
               on:{input:ev=>{
+                const at=getActiveTarget();
                 const q=Math.max(1,parseInt(ev.target.value)||1);
-                fEntry.transporteCantidad=q;
-                const unit=fEntry.transportePrecioUnit!=null?fEntry.transportePrecioUnit:e.transporte;
-                fEntry.transporte=Math.round(q*unit*100)/100;
+                at.transporteCantidad=q;
+                const unit=at.transportePrecioUnit!=null?at.transportePrecioUnit:at.transporte;
+                at.transporte=Math.round(q*unit*100)/100;
+                recomputeDayAggregates();
                 rerender();
               }}}),
             h('span',{style:{color:'var(--ink3)',fontSize:'.75rem'}},'×')
           ),
-          importeField(fEntry.transportePrecioUnit!=null?fEntry.transportePrecioUnit:e.transporte, v=>{
-            fEntry.transportePrecioUnit=v;
-            const q=fEntry.transporteCantidad||1;
-            fEntry.transporte=Math.round(q*v*100)/100;
-            if(fEntry._transportType){
-              const _ti=S.transportTypes.findIndex(t=>t.id===fEntry._transportType);
+          importeField(getActiveTarget().transportePrecioUnit!=null?getActiveTarget().transportePrecioUnit:getActiveTarget().transporte, v=>{
+            const at=getActiveTarget();
+            at.transportePrecioUnit=v;
+            const q=at.transporteCantidad||1;
+            at.transporte=Math.round(q*v*100)/100;
+            if(at._transportType){
+              const _ti=S.transportTypes.findIndex(t=>t.id===at._transportType);
               if(_ti>=0){S.transportTypes[_ti].precio=v;localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));}
             }
+            recomputeDayAggregates();
             rerender();
           }),
-          (fEntry.transporteCantidad||1)>1?h('div',{style:{marginTop:'.3rem',fontSize:'.78rem',fontWeight:700,color:'var(--acc)'}},'Total: '+eur(e.transporte)):null
+          (getActiveTarget().transporteCantidad||1)>1?h('div',{style:{marginTop:'.3rem',fontSize:'.78rem',fontWeight:700,color:'var(--acc)'}},'Total: '+eur(getActiveTarget().transporte)):null
         )
       )
     ),
@@ -1820,7 +1852,7 @@ function renderFichaje(fj,i){
           ? h('span',{class:'badge badge-g',style:{flexShrink:0}},
             (function(){
               var raw=calcH(fj.entrada,fj.salida);
-              var dec=fEntry.fichajes.length===1?timerDeduct/60:0;
+              var dec=fEntry.fichajes.length===1?timerDeduct/60:(fj.descanso||0)/60;
               return fmtH(Math.max(0,raw-dec));
             })())
           : null
@@ -1849,10 +1881,21 @@ function renderFichaje(fj,i){
         on:{click:()=>{
           fEntry.fichajes=[...fEntry.fichajes.slice(0,i),...fEntry.fichajes.slice(i+1)];
           delete fichajeTimers[fj._fid];
+          // Si queda solo 1 fichaje, sus horas/dieta/transporte vuelven a vivir en el día,
+          // así que se migran de vuelta para no perder lo que tenía metido.
+          if(fEntry.fichajes.length===1){
+            const f0=fEntry.fichajes[0];
+            ['horasNormales','horasExtra','horasNocturnas','horasFestivas',
+             'dieta','dietaCantidad','dietaPrecioUnit',
+             'transporte','transporteCantidad','transportePrecioUnit','_transportType'
+            ].forEach(k=>{ if(f0[k]!=null && f0[k]!==0 && f0[k]!=='') fEntry[k]=f0[k]; });
+            if(f0.descanso) timerDeduct=f0.descanso, fEntry.timerDeduct=f0.descanso;
+          }
+          fichajeSeleccionado=0;
           scheduleDraftSave(); rerender();
         }}},'✕')
     ),
-    // Row 2: título (dónde he estado) + tarea asociada
+    // Row 2: título (dónde he estado) + descanso de este fichaje
     h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center'}},
       h('input',{
         type:'text', spellcheck:true, lang:'es',
@@ -1865,7 +1908,16 @@ function renderFichaje(fj,i){
           input:ev=>{fEntry.fichajes[i].titulo=ev.target.value;},
           blur:ev=>{fEntry.fichajes[i].titulo=ev.target.value;scheduleDraftSave();}
         }
-      })
+      }),
+      (fEntry.fichajes||[]).length>1?h('div',{style:{display:'flex',alignItems:'center',gap:'.25rem',flexShrink:0}},
+        h('span',{style:{fontSize:'.68rem',color:'var(--ink3)'}},'Desc.'),
+        h('input',{type:'number',min:'0',step:'5',value:fj.descanso||0,
+          title:'Minutos de descanso de este fichaje',
+          style:{width:'50px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem',color:'var(--ink)',fontSize:'.78rem'},
+          on:{input:ev=>{fEntry.fichajes[i].descanso=parseInt(ev.target.value)||0;},
+              blur:ev=>{fEntry.fichajes[i].descanso=parseInt(ev.target.value)||0;scheduleDraftSave();rerender();}}}),
+        h('span',{style:{fontSize:'.68rem',color:'var(--ink3)'}},'min')
+      ):null
     ),
     // Row 3: nota + tarea asociada
     h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center'}},
@@ -2680,6 +2732,41 @@ function cambiarFechaJornada(){
   };
 }
 
+// ── EDICIÓN INDEPENDIENTE POR FICHAJE ──────────────────────
+// Si el día tiene solo 1 fichaje (el caso normal de siempre), todo se sigue
+// leyendo/escribiendo directamente en fEntry, exactamente como antes — cero
+// cambios de comportamiento. Solo cuando hay 2+ fichajes, cada uno se edita
+// de forma independiente (horas, dieta, transporte, descanso), y el total
+// del día se recalcula solo sumando todos los fichajes, para que el Resumen,
+// las exportaciones y Drive sigan funcionando sin tocarlos.
+let fichajeSeleccionado = 0;
+function getActiveTarget(){
+  if(fEntry.fichajes && fEntry.fichajes.length>1){
+    const idx=Math.min(fichajeSeleccionado, fEntry.fichajes.length-1);
+    return fEntry.fichajes[idx];
+  }
+  return fEntry;
+}
+function recomputeDayAggregates(){
+  if(!fEntry.fichajes || fEntry.fichajes.length<=1) return; // sin cambios en el caso normal
+  let hn=0,he=0,hnoc=0,hf=0,di=0,tr=0;
+  fEntry.fichajes.forEach(fj=>{
+    hn+=(+fj.horasNormales||0); he+=(+fj.horasExtra||0);
+    hnoc+=(+fj.horasNocturnas||0); hf+=(+fj.horasFestivas||0);
+    di+=(+fj.dieta||0); tr+=(+fj.transporte||0);
+  });
+  fEntry.horasNormales=Math.round(hn*100)/100;
+  fEntry.horasExtra=Math.round(he*100)/100;
+  fEntry.horasNocturnas=Math.round(hnoc*100)/100;
+  fEntry.horasFestivas=Math.round(hf*100)/100;
+  fEntry.dieta=Math.round(di*100)/100;
+  fEntry.transporte=Math.round(tr*100)/100;
+  fEntry.importeNormales=Math.round(fEntry.horasNormales*(fEntry.precioHoraNormal||0)*100)/100;
+  fEntry.importeExtra=Math.round(fEntry.horasExtra*(fEntry.precioHoraExtra||0)*100)/100;
+  fEntry.importeNocturnas=Math.round(fEntry.horasNocturnas*(fEntry.precioHoraNocturna||0)*100)/100;
+  fEntry.importeFestivas=Math.round(fEntry.horasFestivas*(fEntry.precioHoraFestiva||0)*100)/100;
+}
+
 function goToDay(ds){
   // Save current day before switching
   try{
@@ -2695,6 +2782,7 @@ function goToDay(ds){
   pauseAndSaveTimerForDay(); // save current day's timer
   localStorage.removeItem('_fEntry');
   _skipDomCapture=true;
+  fichajeSeleccionado=0;
   // Navigate to Fichar tab for specific date
   const existing=S.entries.find(e=>e.fecha===ds);
   if(existing){
@@ -5002,7 +5090,7 @@ function renderModalResumenDia(){
                   f.entrada&&f.salida?h('span',{style:{
                     background:'#dcfce7',color:'#16a34a',borderRadius:'6px',
                     padding:'.2rem .5rem',fontSize:'.75rem',fontWeight:700,marginLeft:'auto'
-                  }},(function(){var r=calcH(f.entrada,f.salida);var d=fichajesList.length===1?(e.timerDeduct||timerDeduct||0)/60:0;return fmtH(Math.max(0,r-d));}())):null
+                  }},(function(){var r=calcH(f.entrada,f.salida);var d=fichajesList.length===1?(e.timerDeduct||timerDeduct||0)/60:(f.descanso||0)/60;return fmtH(Math.max(0,r-d));}())):null
                 ),
                 (f.titulo||f.nota)?h('div',{style:{marginTop:'.3rem',paddingLeft:'1.7rem'}},
                   f.titulo?h('div',{style:{fontSize:'.8rem',fontWeight:700,color:'#1e293b',textDecoration:'underline'}},f.titulo+':'):null,
@@ -5369,7 +5457,7 @@ function generarPDFResumen(conPrecios){
         <span class="ftime">${f.entrada||'—'}</span>
         <span class="farrow">→</span>
         <span class="ftime">${f.salida||'—'}</span>
-        ${f.entrada&&f.salida?`<span class="fbadge">${fmtH(calcH(f.entrada,f.salida))}</span>`:''}
+        ${f.entrada&&f.salida?`<span class="fbadge">${fmtH(Math.max(0,calcH(f.entrada,f.salida)-((e.fichajes||[]).length===1?(e.timerDeduct||0)/60:(f.descanso||0)/60)))}</span>`:''}
       </div>
       ${f.titulo?`<div style="margin-top:4px;padding-left:26px;font-size:12px;font-weight:700;color:#1e293b;text-decoration:underline">${f.titulo}:</div>`:''}
       ${f.nota?`<div class="fnota" style="margin-top:${f.titulo?'2px':'4px'};padding-left:26px;line-height:1.5;white-space:pre-wrap;word-break:break-word">${f.nota}</div>`:''}
@@ -5587,7 +5675,7 @@ async function compartirComoImagen(conPrecios){
       if(fichajesList.length>0){
         html += sec('⏱','FICHAJES');
         fichajesList.forEach(function(f,i){
-          var dur = (f.entrada&&f.salida)?(function(){var raw=calcH(f.entrada,f.salida);var dec=fichajesList.length===1?(e.timerDeduct||0)/60:0;return '<span style="background:#dcfce7;color:#16a34a;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:auto">'+fmtH(Math.max(0,raw-dec))+'</span>';}()):'';;
+          var dur = (f.entrada&&f.salida)?(function(){var raw=calcH(f.entrada,f.salida);var dec=fichajesList.length===1?(e.timerDeduct||0)/60:(f.descanso||0)/60;return '<span style="background:#dcfce7;color:#16a34a;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:auto">'+fmtH(Math.max(0,raw-dec))+'</span>';}()):'';;
           var linkedTask = f.taskId ? (S.tasks||[]).find(function(t){return t.id===f.taskId;}) : null;
           var linkedDieta = f.dietaId==='base' ? {concepto:'Dieta'+((e.dietaCantidad||1)>1?' x'+e.dietaCantidad:''),importe:e.dieta} : f.dietaId ? (e.dietasExtra||[]).find(function(d,di){return (d.id||('idx'+di))===f.dietaId;}) : null;
           var linkedViaje = f.journeyId==='base' ? {tipoManual:e._transportType==='camion'?'camion':'coche',destino:'',_isBase:true,_importe:e.transporte} : f.journeyId ? (e.journeys||[]).find(function(j){return j.id===f.journeyId;}) : null;
@@ -6599,7 +6687,20 @@ function toggleDark(){
 }
 
 function addFichaje(){
+  // Si hasta ahora solo había 1 fichaje (o ninguno), los datos de horas/dieta/transporte
+  // vivían directamente en el día. Al añadir un 2º fichaje, hay que migrarlos al primero
+  // para que no se queden "huérfanos" y se pierdan al empezar a editar por fichaje.
+  if(fEntry.fichajes.length===1){
+    const f0=fEntry.fichajes[0];
+    ['horasNormales','horasExtra','horasNocturnas','horasFestivas',
+     'dieta','dietaCantidad','dietaPrecioUnit',
+     'transporte','transporteCantidad','transportePrecioUnit','_transportType'
+    ].forEach(k=>{ if(fEntry[k]!=null && fEntry[k]!==0 && fEntry[k]!=='') f0[k]=fEntry[k]; });
+    if(fEntry.timerDeduct) f0.descanso=fEntry.timerDeduct;
+  }
   fEntry.fichajes.push(defFichaje());
+  fichajeSeleccionado=fEntry.fichajes.length-1; // abre directamente el fichaje nuevo
+  recomputeDayAggregates();
   rerender();
   scheduleDraftSave();
 }
@@ -6828,6 +6929,7 @@ function loadHistorial(entry){
   localStorage.removeItem('_fEntry');
   // Load the new day — flag tells captureFormState to NOT read old DOM
   _skipDomCapture=true;
+  fichajeSeleccionado=0;
   fEntry={...entry,fichajes:[...(entry.fichajes||[]).map(f=>({...f}))],dietasExtra:[...(entry.dietasExtra||[])],otrosConceptos:[...(entry.otrosConceptos||[])],journeys:[...(entry.journeys||[])]};
   // notas come from the DB entry — don't override with localStorage
   editingEntry=true;
