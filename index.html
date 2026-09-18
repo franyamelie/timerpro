@@ -1246,7 +1246,7 @@ function renderFichar(){
       return null;
     })(),
     // Horas e importes
-    h('div',{class:'card'},
+    h('div',{class:'card',id:'horas-importes-card'},
       // Selector de fichaje: solo aparece si hay 2 o más fichajes en el día.
       // Cada uno se edita de forma independiente (horas, dieta, transporte, descanso).
       (fEntry.fichajes||[]).length>1 ? h('div',{style:{marginBottom:'.8rem'}},
@@ -1935,46 +1935,34 @@ function renderFichaje(fj,i){
       },fj.nota||''),
       h('select',{
         style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
-               padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.75rem',maxWidth:'130px'},
+               padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.75rem',maxWidth:'110px'},
         on:{change:ev=>{fEntry.fichajes[i].taskId=ev.target.value;scheduleDraftSave();}}
       },
         ...taskOpts.map(t=>h('option',{value:t.id||'',selected:(t.id||'')===(fj.taskId||'')?true:false},
           t.id?(t.titulo||'Tarea').slice(0,20)+(t.otNumero?' ['+t.otNumero+']':''):'Sin tarea'
         ))
-      )
+      ),
+      h('button',{class:'btn btn-gh btn-sm',style:{padding:'.3rem .5rem',fontSize:'.75rem',flexShrink:0},
+        title:'Crear o vincular una nueva tarea/OT a este fichaje (como siempre)',
+        on:{click:()=>{
+          _pendingFichajeTaskLink={fecha:fEntry.fecha, idx:i};
+          fTask=defTask(fEntry.fecha);
+          editTaskId=null;
+          S.tab='tareas';
+          rerender();
+        }}},'➕')
     ),
-    // Row 3: vincular a una dieta y/o un viaje concretos de esta jornada (opcional)
-    // Incluye tanto la dieta/transporte "base" del día como los que se hayan añadido como extra.
-    (((fEntry.dieta||0)>0) || (fEntry.dietasExtra||[]).length>0 || ((fEntry.transporte||0)>0) || (fEntry.journeys||[]).length>0)
-      ? h('div',{style:{display:'flex',gap:'.4rem',alignItems:'center',flexWrap:'wrap'}},
-          (((fEntry.dieta||0)>0) || (fEntry.dietasExtra||[]).length>0) ? h('select',{
-            style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
-                   padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.72rem',maxWidth:'150px'},
-            on:{change:ev=>{fEntry.fichajes[i].dietaId=ev.target.value;scheduleDraftSave();rerender();}}
-          },
-            h('option',{value:'',selected:!fj.dietaId},'☀ Sin dieta vinculada'),
-            (fEntry.dieta||0)>0?h('option',{value:'base',selected:(fj.dietaId||'')==='base'},
-              '☀ Dieta'+((fEntry.dietaCantidad||1)>1?' x'+fEntry.dietaCantidad:'')+' ('+eur(fEntry.dieta)+')'
-            ):null,
-            ...(fEntry.dietasExtra||[]).map((d,di)=>h('option',{value:d.id||('idx'+di),selected:(d.id||('idx'+di))===(fj.dietaId||'')},
-              '☀ '+(d.concepto||'Dieta')+' ('+eur(d.importe||0)+')'
-            ))
-          ) : null,
-          (((fEntry.transporte||0)>0) || (fEntry.journeys||[]).length>0) ? h('select',{
-            style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',
-                   padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.72rem',maxWidth:'150px'},
-            on:{change:ev=>{fEntry.fichajes[i].journeyId=ev.target.value;scheduleDraftSave();rerender();}}
-          },
-            h('option',{value:'',selected:!fj.journeyId},'🚗 Sin viaje vinculado'),
-            (fEntry.transporte||0)>0?h('option',{value:'base',selected:(fj.journeyId||'')==='base'},
-              '🚗 Transporte'+((fEntry.transporteCantidad||1)>1?' x'+fEntry.transporteCantidad:'')+' ('+eur(fEntry.transporte)+')'
-            ):null,
-            ...(fEntry.journeys||[]).map((j,ji)=>h('option',{value:j.id||('idx'+ji),selected:(j.id||('idx'+ji))===(fj.journeyId||'')},
-              '🚗 '+(j.tipoManual==='camion'?'Camión':'Coche')+(j.destino?' → '+j.destino:'')
-            ))
-          ) : null
-        )
-      : null,
+    // Row 4: resumen de este fichaje (dieta/viaje propios) + acceso directo a editarlo
+    (fEntry.fichajes||[]).length>1 ? h('div',{style:{display:'flex',gap:'.5rem',alignItems:'center',flexWrap:'wrap',fontSize:'.72rem',color:'var(--ink2)'}},
+      (fj.dieta||0)>0?h('span',{style:{background:'rgba(234,179,8,.15)',color:'#b45309',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'☀ '+eur(fj.dieta)):null,
+      (fj.transporte||0)>0?h('span',{style:{background:'rgba(59,130,246,.15)',color:'#1e40af',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'🚗 '+eur(fj.transporte)):null,
+      ((fj.horasNormales||0)+(fj.horasExtra||0)+(fj.horasNocturnas||0)+(fj.horasFestivas||0))>0?h('span',{style:{background:'rgba(34,197,94,.15)',color:'#16a34a',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'🕐 '+fmtH((fj.horasNormales||0)+(fj.horasExtra||0)+(fj.horasNocturnas||0)+(fj.horasFestivas||0))):null,
+      h('button',{class:'btn btn-gh btn-sm',style:{padding:'.15rem .5rem',fontSize:'.7rem',marginLeft:'auto'},
+        on:{click:()=>{fichajeSeleccionado=i;rerender();
+          const card=document.getElementById('horas-importes-card');
+          if(card) card.scrollIntoView({behavior:'smooth',block:'start'});
+        }}},'✏️ Editar horas/dieta/viaje de este fichaje')
+    ) : null,
     ftimer.running
       ? h('div',{id:'fichaje-timer-'+fj._fid,style:{fontSize:'.72rem',color:'var(--acc)',fontWeight:700}},
           '⏱ En curso: '+formatTimer(ftimer.elapsed))
@@ -2740,6 +2728,7 @@ function cambiarFechaJornada(){
 // del día se recalcula solo sumando todos los fichajes, para que el Resumen,
 // las exportaciones y Drive sigan funcionando sin tocarlos.
 let fichajeSeleccionado = 0;
+let _pendingFichajeTaskLink = null; // {fecha, idx} — recuerda a qué fichaje volver tras crear una tarea nueva
 function getActiveTarget(){
   if(fEntry.fichajes && fEntry.fichajes.length>1){
     const idx=Math.min(fichajeSeleccionado, fEntry.fichajes.length-1);
@@ -5067,7 +5056,7 @@ function renderModalResumenDia(){
         // Fichajes: la hora de entrada/salida principal siempre primero, y detrás cualquier fichaje adicional
         showHorario?(()=>{
           const fichajesList=[];
-          if(e.horaEntrada||e.horaSalida) fichajesList.push({entrada:e.horaEntrada||'',salida:e.horaSalida||'',nota:''});
+          if((e.horaEntrada||e.horaSalida) && (!e.fichajes||e.fichajes.length===0)) fichajesList.push({entrada:e.horaEntrada||'',salida:e.horaSalida||'',nota:''});
           (e.fichajes||[]).forEach(f=>{ if(f.entrada||f.salida) fichajesList.push(f); });
           if(!fichajesList.length) return null;
           return h('div',{},
@@ -5082,19 +5071,19 @@ function renderModalResumenDia(){
                 background:'#f8fafc',borderRadius:'8px',
                 border:'1px solid #e2e8f0'
               }},
-                h('div',{style:{display:'flex',alignItems:'center',gap:'.6rem'}},
+                h('div',{style:{display:'flex',alignItems:'center',gap:'.6rem',flexWrap:'wrap'}},
                   h('span',{style:{fontWeight:700,color:'#64748b',minWidth:'20px',fontSize:'.8rem'}},i+1+'.'),
                   h('span',{style:{fontWeight:700,fontSize:'1rem',color:'#0f172a',minWidth:'50px'}},f.entrada||'—'),
                   h('span',{style:{color:'#94a3b8',fontSize:'1.1rem'}},'→'),
                   h('span',{style:{fontWeight:700,fontSize:'1rem',color:'#0f172a',minWidth:'50px'}},f.salida||'—'),
+                  f.titulo?h('span',{style:{fontSize:'.8rem',fontWeight:700,color:'#1e293b',textDecoration:'underline'}},f.titulo):null,
                   f.entrada&&f.salida?h('span',{style:{
                     background:'#dcfce7',color:'#16a34a',borderRadius:'6px',
                     padding:'.2rem .5rem',fontSize:'.75rem',fontWeight:700,marginLeft:'auto'
                   }},(function(){var r=calcH(f.entrada,f.salida);var d=fichajesList.length===1?(e.timerDeduct||timerDeduct||0)/60:(f.descanso||0)/60;return fmtH(Math.max(0,r-d));}())):null
                 ),
-                (f.titulo||f.nota)?h('div',{style:{marginTop:'.3rem',paddingLeft:'1.7rem'}},
-                  f.titulo?h('div',{style:{fontSize:'.8rem',fontWeight:700,color:'#1e293b',textDecoration:'underline'}},f.titulo+':'):null,
-                  f.nota?h('div',{style:{fontSize:'.78rem',color:'#475569',lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word',marginTop:f.titulo?'.15rem':0}},f.nota):null
+                f.nota?h('div',{style:{marginTop:'.3rem',paddingLeft:'1.7rem'}},
+                  h('div',{style:{fontSize:'.78rem',color:'#475569',lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}},f.nota)
                 ):null,
                 hasExtras?h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.35rem',paddingLeft:'1.7rem'}},
                   linkedTask?h('span',{style:{fontSize:'.7rem',background:'#fef9c3',color:'#854d0e',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'🔧 '+(linkedTask.otNumero||'')+' '+(linkedTask.titulo||'').replace(/<[^>]*>/g,'').slice(0,20)):null,
@@ -5452,15 +5441,15 @@ function generarPDFResumen(conPrecios){
       </div>` : '';
     return `
     <div class="fichaje-row" style="flex-direction:column;align-items:stretch">
-      <div style="display:flex;align-items:center;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span class="fnum">${i+1}.</span>
         <span class="ftime">${f.entrada||'—'}</span>
         <span class="farrow">→</span>
         <span class="ftime">${f.salida||'—'}</span>
+        ${f.titulo?`<span style="font-size:12px;font-weight:700;color:#1e293b;text-decoration:underline">${f.titulo}</span>`:''}
         ${f.entrada&&f.salida?`<span class="fbadge">${fmtH(Math.max(0,calcH(f.entrada,f.salida)-((e.fichajes||[]).length===1?(e.timerDeduct||0)/60:(f.descanso||0)/60)))}</span>`:''}
       </div>
-      ${f.titulo?`<div style="margin-top:4px;padding-left:26px;font-size:12px;font-weight:700;color:#1e293b;text-decoration:underline">${f.titulo}:</div>`:''}
-      ${f.nota?`<div class="fnota" style="margin-top:${f.titulo?'2px':'4px'};padding-left:26px;line-height:1.5;white-space:pre-wrap;word-break:break-word">${f.nota}</div>`:''}
+      ${f.nota?`<div class="fnota" style="margin-top:4px;padding-left:26px;line-height:1.5;white-space:pre-wrap;word-break:break-word">${f.nota}</div>`:''}
     </div>${extras}`;
   })) : '';
 
@@ -5667,7 +5656,7 @@ async function compartirComoImagen(conPrecios){
     if(e._showHorario!==false){
       var fichajesList = [];
       if(e.horaEntrada || e.horaSalida){
-        fichajesList.push({entrada:e.horaEntrada||'', salida:e.horaSalida||'', nota:''});
+        if(!e.fichajes || e.fichajes.length===0) fichajesList.push({entrada:e.horaEntrada||'', salida:e.horaSalida||'', nota:''});
       }
       (e.fichajes||[]).forEach(function(f){
         if(f.entrada || f.salida) fichajesList.push(f);
@@ -5688,16 +5677,16 @@ async function compartirComoImagen(conPrecios){
               +'</div>';
           }
           html += '<div style="padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:4px">'
-            +'<div style="display:flex;align-items:center;gap:6px">'
+            +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
             +'<span style="color:#94a3b8;font-size:11px">'+(i+1)+'.</span>'
             +'<span style="font-weight:700;font-size:15px;min-width:46px">'+(f.entrada||'—')+'</span>'
             +'<span style="color:#94a3b8">→</span>'
             +'<span style="font-weight:700;font-size:15px;min-width:46px">'+(f.salida||'—')+'</span>'
+            +(f.titulo?'<span style="font-size:12px;font-weight:700;color:#1e293b;text-decoration:underline">'+f.titulo+'</span>':'')
             +dur
             +'</div>'
-            +((f.titulo||f.nota)?('<div style="margin-top:4px;padding-left:26px">'
-               +(f.titulo?'<div style="font-size:12px;font-weight:700;color:#1e293b;text-decoration:underline">'+f.titulo+':</div>':'')
-               +(f.nota?'<div style="font-size:11px;color:#475569;line-height:1.5;white-space:pre-wrap;word-break:break-word;margin-top:'+(f.titulo?'2px':'0')+'">'+f.nota+'</div>':'')
+            +(f.nota?('<div style="margin-top:4px;padding-left:26px">'
+               +'<div style="font-size:11px;color:#475569;line-height:1.5;white-space:pre-wrap;word-break:break-word">'+f.nota+'</div>'
                +'</div>') : '')
             +extrasHtml
             +'</div>';
@@ -6687,6 +6676,22 @@ function toggleDark(){
 }
 
 function addFichaje(){
+  // Si todavía no hay ningún fichaje en la lista pero sí hay hora de entrada/salida
+  // puesta en los campos simples de arriba, ese es en realidad "el fichaje 1" — hay
+  // que convertirlo en un fichaje real primero, para que la numeración sea consistente
+  // y el nuevo se añada correctamente como el 2º (y así sucesivamente).
+  if(fEntry.fichajes.length===0 && (fEntry.horaEntrada||fEntry.horaSalida)){
+    const f0=defFichaje();
+    f0.entrada=fEntry.horaEntrada||'';
+    f0.salida=fEntry.horaSalida||'';
+    ['horasNormales','horasExtra','horasNocturnas','horasFestivas',
+     'dieta','dietaCantidad','dietaPrecioUnit',
+     'transporte','transporteCantidad','transportePrecioUnit','_transportType'
+    ].forEach(k=>{ if(fEntry[k]!=null && fEntry[k]!==0 && fEntry[k]!=='') f0[k]=fEntry[k]; });
+    if(fEntry.timerDeduct) f0.descanso=fEntry.timerDeduct;
+    fEntry.fichajes.push(f0);
+    fEntry.horaEntrada=''; fEntry.horaSalida=''; // ya viven en el fichaje 1, evita duplicarlos
+  }
   // Si hasta ahora solo había 1 fichaje (o ninguno), los datos de horas/dieta/transporte
   // vivían directamente en el día. Al añadir un 2º fichaje, hay que migrarlos al primero
   // para que no se queden "huérfanos" y se pierdan al empezar a editar por fichaje.
@@ -7068,16 +7073,30 @@ function scheduleSync(){
 async function saveTask(){
   if(!fTask.titulo.trim()){showAlert('El título es obligatorio','err');return;}
   try{
+    let savedId=fTask.id;
     if(fTask.id){
       await dbPut(ST.tasks,fTask);
       S.tasks=S.tasks.map(t=>t.id===fTask.id?fTask:t);
     } else {
-      const id=await dbPut(ST.tasks,fTask);
-      S.tasks.push({...fTask,id});
+      savedId=await dbPut(ST.tasks,fTask);
+      S.tasks.push({...fTask,id:savedId});
     }
     fTask=defTask();
     editTaskId=null;
     localStorage.removeItem('fTaskDraft');
+    // Si esta tarea se creó desde un fichaje concreto, vincularla ahí y volver
+    if(_pendingFichajeTaskLink && _pendingFichajeTaskLink.fecha===fEntry.fecha){
+      const idx=_pendingFichajeTaskLink.idx;
+      if(fEntry.fichajes && fEntry.fichajes[idx]){
+        fEntry.fichajes[idx].taskId=savedId;
+        scheduleDraftSave();
+      }
+      _pendingFichajeTaskLink=null;
+      S.tab='fichar';
+      showAlert('Tarea creada y vinculada a este fichaje ✓');
+      rerender();
+      return;
+    }
     showAlert('Tarea guardada ✓');
     rerender();
     scheduleSync();
