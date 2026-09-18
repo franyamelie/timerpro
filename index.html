@@ -354,7 +354,7 @@ const defFichaje = () => ({_fid:Date.now(), entrada:'', salida:'', titulo:'', no
   horasNormales:0, horasExtra:0, horasNocturnas:0, horasFestivas:0,
   dieta:0, dietaCantidad:1, dietaPrecioUnit:0,
   transporte:0, transporteCantidad:1, transportePrecioUnit:0, _transportType:'',
-  descanso:0, ubicacionEntrada:'', ubicacionSalida:''});
+  descanso:0, ubicacionEntrada:'', ubicacionSalida:'', otrosConceptos:[], journeys:[]});
 const defTask = f => ({fecha:f||today(), titulo:'', horaInicio:'', horaFin:'', descripcion:'', siteId:'', workOrderId:'', otNumero:'', usaOT:false, tipoTarea:'ot', fotos:[]});
 const defJourney = () => ({id:'j'+Date.now()+Math.random().toString(36).slice(2,7), vehicleId:'', tipoManual:'coche', precioManual:0.19, origen:'', destino:'', km:0, horaInicio:nowTime(), horaFin:''});
 const defWorker = {nombre:'',apellidos:'',dni:'',cargo:'',departamento:'',email:'',telefono:'',numSS:'',fechaAlta:'',convenio:'',firma:'',foto:''};
@@ -421,6 +421,12 @@ function syncTituloDetailFromEditor(fj){
   const el=document.getElementById('titulo-detail-'+fj._fid);
   if(!el) return;
   fj.titulo=el.innerHTML;
+  scheduleDraftSave();
+}
+function syncNotaDetailFromEditor(fj){
+  const el=document.getElementById('nota-detail-'+fj._fid);
+  if(!el) return;
+  fj.nota=el.innerHTML;
   scheduleDraftSave();
 }
 function restoreEntry(){
@@ -857,11 +863,32 @@ function renderMain(){
 // ══════════════════════════════════════════════════════════
 
 // ── AUTO CÁLCULO HORAS DESDE FICHAJES ──────────────────
+// Si el día tiene una hora de entrada/salida "suelta" (campos simples de arriba)
+// que nunca se convirtió en un fichaje real de la lista — algo que podía pasar
+// con datos guardados antes de tener varios fichajes — se convierte aquí de
+// forma automática, insertándola como el primero cronológicamente. Así el
+// título, el resumen y la vista de varios fichajes funcionan siempre bien,
+// también con jornadas guardadas anteriormente.
+function migrarFichajeBaseSiHaceFalta(){
+  if(!(fEntry.horaEntrada||fEntry.horaSalida)) return;
+  const yaExiste=(fEntry.fichajes||[]).some(f=>f.entrada===fEntry.horaEntrada && f.salida===fEntry.horaSalida);
+  if(yaExiste) return;
+  const f0=defFichaje();
+  f0.entrada=fEntry.horaEntrada||'';
+  f0.salida=fEntry.horaSalida||'';
+  ['horasNormales','horasExtra','horasNocturnas','horasFestivas',
+   'dieta','dietaCantidad','dietaPrecioUnit',
+   'transporte','transporteCantidad','transportePrecioUnit','_transportType'
+  ].forEach(k=>{ if(fEntry[k]!=null && fEntry[k]!==0 && fEntry[k]!=='') f0[k]=fEntry[k]; });
+  if(fEntry.timerDeduct) f0.descanso=fEntry.timerDeduct;
+  fEntry.fichajes=[f0, ...(fEntry.fichajes||[])]; // va primero cronológicamente
+  fEntry.horaEntrada=''; fEntry.horaSalida='';
+  recomputeDayAggregates();
+  scheduleDraftSave();
+}
 function autoCalcHorasFromFichajes(){
   // Solo calcular si no hay horas introducidas manualmente
   if(!fEntry.fichajes || fEntry.fichajes.length===0) return;
-  // Si ya hay horas normales o extras introducidas manualmente, no sobreescribir
-  if(fEntry.horasNormales>0 || fEntry.horasExtra>0) return;
   fEntry.fichajes.forEach((fj,i)=>{
     if(!fEntry.fichajes[i]) return;
     const _eEl=document.getElementById('fich-ent-'+fj._fid);
@@ -869,6 +896,22 @@ function autoCalcHorasFromFichajes(){
     if(_eEl&&_eEl.value) fEntry.fichajes[i].entrada=_eEl.value;
     if(_sEl&&_sEl.value) fEntry.fichajes[i].salida=_sEl.value;
   });
+  if(fEntry.fichajes.length>1){
+    // Con varios fichajes: si alguno tiene horario pero ninguna hora especificada
+    // todavía (normales/extra/nocturnas/festivas a 0), se le calculan solas como
+    // normales a partir de su propio horario, descontando su descanso.
+    fEntry.fichajes.forEach(fj=>{
+      if(!fj.entrada||!fj.salida) return;
+      const yaTiene=(fj.horasNormales||0)+(fj.horasExtra||0)+(fj.horasNocturnas||0)+(fj.horasFestivas||0);
+      if(yaTiene>0) return;
+      const mins=Math.max(0,calcH(fj.entrada,fj.salida)*60-(fj.descanso||0));
+      if(mins>0) fj.horasNormales=Math.round(mins*100/60)/100;
+    });
+    recomputeDayAggregates();
+    return;
+  }
+  // Si ya hay horas normales o extras introducidas manualmente, no sobreescribir
+  if(fEntry.horasNormales>0 || fEntry.horasExtra>0) return;
   let totalMins=0;
   fEntry.fichajes.forEach(fj=>{
     if(fj.entrada&&fj.salida) totalMins+=calcH(fj.entrada,fj.salida)*60;
@@ -1027,6 +1070,7 @@ function _renderHistorial(){
 
 function renderFichar(){
   const e = fEntry;
+  migrarFichajeBaseSiHaceFalta();
   if(fichajeDetailIndex!=null && e.fichajes && e.fichajes[fichajeDetailIndex]){
     return renderFichajeDetailScreen(fichajeDetailIndex);
   }
@@ -1908,12 +1952,23 @@ function renderFichajeDetailScreen(idx){
         on:{input:ev=>{fj.titulo=ev.target.innerHTML;},blur:ev=>{fj.titulo=ev.target.innerHTML;scheduleDraftSave();}}
       }),
       h('div',{class:'sec-title'},'Descripción del trabajo'),
-      h('textarea',{
-        value:fj.nota||'', rows:3, spellcheck:true, lang:'es',
+      h('div',{style:{display:'flex',gap:'.3rem',marginBottom:'.3rem'}},
+        h('button',{class:'btn btn-gh btn-sm',style:{padding:'.15rem .5rem',fontWeight:'bold'},title:'Negrita',
+          on:{mousedown:ev=>{ev.preventDefault();document.execCommand('bold');syncNotaDetailFromEditor(fj);}}},'N'),
+        h('button',{class:'btn btn-gh btn-sm',style:{padding:'.15rem .5rem',fontStyle:'italic'},title:'Cursiva',
+          on:{mousedown:ev=>{ev.preventDefault();document.execCommand('italic');syncNotaDetailFromEditor(fj);}}},'C'),
+        h('button',{class:'btn btn-gh btn-sm',style:{padding:'.15rem .5rem',textDecoration:'underline'},title:'Subrayado',
+          on:{mousedown:ev=>{ev.preventDefault();document.execCommand('underline');syncNotaDetailFromEditor(fj);}}},'S')
+      ),
+      h('div',{
+        id:'nota-detail-'+fj._fid,
+        contenteditable:'true',
+        html:fj.nota||'',
         style:{width:'100%',boxSizing:'border-box',background:'var(--surf2)',border:'1px solid var(--brd)',
-               borderRadius:'var(--r2)',padding:'.5rem .6rem',color:'var(--ink)',fontSize:'.85rem',fontFamily:'inherit',resize:'vertical'},
-        on:{input:ev=>{fj.nota=ev.target.value;},blur:ev=>{fj.nota=ev.target.value;scheduleDraftSave();}}
-      },fj.nota||'')
+               borderRadius:'var(--r2)',padding:'.5rem .6rem',color:'var(--ink)',fontSize:'.85rem',
+               lineHeight:1.6,minHeight:'70px',outline:'none'},
+        on:{input:ev=>{fj.nota=ev.target.innerHTML;},blur:ev=>{fj.nota=ev.target.innerHTML;scheduleDraftSave();}}
+      })
     ),
 
     // Tarea / OT vinculada
@@ -2046,6 +2101,59 @@ function renderFichajeDetailScreen(idx){
         })
       ),
       h('div',{style:{fontWeight:700,color:'var(--acc)'}},'Total transporte: '+eur(fj.transporte||0))
+    ),
+
+    // Otros conceptos de este fichaje
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'Otros Conceptos de este fichaje'),
+      ...(fj.otrosConceptos||[]).map((o,oi)=>
+        h('div',{class:'grid-2',style:{marginBottom:'.4rem'}},
+          h('div',{class:'field'},
+            h('label',{},'Concepto'),
+            h('input',{type:'text',value:o.concepto||'',
+              style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
+              on:{blur:ev=>{fj.otrosConceptos[oi].concepto=ev.target.value;scheduleDraftSave();}}})
+          ),
+          h('div',{class:'field'},
+            h('label',{},'IMPORTE'),
+            h('div',{class:'imp-wrap'},
+              importeField(o.importe,v=>{fj.otrosConceptos[oi].importe=v;recomputeDayAggregates();scheduleDraftSave();rerender();}),
+              h('button',{class:'btn btn-r btn-sm',on:{click:()=>{fj.otrosConceptos.splice(oi,1);recomputeDayAggregates();scheduleDraftSave();rerender();}}},'✕')
+            )
+          )
+        )
+      ),
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{
+        fj.otrosConceptos.push({id:'o'+Date.now()+Math.random().toString(36).slice(2,7),concepto:'',importe:0,_fichajeOrigen:fj._fid});
+        scheduleDraftSave(); rerender();
+      }}},'➕ Añadir concepto')
+    ),
+
+    // Viajes de este fichaje
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'Viajes de este fichaje'),
+      ...(fj.journeys||[]).map((j,ji)=>
+        h('div',{style:{border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.6rem',marginBottom:'.5rem'}},
+          h('div',{class:'grid-2',style:{marginBottom:'.4rem'}},
+            field('Origen','text',j.origen,v=>{fj.journeys[ji].origen=v;}),
+            field('Destino','text',j.destino,v=>{fj.journeys[ji].destino=v;})
+          ),
+          h('div',{class:'grid-2'},
+            field('Km','number',j.km,v=>{fj.journeys[ji].km=parseFloat(v)||0;}),
+            h('div',{class:'field'},
+              h('label',{},'Precio manual €'),
+              h('div',{class:'imp-wrap'},
+                importeField(j.precioManual,v=>{fj.journeys[ji].precioManual=v;recomputeDayAggregates();scheduleDraftSave();rerender();}),
+                h('button',{class:'btn btn-r btn-sm',on:{click:()=>{fj.journeys.splice(ji,1);recomputeDayAggregates();scheduleDraftSave();rerender();}}},'✕')
+              )
+            )
+          )
+        )
+      ),
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{
+        fj.journeys.push({id:'j'+Date.now()+Math.random().toString(36).slice(2,7),vehicleId:'',tipoManual:'coche',precioManual:0,origen:'',destino:'',km:0,_fichajeOrigen:fj._fid});
+        scheduleDraftSave(); rerender();
+      }}},'➕ Añadir viaje')
     ),
 
     // Ubicación propia de este fichaje
@@ -3049,10 +3157,13 @@ function getActiveTarget(){
 function recomputeDayAggregates(){
   if(!fEntry.fichajes || fEntry.fichajes.length<=1) return; // sin cambios en el caso normal
   let hn=0,he=0,hnoc=0,hf=0,di=0,tr=0;
+  let otrosAgg=[], journeysAgg=[];
   fEntry.fichajes.forEach(fj=>{
     hn+=(+fj.horasNormales||0); he+=(+fj.horasExtra||0);
     hnoc+=(+fj.horasNocturnas||0); hf+=(+fj.horasFestivas||0);
     di+=(+fj.dieta||0); tr+=(+fj.transporte||0);
+    (fj.otrosConceptos||[]).forEach(o=>otrosAgg.push(o));
+    (fj.journeys||[]).forEach(j=>journeysAgg.push(j));
   });
   fEntry.horasNormales=Math.round(hn*100)/100;
   fEntry.horasExtra=Math.round(he*100)/100;
@@ -3064,6 +3175,12 @@ function recomputeDayAggregates(){
   fEntry.importeExtra=Math.round(fEntry.horasExtra*(fEntry.precioHoraExtra||0)*100)/100;
   fEntry.importeNocturnas=Math.round(fEntry.horasNocturnas*(fEntry.precioHoraNocturna||0)*100)/100;
   fEntry.importeFestivas=Math.round(fEntry.horasFestivas*(fEntry.precioHoraFestiva||0)*100)/100;
+  // Los conceptos "extra" no ligados a un solo fichaje siguen siendo del día
+  // (no vinculados a ninguno en concreto); los ligados a cada fichaje se suman aquí.
+  const otrosDelDia=(fEntry.otrosConceptos||[]).filter(o=>!o._fichajeOrigen);
+  fEntry.otrosConceptos=[...otrosDelDia, ...otrosAgg];
+  const viajesDelDia=(fEntry.journeys||[]).filter(j=>!j._fichajeOrigen);
+  fEntry.journeys=[...viajesDelDia, ...journeysAgg];
 }
 
 function goToDay(ds){
@@ -5394,7 +5511,7 @@ function renderModalResumenDia(){
                   }},(function(){var r=calcH(f.entrada,f.salida);var d=fichajesList.length===1?(e.timerDeduct||timerDeduct||0)/60:(f.descanso||0)/60;return fmtH(Math.max(0,r-d));}())):null
                 ),
                 f.nota?h('div',{style:{marginTop:'.3rem',paddingLeft:'1.7rem'}},
-                  h('div',{style:{fontSize:'.78rem',color:'#475569',lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}},f.nota)
+                  h('div',{style:{fontSize:'.78rem',color:'#475569',lineHeight:1.5,wordBreak:'break-word'},html:f.nota})
                 ):null,
                 hasExtras?h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.35rem',paddingLeft:'1.7rem'}},
                   linkedTask?h('span',{style:{fontSize:'.7rem',background:'#fef9c3',color:'#854d0e',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'🔧 '+(linkedTask.otNumero||'')+' '+(linkedTask.titulo||'').replace(/<[^>]*>/g,'').slice(0,20)):null,
