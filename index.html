@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260918-6'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260918-7'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -2041,17 +2041,81 @@ function renderFichajeDetailScreen(idx){
         'Fichaje '+(idx+1)+' de '+fEntry.fichajes.length+' · '+dlbl(fEntry.fecha))
     ),
 
-    // Horario propio de este fichaje
+    // Horario propio de este fichaje — mismo selector que el fichaje principal
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'Horario de este fichaje'),
-      h('div',{class:'grid-2'},
-        h('div',{class:'field'},
-          h('label',{},'Entrada'),
-          h('input',{type:'time',value:fj.entrada||'',on:{change:ev=>{fj.entrada=ev.target.value;recomputeDayAggregates();scheduleDraftSave();rerender();}}})
+      h('div',{class:'grid-2',style:{marginBottom:'.6rem'}},
+        h('div',{class:'field',style:{margin:0}},
+          h('label',{style:{color:'var(--acc)',fontWeight:800}},'🕐 ENTRADA'),
+          h('div',{style:{display:'flex',gap:'.3rem'}},
+            h('input',{
+              type:'text',
+              id:'fich-detail-entrada-'+fj._fid,
+              value:fj.entrada||'',
+              maxlength:'5',
+              placeholder:'07:00',
+              style:{flex:1,background:'var(--surf2)',border:'2px solid var(--acc)',borderRadius:'var(--r2)',padding:'.5rem .6rem',color:'var(--ink)',fontSize:'1rem',fontWeight:700,textAlign:'center'},
+              on:{
+                input:ev=>{fj.entrada=ev.target.value;},
+                blur:ev=>{
+                  let v=ev.target.value;
+                  const norm=normalizeTimeStr(v);
+                  if(norm){ v=norm; ev.target.value=norm; }
+                  fj.entrada=v;
+                  recomputeDayAggregates();scheduleDraftSave();rerender();
+                }
+              }
+            }),
+            h('button',{class:'btn btn-b btn-sm',style:{fontSize:'1.1rem',padding:'.3rem .5rem'},
+              on:{click:()=>{
+                showClockPicker(fj.entrada||'',v=>{
+                  fj.entrada=v;
+                  recomputeDayAggregates();scheduleDraftSave();rerender();
+                });
+              }}},'🕐'),
+            h('button',{class:'btn btn-gh btn-sm',
+              on:{click:()=>{
+                const now=new Date();
+                fj.entrada=pad(now.getHours())+':'+pad(now.getMinutes());
+                recomputeDayAggregates();scheduleDraftSave();rerender();
+              }}},'Ahora')
+          )
         ),
-        h('div',{class:'field'},
-          h('label',{},'Salida'),
-          h('input',{type:'time',value:fj.salida||'',on:{change:ev=>{fj.salida=ev.target.value;recomputeDayAggregates();scheduleDraftSave();rerender();}}})
+        h('div',{class:'field',style:{margin:0}},
+          h('label',{style:{color:'#ef4444',fontWeight:800}},'🏁 SALIDA'),
+          h('div',{style:{display:'flex',gap:'.3rem'}},
+            h('input',{
+              type:'text',
+              id:'fich-detail-salida-'+fj._fid,
+              value:fj.salida||'',
+              maxlength:'5',
+              placeholder:'15:00',
+              style:{flex:1,background:'var(--surf2)',border:'2px solid #ef4444',borderRadius:'var(--r2)',padding:'.5rem .6rem',color:'var(--ink)',fontSize:'1rem',fontWeight:700,textAlign:'center'},
+              on:{
+                input:ev=>{fj.salida=ev.target.value;},
+                blur:ev=>{
+                  let v=ev.target.value;
+                  const norm=normalizeTimeStr(v);
+                  if(norm){ v=norm; ev.target.value=norm; }
+                  fj.salida=v;
+                  recomputeDayAggregates();scheduleDraftSave();rerender();
+                }
+              }
+            }),
+            h('button',{class:'btn btn-b btn-sm',style:{fontSize:'1.1rem',padding:'.3rem .5rem'},
+              on:{click:()=>{
+                showClockPicker(fj.salida||'',v=>{
+                  fj.salida=v;
+                  recomputeDayAggregates();scheduleDraftSave();rerender();
+                });
+              }}},'🕐'),
+            h('button',{class:'btn btn-gh btn-sm',
+              on:{click:()=>{
+                const now=new Date();
+                fj.salida=pad(now.getHours())+':'+pad(now.getMinutes());
+                recomputeDayAggregates();scheduleDraftSave();rerender();
+              }}},'Ahora')
+          )
         )
       ),
       h('div',{class:'field'},
