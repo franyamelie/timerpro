@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260923-1'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260923-2'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1005,19 +1005,21 @@ function autoCalcHorasFromFichajes(){
   }
   // Si el usuario ya editó las horas a mano (aunque sea para dejarlas a 0),
   // no se vuelven a recalcular nunca en esta jornada.
-  if(fEntry._horasManual) return;
+  const f1=fEntry.fichajes[0];
+  if(f1._horasManual) return;
   let totalMins=0;
   fEntry.fichajes.forEach(fj=>{
     if(fj.entrada&&fj.salida) totalMins+=calcH(fj.entrada,fj.salida)*60;
   });
   if(totalMins===0) return;
-  const netMins=Math.max(0,totalMins-timerDeduct);
+  const netMins=Math.max(0,totalMins-(f1.descanso||timerDeduct||0));
   const netHours=Math.round(netMins*100/60)/100;
   // Tope de 8h normales/jornada: el resto es hora extra
   const normalesFinal=Math.min(8,netHours);
   const extraFinal=Math.round((netHours-normalesFinal)*100)/100;
-  fEntry.horasNormales=normalesFinal;
-  if(extraFinal>0) fEntry.horasExtra=extraFinal;
+  f1.horasNormales=normalesFinal;
+  if(extraFinal>0) f1.horasExtra=extraFinal;
+  recomputeDayAggregates();
   if(fEntry.precioHoraNormal>0)
     fEntry.importeNormales=Math.round(normalesFinal*fEntry.precioHoraNormal*100)/100;
   if(extraFinal>0 && fEntry.precioHoraExtra>0)
@@ -3423,10 +3425,27 @@ function getActiveTarget(){
 }
 // La pantalla principal (Horas/Dieta/Transporte de arriba) ES el fichaje 1,
 // siempre — nunca depende de qué fichaje esté seleccionado en las pantallas
-// de detalle. Con 0 o 1 fichajes, sus datos siguen viviendo en fEntry (aún no
-// migrados); con 2+, el fichaje 1 ya tiene sus propios campos.
+// de detalle. Solo si TODAVÍA no existe ningún fichaje (jornada recién
+// empezada) sus datos viven en fEntry; en cuanto existe el fichaje 1 (1 o
+// más fichajes en total), todo vive siempre ahí.
 function getFichaje1Target(){
-  if(fEntry.fichajes && fEntry.fichajes.length>=2) return fEntry.fichajes[0];
+  if(fEntry.fichajes && fEntry.fichajes.length>=1){
+    const f0=fEntry.fichajes[0];
+    // Reparación de una sola vez para jornadas guardadas con una versión
+    // anterior: si el fichaje 1 no tiene sus propios datos pero la jornada
+    // sí los tenía sueltos (dieta/transporte/horas puestos antes de este
+    // cambio), se heredan aquí para que dejen de verse "perdidos".
+    if(!f0._f1Migrado){
+      ['horasNormales','horasExtra','horasNocturnas','horasFestivas',
+       'dieta','dietaCantidad','dietaPrecioUnit',
+       'transporte','transporteCantidad','transportePrecioUnit','_transportType'
+      ].forEach(k=>{ if((f0[k]==null||f0[k]===0||f0[k]==='') && fEntry[k]!=null && fEntry[k]!==0 && fEntry[k]!=='') f0[k]=fEntry[k]; });
+      if(!f0.titulo && fEntry.titulo) f0.titulo=fEntry.titulo;
+      if(!f0.nota && fEntry.notas) f0.nota=fEntry.notas;
+      f0._f1Migrado=true;
+    }
+    return f0;
+  }
   return fEntry;
 }
 // Crea el fichaje 1 en fEntry.fichajes si todavía no existe ninguno, para que
@@ -3438,10 +3457,15 @@ function ensureFichaje1(){
   if(fEntry.fichajes.length===0){
     const f0=defFichaje();
     // Si ya había horas/dieta/transporte/título/notas sueltos en la jornada
-    // (de antes de que existiera ningún fichaje), se heredan al crearlo.
+    // (de antes de que existiera ningún fichaje), se heredan al crearlo, para
+    // que no se pierdan ni queden huérfanos al pasar a vivir en el fichaje 1.
     if(fEntry.titulo) f0.titulo=fEntry.titulo;
     if(fEntry.notas) f0.nota=fEntry.notas;
     if(fEntry.timerDeduct) f0.descanso=fEntry.timerDeduct;
+    ['horasNormales','horasExtra','horasNocturnas','horasFestivas',
+     'dieta','dietaCantidad','dietaPrecioUnit',
+     'transporte','transporteCantidad','transportePrecioUnit','_transportType'
+    ].forEach(k=>{ if(fEntry[k]!=null && fEntry[k]!==0 && fEntry[k]!=='') f0[k]=fEntry[k]; });
     fEntry.fichajes.push(f0);
   }
   return fEntry.fichajes[0];
@@ -3473,7 +3497,7 @@ function snapTransporteF1(){
 }
 function setTransporteF1(v){ Object.assign(getFichaje1Target(),v); }
 function recomputeDayAggregates(){
-  if(!fEntry.fichajes || fEntry.fichajes.length<=1) return; // sin cambios en el caso normal
+  if(!fEntry.fichajes || fEntry.fichajes.length===0) return; // sin fichajes: los datos siguen en fEntry directamente
   let hn=0,he=0,hnoc=0,hf=0,di=0,tr=0;
   let otrosAgg=[], journeysAgg=[];
   fEntry.fichajes.forEach(fj=>{
