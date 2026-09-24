@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260924-1'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260924-2'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1328,7 +1328,7 @@ function renderFichar(){
                   const norm=normalizeTimeStr(v);
                   if(norm){ v=norm; ev.target.value=norm; }
                   ensureFichaje1().salida=v;
-                  recomputeDayAggregates();scheduleDraftSave();rerender();
+                  recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
                 }
               }
             }),
@@ -1337,14 +1337,14 @@ function renderFichar(){
                 const f1=ensureFichaje1();
                 showClockPicker(f1.salida||'',v=>{
                   ensureFichaje1().salida=v;
-                  recomputeDayAggregates();scheduleDraftSave();rerender();
+                  recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
                 });
               }}},'🕐'),
             h('button',{class:'btn btn-gh btn-sm',
               on:{click:()=>{
                 const now=new Date();
                 ensureFichaje1().salida=pad(now.getHours())+':'+pad(now.getMinutes());
-                recomputeDayAggregates();scheduleDraftSave();rerender();
+                recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
               }}},'Ahora')
           )
         )
@@ -2110,7 +2110,7 @@ function renderFichajeDetailScreen(idx){
                   const norm=normalizeTimeStr(v);
                   if(norm){ v=norm; ev.target.value=norm; }
                   fj.salida=v;
-                  recomputeDayAggregates();scheduleDraftSave();rerender();
+                  recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
                 }
               }
             }),
@@ -2118,14 +2118,14 @@ function renderFichajeDetailScreen(idx){
               on:{click:()=>{
                 showClockPicker(fj.salida||'',v=>{
                   fj.salida=v;
-                  recomputeDayAggregates();scheduleDraftSave();rerender();
+                  recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
                 });
               }}},'🕐'),
             h('button',{class:'btn btn-gh btn-sm',
               on:{click:()=>{
                 const now=new Date();
                 fj.salida=pad(now.getHours())+':'+pad(now.getMinutes());
-                recomputeDayAggregates();scheduleDraftSave();rerender();
+                recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
               }}},'Ahora')
           )
         )
@@ -11544,34 +11544,42 @@ function finishTimer(){
 
 // MEJORA 3: Notificación olvido fichar (via setInterval, sin override)
 function checkFichajeOlvidado(){
-  if(S.tab!=='fichar') return;
+  const banner=document.getElementById('olvido-banner');
+  if(S.tab!=='fichar'){ if(banner) banner.remove(); return; }
   const now2=new Date(),hNow=now2.getHours()*60+now2.getMinutes();
-  if(hNow<480||hNow>1380) return;
+  if(hNow<480||hNow>1380){ if(banner) banner.remove(); return; }
+  // Recorremos TODOS los fichajes pendientes (con entrada pero sin salida) y nos
+  // quedamos con el que lleve más tiempo abierto. Si ya no hay ninguno pendiente
+  // (por ejemplo porque el usuario acaba de rellenar la salida), se quita el aviso
+  // que pudiera haber quedado en pantalla de antes, en vez de dejarlo huérfano.
+  let peor=null;
   (fEntry.fichajes||[]).forEach(fj=>{
     if(!fj.entrada||fj.salida) return;
     const [hh,mm]=fj.entrada.split(':').map(Number);
     const mins=hNow-(hh*60+mm);
-    if(mins>600&&!document.getElementById('olvido-banner')){
-      const b=document.createElement('div');
-      b.id='olvido-banner';
-      b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9998;background:#f59e0b;color:#000;padding:.55rem .9rem;display:flex;align-items:center;gap:.7rem;font-size:.8rem;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.3)';
-      b.innerHTML='⚠️ Llevas '+Math.floor(mins/60)+'h '+Math.round(mins%60)+'m desde la entrada ('+fj.entrada+'). ¿Olvidaste la salida?';
-      const bt=document.createElement('button');
-      bt.textContent='📍 Salida ahora';
-      bt.style.cssText='background:#000;color:#fff;border:none;padding:.3rem .7rem;border-radius:5px;cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0';
-      bt.onclick=()=>{
-        const idx=fEntry.fichajes.findIndex(f=>f.entrada===fj.entrada&&!f.salida);
-        if(idx>=0){fEntry.fichajes[idx].salida=nowTime();scheduleDraftSave();rerender();}
-        b.remove();
-      };
-      const bc=document.createElement('button');
-      bc.innerHTML='✕';
-      bc.style.cssText='background:none;border:none;padding:.2rem .5rem;cursor:pointer;margin-left:auto;font-size:1rem;flex-shrink:0';
-      bc.onclick=()=>b.remove();
-      b.appendChild(bt);b.appendChild(bc);
-      document.body.appendChild(b);
-    }
+    if(mins>600&&(!peor||mins>peor.mins)) peor={fj,mins};
   });
+  if(!peor){ if(banner) banner.remove(); return; }
+  if(banner) return; // ya se está mostrando el aviso correcto, no duplicar
+  const {fj,mins}=peor;
+  const b=document.createElement('div');
+  b.id='olvido-banner';
+  b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9998;background:#f59e0b;color:#000;padding:.55rem .9rem;display:flex;align-items:center;gap:.7rem;font-size:.8rem;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.3)';
+  b.innerHTML='⚠️ Llevas '+Math.floor(mins/60)+'h '+Math.round(mins%60)+'m desde la entrada ('+fj.entrada+'). ¿Olvidaste la salida?';
+  const bt=document.createElement('button');
+  bt.textContent='📍 Salida ahora';
+  bt.style.cssText='background:#000;color:#fff;border:none;padding:.3rem .7rem;border-radius:5px;cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0';
+  bt.onclick=()=>{
+    const idx=fEntry.fichajes.findIndex(f=>f._fid===fj._fid);
+    if(idx>=0){fEntry.fichajes[idx].salida=nowTime();scheduleDraftSave();rerender();}
+    b.remove();
+  };
+  const bc=document.createElement('button');
+  bc.innerHTML='✕';
+  bc.style.cssText='background:none;border:none;padding:.2rem .5rem;cursor:pointer;margin-left:auto;font-size:1rem;flex-shrink:0';
+  bc.onclick=()=>b.remove();
+  b.appendChild(bt);b.appendChild(bc);
+  document.body.appendChild(b);
 }
 setInterval(checkFichajeOlvidado, 60000);
 
