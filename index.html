@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260925-1'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260925-2'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1814,7 +1814,7 @@ function renderFichar(){
         ),
         ...dayTasks.map(t=>h('div',{
           style:{padding:'.5rem 0',borderBottom:'1px solid var(--brd)',display:'flex',gap:'.5rem',alignItems:'flex-start',cursor:'pointer'},
-          on:{click:()=>{fTask={...t};editTaskId=t.id;S.tab='tareas';rerender();}}
+          on:{click:()=>{fTask={...t};editTaskId=t.id;_pendingFichajeTaskLink={fecha:e.fecha||today(),idx:'f1'};S.tab='tareas';rerender();}}
         },
           h('div',{style:{flex:1}},
             h('div',{style:{fontWeight:700,fontSize:'.85rem',display:'flex',alignItems:'center',gap:'.3rem',flexWrap:'wrap'}},
@@ -1832,7 +1832,7 @@ function renderFichar(){
               : null
           ),
           h('button',{class:'btn btn-gh btn-sm',style:{flexShrink:0},
-            on:{click:ev=>{ev.stopPropagation();fTask={...t};editTaskId=t.id;S.tab='tareas';rerender();}}},'✏️')
+            on:{click:ev=>{ev.stopPropagation();fTask={...t};editTaskId=t.id;_pendingFichajeTaskLink={fecha:e.fecha||today(),idx:'f1'};S.tab='tareas';rerender();}}},'✏️')
         ))
       );
     })(),
@@ -2831,6 +2831,9 @@ function mostrarSelectorTipoTarea(fecha){
       const tipoId=btn.getAttribute('data-tipo');
       document.body.removeChild(overlay);
       fTask={...defTask(fecha),tipoTarea:tipoId,usaOT:true};editTaskId=null;
+      // Recuerda que esta tarea se creó desde la pantalla principal (fichaje 1),
+      // para poder volver ahí solos al guardar, igual que ya pasa con los demás fichajes.
+      if(fEntry.fecha===fecha) _pendingFichajeTaskLink={fecha:fecha, idx:'f1'};
       S.tab='tareas';rerender();
     };
   });
@@ -2912,6 +2915,7 @@ function crearNuevoTipoTarea(fecha, preserveTask){
       fTask.tipoTarea=id; fTask.usaOT=true;
     } else {
       fTask={...defTask(fecha),tipoTarea:id,usaOT:true};editTaskId=null;
+      if(fEntry.fecha===fecha) _pendingFichajeTaskLink={fecha:fecha, idx:'f1'};
     }
     S.tab='tareas';rerender();
     showAlert('Tipo "'+nombre+'" creado ✓');
@@ -5815,8 +5819,11 @@ function renderModalResumenDia(){
         ),
         // Horario entrada → salida (se puede ocultar con la preferencia de abajo)
         showHorario?(()=>{
-          const hEnt=e.horaEntrada||e._horaInicioManual||(e.fichajes&&e.fichajes[0]?e.fichajes[0].entrada:'');
-          const hSal=e.horaSalida||e._horaFinManual||(e.fichajes&&e.fichajes.length>0?e.fichajes[e.fichajes.length-1].salida:'');
+          // El fichaje 1 real (fEntry.fichajes[0]) manda siempre sobre los campos sueltos
+          // _horaInicioManual/_horaFinManual, que solo reflejan el cronómetro independiente
+          // y no deben pisar la hora de entrada/salida que el usuario puso en sus fichajes.
+          const hEnt=(e.fichajes&&e.fichajes[0]&&e.fichajes[0].entrada)||e.horaEntrada||e._horaInicioManual||'';
+          const hSal=(e.fichajes&&e.fichajes.length>0&&e.fichajes[e.fichajes.length-1].salida)||e.horaSalida||e._horaFinManual||'';
           if(!hEnt&&!hSal) return null;
           const desc=e.timerDeduct||0;
           return h('div',{style:{background:'rgba(255,255,255,.1)',borderRadius:'8px',padding:'.6rem 1rem',marginTop:'.6rem',textAlign:'center'}},
@@ -6308,6 +6315,11 @@ function generarPDFResumen(conPrecios){
   const multiFichajes = hayFichajes;
   const trabajador = (S.workers||[])[0]||{};
   const empresa = (S.companies||[])[0]||{};
+  // El fichaje 1 real (fEntry.fichajes[0]) manda siempre sobre los campos sueltos
+  // _horaInicioManual/_horaFinManual, que solo reflejan el cronómetro independiente
+  // y no deben pisar la hora de entrada/salida que el usuario puso en sus fichajes.
+  const _hEntPdf=(e.fichajes&&e.fichajes[0]&&e.fichajes[0].entrada)||e.horaEntrada||e._horaInicioManual||'';
+  const _hSalPdf=(e.fichajes&&e.fichajes.length>0&&e.fichajes[e.fichajes.length-1].salida)||e.horaSalida||e._horaFinManual||'';
 
   const cp = conPrecios === true; // ONLY prices when explicitly true
   const conPrecios2 = cp; // alias
@@ -6508,7 +6520,7 @@ function generarPDFResumen(conPrecios){
   </div>
   <div class="kpis">
     <div class="kpi"><div class="kpi-val">${fmtH(totalH)}</div><div class="kpi-label">HORAS TRABAJADAS</div></div>
-    ${((e._showHorario!==false)&&(e.horaEntrada||e._horaInicioManual))?`<div class="kpi"><div class="kpi-val" style="font-size:1rem">${e.horaEntrada||e._horaInicioManual||'--'} → ${e.horaSalida||e._horaFinManual||'--'}</div><div class="kpi-label">HORARIO</div></div>`:''}
+    ${((e._showHorario!==false)&&(_hEntPdf||_hSalPdf))?`<div class="kpi"><div class="kpi-val" style="font-size:1rem">${_hEntPdf||'--'} → ${_hSalPdf||'--'}</div><div class="kpi-label">HORARIO</div></div>`:''}
     ${cp?`<div class="kpi"><div class="kpi-val">${eur(totalI)}</div><div class="kpi-label">TOTAL A COBRAR</div></div>`:''}
   </div>
 </div>
@@ -8076,16 +8088,17 @@ async function saveTask(){
     fTask=defTask();
     editTaskId=null;
     localStorage.removeItem('fTaskDraft');
-    // Si esta tarea se creó desde un fichaje concreto, vincularla ahí y volver
+    // Si esta tarea se creó desde un fichaje concreto (o desde la pantalla principal,
+    // que es el fichaje 1), vincularla ahí si procede y volver a Fichar — igual en ambos casos.
     if(_pendingFichajeTaskLink && _pendingFichajeTaskLink.fecha===fEntry.fecha){
       const idx=_pendingFichajeTaskLink.idx;
-      if(fEntry.fichajes && fEntry.fichajes[idx]){
+      if(idx!=='f1' && fEntry.fichajes && fEntry.fichajes[idx]){
         fEntry.fichajes[idx].taskId=savedId;
         scheduleDraftSave();
       }
       _pendingFichajeTaskLink=null;
       S.tab='fichar';
-      showAlert('Tarea creada y vinculada a este fichaje ✓');
+      showAlert(idx==='f1'?'Tarea creada ✓':'Tarea creada y vinculada a este fichaje ✓');
       rerender();
       return;
     }
