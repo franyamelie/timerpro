@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260925-2'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260925-3'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1246,14 +1246,9 @@ function renderFichar(){
 
     renderDayCard(),
     // ── TEMPORIZADOR JORNADA ──
-    h('div',{class:'card',style:{border:'2px solid '+(timerRunning?'var(--acc)':'var(--brd)'),transition:'border .3s'}},
-      h('div',{class:'sec-title',style:{marginBottom:'.5rem'}},'Temporizador de Jornada'),
+    h('div',{class:'card'},
+      h('div',{class:'sec-title',style:{marginBottom:'.5rem'}},'Horario de la jornada'),
       h('div',{style:{display:'flex',alignItems:'center',gap:'1rem',flexWrap:'wrap',marginBottom:'.6rem'}},
-        // Big timer display
-        h('div',{style:{
-          fontSize:'2rem',fontWeight:800,fontVariantNumeric:'tabular-nums',
-          color:timerRunning?'var(--acc)':'var(--ink)',flex:1,minWidth:'140px'
-        }},timerRunning||timerElapsed>0 ? formatTimer(timerElapsed) : '00:00:00'),
         // Deduct
         h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',fontSize:'.8rem',color:'var(--ink2)'}},
           'Descanso:',
@@ -1306,7 +1301,6 @@ function renderFichar(){
               on:{click:()=>{
                 const now=new Date();
                 ensureFichaje1().entrada=pad(now.getHours())+':'+pad(now.getMinutes());
-                if(!timerRunning) timerStart=Date.now()-timerElapsed*1000;
                 recomputeDayAggregates();scheduleDraftSave();rerender();
               }}},'Ahora')
           )
@@ -1349,46 +1343,9 @@ function renderFichar(){
           )
         )
       ),
-      // Buttons
-      h('div',{style:{display:'flex',gap:'.5rem',flexWrap:'wrap'}},
-        !timerRunning
-          ? h('button',{class:'btn btn-g',on:{click:startTimer}},
-              timerElapsed>0?'▶ Continuar':'▶ Iniciar')
-          : h('button',{class:'btn btn-y',on:{click:stopTimer}},'⏸ Pausar'),
-        timerElapsed>0
-          ? h('button',{class:'btn btn-g',on:{click:finishTimer}},'✓ Finalizar y registrar')
-          : null,
-        timerElapsed>0
-          ? h('button',{class:'btn btn-gh btn-sm',on:{click:resetTimer}},'↺ Reset')
-          : null
-      ),
-      // Totals summary when timer has time
-      timerElapsed>0
-        ? h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.6rem .8rem',marginTop:'.5rem',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.3rem'}},
-            h('div',{style:{display:'flex',flexDirection:'column'}},
-              h('span',{style:{fontSize:'.65rem',color:'var(--ink3)',textTransform:'uppercase',letterSpacing:'.04em'}},'Tiempo total'),
-              h('span',{id:'timer-display',style:{fontWeight:800,fontSize:'1.1rem',color:'var(--acc)',fontVariantNumeric:'tabular-nums'}},formatTimerFull(timerElapsed))
-            ),
-            h('div',{style:{display:'flex',flexDirection:'column'}},
-              h('span',{style:{fontSize:'.65rem',color:'var(--ink3)',textTransform:'uppercase',letterSpacing:'.04em'}},'Tiempo neto'),
-              h('span',{style:{fontWeight:800,fontSize:'1.1rem',color:'#f59e0b',fontVariantNumeric:'tabular-nums'}},
-                formatTimerFull(Math.max(0,timerElapsed-timerDeduct*60)))
-            ),
-            h('div',{style:{display:'flex',flexDirection:'column'}},
-              h('span',{style:{fontSize:'.65rem',color:'var(--ink3)',textTransform:'uppercase',letterSpacing:'.04em'}},'Horas decimales'),
-              h('span',{style:{fontWeight:700,fontSize:'.9rem'}},
-                (Math.max(0,timerElapsed-timerDeduct*60)/3600).toFixed(2)+'h')
-            ),
-            timerStart?h('div',{style:{display:'flex',flexDirection:'column'}},
-              h('span',{style:{fontSize:'.65rem',color:'var(--ink3)',textTransform:'uppercase',letterSpacing:'.04em'}},'Inicio'),
-              h('span',{style:{fontWeight:700,fontSize:'.9rem'}},
-                new Date(timerStart+(timerDeduct*60*1000/2)).toTimeString().slice(0,5))
-            ):null,
-            timerDeduct>0?h('div',{style:{gridColumn:'1/-1',fontSize:'.72rem',color:'var(--ink2)',borderTop:'1px solid var(--brd)',paddingTop:'.3rem',marginTop:'.1rem'}},
-              '⏷ Descontando '+timerDeduct+' min de descanso'
-            ):null
-          )
-        : null
+      timerDeduct>0?h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',borderTop:'1px solid var(--brd)',paddingTop:'.3rem',marginTop:'.3rem'}},
+        '⏷ Descontando '+timerDeduct+' min de descanso'
+      ):null
     ),
 
     // Fichajes
@@ -7898,26 +7855,16 @@ function pauseAndSaveTimerForDay(){
 }
 
 function restoreTimerForDay(fecha){
-  // Restore timer state for the new day
+  // El "Temporizador de Jornada" (cronómetro en vivo) se ha quitado a
+  // petición del usuario: no respetaba las horas que se ponen a mano y
+  // contaba por su cuenta. Aquí solo se resetean las variables por si
+  // quedó algo antiguo en marcha, sin resucitar nada desde localStorage.
   timerRunning=false;
   timerStart=null;
   timerElapsed=0;
   timerDeduct=0;
   if(timerInterval){ clearInterval(timerInterval); timerInterval=null; }
-  try{
-    const saved=localStorage.getItem('timerState');
-    if(!saved) return;
-    const ts=JSON.parse(saved);
-    if(ts.fecha !== fecha) return; // timer belongs to a different day
-    timerStart=ts.start;
-    timerElapsed=ts.elapsed||Math.floor((Date.now()-ts.start)/1000);
-    timerDeduct=0;
-    if(ts.running){
-      timerRunning=true;
-      timerStart=Date.now()-timerElapsed*1000;
-      timerInterval=setInterval(()=>{ timerElapsed=Math.floor((Date.now()-timerStart)/1000); updateTitle(); },1000);
-    }
-  }catch(e){}
+  try{ localStorage.removeItem('timerState'); }catch(e){}
 }
 
 function loadHistorial(entry){
@@ -11377,25 +11324,11 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
       const phf=localStorage.getItem('precioHoraFestivaDefault');
       if(phf) S.precioHoraFestivaDefault=parseFloat(phf)||0;
     }catch(e){}
-    // Restore timer state if was running
-    const savedTimer=localStorage.getItem('timerState');
-    if(savedTimer){
-      try{
-        const ts=JSON.parse(savedTimer);
-        if(ts.running && ts.start){
-          timerStart=ts.start;
-          timerElapsed=Math.floor((Date.now()-ts.start)/1000);
-          timerDeduct=typeof ts.deduct==='number'?ts.deduct:(fEntry.timerDeduct||0);
-          fEntry.timerDeduct=timerDeduct;
-          timerRunning=true;
-          timerInterval=setInterval(()=>{
-            timerElapsed=Math.floor((Date.now()-timerStart)/1000);
-            updateTitle();
-          },1000);
-          showAlert('⏱ Jornada en curso desde '+new Date(ts.start).toTimeString().slice(0,5));
-        }
-      }catch(e){}
-    }
+    // El "Temporizador de Jornada" (cronómetro en vivo) se ha quitado a
+    // petición del usuario: no respetaba las horas que se ponen a mano y
+    // contaba por su cuenta. Si quedaba un cronómetro antiguo en marcha
+    // guardado en este dispositivo, se descarta aquí en vez de resucitarlo.
+    try{ localStorage.removeItem('timerState'); }catch(e){}
     // Restore draft if exists for today
     const todayDraft = S.entries.find(e=>e.fecha===today()&&e._draft);
     if(todayDraft){ fEntry={...todayDraft}; editingEntry=true; timerDeduct=fEntry.timerDeduct||0; }
