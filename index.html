@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260927-02'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260927-03'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -5909,10 +5909,10 @@ function renderModalSyncWarning(){
       ),
       h('button',{class:'btn btn-g',style:{width:'100%',marginBottom:'.6rem',fontWeight:700},
         on:{click:()=>{ isUpload?proceedMergeThenUpload():proceedMergeInsteadOfLoad(); }}
-      }, isUpload?'🔀 Fusionar y subir (recomendado)':'🔀 Fusionar en vez de cargar (recomendado)'),
-      h('button',{class:'btn btn-gh',style:{width:'100%',marginBottom:'.6rem',color:'#ef4444'},
+      }, '🔀 Fusionar'),
+      h('button',{class:'btn btn-gh',style:{width:'100%',marginBottom:'.6rem',color:'#ef4444',fontWeight:700},
         on:{click:()=>{ isUpload?proceedUploadAnyway():proceedLoadAnyway(); }}
-      }, isUpload?'Subir de todas formas ('+total+' cosa(s) se perderán)':'Cargar de todas formas ('+total+' cosa(s) se perderán)'),
+      }, isUpload?'Subir':'Cargar'),
       h('button',{class:'btn btn-gh',style:{width:'100%'},on:{click:cancelSyncWarning}},'Cancelar')
     )
   );
