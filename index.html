@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-8'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-10'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1190,7 +1190,21 @@ function renderFichar(){
             h('button',{class:'btn btn-gh btn-sm',style:{padding:'.1rem .4rem',fontSize:'.65rem',whiteSpace:'nowrap'},title:'Cambiar la fecha de esta jornada sin perder los datos ya metidos',
               on:{click:()=>cambiarFechaJornada()}},'↔ Mover a otro día')
           ),
-          h('input',{type:'date',value:e.fecha||'',on:{change:ev=>{if(ev.target.value && ev.target.value!==fEntry.fecha) goToDay(ev.target.value);}}})
+          h('input',{type:'date',value:e.fecha||'',on:{change:ev=>{
+            const nueva=ev.target.value;
+            if(!nueva || nueva===fEntry.fecha) return;
+            // Este cuadro de fecha SOLO sirve para IR A VER otro día (como el
+            // calendario) — no mueve nada. Como ese matiz confunde fácilmente
+            // con el botón "Mover a otro día" de al lado, si el día actual
+            // tiene datos reales preguntamos qué se quiere hacer en vez de
+            // navegar sin más, para que nunca sea sorpresa cuál de las dos
+            // cosas ha pasado.
+            if(entryHasData(fEntry)){
+              mostrarElegirFechaOMover(nueva);
+            } else {
+              goToDay(nueva);
+            }
+          }}})
         ),
         h('div',{class:'field'},
           h('label',{style:{display:'flex',alignItems:'center',gap:'.4rem',flexWrap:'wrap'}},'JORNADA',
@@ -3453,9 +3467,35 @@ function renderCalendario(){
   );
 }
 
+// El cuadro de fecha de arriba de Fichar es, por diseño, un simple selector
+// para IR A VER otro día — no mueve datos. Como eso se confunde fácilmente
+// con "↔ Mover a otro día" (que sí mueve/sustituye), cuando el día actual
+// tiene datos reales se pregunta antes de navegar, para dejar clarísimo
+// cuál de las dos cosas va a pasar.
+function mostrarElegirFechaOMover(nuevaFecha){
+  const overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
+  overlay.innerHTML=`
+    <div style="background:var(--surf);border-radius:16px;padding:1.5rem;max-width:340px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+      <div style="font-weight:900;font-size:1rem;color:var(--ink);margin-bottom:.6rem">¿Qué quieres hacer?</div>
+      <div style="font-size:.8rem;color:var(--ink2);margin-bottom:1rem">
+        La jornada de <b>${dlbl(fEntry.fecha)}</b> que estás editando tiene datos metidos. ¿Solo quieres ir a ver <b>${dlbl(nuevaFecha)}</b> (sin tocar nada), o quieres mover todos los datos de hoy a esa fecha?
+      </div>
+      <button id="efm-ver" style="width:100%;margin-bottom:.6rem;background:var(--surf3);color:var(--ink);border:1px solid var(--brd);border-radius:8px;padding:.65rem;cursor:pointer;font-size:.85rem;font-weight:700">👀 Solo ir a ver ${dlbl(nuevaFecha)}</button>
+      <button id="efm-mover" style="width:100%;margin-bottom:.6rem;background:var(--acc);color:#000;border:none;border-radius:8px;padding:.65rem;cursor:pointer;font-size:.85rem;font-weight:800">↔ Mover los datos de hoy a esa fecha</button>
+      <button id="efm-cancel" style="width:100%;background:transparent;color:var(--ink3);border:none;padding:.5rem;cursor:pointer;font-size:.8rem">Cancelar</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById('efm-cancel').onclick=()=>document.body.removeChild(overlay);
+  document.getElementById('efm-ver').onclick=()=>{ document.body.removeChild(overlay); goToDay(nuevaFecha); };
+  document.getElementById('efm-mover').onclick=()=>{ document.body.removeChild(overlay); cambiarFechaJornada(nuevaFecha); };
+}
+
 // Mueve la jornada que se está editando (con TODOS sus datos ya metidos) a otra fecha,
 // en vez de tener que volver a empezar desde cero por haberse equivocado de día.
-function cambiarFechaJornada(){
+// Si se le pasa una fecha ya elegida (desde el selector de arriba), se salta
+// directamente al diálogo de fecha con ese valor precargado.
+function cambiarFechaJornada(fechaPrecargada){
   const actual = fEntry.fecha;
   const overlay=document.createElement('div');
   overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
@@ -3463,7 +3503,7 @@ function cambiarFechaJornada(){
     <div style="background:var(--surf);border-radius:16px;padding:1.5rem;max-width:320px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.5)">
       <div style="font-weight:900;font-size:1rem;color:var(--ink);margin-bottom:.6rem">↔ Mover jornada a otro día</div>
       <div style="font-size:.78rem;color:var(--ink2);margin-bottom:.8rem">Todo lo que hayas metido (horas, dietas, notas, tareas, viajes...) se moverá a la fecha que elijas. No hace falta volver a empezar.</div>
-      <input id="mv-fecha" type="date" value="${actual}" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--brd);background:var(--surf2);color:var(--ink);font-size:.95rem;margin-bottom:1rem;box-sizing:border-box">
+      <input id="mv-fecha" type="date" value="${fechaPrecargada||actual}" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--brd);background:var(--surf2);color:var(--ink);font-size:.95rem;margin-bottom:1rem;box-sizing:border-box">
       <div style="display:flex;gap:.6rem">
         <button id="mv-cancel" style="flex:1;background:var(--surf3);color:var(--ink2);border:1px solid var(--brd);border-radius:8px;padding:.65rem;cursor:pointer;font-size:.85rem">Cancelar</button>
         <button id="mv-ok" style="flex:2;background:var(--acc);color:#000;border:none;border-radius:8px;padding:.65rem;cursor:pointer;font-size:.9rem;font-weight:800">✅ Mover</button>
@@ -3480,9 +3520,18 @@ function cambiarFechaJornada(){
         await dbDel(ST.entries, existente.id);
         S.entries=S.entries.filter(x=>x.id!==existente.id);
       }
+      // Mover también las tareas/OT del día de origen a la fecha nueva —
+      // si no, se quedan "huérfanas" en el día viejo (ya sin jornada) y
+      // encima no aparecen donde deberían, en la jornada movida.
+      const tareasAMover = S.tasks.filter(t=>t.fecha===actual);
+      for(const t of tareasAMover){
+        const actualizada = {...t, fecha:nueva};
+        await dbPut(ST.tasks, actualizada);
+        S.tasks = S.tasks.map(x=>x.id===t.id?actualizada:x);
+      }
       fEntry.fecha=nueva;
       await saveDraft(); // guarda ya bajo la nueva fecha, con el mismo id si ya lo tenía
-      showAlert('Jornada movida a '+dlbl(nueva)+' ✓');
+      showAlert('Jornada movida a '+dlbl(nueva)+(tareasAMover.length?' (con '+tareasAMover.length+' tarea/s)':'')+' ✓');
       selDate=null;
       rerender();
     };
@@ -5740,6 +5789,7 @@ function renderModalSyncWarning(){
   const dates=info.missingDates;
   const shown=dates.slice(0,10);
   return h('div',{
+    class:'modal-bg',
     style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',
       display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:'1rem'}
   },
