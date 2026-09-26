@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-1'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-3'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1361,9 +1361,16 @@ function renderFichar(){
           )
         )
       ),
-      timerDeduct>0?h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',borderTop:'1px solid var(--brd)',paddingTop:'.3rem',marginTop:'.3rem'}},
-        '⏷ Descontando '+timerDeduct+' min de descanso'
-      ):null
+      (()=>{
+        const f1=e.fichajes&&e.fichajes[0];
+        if(!f1||!f1.entrada||!f1.salida) return null;
+        const bruta=calcH(f1.entrada,f1.salida);
+        const neta=Math.max(0,bruta-timerDeduct/60);
+        return h('div',{style:{display:'flex',flexDirection:'column',gap:'.15rem',fontSize:'.72rem',color:'var(--ink2)',borderTop:'1px solid var(--brd)',paddingTop:'.3rem',marginTop:'.3rem'}},
+          h('div',{},'⏱ Tiempo en este fichaje: '+fmtH(bruta)),
+          h('div',{style:{fontWeight:700,color:'var(--acc)'}},'🕐 Total descontando descanso: '+fmtH(neta)+(timerDeduct>0?' (-'+timerDeduct+'min)':''))
+        );
+      })()
     ),
 
     // Fichajes
@@ -1986,6 +1993,7 @@ function renderFichar(){
 // Al pulsarla se abre la pantalla completa de detalle de ese fichaje.
 function renderFichajeSummaryRow(fj,idx){
   const totalH=(fj.horasNormales||0)+(fj.horasExtra||0)+(fj.horasNocturnas||0)+(fj.horasFestivas||0);
+  const duracionBruta=(fj.entrada&&fj.salida)?calcH(fj.entrada,fj.salida):0;
   return h('div',{
     style:{display:'flex',alignItems:'center',gap:'.6rem',padding:'.7rem',marginBottom:'.4rem',
       background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',cursor:'pointer'},
@@ -1998,7 +2006,8 @@ function renderFichajeSummaryRow(fj,idx){
         fj.titulo?h('span',{style:{fontSize:'.8rem',color:'var(--ink2)',fontWeight:400},html:fj.titulo}):null
       ),
       h('div',{style:{display:'flex',gap:'.5rem',flexWrap:'wrap',marginTop:'.2rem',fontSize:'.7rem',color:'var(--ink2)'}},
-        totalH>0?h('span',{},'🕐 '+fmtH(totalH)):null,
+        duracionBruta>0?h('span',{},'⏱ '+fmtH(duracionBruta)+' en el fichaje'):null,
+        totalH>0?h('span',{style:{fontWeight:700,color:'var(--acc)'}},'🕐 '+fmtH(totalH)+' netas'+((fj.descanso||0)>0?' (-'+fj.descanso+'min)':'')):null,
         (fj.dieta||0)>0?h('span',{},'☀ '+eur(fj.dieta)):null,
         (fj.transporte||0)>0?h('span',{},'🚗 '+eur(fj.transporte)):null
       )
@@ -2031,7 +2040,14 @@ function renderFichajeSummaryRow(fj,idx){
 function renderFichajeDetailScreen(idx){
   const fj=fEntry.fichajes[idx];
   const volver=()=>{ fichajeDetailIndex=null; scheduleDraftSave(); rerender(); };
-  const taskOptsDetail=[{id:'',titulo:'Sin tarea'},...S.tasks.filter(t=>t.fecha===fEntry.fecha)];
+  // OJO: antes esto solo listaba las tareas/OT guardadas con la misma fecha
+  // que la jornada, así que si tenías una OT guardada de otro día no aparecía
+  // aquí y parecía que solo había una. Ahora sale el listado completo de
+  // TODAS las tareas/OT guardadas (como en la pestaña "Tareas"), con las del
+  // día de esta jornada primero para encontrarlas más rápido.
+  const _tareasHoyDetail=S.tasks.filter(t=>t.fecha===fEntry.fecha);
+  const _tareasOtrosDiasDetail=S.tasks.filter(t=>t.fecha!==fEntry.fecha).slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  const taskOptsDetail=[{id:'',titulo:'Sin tarea'},..._tareasHoyDetail,..._tareasOtrosDiasDetail];
 
   return h('div',{},
     // Cabecera con volver
@@ -2132,8 +2148,14 @@ function renderFichajeDetailScreen(idx){
             scheduleDraftSave();rerender();
           }}})
       ),
-      (fj.entrada&&fj.salida)?h('div',{style:{marginTop:'.4rem',fontSize:'.82rem',fontWeight:700,color:'var(--acc)'}},
-        'Duración: '+fmtH(Math.max(0,calcH(fj.entrada,fj.salida)-(fj.descanso||0)/60))
+      (fj.entrada&&fj.salida)?h('div',{style:{marginTop:'.4rem',display:'flex',flexDirection:'column',gap:'.15rem'}},
+        h('div',{style:{fontSize:'.82rem',fontWeight:700,color:'var(--ink2)'}},
+          'Tiempo en este fichaje: '+fmtH(calcH(fj.entrada,fj.salida))
+        ),
+        h('div',{style:{fontSize:'.82rem',fontWeight:700,color:'var(--acc)'}},
+          'Total descontando descanso: '+fmtH(Math.max(0,calcH(fj.entrada,fj.salida)-(fj.descanso||0)/60))
+          +((fj.descanso||0)>0?' (-'+fj.descanso+'min)':'')
+        )
       ):null
     ),
 
@@ -2193,7 +2215,7 @@ function renderFichajeDetailScreen(idx){
           on:{change:ev=>{fj.taskId=ev.target.value;scheduleDraftSave();rerender();}}
         },
           ...taskOptsDetail.map(t=>h('option',{value:t.id||'',selected:(t.id||'')===(fj.taskId||'')},
-            t.id?(t.titulo||'Tarea')+(t.otNumero?' ['+t.otNumero+']':''):'Sin tarea'
+            t.id?(t.titulo||'Tarea')+(t.otNumero?' ['+t.otNumero+']':'')+(t.fecha&&t.fecha!==fEntry.fecha?' — '+dlbl(t.fecha):''):'Sin tarea'
           ))
         ),
         h('button',{class:'btn btn-gh',style:{flexShrink:0},title:'Crear o vincular una nueva tarea/OT (como siempre)',
