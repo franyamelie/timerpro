@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260925-3'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-1'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -984,6 +984,14 @@ function autoCalcHorasFromFichajes(){
       if(fj._horasManual) return;
       const mins=Math.max(0,calcH(fj.entrada,fj.salida)*60-(fj.descanso||0));
       if(mins>0) fj.horasNormales=Math.round(mins*100/60)/100;
+      // Se recalcula todo el reparto normales/extra de este fichaje desde cero
+      // (con su horario y descanso actuales), así que su hora extra se pone a
+      // 0 aquí antes del tope de abajo. OJO: antes esto NO se reseteaba y cada
+      // vez que se volvía a calcular (al tocar el descanso, la entrada/salida,
+      // o pulsar "Resumen") se iba SUMANDO más hora extra encima de la ya
+      // calculada, en vez de sustituirla — por eso podían aparecer horas
+      // extra infladas (p.ej. 1,5h en vez de 0,5h) sin que nadie las pusiera.
+      if(mins>0) fj.horasExtra=0;
     });
     // Tope de 8h normales por jornada: si la suma de horas auto-calculadas como
     // "normales" supera las 8h del día, el exceso pasa a hora extra (se resta
@@ -997,7 +1005,7 @@ function autoCalcHorasFromFichajes(){
       if(usados>cap){
         const extra=Math.round((usados-cap)*100)/100;
         fj.horasNormales=Math.round(cap*100)/100;
-        fj.horasExtra=Math.round(((fj.horasExtra||0)+extra)*100)/100;
+        fj.horasExtra=Math.round(((fj._horasManual?(fj.horasExtra||0):0)+extra)*100)/100;
       }
     });
     recomputeDayAggregates();
@@ -1018,7 +1026,10 @@ function autoCalcHorasFromFichajes(){
   const normalesFinal=Math.min(8,netHours);
   const extraFinal=Math.round((netHours-normalesFinal)*100)/100;
   f1.horasNormales=normalesFinal;
-  if(extraFinal>0) f1.horasExtra=extraFinal;
+  // Se asigna siempre (no solo "si es mayor que 0"): si ya no hay hora extra
+  // (p.ej. tras corregir el descanso), el campo tiene que volver a 0 en vez
+  // de quedarse con el valor antiguo ya calculado antes.
+  f1.horasExtra=extraFinal;
   recomputeDayAggregates();
   if(fEntry.precioHoraNormal>0)
     fEntry.importeNormales=Math.round(normalesFinal*fEntry.precioHoraNormal*100)/100;
@@ -1257,9 +1268,16 @@ function renderFichar(){
             on:{input:ev=>{
               timerDeduct=parseInt(ev.target.value)||0;
               fEntry.timerDeduct=timerDeduct;
-              if(fEntry.fichajes&&fEntry.fichajes.length>0) fEntry.fichajes[0].descanso=timerDeduct;
+              if(fEntry.fichajes&&fEntry.fichajes.length>0){
+                fEntry.fichajes[0].descanso=timerDeduct;
+                // Igual que en los demás fichajes: el descanso nuevo tiene que
+                // recalcular las horas normales/extra de fichaje 1, aunque
+                // antes se hubieran fijado a mano.
+                fEntry.fichajes[0]._horasManual=false;
+              }
               localStorage.setItem('timerDeduct',timerDeduct);
               autoCalcHorasFromFichajes();
+              recomputeDayAggregates();
               scheduleDraftSave();
             }}},
           'min'
@@ -1749,22 +1767,35 @@ function renderFichar(){
     // Ubicación
     // Tareas del día actual - shown in Fichar
     (() => {
-      const dayTasks = S.tasks.filter(t => t.fecha === (e.fecha||today()));
+      // OJO: las tareas ligadas a un fichaje 2+ (mediante su taskId) NO deben
+      // aparecer aquí — esta tarjeta vive justo debajo de fichaje 1, así que
+      // solo debe mostrar las tareas del día que ningún otro fichaje se haya
+      // "quedado". Si no, una tarea de fichaje 2 se veía (mal) también aquí.
+      const idsClaimedOtros = new Set((e.fichajes||[]).slice(1).map(f=>f.taskId).filter(Boolean));
+      const dayTasksAll = S.tasks.filter(t => t.fecha === (e.fecha||today()));
+      const dayTasks = dayTasksAll.filter(t => !idsClaimedOtros.has(t.id));
+      const hayOtrosFichajes = (e.fichajes||[]).length>1;
+      const verTodasBtn = h('button',{class:'btn btn-gh btn-sm',style:{fontSize:'.7rem'},title:'Ver, editar o eliminar todas las tareas guardadas',
+        on:{click:ev=>{ev.stopPropagation();S.tab='tareas';rerender();}}},'📋 Ver todas');
       if(!dayTasks.length) return h('div',{class:'card',style:{cursor:'pointer'},
         on:{click:()=>{
           mostrarSelectorTipoTarea(e.fecha||today());
         }}
       },
-        h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',color:'var(--ink2)',fontSize:'.82rem'}},
-          h('span',{style:{fontSize:'1.2rem'}},'📝'),
-          h('span',{},'Sin tareas para este día — pulsa para añadir')
+        h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'.5rem'}},
+          h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',color:'var(--ink2)',fontSize:'.82rem'}},
+            h('span',{style:{fontSize:'1.2rem'}},'📝'),
+            h('span',{},'Sin tareas para este día — pulsa para añadir')
+          ),
+          verTodasBtn
         )
       );
       return h('div',{class:'card'},
         h('div',{class:'sec-title',style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'.5rem'}},
-          h('span',{},'📝 Tareas del día ('+dayTasks.length+')'),
+          h('span',{},'📝 '+(hayOtrosFichajes?'Tareas de fichaje 1':'Tareas del día')+' ('+dayTasks.length+')'),
           h('div',{style:{display:'flex',gap:'.4rem'}},
             h('button',{class:'btn btn-b btn-sm',on:{click:()=>{mostrarSelectorTipoTarea(e.fecha||today());}}},'+ Nueva'),
+            verTodasBtn,
             h('button',{class:'btn btn-gh btn-sm',style:{fontSize:'.7rem'},title:'Gestionar tipos de tarea',
               on:{click:()=>{mostrarGestorTipos();}}},'⚙️')
           )
@@ -2090,7 +2121,16 @@ function renderFichajeDetailScreen(idx){
       h('div',{class:'field'},
         h('label',{},'Descanso (minutos)'),
         h('input',{type:'number',min:'0',step:'5',value:fj.descanso||0,
-          on:{change:ev=>{fj.descanso=parseInt(ev.target.value)||0;scheduleDraftSave();rerender();}}})
+          on:{change:ev=>{
+            fj.descanso=parseInt(ev.target.value)||0;
+            // Igual que en la fila resumen: el descanso nuevo tiene que
+            // recalcular las horas normales/extra de este fichaje, aunque
+            // antes se hubieran fijado a mano.
+            fj._horasManual=false;
+            autoCalcHorasFromFichajes();
+            recomputeDayAggregates();
+            scheduleDraftSave();rerender();
+          }}})
       ),
       (fj.entrada&&fj.salida)?h('div',{style:{marginTop:'.4rem',fontSize:'.82rem',fontWeight:700,color:'var(--acc)'}},
         'Duración: '+fmtH(Math.max(0,calcH(fj.entrada,fj.salida)-(fj.descanso||0)/60))
@@ -2545,7 +2585,16 @@ function renderFichaje(fj,i){
             title:'Minutos de descanso de este fichaje',
             style:{width:'50px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.3rem',color:'var(--ink)',fontSize:'.78rem'},
             on:{input:ev=>{fEntry.fichajes[i].descanso=parseInt(ev.target.value)||0;},
-                blur:ev=>{fEntry.fichajes[i].descanso=parseInt(ev.target.value)||0;scheduleDraftSave();rerender();}}}),
+                blur:ev=>{
+                  fEntry.fichajes[i].descanso=parseInt(ev.target.value)||0;
+                  // Cambiar el descanso de este fichaje tiene que recalcular sus
+                  // horas normales/extra con el nuevo descanso, aunque antes se
+                  // hubieran fijado a mano — si no, el descanso nuevo no se nota.
+                  fEntry.fichajes[i]._horasManual=false;
+                  autoCalcHorasFromFichajes();
+                  recomputeDayAggregates();
+                  scheduleDraftSave();rerender();
+                }}}),
           h('span',{style:{fontSize:'.68rem',color:'var(--ink3)'}},'min')
         ):null
       ),
