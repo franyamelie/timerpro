@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-4'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-6'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1769,9 +1769,9 @@ function renderFichar(){
       // aparecer aquí — esta tarjeta vive justo debajo de fichaje 1, así que
       // solo debe mostrar las tareas del día que ningún otro fichaje se haya
       // "quedado". Si no, una tarea de fichaje 2 se veía (mal) también aquí.
-      const idsClaimedOtros = new Set((e.fichajes||[]).slice(1).map(f=>f.taskId).filter(Boolean));
+      const idsClaimedOtros = new Set((e.fichajes||[]).slice(1).map(f=>String(f.taskId)).filter(Boolean));
       const dayTasksAll = S.tasks.filter(t => t.fecha === (e.fecha||today()));
-      const dayTasks = dayTasksAll.filter(t => !idsClaimedOtros.has(t.id));
+      const dayTasks = dayTasksAll.filter(t => !idsClaimedOtros.has(String(t.id)));
       const hayOtrosFichajes = (e.fichajes||[]).length>1;
       const verTodasBtn = h('button',{class:'btn btn-gh btn-sm',style:{fontSize:'.7rem'},title:'Ver, editar o eliminar todas las tareas guardadas',
         on:{click:ev=>{ev.stopPropagation();S.tab='tareas';rerender();}}},'📋 Ver todas');
@@ -1819,7 +1819,46 @@ function renderFichar(){
           ),
           h('button',{class:'btn btn-gh btn-sm',style:{flexShrink:0},
             on:{click:ev=>{ev.stopPropagation();fTask={...t};editTaskId=t.id;_pendingFichajeTaskLink={fecha:e.fecha||today(),idx:'f1'};S.tab='tareas';rerender();}}},'✏️')
-        ))
+        )),
+        // Cuando hay 2+ fichajes: mientras una tarea del día no se vincule
+        // EXPLÍCITAMENTE a fichaje 2, 3... aparece aquí (en fichaje 1) por
+        // ser la única "sin dueño". Este selector deja fijar (o quitar) de
+        // forma explícita cuál es LA tarea/OT de fichaje 1, igual que ya se
+        // puede hacer en cada uno de los demás fichajes — así nunca hay que
+        // adivinar a qué fichaje pertenece cada OT: si una tarea debe estar
+        // en fichaje 2, se vincula desde el selector de fichaje 2, no aquí.
+        hayOtrosFichajes?(()=>{
+          const f0=ensureFichaje1();
+          const _hoyF1=S.tasks.filter(t=>t.fecha===(e.fecha||today()));
+          const _otrosF1=S.tasks.filter(t=>t.fecha!==(e.fecha||today())).slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+          const optsF1=[{id:'',titulo:'Sin tarea fija (usar la de arriba)'},..._hoyF1,..._otrosF1];
+          const vinculadaF1=f0.taskId?S.tasks.find(t=>String(t.id)===String(f0.taskId)):null;
+          return h('div',{style:{marginTop:'.6rem',paddingTop:'.6rem',borderTop:'1px solid var(--brd)'}},
+            h('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--ink3)',textTransform:'uppercase',marginBottom:'.3rem'}},'Fijar tarea/O.T. de fichaje 1 (opcional)'),
+            h('select',{
+              style:{width:'100%',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)',fontSize:'.85rem'},
+              on:{change:ev=>{
+                f0.taskId=ev.target.value;
+                scheduleDraftSave();
+                const elegida=f0.taskId?S.tasks.find(t=>String(t.id)===String(f0.taskId)):null;
+                showAlert(elegida?('✅ Vinculada a fichaje 1: '+(elegida.titulo||'Tarea')+(elegida.otNumero?' ['+elegida.otNumero+']':'')):'Fichaje 1 sin tarea fija — se muestran las tareas sin vincular');
+                rerender();
+              }}
+            },
+              ...optsF1.map(t=>h('option',{value:t.id||'',selected:String(t.id||'')===String(f0.taskId||'')},
+                t.id?(t.titulo||'Tarea')+(t.otNumero?' ['+t.otNumero+']':'')+(t.fecha&&t.fecha!==(e.fecha||today())?' — '+dlbl(t.fecha):''):'Sin tarea fija (usar la de arriba)'
+              ))
+            ),
+            h('div',{style:{marginTop:'.4rem',padding:'.4rem .6rem',borderRadius:'var(--r2)',
+              background:vinculadaF1?'rgba(34,197,94,.12)':'var(--surf2)',
+              border:'1px solid '+(vinculadaF1?'#22c55e':'var(--brd)'),
+              fontSize:'.76rem',fontWeight:700,color:vinculadaF1?'#16a34a':'var(--ink3)'}},
+              vinculadaF1
+                ? '✅ Fichaje 1 tiene fija: '+(vinculadaF1.titulo||'Tarea')+(vinculadaF1.otNumero?' [O.T. '+vinculadaF1.otNumero+']':'')
+                : '— Sin tarea fija: se muestran arriba todas las tareas del día que ningún otro fichaje se haya vinculado —'
+            )
+          );
+        })():null
       );
     })(),
 
@@ -2206,12 +2245,12 @@ function renderFichajeDetailScreen(idx){
           on:{change:ev=>{
             fj.taskId=ev.target.value;
             scheduleDraftSave();
-            const elegida=S.tasks.find(t=>t.id===fj.taskId);
+            const elegida=S.tasks.find(t=>String(t.id)===String(fj.taskId));
             showAlert(elegida?('✅ Vinculada a fichaje '+(idx+1)+': '+(elegida.titulo||'Tarea')+(elegida.otNumero?' ['+elegida.otNumero+']':'')):'Fichaje '+(idx+1)+' sin tarea vinculada');
             rerender();
           }}
         },
-          ...taskOptsDetail.map(t=>h('option',{value:t.id||'',selected:(t.id||'')===(fj.taskId||'')},
+          ...taskOptsDetail.map(t=>h('option',{value:t.id||'',selected:String(t.id||'')===String(fj.taskId||'')},
             t.id?(t.titulo||'Tarea')+(t.otNumero?' ['+t.otNumero+']':'')+(t.fecha&&t.fecha!==fEntry.fecha?' — '+dlbl(t.fecha):''):'Sin tarea'
           ))
         ),
@@ -2228,7 +2267,7 @@ function renderFichajeDetailScreen(idx){
       // vinculada a ESTE fichaje concreto — para que nunca haya dudas de si
       // el clic se ha quedado guardado o no.
       (()=>{
-        const vinculada=fj.taskId?S.tasks.find(t=>t.id===fj.taskId):null;
+        const vinculada=fj.taskId?S.tasks.find(t=>String(t.id)===String(fj.taskId)):null;
         return h('div',{style:{marginTop:'.5rem',padding:'.5rem .6rem',borderRadius:'var(--r2)',
           background:vinculada?'rgba(34,197,94,.12)':'var(--surf2)',
           border:'1px solid '+(vinculada?'#22c55e':'var(--brd)'),
@@ -2663,7 +2702,7 @@ function renderFichaje(fj,i){
                padding:'.3rem .4rem',color:'var(--ink)',fontSize:'.75rem',maxWidth:'110px'},
         on:{change:ev=>{fEntry.fichajes[i].taskId=ev.target.value;scheduleDraftSave();}}
       },
-        ...taskOpts.map(t=>h('option',{value:t.id||'',selected:(t.id||'')===(fj.taskId||'')?true:false},
+        ...taskOpts.map(t=>h('option',{value:t.id||'',selected:String(t.id||'')===String(fj.taskId||'')?true:false},
           t.id?(t.titulo||'Tarea').slice(0,20)+(t.otNumero?' ['+t.otNumero+']':''):'Sin tarea'
         ))
       ),
@@ -5927,13 +5966,13 @@ function renderModalResumenDia(){
           const fichajesList=[];
           if((e.horaEntrada||e.horaSalida) && !(e.fichajes||[]).some(f=>f.entrada===e.horaEntrada && f.salida===e.horaSalida)) fichajesList.push({entrada:e.horaEntrada||'',salida:e.horaSalida||'',nota:''});
           (e.fichajes||[]).forEach(f=>{ if(f.entrada||f.salida) fichajesList.push(f); });
-          const idsClaimed=new Set(fichajesList.slice(1).map(f=>f.taskId).filter(Boolean));
-          const tareasFichaje1=tareasDia.filter(t=>!idsClaimed.has(t.id));
+          const idsClaimed=new Set(fichajesList.slice(1).map(f=>String(f.taskId)).filter(Boolean));
+          const tareasFichaje1=tareasDia.filter(t=>!idsClaimed.has(String(t.id)));
           const conNotas=fichajesList.filter((f,i)=>{
             const esF1=i===0;
             const tit=(esF1?e.titulo:f.titulo);
             const nota=(esF1?e.notas:f.nota);
-            const tareas=f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?tareasFichaje1:[]);
+            const tareas=f.taskId?[(S.tasks||[]).find(t=>String(t.id)===String(f.taskId))].filter(Boolean):(esF1?tareasFichaje1:[]);
             const tieneExtras=(f.dieta||0)>0||(f.transporte||0)>0||(f.journeys||[]).some(j=>(j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino);
             return tit||nota||tareas.length>0||tieneExtras;
           });
@@ -5945,7 +5984,7 @@ function renderModalResumenDia(){
               const esF1=i===0;
               const titulo=(esF1?e.titulo:f.titulo);
               const nota=(esF1?e.notas:f.nota);
-              const linkedTasks=f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?tareasFichaje1:[]);
+              const linkedTasks=f.taskId?[(S.tasks||[]).find(t=>String(t.id)===String(f.taskId))].filter(Boolean):(esF1?tareasFichaje1:[]);
               const misDietas=(f.dieta||0)>0?[{concepto:'Dieta'+((f.dietaCantidad||1)>1?' x'+f.dietaCantidad:''),importe:f.dieta}]:[];
               const misTransporte=(f.transporte||0)>0?[{tipo:((S.transportTypes||[]).find(t=>t.id===f._transportType)||{}).nombre||'Transporte',importe:f.transporte}]:[];
               const misViajes=(f.journeys||[]).filter(j=>(j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino);
@@ -6211,13 +6250,13 @@ function shareResumen(method, conPrecios){
   // Notas: título de cada fichaje con su tarea/OT y descripción debajo, agrupado.
   // El fichaje 1 ES la pantalla principal: si no tiene datos propios, se usan
   // los campos de la jornada (título/notas/tareas del día no reclamadas por otros).
-  const idsClaimadas = new Set((e.fichajes||[]).slice(1).map(f=>f.taskId).filter(Boolean));
-  const tareasFichaje1txt = tareasDia.filter(t=>!idsClaimadas.has(t.id));
+  const idsClaimadas = new Set((e.fichajes||[]).slice(1).map(f=>String(f.taskId)).filter(Boolean));
+  const tareasFichaje1txt = tareasDia.filter(t=>!idsClaimadas.has(String(t.id)));
   const fichajesConNotas = (e.fichajes||[]).filter((f,i)=>{
     const esF1=i===0;
     const tit=((esF1?e.titulo:f.titulo)||'').trim();
     const nota=((esF1?e.notas:f.nota)||'').trim();
-    const tks=f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?tareasFichaje1txt:[]);
+    const tks=f.taskId?[(S.tasks||[]).find(t=>String(t.id)===String(f.taskId))].filter(Boolean):(esF1?tareasFichaje1txt:[]);
     const tieneExtras=(f.dieta||0)>0||(f.transporte||0)>0||(f.journeys||[]).some(j=>(j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino);
     return tit||nota||tks.length>0||tieneExtras;
   });
@@ -6228,7 +6267,7 @@ function shareResumen(method, conPrecios){
       const esF1=(e.fichajes||[]).indexOf(f)===0;
       const tit = ((esF1?e.titulo:f.titulo)||'').replace(/<[^>]*>/g,'').trim();
       const nota = ((esF1?e.notas:f.nota)||'').replace(/<[^>]*>/g,'').trim();
-      const linkedTasks = f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?tareasFichaje1txt:[]);
+      const linkedTasks = f.taskId?[(S.tasks||[]).find(t=>String(t.id)===String(f.taskId))].filter(Boolean):(esF1?tareasFichaje1txt:[]);
       lines.push('▸ '+(f.entrada||'—')+' → '+(f.salida||'—')+'  '+(tit||'(sin título)'));
       linkedTasks.forEach(linkedTask=>{
         const titulo=(linkedTask.titulo||'').replace(/<[^>]*>/g,'').trim();
@@ -6406,13 +6445,13 @@ function generarPDFResumen(conPrecios){
     const lst=[];
     if((e.horaEntrada||e.horaSalida) && !(e.fichajes||[]).some(f=>f.entrada===e.horaEntrada && f.salida===e.horaSalida)) lst.push({entrada:e.horaEntrada||'',salida:e.horaSalida||'',nota:''});
     (e.fichajes||[]).forEach(f=>{ if(f.entrada||f.salida) lst.push(f); });
-    const idsClaimed=new Set(lst.slice(1).map(f=>f.taskId).filter(Boolean));
-    const tareasFichaje1=tareasDia.filter(t=>!idsClaimed.has(t.id));
+    const idsClaimed=new Set(lst.slice(1).map(f=>String(f.taskId)).filter(Boolean));
+    const tareasFichaje1=tareasDia.filter(t=>!idsClaimed.has(String(t.id)));
     return lst.filter((f,i)=>{
       const esF1=i===0;
       const tit=(esF1?e.titulo:f.titulo);
       const nota=(esF1?e.notas:f.nota);
-      const tareas=f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?tareasFichaje1:[]);
+      const tareas=f.taskId?[(S.tasks||[]).find(t=>String(t.id)===String(f.taskId))].filter(Boolean):(esF1?tareasFichaje1:[]);
       const tieneExtras=(f.dieta||0)>0||(f.transporte||0)>0||(f.journeys||[]).some(j=>(j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino);
       return tit||nota||tareas.length>0||tieneExtras;
     }).map((f,fi,arr)=>({f,esF1:lst.indexOf(f)===0,tareasFichaje1}));
@@ -6420,7 +6459,7 @@ function generarPDFResumen(conPrecios){
     const f=item.f, esF1=item.esF1;
     const titulo=(esF1?e.titulo:f.titulo);
     const nota=(esF1?e.notas:f.nota);
-    const linkedTasks=f.taskId?[(S.tasks||[]).find(t=>t.id===f.taskId)].filter(Boolean):(esF1?item.tareasFichaje1:[]);
+    const linkedTasks=f.taskId?[(S.tasks||[]).find(t=>String(t.id)===String(f.taskId))].filter(Boolean):(esF1?item.tareasFichaje1:[]);
     const misDietas=(f.dieta||0)>0?[{concepto:'Dieta'+((f.dietaCantidad||1)>1?' x'+f.dietaCantidad:''),importe:f.dieta}]:[];
     const misTransporte=(f.transporte||0)>0?[{tipo:((S.transportTypes||[]).find(t=>t.id===f._transportType)||{}).nombre||'Transporte',importe:f.transporte}]:[];
     const misViajes=(f.journeys||[]).filter(j=>(j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino);
@@ -6681,7 +6720,7 @@ async function compartirComoImagen(conPrecios){
           var esF1 = i===0;
           var tit = (esF1?e.titulo:f.titulo);
           var nota = (esF1?e.notas:f.nota);
-          var tks = f.taskId ? [(S.tasks||[]).find(function(t){return t.id===f.taskId;})].filter(Boolean) : (esF1?tareasFichaje1:[]);
+          var tks = f.taskId ? [(S.tasks||[]).find(function(t){return String(t.id)===String(f.taskId);})].filter(Boolean) : (esF1?tareasFichaje1:[]);
           var tieneExtras = (f.dieta||0)>0||(f.transporte||0)>0||(f.journeys||[]).some(function(j){return (j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino;});
           return tit||nota||tks.length>0||tieneExtras;
         });
@@ -6691,7 +6730,7 @@ async function compartirComoImagen(conPrecios){
             var esF1 = fichajesList.indexOf(f)===0;
             var titulo = (esF1?e.titulo:f.titulo);
             var nota = (esF1?e.notas:f.nota);
-            var linkedTasks = f.taskId ? [(S.tasks||[]).find(function(t){return t.id===f.taskId;})].filter(Boolean) : (esF1?tareasFichaje1:[]);
+            var linkedTasks = f.taskId ? [(S.tasks||[]).find(function(t){return String(t.id)===String(f.taskId);})].filter(Boolean) : (esF1?tareasFichaje1:[]);
             var misDietas = (f.dieta||0)>0 ? [{concepto:'Dieta'+((f.dietaCantidad||1)>1?' x'+f.dietaCantidad:''),importe:f.dieta}] : [];
             var misTransporte = (f.transporte||0)>0 ? [{tipo:((S.transportTypes||[]).find(function(t){return t.id===f._transportType;})||{}).nombre||'Transporte',importe:f.transporte}] : [];
             var misViajes = (f.journeys||[]).filter(function(j){return (j.km||0)>0||(j.precioManual||0)>0||j.origen||j.destino;});
