@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-3'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-4'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -983,30 +983,21 @@ function autoCalcHorasFromFichajes(){
       if(!fj.entrada||!fj.salida) return;
       if(fj._horasManual) return;
       const mins=Math.max(0,calcH(fj.entrada,fj.salida)*60-(fj.descanso||0));
-      if(mins>0) fj.horasNormales=Math.round(mins*100/60)/100;
-      // Se recalcula todo el reparto normales/extra de este fichaje desde cero
-      // (con su horario y descanso actuales), así que su hora extra se pone a
-      // 0 aquí antes del tope de abajo. OJO: antes esto NO se reseteaba y cada
-      // vez que se volvía a calcular (al tocar el descanso, la entrada/salida,
-      // o pulsar "Resumen") se iba SUMANDO más hora extra encima de la ya
-      // calculada, en vez de sustituirla — por eso podían aparecer horas
-      // extra infladas (p.ej. 1,5h en vez de 0,5h) sin que nadie las pusiera.
-      if(mins>0) fj.horasExtra=0;
-    });
-    // Tope de 8h normales por jornada: si la suma de horas auto-calculadas como
-    // "normales" supera las 8h del día, el exceso pasa a hora extra (se resta
-    // del/de los fichaje/s que hacen superar el tope, en orden cronológico).
-    let acumNormales=0;
-    fEntry.fichajes.forEach(fj=>{
-      if(!fj.horasNormales) return;
-      const cap=Math.max(0, 8-acumNormales);
-      const usados=fj.horasNormales;
-      acumNormales+=usados;
-      if(usados>cap){
-        const extra=Math.round((usados-cap)*100)/100;
-        fj.horasNormales=Math.round(cap*100)/100;
-        fj.horasExtra=Math.round(((fj._horasManual?(fj.horasExtra||0):0)+extra)*100)/100;
-      }
+      if(mins<=0) return;
+      const horasNetas=Math.round(mins*100/60)/100;
+      // IMPORTANTE: cada fichaje se calcula SOLO con su propio horario y su
+      // propio descanso — nunca "toma prestadas" ni "presta" horas a otro
+      // fichaje. Si tú solo, por su cuenta, pasara de 8h, esas de más se
+      // marcan como extra DE ESE FICHAJE; si no, todas sus horas son
+      // normales. Así lo que se ve en la pestaña de cada fichaje es siempre
+      // el cálculo real de ESE fichaje (p.ej. 8:30→18:00 con 90min de
+      // descanso = 8h normales, 0 extra, tal cual), sin repartos raros con
+      // los demás fichajes del día. El tope de 8h normales POR JORNADA (que
+      // sí puede convertir parte del total del día en hora extra cuando hay
+      // varios fichajes que sumados pasan de 8h) se calcula aparte, solo a
+      // nivel de día, en recomputeDayAggregates() — sin tocar este desglose.
+      fj.horasNormales=Math.min(8,horasNetas);
+      fj.horasExtra=Math.round(Math.max(0,horasNetas-8)*100)/100;
     });
     recomputeDayAggregates();
     return;
@@ -2212,7 +2203,13 @@ function renderFichajeDetailScreen(idx){
       h('div',{style:{display:'flex',gap:'.4rem'}},
         h('select',{
           style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)',fontSize:'.85rem'},
-          on:{change:ev=>{fj.taskId=ev.target.value;scheduleDraftSave();rerender();}}
+          on:{change:ev=>{
+            fj.taskId=ev.target.value;
+            scheduleDraftSave();
+            const elegida=S.tasks.find(t=>t.id===fj.taskId);
+            showAlert(elegida?('✅ Vinculada a fichaje '+(idx+1)+': '+(elegida.titulo||'Tarea')+(elegida.otNumero?' ['+elegida.otNumero+']':'')):'Fichaje '+(idx+1)+' sin tarea vinculada');
+            rerender();
+          }}
         },
           ...taskOptsDetail.map(t=>h('option',{value:t.id||'',selected:(t.id||'')===(fj.taskId||'')},
             t.id?(t.titulo||'Tarea')+(t.otNumero?' ['+t.otNumero+']':'')+(t.fecha&&t.fecha!==fEntry.fecha?' — '+dlbl(t.fecha):''):'Sin tarea'
@@ -2226,7 +2223,21 @@ function renderFichajeDetailScreen(idx){
             S.tab='tareas';
             rerender();
           }}},'➕ Nueva')
-      )
+      ),
+      // Confirmación visible, siempre a la vista, de qué tarea/OT queda
+      // vinculada a ESTE fichaje concreto — para que nunca haya dudas de si
+      // el clic se ha quedado guardado o no.
+      (()=>{
+        const vinculada=fj.taskId?S.tasks.find(t=>t.id===fj.taskId):null;
+        return h('div',{style:{marginTop:'.5rem',padding:'.5rem .6rem',borderRadius:'var(--r2)',
+          background:vinculada?'rgba(34,197,94,.12)':'var(--surf2)',
+          border:'1px solid '+(vinculada?'#22c55e':'var(--brd)'),
+          fontSize:'.8rem',fontWeight:700,color:vinculada?'#16a34a':'var(--ink3)'}},
+          vinculada
+            ? '✅ Este fichaje '+(idx+1)+' tiene vinculada: '+(vinculada.titulo||'Tarea')+(vinculada.otNumero?' [O.T. '+vinculada.otNumero+']':'')
+            : '— Este fichaje '+(idx+1)+' no tiene ninguna tarea/OT vinculada —'
+        );
+      })()
     ),
 
     // Horas e importes de este fichaje
@@ -3539,6 +3550,17 @@ function recomputeDayAggregates(){
     (fj.otrosConceptos||[]).forEach(o=>otrosAgg.push(o));
     (fj.journeys||[]).forEach(j=>journeysAgg.push(j));
   });
+  // Tope de 8h normales POR JORNADA (no por fichaje): si el conjunto de
+  // fichajes del día suma más de 8h normales entre todos, el exceso se
+  // muestra como hora extra DEL DÍA aquí — sin tocar el desglose de horas
+  // normales/extra que ya tiene cada fichaje por su cuenta (eso se calcula
+  // en autoCalcHorasFromFichajes y siempre refleja solo ese fichaje). Así
+  // cada fichaje se ve siempre correcto en su propia pestaña, y el total del
+  // día también respeta el tope de 8h normales correctamente.
+  if(hn>8){
+    he=Math.round((he+(hn-8))*100)/100;
+    hn=8;
+  }
   fEntry.horasNormales=Math.round(hn*100)/100;
   fEntry.horasExtra=Math.round(he*100)/100;
   fEntry.horasNocturnas=Math.round(hnoc*100)/100;
