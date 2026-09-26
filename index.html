@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-10'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-11'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1832,7 +1832,11 @@ function renderFichar(){
               : null
           ),
           h('button',{class:'btn btn-gh btn-sm',style:{flexShrink:0},
-            on:{click:ev=>{ev.stopPropagation();fTask={...t};editTaskId=t.id;_pendingFichajeTaskLink={fecha:e.fecha||today(),idx:'f1'};S.tab='tareas';rerender();}}},'✏️')
+            on:{click:ev=>{ev.stopPropagation();fTask={...t};editTaskId=t.id;_pendingFichajeTaskLink={fecha:e.fecha||today(),idx:'f1'};S.tab='tareas';rerender();}}},'✏️'),
+          // Borrar directamente desde aquí (sin tener que ir a la pestaña
+          // Tareas) — por si se ha metido por error, como con las OT.
+          h('button',{class:'btn btn-r btn-sm',style:{flexShrink:0},title:'Borrar esta tarea/OT',
+            on:{click:ev=>{ev.stopPropagation();deleteTask(t.id);}}},'🗑')
         )),
         // Cuando hay 2+ fichajes: mientras una tarea del día no se vincule
         // EXPLÍCITAMENTE a fichaje 2, 3... aparece aquí (en fichaje 1) por
@@ -1942,7 +1946,19 @@ function renderFichar(){
                 showAlert('Sitio "'+nombre+'" guardado ✓');
                 rerender();
               }}
-            },'💾 Guardar sitio'):null
+            },'💾 Guardar sitio'):null,
+            // Borrar esta ubicación si te has equivocado al meterla — sin
+            // tener que ir a ningún otro sitio de la app.
+            e[key]?h('button',{
+              class:'btn btn-r btn-sm',style:{flexShrink:0},
+              title:'Borrar esta ubicación',
+              on:{click:()=>{
+                fEntry[key]='';
+                scheduleDraftSave();
+                showAlert('Ubicación de '+tipo.toLowerCase()+' borrada');
+                rerender();
+              }}
+            },'✕ Borrar'):null
           ),
           // Vista previa del mapa si tiene coordenadas
           e[key]?h('div',{style:{marginTop:'.3rem'}},gpsDisplay(e[key])):null
@@ -2285,10 +2301,17 @@ function renderFichajeDetailScreen(idx){
         return h('div',{style:{marginTop:'.5rem',padding:'.5rem .6rem',borderRadius:'var(--r2)',
           background:vinculada?'rgba(34,197,94,.12)':'var(--surf2)',
           border:'1px solid '+(vinculada?'#22c55e':'var(--brd)'),
-          fontSize:'.8rem',fontWeight:700,color:vinculada?'#16a34a':'var(--ink3)'}},
-          vinculada
-            ? '✅ Este fichaje '+(idx+1)+' tiene vinculada: '+(vinculada.titulo||'Tarea')+(vinculada.otNumero?' [O.T. '+vinculada.otNumero+']':'')
-            : '— Este fichaje '+(idx+1)+' no tiene ninguna tarea/OT vinculada —'
+          fontSize:'.8rem',fontWeight:700,color:vinculada?'#16a34a':'var(--ink3)',
+          display:'flex',alignItems:'center',justifyContent:'space-between',gap:'.5rem'}},
+          h('span',{},
+            vinculada
+              ? '✅ Este fichaje '+(idx+1)+' tiene vinculada: '+(vinculada.titulo||'Tarea')+(vinculada.otNumero?' [O.T. '+vinculada.otNumero+']':'')
+              : '— Este fichaje '+(idx+1)+' no tiene ninguna tarea/OT vinculada —'
+          ),
+          // Borrar la tarea/OT del todo (no solo desvincularla), por si se
+          // metió por error — sin tener que ir a la pestaña Tareas.
+          vinculada?h('button',{class:'btn btn-r btn-sm',style:{flexShrink:0},title:'Borrar esta tarea/OT (no solo desvincularla)',
+            on:{click:ev=>{ev.stopPropagation();deleteTask(vinculada.id);}}},'🗑'):null
         );
       })()
     ),
