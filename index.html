@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-14'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260927-01'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -5842,12 +5842,51 @@ function renderEmpresa(){
 // Aviso de seguridad: se muestra cuando subir o cargar desde Drive sustituiría
 // por completo el archivo y haría desaparecer días que solo existen en un
 // dispositivo (típico si se te olvidó sincronizar un día en el móvil o el PC).
+// Construye el listado detallado del conflicto, en función de qué lado se
+// perdería (isUpload: se pierde lo que solo está/es distinto en Drive;
+// si no, se pierde lo que solo está/es distinto en este dispositivo).
+function _renderSyncDiffLines(diff, isUpload){
+  const rows=[];
+  const onlyLostSide = isUpload ? diff.onlyRemote : diff.onlyLocal;
+  const onlySideLabel = isUpload ? 'solo en Drive' : 'solo en este dispositivo';
+  onlyLostSide.forEach(fecha=>{
+    rows.push(h('div',{style:{marginBottom:'.5rem'}},
+      h('div',{style:{fontWeight:800,color:'var(--ink)'}},'📅 '+dlbl(fecha)),
+      h('div',{style:{fontSize:'.75rem',color:'#ef4444',paddingLeft:'.4rem'}},'Jornada entera '+onlySideLabel+' — se perdería')
+    ));
+  });
+  diff.differing.forEach(({fecha,lines})=>{
+    rows.push(h('div',{style:{marginBottom:'.5rem'}},
+      h('div',{style:{fontWeight:800,color:'var(--ink)'}},'📅 '+dlbl(fecha)+' — datos distintos'),
+      ...lines.map(l=>h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',paddingLeft:'.4rem'}},'• '+l+(isUpload?' (se perderá lo de aquí)':' (se perderá lo de aquí, quedará lo de Drive)')))
+    ));
+  });
+  const tasksOnlyLost = isUpload ? diff.tasksOnlyRemote : diff.tasksOnlyLocal;
+  tasksOnlyLost.forEach(t=>{
+    rows.push(h('div',{style:{marginBottom:'.5rem'}},
+      h('div',{style:{fontWeight:800,color:'var(--ink)'}},'📝 '+(t.titulo||'Tarea/OT')+(t.otNumero?' ['+t.otNumero+']':'')),
+      h('div',{style:{fontSize:'.75rem',color:'#ef4444',paddingLeft:'.4rem'}},'Tarea/OT '+onlySideLabel+' — se perdería')
+    ));
+  });
+  diff.tasksDiffering.forEach(({titulo,lines})=>{
+    rows.push(h('div',{style:{marginBottom:'.5rem'}},
+      h('div',{style:{fontWeight:800,color:'var(--ink)'}},'📝 '+titulo+' — datos distintos'),
+      ...lines.map(l=>h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',paddingLeft:'.4rem'}},'• '+l))
+    ));
+  });
+  return rows;
+}
 function renderModalSyncWarning(){
   const info=syncWarningInfo;
   if(!info) return null;
   const isUpload = info.direction==='upload';
-  const dates=info.missingDates;
-  const shown=dates.slice(0,10);
+  const diff = info.diff;
+  const rows = _renderSyncDiffLines(diff, isUpload);
+  // Solo cuenta lo que de verdad se perdería EN ESTA dirección concreta
+  // (subir pierde lo "solo en Drive"/distinto; cargar pierde lo "solo aquí"/distinto).
+  const total = isUpload
+    ? diff.onlyRemote.length + diff.differing.length + diff.tasksOnlyRemote.length + diff.tasksDiffering.length
+    : diff.onlyLocal.length + diff.differing.length + diff.tasksOnlyLocal.length + diff.tasksDiffering.length;
   return h('div',{
     class:'modal-bg',
     style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',
@@ -5855,26 +5894,25 @@ function renderModalSyncWarning(){
   },
     h('div',{style:{
       background:'var(--surf)',borderRadius:'16px',padding:'1.5rem',
-      maxWidth:'380px',width:'100%',boxShadow:'0 25px 60px rgba(0,0,0,.4)'
+      maxWidth:'420px',width:'100%',boxShadow:'0 25px 60px rgba(0,0,0,.4)'
     }},
       h('div',{style:{fontSize:'1.8rem',textAlign:'center',marginBottom:'.4rem'}},'⚠️'),
       h('div',{style:{fontWeight:900,fontSize:'1.05rem',textAlign:'center',color:'var(--ink)',marginBottom:'.5rem'}},
-        isUpload ? '¡Cuidado! Vas a perder jornadas de Drive' : '¡Cuidado! Vas a perder jornadas de este dispositivo'),
+        isUpload ? '¡Cuidado! Vas a perder datos de Drive' : '¡Cuidado! Vas a perder datos de este dispositivo'),
       h('div',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.6rem',textAlign:'center'}},
         isUpload
-          ? 'Google Drive tiene '+dates.length+' día(s) que no están aquí. Si subes ahora, se perderán de Drive:'
-          : 'Este dispositivo tiene '+dates.length+' día(s) que no están en Drive. Si cargas ahora, se perderán de aquí:'
+          ? 'Esto es exactamente lo que se perdería de Drive si subes ahora sin fusionar:'
+          : 'Esto es exactamente lo que se perdería de aquí si cargas ahora sin fusionar:'
       ),
-      h('div',{style:{maxHeight:'130px',overflowY:'auto',background:'var(--surf2)',borderRadius:'8px',padding:'.6rem .8rem',marginBottom:'1rem',fontSize:'.8rem',color:'var(--ink)'}},
-        ...shown.map(f=>h('div',{},dlbl(f))),
-        dates.length>shown.length?h('div',{style:{color:'var(--ink3)',marginTop:'.3rem'}},'y '+(dates.length-shown.length)+' más...'):null
+      h('div',{style:{maxHeight:'260px',overflowY:'auto',background:'var(--surf2)',borderRadius:'8px',padding:'.6rem .8rem',marginBottom:'1rem',fontSize:'.8rem',color:'var(--ink)'}},
+        ...rows
       ),
       h('button',{class:'btn btn-g',style:{width:'100%',marginBottom:'.6rem',fontWeight:700},
         on:{click:()=>{ isUpload?proceedMergeThenUpload():proceedMergeInsteadOfLoad(); }}
       }, isUpload?'🔀 Fusionar y subir (recomendado)':'🔀 Fusionar en vez de cargar (recomendado)'),
       h('button',{class:'btn btn-gh',style:{width:'100%',marginBottom:'.6rem',color:'#ef4444'},
         on:{click:()=>{ isUpload?proceedUploadAnyway():proceedLoadAnyway(); }}
-      }, isUpload?'Subir de todas formas (se perderán)':'Cargar de todas formas (se perderán)'),
+      }, isUpload?'Subir de todas formas ('+total+' cosa(s) se perderán)':'Cargar de todas formas ('+total+' cosa(s) se perderán)'),
       h('button',{class:'btn btn-gh',style:{width:'100%'},on:{click:cancelSyncWarning}},'Cancelar')
     )
   );
@@ -10668,7 +10706,7 @@ async function gdriveLoadData(){
 }
 
 // Override driveSync and _doLoad to use Google Drive OAuth
-let syncWarningInfo = null; // {missingDates, direction, data, remoteData} para el modal de aviso
+let syncWarningInfo = null; // {diff, direction, data, remoteData} para el modal de aviso
 
 async function driveSync(skipSafetyCheck){
   if(_syncInProgress) return;
@@ -10680,18 +10718,19 @@ async function driveSync(skipSafetyCheck){
   syncStatus='syncing'; rerender();
   try{
     const data = await buildSyncDataWithPhotos();
-    // Comprobación de seguridad: si Drive tiene días que aquí no tenemos, avisar
-    // antes de subir (subir sustituye el archivo entero, y esos días se perderían).
+    // Comprobación de seguridad: subir sustituye el archivo ENTERO de Drive,
+    // así que si Drive tiene algo que aquí no está (o es distinto), avisar
+    // ANTES con el detalle exacto de qué se perdería.
     if(!skipSafetyCheck){
       let remoteData=null;
       try{ remoteData = await gdriveLoadData(); }catch(e){ /* si falla, seguimos sin bloquear */ }
       if(remoteData && remoteData.entries && remoteData.entries.length){
-        const localDates = new Set((data.entries||[]).map(e=>e.fecha));
-        const missing = remoteData.entries.filter(e=>!localDates.has(e.fecha)).map(e=>e.fecha).sort();
-        if(missing.length){
+        const diff=computeSyncDiff(data, remoteData);
+        const wouldLose = diff.onlyRemote.length || diff.differing.length || diff.tasksOnlyRemote.length || diff.tasksDiffering.length;
+        if(wouldLose){
           _syncInProgress=false;
           syncStatus='ok';
-          syncWarningInfo={missingDates:missing, direction:'upload', data, remoteData};
+          syncWarningInfo={diff, direction:'upload', data, remoteData};
           S.modal='syncWarning';
           rerender();
           return;
@@ -10724,14 +10763,16 @@ async function _doLoad(force, verifyMode, confirmMode, skipSafetyCheck){
       showAlert('Drive vacío — sube primero desde el PC','err');
       rerender(); return;
     }
-    // Comprobación de seguridad: si aquí (local) hay días que Drive no tiene,
-    // avisar antes de cargar (cargar sustituye los datos locales enteros).
+    // Comprobación de seguridad: cargar sustituye los datos locales enteros,
+    // así que si aquí hay algo que Drive no tiene (o es distinto), avisar
+    // ANTES con el detalle exacto de qué se perdería.
     if(!skipSafetyCheck){
-      const remoteDates = new Set(d.entries.map(e=>e.fecha));
-      const missing = S.entries.filter(e=>!e._draft && !remoteDates.has(e.fecha)).map(e=>e.fecha).sort();
-      if(missing.length){
+      const localData=buildSyncData();
+      const diff=computeSyncDiff(localData, d);
+      const wouldLose = diff.onlyLocal.length || diff.differing.length || diff.tasksOnlyLocal.length || diff.tasksDiffering.length;
+      if(wouldLose){
         syncStatus='ok';
-        syncWarningInfo={missingDates:missing, direction:'download', data:d, remoteData:d, verifyMode};
+        syncWarningInfo={diff, direction:'download', data:d, remoteData:d, verifyMode};
         S.modal='syncWarning';
         rerender();
         return;
@@ -10749,6 +10790,92 @@ async function _doLoad(force, verifyMode, confirmMode, skipSafetyCheck){
 
 function warmupDriveScript(){ /* no-op */ }
 
+// ── DIFF DETALLADO ENTRE LOS DATOS LOCALES Y LOS DE DRIVE ───────────────
+// Compara día a día (y tarea a tarea) para poder decir EXACTAMENTE qué
+// falta o qué es distinto entre este dispositivo y Drive, en vez de solo
+// avisar de forma genérica. Se usa para: (1) decidir si es seguro cargar
+// o fusionar automáticamente al abrir la app sin preguntar nada (porque
+// no hay nada que se pudiera perder), y (2) si NO es seguro (hay un
+// conflicto real), mostrar el aviso con el detalle exacto de cada cosa.
+function _stripHtmlSync(s){ return (s||'').replace(/<[^>]*>/g,'').trim(); }
+function _moneySync(n){ return eur(+n||0); }
+function _diffFichajeSync(fl,fr,i){
+  const lines=[]; const lbl='Fichaje '+(i+1);
+  if((fl.entrada||'')!==(fr.entrada||'')) lines.push(lbl+' — hora entrada: '+(fl.entrada||'—')+' aquí / '+(fr.entrada||'—')+' en Drive');
+  if((fl.salida||'')!==(fr.salida||'')) lines.push(lbl+' — hora salida: '+(fl.salida||'—')+' aquí / '+(fr.salida||'—')+' en Drive');
+  if(Math.round((fl.dieta||0)*100)!==Math.round((fr.dieta||0)*100)) lines.push(lbl+' — dieta: '+_moneySync(fl.dieta)+' aquí / '+_moneySync(fr.dieta)+' en Drive');
+  if(Math.round((fl.transporte||0)*100)!==Math.round((fr.transporte||0)*100)) lines.push(lbl+' — transporte: '+_moneySync(fl.transporte)+' aquí / '+_moneySync(fr.transporte)+' en Drive');
+  if((fl.otrosConceptos||[]).length!==(fr.otrosConceptos||[]).length) lines.push(lbl+' — otros conceptos: '+(fl.otrosConceptos||[]).length+' aquí / '+(fr.otrosConceptos||[]).length+' en Drive');
+  if((fl.journeys||[]).length!==(fr.journeys||[]).length) lines.push(lbl+' — viajes: '+(fl.journeys||[]).length+' aquí / '+(fr.journeys||[]).length+' en Drive');
+  if(String(fl.taskId||'')!==String(fr.taskId||'')) lines.push(lbl+' — tarea/OT vinculada distinta');
+  return lines;
+}
+function _diffEntrySync(l,r){
+  const lines=[];
+  const nl=(l.fichajes||[]).length, nr=(r.fichajes||[]).length;
+  const maxN=Math.max(nl,nr);
+  for(let i=0;i<maxN;i++){
+    const fl=(l.fichajes||[])[i], fr=(r.fichajes||[])[i];
+    if(fl&&fr) lines.push(..._diffFichajeSync(fl,fr,i));
+    else if(fl&&!fr) lines.push('Fichaje '+(i+1)+' existe aquí pero no en Drive');
+    else if(!fl&&fr) lines.push('Fichaje '+(i+1)+' existe en Drive pero no aquí');
+  }
+  if(Math.round((l.horasNormales||0)*100)!==Math.round((r.horasNormales||0)*100)) lines.push('Horas normales: '+fmtH(l.horasNormales||0)+' aquí / '+fmtH(r.horasNormales||0)+' en Drive');
+  if(Math.round((l.horasExtra||0)*100)!==Math.round((r.horasExtra||0)*100)) lines.push('Horas extra: '+fmtH(l.horasExtra||0)+' aquí / '+fmtH(r.horasExtra||0)+' en Drive');
+  if(Math.round((l.dieta||0)*100)!==Math.round((r.dieta||0)*100)) lines.push('Dieta del día: '+_moneySync(l.dieta)+' aquí / '+_moneySync(r.dieta)+' en Drive');
+  if(Math.round((l.transporte||0)*100)!==Math.round((r.transporte||0)*100)) lines.push('Transporte del día: '+_moneySync(l.transporte)+' aquí / '+_moneySync(r.transporte)+' en Drive');
+  if(_stripHtmlSync(l.notas)!==_stripHtmlSync(r.notas)) lines.push('Notas distintas');
+  if((l.ubicacionEntrada||'')!==(r.ubicacionEntrada||'')) lines.push('Ubicación de entrada distinta');
+  if((l.ubicacionSalida||'')!==(r.ubicacionSalida||'')) lines.push('Ubicación de salida distinta');
+  return lines;
+}
+function computeSyncDiff(local, remote){
+  const diff={onlyLocal:[],onlyRemote:[],differing:[],tasksOnlyLocal:[],tasksOnlyRemote:[],tasksDiffering:[]};
+  const lMap={}; (local.entries||[]).forEach(e=>{ if(e.fecha) lMap[e.fecha]=e; });
+  const rMap={}; (remote.entries||[]).forEach(e=>{ if(e.fecha) rMap[e.fecha]=e; });
+  const allDates=Array.from(new Set([...Object.keys(lMap),...Object.keys(rMap)])).sort();
+  allDates.forEach(fecha=>{
+    const l=lMap[fecha], r=rMap[fecha];
+    if(l&&!r) diff.onlyLocal.push(fecha);
+    else if(!l&&r) diff.onlyRemote.push(fecha);
+    else if(l&&r){
+      const lines=_diffEntrySync(l,r);
+      if(lines.length) diff.differing.push({fecha,lines});
+    }
+  });
+  const ltMap={}; (local.tasks||[]).forEach(t=>{ if(t.id!=null) ltMap[t.id]=t; });
+  const rtMap={}; (remote.tasks||[]).forEach(t=>{ if(t.id!=null) rtMap[t.id]=t; });
+  const allIds=Array.from(new Set([...Object.keys(ltMap),...Object.keys(rtMap)]));
+  allIds.forEach(id=>{
+    const l=ltMap[id], r=rtMap[id];
+    if(l&&!r) diff.tasksOnlyLocal.push(l);
+    else if(!l&&r) diff.tasksOnlyRemote.push(r);
+    else if(l&&r){
+      const lines=[];
+      if((l.titulo||'')!==(r.titulo||'')) lines.push('título: "'+(l.titulo||'—')+'" aquí / "'+(r.titulo||'—')+'" en Drive');
+      if((l.otNumero||'')!==(r.otNumero||'')) lines.push('número: '+(l.otNumero||'—')+' aquí / '+(r.otNumero||'—')+' en Drive');
+      if((l.fecha||'')!==(r.fecha||'')) lines.push('fecha: '+(l.fecha?dlbl(l.fecha):'sin fecha')+' aquí / '+(r.fecha?dlbl(r.fecha):'sin fecha')+' en Drive');
+      if((l.tipoTarea||'ot')!==(r.tipoTarea||'ot')) lines.push('tipo de tarea distinto');
+      if(lines.length) diff.tasksDiffering.push({id,titulo:l.titulo||r.titulo||'Sin título',lines});
+    }
+  });
+  return diff;
+}
+function diffIsEmpty(d){
+  return d.onlyLocal.length===0 && d.onlyRemote.length===0 && d.differing.length===0
+    && d.tasksOnlyLocal.length===0 && d.tasksOnlyRemote.length===0 && d.tasksDiffering.length===0;
+}
+// "Seguro cargar/fusionar sin preguntar" = no hay NADA que exista solo aquí
+// ni nada que sea distinto para el mismo día/tarea — o sea, adoptar lo de
+// Drive no puede hacer perder ni un solo dato de este dispositivo.
+function diffIsSafeAutoMerge(d){
+  return d.onlyLocal.length===0 && d.differing.length===0
+    && d.tasksOnlyLocal.length===0 && d.tasksDiffering.length===0;
+}
+// Cuántas "cosas" tiene el diff en total (para el texto del aviso/resumen)
+function diffCount(d){
+  return d.onlyLocal.length+d.onlyRemote.length+d.differing.length+d.tasksOnlyLocal.length+d.tasksOnlyRemote.length+d.tasksDiffering.length;
+}
 
 function buildSyncData(){
   function cleanLoc(loc){
@@ -11559,14 +11686,26 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
                 const driveTs = new Date(d.exportedAt||0).getTime();
                 const localTs = parseInt(localStorage.getItem('lastDriveLoad')||'0');
                 const lastSaveTs = new Date(localStorage.getItem('lastSave')||0).getTime();
-                // STRICT: Skip boot load if we have ANY local entries
-                // Only load from Drive if this is a fresh install (no local data)
-                if(S.entries.length > 0){
-                  console.log('Skipping boot load: local data exists ('+S.entries.length+' entries)');
-                  // Just show notification if Drive has newer data
-                  if(driveTs > localTs + 5000) driveHasNew=true;
+                // Comparación DETALLADA (día a día, tarea a tarea) entre lo que hay
+                // aquí y lo que hay en Drive — para saber si es seguro fusionar solo
+                // (Drive solo trae cosas de MÁS, nada se perdería de aquí) o si hay
+                // un conflicto real (algo distinto o solo-aquí que se perdería).
+                const _localSyncData = buildSyncData();
+                const _diff = computeSyncDiff(_localSyncData, d);
+                if(diffIsEmpty(_diff)){
+                  // Ya coincide todo, no hay nada que cargar ni que avisar.
                   syncStatus='ok'; rerender(); res(); return;
                 }
+                if(!diffIsSafeAutoMerge(_diff)){
+                  // Conflicto real: no tocar nada por nuestra cuenta. Avisar con el
+                  // detalle exacto de qué es distinto o qué se perdería en cada caso.
+                  driveHasNew=true;
+                  syncWarningInfo={diff:_diff, direction:'download', data:d, remoteData:d, verifyMode:false};
+                  S.modal='syncWarning';
+                  syncStatus='ok'; rerender(); res(); return;
+                }
+                // Seguro fusionar sin preguntar: Drive solo tiene días/tareas de MÁS
+                // que aquí, nada que perder — se carga en silencio.
                 // Build local maps for merging
                 const savedFoto=fWorker.foto||'', savedFirma=fWorker.firma||'', savedLogo=fCompany.logo||'';
                 const localEntryMap={}; S.entries.forEach(e=>{localEntryMap[e.fecha]=e;});
@@ -11604,6 +11743,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
                 await loadData();
                 localStorage.setItem('lastDriveLoad', Date.now().toString());
                 syncStatus='ok';
+                showAlert('✅ Datos actualizados automáticamente desde Drive ('+diffCount(_diff)+' novedad(es), sin conflicto)');
               }catch(e){ console.warn('Boot load error:',e); syncStatus='ok'; }
             } else {
               syncStatus='ok';
