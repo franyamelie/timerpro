@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260927-01'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260927-02'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -11001,7 +11001,31 @@ async function importDriveData(d, verifyMode){
     lastSync=new Date().toLocaleTimeString('es-ES');
     localStorage.setItem('lastSync',lastSync);
     driveHasNew=false; // cleared after loading
-    // Do NOT reset fEntry - keep current form data
+    // Refrescar el día que está abierto en pantalla con los datos recién
+    // cargados. IMPORTANTE: si esto no se hace, el formulario se queda con
+    // los valores VIEJOS en memoria aunque la base de datos ya esté
+    // actualizada — y la próxima vez que la app compare o suba datos,
+    // resucita ese valor viejo (era la causa de que el aviso de
+    // sincronización volviera a salir una y otra vez, con los valores
+    // "al revés", incluso después de haber cargado correctamente).
+    if(fEntry.fecha){
+      const recargada=S.entries.find(e=>e.fecha===fEntry.fecha);
+      if(recargada){
+        fEntry={...recargada,
+          fichajes:[...(recargada.fichajes||[]).map(f=>({...f}))],
+          dietasExtra:[...(recargada.dietasExtra||[])],
+          otrosConceptos:[...(recargada.otrosConceptos||[])],
+          journeys:[...(recargada.journeys||[])]};
+        editingEntry=true;
+      } else {
+        fEntry={...defEntry(), fecha:fEntry.fecha,
+          precioHoraNormal:S.precioHoraNormalDefault||0,
+          precioHoraExtra:S.precioHoraExtraDefault||0,
+          precioHoraNocturna:S.precioHoraNocturnaDefault||0,
+          precioHoraFestiva:S.precioHoraFestivaDefault||0};
+        editingEntry=false;
+      }
+    }
     if(verifyMode){
       showAlert('✅ Drive OK: '+S.entries.length+' jornadas guardadas correctamente');
     } else {
