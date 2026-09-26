@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-11'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-13'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1833,10 +1833,13 @@ function renderFichar(){
           ),
           h('button',{class:'btn btn-gh btn-sm',style:{flexShrink:0},
             on:{click:ev=>{ev.stopPropagation();fTask={...t};editTaskId=t.id;_pendingFichajeTaskLink={fecha:e.fecha||today(),idx:'f1'};S.tab='tareas';rerender();}}},'✏️'),
-          // Borrar directamente desde aquí (sin tener que ir a la pestaña
-          // Tareas) — por si se ha metido por error, como con las OT.
-          h('button',{class:'btn btn-r btn-sm',style:{flexShrink:0},title:'Borrar esta tarea/OT',
-            on:{click:ev=>{ev.stopPropagation();deleteTask(t.id);}}},'🗑')
+          // Quita la tarea/OT de ESTE día sin borrarla del listado donde está
+          // guardada (pestaña Tareas) — por si se ha metido por error en este
+          // día en concreto. El registro sigue existiendo y se puede volver a
+          // encontrar/asignar desde la pestaña Tareas; solo se borra de verdad
+          // desde el sitio donde está creada.
+          h('button',{class:'btn btn-r btn-sm',style:{flexShrink:0},title:'Quitar esta tarea/OT de este día (no se borra, sigue guardada en Tareas)',
+            on:{click:ev=>{ev.stopPropagation();quitarTareaDeDia(t);}}},'🗑')
         )),
         // Cuando hay 2+ fichajes: mientras una tarea del día no se vincule
         // EXPLÍCITAMENTE a fichaje 2, 3... aparece aquí (en fichaje 1) por
@@ -2310,8 +2313,17 @@ function renderFichajeDetailScreen(idx){
           ),
           // Borrar la tarea/OT del todo (no solo desvincularla), por si se
           // metió por error — sin tener que ir a la pestaña Tareas.
-          vinculada?h('button',{class:'btn btn-r btn-sm',style:{flexShrink:0},title:'Borrar esta tarea/OT (no solo desvincularla)',
-            on:{click:ev=>{ev.stopPropagation();deleteTask(vinculada.id);}}},'🗑'):null
+          // Esto SOLO desvincula la tarea/OT de este fichaje — nunca borra el
+          // registro en sí. El registro real solo se borra desde el sitio
+          // donde está guardado (pestaña Tareas / O.T. / ESTRAL).
+          vinculada?h('button',{class:'btn btn-r btn-sm',style:{flexShrink:0},title:'Quitar esta tarea/OT de este fichaje (no se borra, sigue guardada en Tareas)',
+            on:{click:ev=>{
+              ev.stopPropagation();
+              fj.taskId='';
+              scheduleDraftSave();
+              showAlert('Tarea/OT quitada de este fichaje (sigue guardada en Tareas)');
+              rerender();
+            }}},'🗑'):null
         );
       })()
     ),
@@ -2445,6 +2457,10 @@ function renderFichajeDetailScreen(idx){
           fj.transportePrecioUnit=v;
           const q=fj.transporteCantidad||1;
           fj.transporte=Math.round(q*v*100)/100;
+          if(fj._transportType){
+            const _ti=(S.transportTypes||[]).findIndex(t=>t.id===fj._transportType);
+            if(_ti>=0){S.transportTypes[_ti].precio=v;localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));}
+          }
           recomputeDayAggregates(); scheduleDraftSave();
           histPush('transporteFich',()=>({transporte:fj.transporte,transporteCantidad:fj.transporteCantidad,transportePrecioUnit:fj.transportePrecioUnit,_transportType:fj._transportType}),'f'+idx);
           rerender();
@@ -2559,7 +2575,17 @@ function renderFichajeDetailScreen(idx){
                 showAlert('Sitio "'+nombre+'" guardado ✓');
                 rerender();
               }}
-            },'💾 Guardar sitio'):null
+            },'💾 Guardar sitio'):null,
+            fj[key]?h('button',{
+              class:'btn btn-r btn-sm',style:{flexShrink:0},
+              title:'Borrar esta ubicación',
+              on:{click:()=>{
+                fj[key]='';
+                scheduleDraftSave();
+                showAlert('Ubicación de '+tipo.toLowerCase()+' borrada');
+                rerender();
+              }}
+            },'✕ Borrar'):null
           ),
           fj[key]?h('div',{style:{marginTop:'.3rem'}},gpsDisplay(fj[key])):null
         );
@@ -8317,9 +8343,51 @@ async function deleteTask(id){
   ask('¿Eliminar esta tarea?', async()=>{
     await dbDel(ST.tasks,id);
     S.tasks=S.tasks.filter(t=>t.id!==id);
-    showAlert('Tarea eliminada');
+    // Si algún fichaje (de la jornada abierta o de cualquier otra ya guardada)
+    // tenía esta tarea/OT vinculada, se desvincula para no dejar una
+    // referencia "fantasma" a una tarea que ya no existe.
+    const sameId=tid=>tid!=null && String(tid)===String(id);
+    if(fEntry.fichajes){
+      fEntry.fichajes.forEach(fj=>{ if(sameId(fj.taskId)) fj.taskId=''; });
+      scheduleDraftSave();
+    }
+    let tocoOtrasJornadas=false;
+    for(const en of S.entries){
+      if(!en.fichajes) continue;
+      let cambiado=false;
+      en.fichajes.forEach(fj=>{ if(sameId(fj.taskId)){ fj.taskId=''; cambiado=true; } });
+      if(cambiado){
+        tocoOtrasJornadas=true;
+        try{ await dbPut(ST.entries, en); }catch(ex){}
+      }
+    }
+    showAlert('Tarea eliminada'+(tocoOtrasJornadas?' (y desvinculada de sus fichajes)':''));
     rerender();
+  });
+}
 
+// Quita una tarea/OT de UN día concreto sin borrarla del listado donde está
+// guardada (pestaña Tareas / O.T. / ESTRAL). Solo se le quita la fecha (deja
+// de aparecer en ese día) y se desvincula de cualquier fichaje de ESE día que
+// la tuviera fijada — el registro sigue existiendo intacto y se puede volver
+// a encontrar y reasignar a un día desde la pestaña Tareas. El borrado real
+// del registro solo ocurre desde el sitio donde está creado (deleteTask).
+async function quitarTareaDeDia(t){
+  ask('¿Quitar esta tarea/OT de este día? No se borra: seguirá guardada en Tareas.', async()=>{
+    const idx=S.tasks.findIndex(x=>x.id===t.id);
+    if(idx<0) return;
+    const actualizada={...S.tasks[idx], fecha:''};
+    try{ await dbPut(ST.tasks, actualizada); }catch(ex){}
+    S.tasks[idx]=actualizada;
+    // Si algún fichaje de ESTE día concreto tenía esta tarea vinculada, se
+    // desvincula (ya no pertenece a este día); no se toca ningún otro día.
+    const sameId=tid=>tid!=null && String(tid)===String(t.id);
+    if(fEntry.fichajes){
+      fEntry.fichajes.forEach(fj=>{ if(sameId(fj.taskId)) fj.taskId=''; });
+      scheduleDraftSave();
+    }
+    showAlert('Tarea/OT quitada de este día (sigue guardada en Tareas)');
+    rerender();
   });
 }
 
