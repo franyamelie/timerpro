@@ -579,11 +579,11 @@ function attachFichajeListeners(){
       const salEl=document.getElementById('fich-sal-'+fj._fid);
       if(entEl){
         entEl.oninput=ev=>{ if(fEntry.fichajes[i]&&ev.target.value) fEntry.fichajes[i].entrada=ev.target.value; };
-        entEl.onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].entrada=ev.target.value; scheduleDraftSave(); } };
+        entEl.onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].entrada=ev.target.value; autoCalcHorasFromFichajes(); recomputeDayAggregates(); scheduleDraftSave(); rerender(); } };
       }
       if(salEl){
         salEl.oninput=ev=>{ if(fEntry.fichajes[i]&&ev.target.value) fEntry.fichajes[i].salida=ev.target.value; };
-        salEl.onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].salida=ev.target.value; scheduleDraftSave(); } };
+        salEl.onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].salida=ev.target.value; autoCalcHorasFromFichajes(); recomputeDayAggregates(); scheduleDraftSave(); rerender(); } };
       }
       // Textarea for nota
       const rowEl=document.getElementById('fich-row-'+fj._fid);
@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-6'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-7'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1294,7 +1294,7 @@ function renderFichar(){
                   const norm=normalizeTimeStr(v);
                   if(norm){ v=norm; ev.target.value=norm; }
                   ensureFichaje1().entrada=v;
-                  recomputeDayAggregates();scheduleDraftSave();rerender();
+                  autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
                 }
               }
             }),
@@ -1303,14 +1303,14 @@ function renderFichar(){
                 const f1=ensureFichaje1();
                 showClockPicker(f1.entrada||'',v=>{
                   ensureFichaje1().entrada=v;
-                  recomputeDayAggregates();scheduleDraftSave();rerender();
+                  autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
                 });
               }}},'🕐'),
             h('button',{class:'btn btn-gh btn-sm',
               on:{click:()=>{
                 const now=new Date();
                 ensureFichaje1().entrada=pad(now.getHours())+':'+pad(now.getMinutes());
-                recomputeDayAggregates();scheduleDraftSave();rerender();
+                autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
               }}},'Ahora')
           )
         ),
@@ -1331,7 +1331,7 @@ function renderFichar(){
                   const norm=normalizeTimeStr(v);
                   if(norm){ v=norm; ev.target.value=norm; }
                   ensureFichaje1().salida=v;
-                  recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
+                  autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
                 }
               }
             }),
@@ -1340,14 +1340,14 @@ function renderFichar(){
                 const f1=ensureFichaje1();
                 showClockPicker(f1.salida||'',v=>{
                   ensureFichaje1().salida=v;
-                  recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
+                  autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
                 });
               }}},'🕐'),
             h('button',{class:'btn btn-gh btn-sm',
               on:{click:()=>{
                 const now=new Date();
                 ensureFichaje1().salida=pad(now.getHours())+':'+pad(now.getMinutes());
-                recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
+                autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
               }}},'Ahora')
           )
         )
@@ -2108,7 +2108,7 @@ function renderFichajeDetailScreen(idx){
                   const norm=normalizeTimeStr(v);
                   if(norm){ v=norm; ev.target.value=norm; }
                   fj.entrada=v;
-                  recomputeDayAggregates();scheduleDraftSave();rerender();
+                  autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
                 }
               }
             }),
@@ -2116,14 +2116,14 @@ function renderFichajeDetailScreen(idx){
               on:{click:()=>{
                 showClockPicker(fj.entrada||'',v=>{
                   fj.entrada=v;
-                  recomputeDayAggregates();scheduleDraftSave();rerender();
+                  autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
                 });
               }}},'🕐'),
             h('button',{class:'btn btn-gh btn-sm',
               on:{click:()=>{
                 const now=new Date();
                 fj.entrada=pad(now.getHours())+':'+pad(now.getMinutes());
-                recomputeDayAggregates();scheduleDraftSave();rerender();
+                autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
               }}},'Ahora')
           )
         ),
@@ -2144,7 +2144,7 @@ function renderFichajeDetailScreen(idx){
                   const norm=normalizeTimeStr(v);
                   if(norm){ v=norm; ev.target.value=norm; }
                   fj.salida=v;
-                  recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
+                  autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
                 }
               }
             }),
@@ -2152,14 +2152,14 @@ function renderFichajeDetailScreen(idx){
               on:{click:()=>{
                 showClockPicker(fj.salida||'',v=>{
                   fj.salida=v;
-                  recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
+                  autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
                 });
               }}},'🕐'),
             h('button',{class:'btn btn-gh btn-sm',
               on:{click:()=>{
                 const now=new Date();
                 fj.salida=pad(now.getHours())+':'+pad(now.getMinutes());
-                recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
+                autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
               }}},'Ahora')
           )
         )
@@ -2791,6 +2791,13 @@ function renderTareas(){
   const woOpts = [{id:'',codigo:'Sin O.T.'},...S.workorders];
   
   return h('div',{},
+    // Volver al menú principal (Fichar) sin perder nada de lo ya guardado —
+    // los cambios de la jornada se guardan solos según se editan, así que
+    // aquí solo forzamos un guardado inmediato antes de cambiar de pestaña.
+    h('div',{style:{marginBottom:'.6rem'}},
+      h('button',{class:'btn btn-gh btn-sm',style:{fontSize:'.8rem'},
+        on:{click:()=>{ saveDraft(); S.tab='fichar'; rerender(); }}},'← Volver al menú principal')
+    ),
     // Formulario nueva tarea
     h('div',{class:'card'},
       h('div',{class:'sec-title'},editTaskId?'✏️ Editar Tarea':'➕ Nueva Tarea'),
@@ -8037,12 +8044,32 @@ function loadHistorial(entry){
 
 async function deleteEntry(id){
   ask('¿Eliminar esta jornada?', async()=>{
+    const entryToDelete = S.entries.find(e=>e.id===id) || (fEntry.id===id?fEntry:null);
+    const fecha = entryToDelete ? entryToDelete.fecha : null;
     await dbDel(ST.entries,id);
     S.entries=S.entries.filter(e=>e.id!==id);
     if(fEntry.id===id){editingEntry=false;fEntry=defEntry();}
     showAlert('Jornada eliminada');
     rerender();
-
+    // Las tareas/OT guardadas ese día viven independientes de la jornada
+    // (para poder consultarlas o reutilizarlas aunque borres la jornada),
+    // así que NO se borran solas. Pero si ya no queda ninguna otra jornada
+    // ese día, preguntamos si también quieres borrarlas — para que no
+    // aparezcan "sueltas" al crear una jornada nueva en la misma fecha.
+    if(fecha){
+      const tareasDeEseDia = S.tasks.filter(t=>t.fecha===fecha);
+      const quedanOtrasJornadasEseDia = S.entries.some(e=>e.fecha===fecha);
+      if(tareasDeEseDia.length && !quedanOtrasJornadasEseDia){
+        setTimeout(()=>{
+          ask('Esta jornada tenía '+tareasDeEseDia.length+' tarea(s)/OT guardada(s) el '+fecha+'. ¿Eliminarlas también?', async()=>{
+            for(const t of tareasDeEseDia){ await dbDel(ST.tasks,t.id); }
+            S.tasks=S.tasks.filter(t=>t.fecha!==fecha);
+            showAlert('Tareas del día eliminadas');
+            rerender();
+          });
+        },300);
+      }
+    }
   });
 }
 
