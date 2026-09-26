@@ -579,11 +579,11 @@ function attachFichajeListeners(){
       const salEl=document.getElementById('fich-sal-'+fj._fid);
       if(entEl){
         entEl.oninput=ev=>{ if(fEntry.fichajes[i]&&ev.target.value) fEntry.fichajes[i].entrada=ev.target.value; };
-        entEl.onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].entrada=ev.target.value; autoCalcHorasFromFichajes(); recomputeDayAggregates(); scheduleDraftSave(); rerender(); } };
+        entEl.onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].entrada=ev.target.value; fEntry.fichajes[i]._horasManual=false; autoCalcHorasFromFichajes(); recomputeDayAggregates(); scheduleDraftSave(); rerender(); } };
       }
       if(salEl){
         salEl.oninput=ev=>{ if(fEntry.fichajes[i]&&ev.target.value) fEntry.fichajes[i].salida=ev.target.value; };
-        salEl.onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].salida=ev.target.value; autoCalcHorasFromFichajes(); recomputeDayAggregates(); scheduleDraftSave(); rerender(); } };
+        salEl.onblur=ev=>{ if(fEntry.fichajes[i]&&ev.target.value){ fEntry.fichajes[i].salida=ev.target.value; fEntry.fichajes[i]._horasManual=false; autoCalcHorasFromFichajes(); recomputeDayAggregates(); scheduleDraftSave(); rerender(); } };
       }
       // Textarea for nota
       const rowEl=document.getElementById('fich-row-'+fj._fid);
@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-7'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260926-8'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1294,7 +1294,7 @@ function renderFichar(){
                   const norm=normalizeTimeStr(v);
                   if(norm){ v=norm; ev.target.value=norm; }
                   ensureFichaje1().entrada=v;
-                  autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
+                  ensureFichaje1()._horasManual=false;autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
                 }
               }
             }),
@@ -1303,14 +1303,14 @@ function renderFichar(){
                 const f1=ensureFichaje1();
                 showClockPicker(f1.entrada||'',v=>{
                   ensureFichaje1().entrada=v;
-                  autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
+                  ensureFichaje1()._horasManual=false;autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
                 });
               }}},'🕐'),
             h('button',{class:'btn btn-gh btn-sm',
               on:{click:()=>{
                 const now=new Date();
                 ensureFichaje1().entrada=pad(now.getHours())+':'+pad(now.getMinutes());
-                autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
+                ensureFichaje1()._horasManual=false;autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
               }}},'Ahora')
           )
         ),
@@ -1331,7 +1331,7 @@ function renderFichar(){
                   const norm=normalizeTimeStr(v);
                   if(norm){ v=norm; ev.target.value=norm; }
                   ensureFichaje1().salida=v;
-                  autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
+                  ensureFichaje1()._horasManual=false;autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
                 }
               }
             }),
@@ -1340,14 +1340,14 @@ function renderFichar(){
                 const f1=ensureFichaje1();
                 showClockPicker(f1.salida||'',v=>{
                   ensureFichaje1().salida=v;
-                  autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
+                  ensureFichaje1()._horasManual=false;autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
                 });
               }}},'🕐'),
             h('button',{class:'btn btn-gh btn-sm',
               on:{click:()=>{
                 const now=new Date();
                 ensureFichaje1().salida=pad(now.getHours())+':'+pad(now.getMinutes());
-                autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
+                ensureFichaje1()._horasManual=false;autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
               }}},'Ahora')
           )
         )
@@ -1790,7 +1790,7 @@ function renderFichar(){
       );
       return h('div',{class:'card'},
         h('div',{class:'sec-title',style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'.5rem'}},
-          h('span',{},'📝 '+(hayOtrosFichajes?'Tareas de fichaje 1':'Tareas del día')+' ('+dayTasks.length+')'),
+          h('span',{},'📝 '+(hayOtrosFichajes?'Tareas del día sin asignar a ningún fichaje':'Tareas del día')+' ('+dayTasks.length+')'),
           h('div',{style:{display:'flex',gap:'.4rem'}},
             h('button',{class:'btn btn-b btn-sm',on:{click:()=>{mostrarSelectorTipoTarea(e.fecha||today());}}},'+ Nueva'),
             verTodasBtn,
@@ -2108,7 +2108,7 @@ function renderFichajeDetailScreen(idx){
                   const norm=normalizeTimeStr(v);
                   if(norm){ v=norm; ev.target.value=norm; }
                   fj.entrada=v;
-                  autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
+                  fj._horasManual=false;autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
                 }
               }
             }),
@@ -2116,14 +2116,14 @@ function renderFichajeDetailScreen(idx){
               on:{click:()=>{
                 showClockPicker(fj.entrada||'',v=>{
                   fj.entrada=v;
-                  autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
+                  fj._horasManual=false;autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
                 });
               }}},'🕐'),
             h('button',{class:'btn btn-gh btn-sm',
               on:{click:()=>{
                 const now=new Date();
                 fj.entrada=pad(now.getHours())+':'+pad(now.getMinutes());
-                autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
+                fj._horasManual=false;autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();
               }}},'Ahora')
           )
         ),
@@ -2144,7 +2144,7 @@ function renderFichajeDetailScreen(idx){
                   const norm=normalizeTimeStr(v);
                   if(norm){ v=norm; ev.target.value=norm; }
                   fj.salida=v;
-                  autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
+                  fj._horasManual=false;autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
                 }
               }
             }),
@@ -2152,14 +2152,14 @@ function renderFichajeDetailScreen(idx){
               on:{click:()=>{
                 showClockPicker(fj.salida||'',v=>{
                   fj.salida=v;
-                  autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
+                  fj._horasManual=false;autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
                 });
               }}},'🕐'),
             h('button',{class:'btn btn-gh btn-sm',
               on:{click:()=>{
                 const now=new Date();
                 fj.salida=pad(now.getHours())+':'+pad(now.getMinutes());
-                autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
+                fj._horasManual=false;autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();checkFichajeOlvidado();rerender();
               }}},'Ahora')
           )
         )
@@ -5974,7 +5974,13 @@ function renderModalResumenDia(){
           if((e.horaEntrada||e.horaSalida) && !(e.fichajes||[]).some(f=>f.entrada===e.horaEntrada && f.salida===e.horaSalida)) fichajesList.push({entrada:e.horaEntrada||'',salida:e.horaSalida||'',nota:''});
           (e.fichajes||[]).forEach(f=>{ if(f.entrada||f.salida) fichajesList.push(f); });
           const idsClaimed=new Set(fichajesList.slice(1).map(f=>String(f.taskId)).filter(Boolean));
-          const tareasFichaje1=tareasDia.filter(t=>!idsClaimed.has(String(t.id)));
+          // OJO: el "catch-all" de tareas sin reclamar SOLO se le asigna a
+          // fichaje 1 cuando es el ÚNICO fichaje del día (sin ambigüedad
+          // posible). En cuanto hay 2+ fichajes, fichaje 1 solo muestra lo
+          // que tenga vinculado EXPLÍCITAMENTE — así, cambiar la OT de otro
+          // fichaje nunca "mueve" una tarea a fichaje 1 por sorpresa.
+          const soloUnFichaje = fichajesList.length<=1;
+          const tareasFichaje1=soloUnFichaje?tareasDia.filter(t=>!idsClaimed.has(String(t.id))):[];
           const conNotas=fichajesList.filter((f,i)=>{
             const esF1=i===0;
             const tit=(esF1?e.titulo:f.titulo);
@@ -6258,7 +6264,8 @@ function shareResumen(method, conPrecios){
   // El fichaje 1 ES la pantalla principal: si no tiene datos propios, se usan
   // los campos de la jornada (título/notas/tareas del día no reclamadas por otros).
   const idsClaimadas = new Set((e.fichajes||[]).slice(1).map(f=>String(f.taskId)).filter(Boolean));
-  const tareasFichaje1txt = tareasDia.filter(t=>!idsClaimadas.has(String(t.id)));
+  const soloUnFichajeTxt = (e.fichajes||[]).length<=1;
+  const tareasFichaje1txt = soloUnFichajeTxt?tareasDia.filter(t=>!idsClaimadas.has(String(t.id))):[];
   const fichajesConNotas = (e.fichajes||[]).filter((f,i)=>{
     const esF1=i===0;
     const tit=((esF1?e.titulo:f.titulo)||'').trim();
@@ -6453,7 +6460,8 @@ function generarPDFResumen(conPrecios){
     if((e.horaEntrada||e.horaSalida) && !(e.fichajes||[]).some(f=>f.entrada===e.horaEntrada && f.salida===e.horaSalida)) lst.push({entrada:e.horaEntrada||'',salida:e.horaSalida||'',nota:''});
     (e.fichajes||[]).forEach(f=>{ if(f.entrada||f.salida) lst.push(f); });
     const idsClaimed=new Set(lst.slice(1).map(f=>String(f.taskId)).filter(Boolean));
-    const tareasFichaje1=tareasDia.filter(t=>!idsClaimed.has(String(t.id)));
+    const soloUnFichajeImg = lst.length<=1;
+    const tareasFichaje1=soloUnFichajeImg?tareasDia.filter(t=>!idsClaimed.has(String(t.id))):[];
     return lst.filter((f,i)=>{
       const esF1=i===0;
       const tit=(esF1?e.titulo:f.titulo);
@@ -6722,7 +6730,8 @@ async function compartirComoImagen(conPrecios){
         // Notas: título de cada fichaje con sus tareas/OT y descripción debajo, agrupado
         var idsClaimed1 = {};
         fichajesList.slice(1).forEach(function(f){ if(f.taskId) idsClaimed1[f.taskId]=true; });
-        var tareasFichaje1 = tareas.filter(function(t){ return !idsClaimed1[t.id]; });
+        var soloUnFichajeWA = fichajesList.length<=1;
+        var tareasFichaje1 = soloUnFichajeWA ? tareas.filter(function(t){ return !idsClaimed1[t.id]; }) : [];
         var fichajesConNotas = fichajesList.filter(function(f,i){
           var esF1 = i===0;
           var tit = (esF1?e.titulo:f.titulo);
