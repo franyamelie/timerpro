@@ -779,7 +779,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260927-03'),
+    h('div',{style:{fontSize:'.55rem',color:'#4ade80',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20260927-05'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1385,7 +1385,7 @@ function renderFichar(){
         h('button',{
           class:'btn btn-b btn-sm',
           style:{fontSize:'.72rem',padding:'.25rem .6rem'},
-          on:{click:()=>{ autoCalcHorasFromFichajes(); S.modal='resumendia'; S._shareConPrecios=false; rerender(); }}
+          on:{click:()=>{ autoCalcHorasFromFichajes(); S.modal='resumendia'; S._shareConPrecios=false; S._showPrecioDieta=false; S._showPrecioViaje=false; rerender(); }}
         },'📊 Resumen')
       ),
       e.fichajes.map((fj,i)=>i===0?null:renderFichajeSummaryRow(fj,i)),
@@ -5495,6 +5495,17 @@ function renderSincronizar(){
       h('div',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'1rem',lineHeight:1.7}},
         'Sube tus datos al Drive cuando quieras. Carga desde Drive para obtener los datos más recientes.'
       ),
+      h('div',{class:'sum-row'},
+        h('span',{class:'sum-label'},'Este dispositivo'),
+        h('input',{
+          type:'text',value:getDeviceLabel(),
+          style:{fontWeight:700,textAlign:'right',border:'1px solid var(--bd)',borderRadius:'6px',padding:'.2rem .5rem',fontSize:'.85rem',background:'var(--surf)',color:'var(--ink)',maxWidth:'140px'},
+          on:{change:e=>{setDeviceLabel(e.target.value);showAlert('✅ Este dispositivo se llamará "'+getDeviceLabel()+'" en los avisos de sincronización');rerender();}}
+        })
+      ),
+      h('div',{style:{fontSize:'.7rem',color:'var(--ink3)',marginTop:'-.4rem',marginBottom:'.3rem'}},
+        'Ej: "Teléfono" u "Ordenador", para que los avisos de conflicto digan claramente qué aparato tiene cada dato'
+      ),
       lastSync?h('div',{class:'sum-row'},
         h('span',{class:'sum-label'},'Última subida'),
         h('span',{style:{fontSize:'.8rem',color:'var(--ink2)'}},lastSync)
@@ -5845,10 +5856,12 @@ function renderEmpresa(){
 // Construye el listado detallado del conflicto, en función de qué lado se
 // perdería (isUpload: se pierde lo que solo está/es distinto en Drive;
 // si no, se pierde lo que solo está/es distinto en este dispositivo).
-function _renderSyncDiffLines(diff, isUpload){
+function _renderSyncDiffLines(diff, isUpload, localLabel, remoteLabel){
   const rows=[];
   const onlyLostSide = isUpload ? diff.onlyRemote : diff.onlyLocal;
-  const onlySideLabel = isUpload ? 'solo en Drive' : 'solo en este dispositivo';
+  const loseLabel = isUpload ? remoteLabel : localLabel; // dispositivo cuyo dato desaparecería
+  const keepLabel = isUpload ? localLabel : remoteLabel; // dispositivo cuyo dato prevalece
+  const onlySideLabel = 'solo en '+loseLabel;
   onlyLostSide.forEach(fecha=>{
     rows.push(h('div',{style:{marginBottom:'.5rem'}},
       h('div',{style:{fontWeight:800,color:'var(--ink)'}},'📅 '+dlbl(fecha)),
@@ -5858,7 +5871,7 @@ function _renderSyncDiffLines(diff, isUpload){
   diff.differing.forEach(({fecha,lines})=>{
     rows.push(h('div',{style:{marginBottom:'.5rem'}},
       h('div',{style:{fontWeight:800,color:'var(--ink)'}},'📅 '+dlbl(fecha)+' — datos distintos'),
-      ...lines.map(l=>h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',paddingLeft:'.4rem'}},'• '+l+(isUpload?' (se perderá lo de aquí)':' (se perderá lo de aquí, quedará lo de Drive)')))
+      ...lines.map(l=>h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',paddingLeft:'.4rem'}},'• '+l+' (se perderá lo de '+loseLabel+', quedará lo de '+keepLabel+')'))
     ));
   });
   const tasksOnlyLost = isUpload ? diff.tasksOnlyRemote : diff.tasksOnlyLocal;
@@ -5881,12 +5894,19 @@ function renderModalSyncWarning(){
   if(!info) return null;
   const isUpload = info.direction==='upload';
   const diff = info.diff;
-  const rows = _renderSyncDiffLines(diff, isUpload);
+  // Nombre de ESTE dispositivo (donde se está viendo el aviso) y del OTRO lado
+  // (el que subió por última vez lo que hay en Drive), para que el aviso diga
+  // explícitamente "Teléfono" / "Ordenador" en vez de "aquí"/"en Drive".
+  const localLabel = getDeviceLabel();
+  const remoteLabel = (info.remoteData && info.remoteData.deviceName) ? info.remoteData.deviceName : 'Drive (otro dispositivo)';
+  const rows = _renderSyncDiffLines(diff, isUpload, localLabel, remoteLabel);
   // Solo cuenta lo que de verdad se perdería EN ESTA dirección concreta
   // (subir pierde lo "solo en Drive"/distinto; cargar pierde lo "solo aquí"/distinto).
   const total = isUpload
     ? diff.onlyRemote.length + diff.differing.length + diff.tasksOnlyRemote.length + diff.tasksDiffering.length
     : diff.onlyLocal.length + diff.differing.length + diff.tasksOnlyLocal.length + diff.tasksDiffering.length;
+  const loseLabel = isUpload ? remoteLabel : localLabel;
+  const keepLabel = isUpload ? localLabel : remoteLabel;
   return h('div',{
     class:'modal-bg',
     style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',
@@ -5898,11 +5918,12 @@ function renderModalSyncWarning(){
     }},
       h('div',{style:{fontSize:'1.8rem',textAlign:'center',marginBottom:'.4rem'}},'⚠️'),
       h('div',{style:{fontWeight:900,fontSize:'1.05rem',textAlign:'center',color:'var(--ink)',marginBottom:'.5rem'}},
-        isUpload ? '¡Cuidado! Vas a perder datos de Drive' : '¡Cuidado! Vas a perder datos de este dispositivo'),
+        '¡Cuidado! Vas a perder datos de '+loseLabel),
+      h('div',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.3rem',textAlign:'center'}},
+        'Estás en: '+localLabel+' · '+(isUpload?'vas a SUBIR a Drive':'vas a CARGAR desde Drive')
+      ),
       h('div',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.6rem',textAlign:'center'}},
-        isUpload
-          ? 'Esto es exactamente lo que se perdería de Drive si subes ahora sin fusionar:'
-          : 'Esto es exactamente lo que se perdería de aquí si cargas ahora sin fusionar:'
+        'Si continúas sin fusionar, esto de '+loseLabel+' se perderá y quedará lo de '+keepLabel+':'
       ),
       h('div',{style:{maxHeight:'260px',overflowY:'auto',background:'var(--surf2)',borderRadius:'8px',padding:'.6rem .8rem',marginBottom:'1rem',fontSize:'.8rem',color:'var(--ink)'}},
         ...rows
@@ -10725,7 +10746,7 @@ async function driveSync(skipSafetyCheck){
       let remoteData=null;
       try{ remoteData = await gdriveLoadData(); }catch(e){ /* si falla, seguimos sin bloquear */ }
       if(remoteData && remoteData.entries && remoteData.entries.length){
-        const diff=computeSyncDiff(data, remoteData);
+        const diff=computeSyncDiff(data, remoteData, getDeviceLabel(), remoteData.deviceName||'Drive (otro dispositivo)');
         const wouldLose = diff.onlyRemote.length || diff.differing.length || diff.tasksOnlyRemote.length || diff.tasksDiffering.length;
         if(wouldLose){
           _syncInProgress=false;
@@ -10768,7 +10789,7 @@ async function _doLoad(force, verifyMode, confirmMode, skipSafetyCheck){
     // ANTES con el detalle exacto de qué se perdería.
     if(!skipSafetyCheck){
       const localData=buildSyncData();
-      const diff=computeSyncDiff(localData, d);
+      const diff=computeSyncDiff(localData, d, getDeviceLabel(), d.deviceName||'Drive (otro dispositivo)');
       const wouldLose = diff.onlyLocal.length || diff.differing.length || diff.tasksOnlyLocal.length || diff.tasksDiffering.length;
       if(wouldLose){
         syncStatus='ok';
@@ -10799,37 +10820,41 @@ function warmupDriveScript(){ /* no-op */ }
 // conflicto real), mostrar el aviso con el detalle exacto de cada cosa.
 function _stripHtmlSync(s){ return (s||'').replace(/<[^>]*>/g,'').trim(); }
 function _moneySync(n){ return eur(+n||0); }
-function _diffFichajeSync(fl,fr,i){
+function _diffFichajeSync(fl,fr,i,ll,rl){
   const lines=[]; const lbl='Fichaje '+(i+1);
-  if((fl.entrada||'')!==(fr.entrada||'')) lines.push(lbl+' — hora entrada: '+(fl.entrada||'—')+' aquí / '+(fr.entrada||'—')+' en Drive');
-  if((fl.salida||'')!==(fr.salida||'')) lines.push(lbl+' — hora salida: '+(fl.salida||'—')+' aquí / '+(fr.salida||'—')+' en Drive');
-  if(Math.round((fl.dieta||0)*100)!==Math.round((fr.dieta||0)*100)) lines.push(lbl+' — dieta: '+_moneySync(fl.dieta)+' aquí / '+_moneySync(fr.dieta)+' en Drive');
-  if(Math.round((fl.transporte||0)*100)!==Math.round((fr.transporte||0)*100)) lines.push(lbl+' — transporte: '+_moneySync(fl.transporte)+' aquí / '+_moneySync(fr.transporte)+' en Drive');
-  if((fl.otrosConceptos||[]).length!==(fr.otrosConceptos||[]).length) lines.push(lbl+' — otros conceptos: '+(fl.otrosConceptos||[]).length+' aquí / '+(fr.otrosConceptos||[]).length+' en Drive');
-  if((fl.journeys||[]).length!==(fr.journeys||[]).length) lines.push(lbl+' — viajes: '+(fl.journeys||[]).length+' aquí / '+(fr.journeys||[]).length+' en Drive');
+  if((fl.entrada||'')!==(fr.entrada||'')) lines.push(lbl+' — hora entrada: '+(fl.entrada||'—')+' '+ll+' / '+(fr.entrada||'—')+' '+rl);
+  if((fl.salida||'')!==(fr.salida||'')) lines.push(lbl+' — hora salida: '+(fl.salida||'—')+' '+ll+' / '+(fr.salida||'—')+' '+rl);
+  if(Math.round((fl.dieta||0)*100)!==Math.round((fr.dieta||0)*100)) lines.push(lbl+' — dieta: '+_moneySync(fl.dieta)+' '+ll+' / '+_moneySync(fr.dieta)+' '+rl);
+  if(Math.round((fl.transporte||0)*100)!==Math.round((fr.transporte||0)*100)) lines.push(lbl+' — transporte: '+_moneySync(fl.transporte)+' '+ll+' / '+_moneySync(fr.transporte)+' '+rl);
+  if((fl.otrosConceptos||[]).length!==(fr.otrosConceptos||[]).length) lines.push(lbl+' — otros conceptos: '+(fl.otrosConceptos||[]).length+' '+ll+' / '+(fr.otrosConceptos||[]).length+' '+rl);
+  if((fl.journeys||[]).length!==(fr.journeys||[]).length) lines.push(lbl+' — viajes: '+(fl.journeys||[]).length+' '+ll+' / '+(fr.journeys||[]).length+' '+rl);
   if(String(fl.taskId||'')!==String(fr.taskId||'')) lines.push(lbl+' — tarea/OT vinculada distinta');
   return lines;
 }
-function _diffEntrySync(l,r){
+function _diffEntrySync(l,r,ll,rl){
   const lines=[];
   const nl=(l.fichajes||[]).length, nr=(r.fichajes||[]).length;
   const maxN=Math.max(nl,nr);
   for(let i=0;i<maxN;i++){
     const fl=(l.fichajes||[])[i], fr=(r.fichajes||[])[i];
-    if(fl&&fr) lines.push(..._diffFichajeSync(fl,fr,i));
-    else if(fl&&!fr) lines.push('Fichaje '+(i+1)+' existe aquí pero no en Drive');
-    else if(!fl&&fr) lines.push('Fichaje '+(i+1)+' existe en Drive pero no aquí');
+    if(fl&&fr) lines.push(..._diffFichajeSync(fl,fr,i,ll,rl));
+    else if(fl&&!fr) lines.push('Fichaje '+(i+1)+' existe en '+ll+' pero no en '+rl);
+    else if(!fl&&fr) lines.push('Fichaje '+(i+1)+' existe en '+rl+' pero no en '+ll);
   }
-  if(Math.round((l.horasNormales||0)*100)!==Math.round((r.horasNormales||0)*100)) lines.push('Horas normales: '+fmtH(l.horasNormales||0)+' aquí / '+fmtH(r.horasNormales||0)+' en Drive');
-  if(Math.round((l.horasExtra||0)*100)!==Math.round((r.horasExtra||0)*100)) lines.push('Horas extra: '+fmtH(l.horasExtra||0)+' aquí / '+fmtH(r.horasExtra||0)+' en Drive');
-  if(Math.round((l.dieta||0)*100)!==Math.round((r.dieta||0)*100)) lines.push('Dieta del día: '+_moneySync(l.dieta)+' aquí / '+_moneySync(r.dieta)+' en Drive');
-  if(Math.round((l.transporte||0)*100)!==Math.round((r.transporte||0)*100)) lines.push('Transporte del día: '+_moneySync(l.transporte)+' aquí / '+_moneySync(r.transporte)+' en Drive');
+  if(Math.round((l.horasNormales||0)*100)!==Math.round((r.horasNormales||0)*100)) lines.push('Horas normales: '+fmtH(l.horasNormales||0)+' '+ll+' / '+fmtH(r.horasNormales||0)+' '+rl);
+  if(Math.round((l.horasExtra||0)*100)!==Math.round((r.horasExtra||0)*100)) lines.push('Horas extra: '+fmtH(l.horasExtra||0)+' '+ll+' / '+fmtH(r.horasExtra||0)+' '+rl);
+  if(Math.round((l.dieta||0)*100)!==Math.round((r.dieta||0)*100)) lines.push('Dieta del día: '+_moneySync(l.dieta)+' '+ll+' / '+_moneySync(r.dieta)+' '+rl);
+  if(Math.round((l.transporte||0)*100)!==Math.round((r.transporte||0)*100)) lines.push('Transporte del día: '+_moneySync(l.transporte)+' '+ll+' / '+_moneySync(r.transporte)+' '+rl);
   if(_stripHtmlSync(l.notas)!==_stripHtmlSync(r.notas)) lines.push('Notas distintas');
   if((l.ubicacionEntrada||'')!==(r.ubicacionEntrada||'')) lines.push('Ubicación de entrada distinta');
   if((l.ubicacionSalida||'')!==(r.ubicacionSalida||'')) lines.push('Ubicación de salida distinta');
   return lines;
 }
-function computeSyncDiff(local, remote){
+// llabel/rlabel identifican QUÉ dispositivo es cada lado en el texto generado
+// (p.ej. "Teléfono"/"Ordenador" en vez del genérico "aquí"/"en Drive"), para
+// que el detalle del conflicto diga explícitamente de dónde viene cada dato.
+function computeSyncDiff(local, remote, llabel, rlabel){
+  const ll = llabel || 'aquí', rl = rlabel || 'en Drive';
   const diff={onlyLocal:[],onlyRemote:[],differing:[],tasksOnlyLocal:[],tasksOnlyRemote:[],tasksDiffering:[]};
   const lMap={}; (local.entries||[]).forEach(e=>{ if(e.fecha) lMap[e.fecha]=e; });
   const rMap={}; (remote.entries||[]).forEach(e=>{ if(e.fecha) rMap[e.fecha]=e; });
@@ -10839,7 +10864,7 @@ function computeSyncDiff(local, remote){
     if(l&&!r) diff.onlyLocal.push(fecha);
     else if(!l&&r) diff.onlyRemote.push(fecha);
     else if(l&&r){
-      const lines=_diffEntrySync(l,r);
+      const lines=_diffEntrySync(l,r,ll,rl);
       if(lines.length) diff.differing.push({fecha,lines});
     }
   });
@@ -10852,9 +10877,9 @@ function computeSyncDiff(local, remote){
     else if(!l&&r) diff.tasksOnlyRemote.push(r);
     else if(l&&r){
       const lines=[];
-      if((l.titulo||'')!==(r.titulo||'')) lines.push('título: "'+(l.titulo||'—')+'" aquí / "'+(r.titulo||'—')+'" en Drive');
-      if((l.otNumero||'')!==(r.otNumero||'')) lines.push('número: '+(l.otNumero||'—')+' aquí / '+(r.otNumero||'—')+' en Drive');
-      if((l.fecha||'')!==(r.fecha||'')) lines.push('fecha: '+(l.fecha?dlbl(l.fecha):'sin fecha')+' aquí / '+(r.fecha?dlbl(r.fecha):'sin fecha')+' en Drive');
+      if((l.titulo||'')!==(r.titulo||'')) lines.push('título: "'+(l.titulo||'—')+'" '+ll+' / "'+(r.titulo||'—')+'" '+rl);
+      if((l.otNumero||'')!==(r.otNumero||'')) lines.push('número: '+(l.otNumero||'—')+' '+ll+' / '+(r.otNumero||'—')+' '+rl);
+      if((l.fecha||'')!==(r.fecha||'')) lines.push('fecha: '+(l.fecha?dlbl(l.fecha):'sin fecha')+' '+ll+' / '+(r.fecha?dlbl(r.fecha):'sin fecha')+' '+rl);
       if((l.tipoTarea||'ot')!==(r.tipoTarea||'ot')) lines.push('tipo de tarea distinto');
       if(lines.length) diff.tasksDiffering.push({id,titulo:l.titulo||r.titulo||'Sin título',lines});
     }
@@ -10877,6 +10902,23 @@ function diffCount(d){
   return d.onlyLocal.length+d.onlyRemote.length+d.differing.length+d.tasksOnlyLocal.length+d.tasksOnlyRemote.length+d.tasksDiffering.length;
 }
 
+// Etiqueta de ESTE dispositivo (solo local, nunca se sincroniza como tal:
+// se guarda en localStorage de cada aparato). Sirve para que los avisos de
+// sincronización digan "Teléfono" / "Ordenador" en vez de "aquí"/"Drive".
+function getDeviceLabel(){
+  let v = localStorage.getItem('deviceLabel');
+  if(v) return v;
+  // Sugerencia automática la primera vez, editable luego desde Sincronizar.
+  const ua = navigator.userAgent||'';
+  const guess = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ? 'Teléfono' : 'Ordenador';
+  localStorage.setItem('deviceLabel', guess);
+  return guess;
+}
+function setDeviceLabel(v){
+  v = (v||'').trim();
+  if(!v) return;
+  localStorage.setItem('deviceLabel', v);
+}
 function buildSyncData(){
   function cleanLoc(loc){
     if(!loc) return loc;
@@ -10908,6 +10950,7 @@ function buildSyncData(){
   return {
     version:2,
     exportedAt:new Date().toISOString(),
+    deviceName:getDeviceLabel(), // qué aparato subió estos datos (p.ej. "Teléfono")
     entries:entries.map(e=>({...e,fotosGastos:[]})),
     tasks:S.tasks.map(t=>({
       id:t.id,
@@ -11715,7 +11758,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
                 // (Drive solo trae cosas de MÁS, nada se perdería de aquí) o si hay
                 // un conflicto real (algo distinto o solo-aquí que se perdería).
                 const _localSyncData = buildSyncData();
-                const _diff = computeSyncDiff(_localSyncData, d);
+                const _diff = computeSyncDiff(_localSyncData, d, getDeviceLabel(), d.deviceName||'Drive (otro dispositivo)');
                 if(diffIsEmpty(_diff)){
                   // Ya coincide todo, no hay nada que cargar ni que avisar.
                   syncStatus='ok'; rerender(); res(); return;
@@ -11767,7 +11810,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
                 await loadData();
                 localStorage.setItem('lastDriveLoad', Date.now().toString());
                 syncStatus='ok';
-                showAlert('✅ Datos actualizados automáticamente desde Drive ('+diffCount(_diff)+' novedad(es), sin conflicto)');
+                showAlert('✅ Datos actualizados automáticamente desde Drive'+(d.deviceName?' ('+d.deviceName+')':'')+' ('+diffCount(_diff)+' novedad(es), sin conflicto)');
               }catch(e){ console.warn('Boot load error:',e); syncStatus='ok'; }
             } else {
               syncStatus='ok';
