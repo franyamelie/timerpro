@@ -11083,36 +11083,98 @@ async function importDriveData(d, verifyMode){
   }
 }
 
+// Fusiona dos fichajes campo a campo SIN perder datos: si un lado tiene un
+// valor "vacío" (sin rellenar, 0 o '') y el otro lado tiene algo, se queda el
+// que tiene algo. Así una ubicación o una hora que solo se guardó en un
+// dispositivo nunca se borra solo porque el otro lado no la tenía todavía.
+function _esVacioMerge(v){ return v===undefined||v===null||v===''||v===0; }
+function _mergeCamposFichaje(fl,fr){
+  const out={...fr};
+  ['entrada','salida','titulo','nota','taskId','dieta','dietaCantidad','dietaPrecioUnit',
+   'transporte','transporteCantidad','transportePrecioUnit','_transportType','descanso',
+   'ubicacionEntrada','ubicacionSalida','horasNormales','horasExtra','horasNocturnas','horasFestivas'
+  ].forEach(k=>{
+    if(_esVacioMerge(fr[k]) && !_esVacioMerge(fl[k])) out[k]=fl[k];
+  });
+  const _mergeLista=(la,ra)=>{ la=la||[]; ra=ra||[]; return la.length<=ra.length?ra:la; };
+  out.otrosConceptos=_mergeLista(fl.otrosConceptos,fr.otrosConceptos);
+  out.journeys=_mergeLista(fl.journeys,fr.journeys);
+  return out;
+}
+// Fusiona una jornada completa (fecha) presente en ambos lados: nunca se
+// sobrescribe entera con la versión de Drive, se completan los campos y los
+// fichajes vacíos de un lado con los del otro (ubicaciones, OT vinculada, etc.)
+function _mergeCamposJornada(l,r){
+  if(!l) return r;
+  if(!r) return l;
+  const out={...r};
+  ['notas','ubicacionEntrada','ubicacionSalida','dieta','transporte','horasNormales','horasExtra',
+   'horasNocturnas','horasFestivas','titulo'
+  ].forEach(k=>{
+    if(_esVacioMerge(r[k]) && !_esVacioMerge(l[k])) out[k]=l[k];
+  });
+  const lf=l.fichajes||[], rf=r.fichajes||[];
+  const maxN=Math.max(lf.length,rf.length);
+  if(maxN>0){
+    const fichajes=[];
+    for(let i=0;i<maxN;i++){
+      const fl=lf[i], fr=rf[i];
+      fichajes.push(fl&&fr ? _mergeCamposFichaje(fl,fr) : (fl||fr));
+    }
+    out.fichajes=fichajes;
+  }
+  const _mergeLista=(la,ra)=>{ la=la||[]; ra=ra||[]; return la.length<=ra.length?ra:la; };
+  out.otrosConceptos=_mergeLista(l.otrosConceptos,r.otrosConceptos);
+  out.journeys=_mergeLista(l.journeys,r.journeys);
+  return out;
+}
 async function mergeDriveData(d){
-  // Merge: keep local entries that don't exist in Drive, add Drive entries
+  // Fusión de verdad, sin perder nada de ningún lado:
+  // - Jornadas (entries): unión por fecha; si una fecha está en ambos lados,
+  //   se completan los campos y fichajes de uno con los del otro (ver
+  //   _mergeCamposJornada) en vez de que Drive sustituya la jornada entera.
+  // - Tareas/OT (tasks): unión por id — ANTES esto no se fusionaba (se usaban
+  //   solo las de Drive), así que cualquier OT creada en un dispositivo y no
+  //   subida todavía a Drive se borraba al fusionar. Ahora se completan los
+  //   campos vacíos de una con los de la otra cuando el id coincide, y se
+  //   conservan las que solo existen en un lado.
   try{
     const localEntries = [...S.entries];
     const driveEntries = d.entries||[];
-
-    // Merge by fecha: Drive wins for same date, keep local if not in Drive
-    const merged = [];
-    const driveDates = new Set(driveEntries.map(e=>e.fecha));
-
-    // Add all Drive entries
-    driveEntries.forEach(e=>merged.push(e));
-
-    // Add local entries not in Drive
-    localEntries.forEach(e=>{
-      if(!driveDates.has(e.fecha)){
-        merged.push(e);
-      }
+    const localMap={}; localEntries.forEach(e=>{ if(e.fecha) localMap[e.fecha]=e; });
+    const driveMap={}; driveEntries.forEach(e=>{ if(e.fecha) driveMap[e.fecha]=e; });
+    const allDates=Array.from(new Set([...Object.keys(localMap),...Object.keys(driveMap)])).sort();
+    const merged = allDates.map(fecha=>{
+      const l=localMap[fecha], r=driveMap[fecha];
+      return (l&&r) ? _mergeCamposJornada(l,r) : (l||r);
     });
 
-    // Sort by date
-    merged.sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    const localTasks=[...S.tasks];
+    const driveTasks=d.tasks||[];
+    const ltMap={}; localTasks.forEach(t=>{ if(t.id!=null) ltMap[String(t.id)]=t; });
+    const rtMap={}; driveTasks.forEach(t=>{ if(t.id!=null) rtMap[String(t.id)]=t; });
+    const allTaskIds=Array.from(new Set([...Object.keys(ltMap),...Object.keys(rtMap)]));
+    const mergedTasks=allTaskIds.map(id=>{
+      const l=ltMap[id], r=rtMap[id];
+      if(l&&r){
+        const out={...r};
+        Object.keys(l).forEach(k=>{ if(_esVacioMerge(r[k]) && !_esVacioMerge(l[k])) out[k]=l[k]; });
+        return out;
+      }
+      return l||r;
+    });
+    // Por seguridad, tareas sin id (no debería pasar normalmente) no se descartan nunca
+    const sinIdLocal = localTasks.filter(t=>t.id==null);
+    const sinIdDrive = driveTasks.filter(t=>t.id==null);
+    const tasksFinal = [...mergedTasks, ...sinIdLocal, ...sinIdDrive];
 
     // Fusionar etiquetas de días (vacaciones/festivo/etc.): unión de local + Drive, Drive gana en conflicto
     const mergedTags = {...dayTags, ...(d.dayTags||{})};
 
     // Save merged data
-    const mergedData = {...d, entries: merged, dayTags: mergedTags};
+    const mergedData = {...d, entries: merged, tasks: tasksFinal, dayTags: mergedTags};
     await importDriveData(mergedData, false);
-    showAlert('✅ Fusionado: '+merged.length+' jornadas totales');
+    showAlert('✅ Fusionado: '+merged.length+' jornadas, '+tasksFinal.length+' tareas/OT');
 
     // Upload merged data back to Drive
     // auto-sync disabled
