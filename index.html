@@ -212,6 +212,16 @@ main{flex:1;overflow-y:auto;padding:1rem}
 .clock-center{position:absolute;top:50%;left:50%;width:8px;height:8px;
   border-radius:50%;background:var(--acc);transform:translate(-50%,-50%);}
 .clock-btns{display:flex;gap:.4rem;justify-content:center;margin-top:.5rem;flex-wrap:wrap;}
+/* Titulo/Notas de jornada (y de cada fichaje) son contenteditable: si alguna
+   vez se pego ahi texto copiado de otro sitio (Word, WhatsApp, un email...)
+   puede traer su propio color de fondo escondido en el HTML. No se nota al
+   escribir, pero SI se ve como un parche de color al seleccionar ese texto
+   con el raton para copiarlo. Esto anula cualquier fondo que traiga pegado,
+   para que la seleccion se vea siempre limpia, sea cual sea el fichaje. */
+[contenteditable="true"], [contenteditable="true"] *{
+  background-color:transparent!important;
+  background-image:none!important;
+}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -10889,14 +10899,39 @@ function _diffEntrySync(l,r,ll,rl){
   if((l.ubicacionSalida||'')!==(r.ubicacionSalida||'')) lines.push('Ubicación de salida distinta');
   return lines;
 }
+// Reproduce EXACTAMENTE la misma conversión que migrarFichajeBaseSiHaceFalta()
+// pero sin tocar nada de verdad — solo para poder comparar dos copias de una
+// jornada de forma justa. Antes, con solo CONSULTAR (abrir para ver) una
+// jornada antigua que todavía tenía la hora de entrada/salida "suelta" (sin
+// convertir a fichaje), esa consulta ya disparaba la migración automática en
+// memoria, y la comparación con Drive (que no se había tocado y seguía sin
+// migrar) veía un "fichaje de más aquí" — un aviso de conflicto fantasma por
+// el simple hecho de haber abierto la jornada, sin cambiar nada. Al aplicar
+// esta misma normalización a los dos lados antes de comparar, ese falso
+// aviso desaparece y solo salta cuando hay una diferencia de verdad.
+function _normalizarEntradaParaDiff(e){
+  if(!e) return e;
+  if(!(e.horaEntrada||e.horaSalida)) return e;
+  const yaExiste=(e.fichajes||[]).some(f=>f.entrada===e.horaEntrada && f.salida===e.horaSalida);
+  if(yaExiste) return e;
+  const habiaOtroFichajeYa=(e.fichajes||[]).length>0;
+  const f0={entrada:e.horaEntrada||'', salida:e.horaSalida||'', titulo:e.titulo||'', nota:e.notas||'',
+    taskId:'', otrosConceptos:[], journeys:[],
+    horasNormales:0,horasExtra:0,horasNocturnas:0,horasFestivas:0,dieta:0,transporte:0};
+  if(!habiaOtroFichajeYa){
+    ['horasNormales','horasExtra','horasNocturnas','horasFestivas','dieta','transporte']
+      .forEach(k=>{ if(e[k]!=null && e[k]!==0 && e[k]!=='') f0[k]=e[k]; });
+  }
+  return {...e, fichajes:[f0, ...(e.fichajes||[])]};
+}
 // llabel/rlabel identifican QUÉ dispositivo es cada lado en el texto generado
 // (p.ej. "Teléfono"/"Ordenador" en vez del genérico "aquí"/"en Drive"), para
 // que el detalle del conflicto diga explícitamente de dónde viene cada dato.
 function computeSyncDiff(local, remote, llabel, rlabel){
   const ll = llabel || 'aquí', rl = rlabel || 'en Drive';
   const diff={onlyLocal:[],onlyRemote:[],differing:[],tasksOnlyLocal:[],tasksOnlyRemote:[],tasksDiffering:[]};
-  const lMap={}; (local.entries||[]).forEach(e=>{ if(e.fecha) lMap[e.fecha]=e; });
-  const rMap={}; (remote.entries||[]).forEach(e=>{ if(e.fecha) rMap[e.fecha]=e; });
+  const lMap={}; (local.entries||[]).forEach(e=>{ if(e.fecha) lMap[e.fecha]=_normalizarEntradaParaDiff(e); });
+  const rMap={}; (remote.entries||[]).forEach(e=>{ if(e.fecha) rMap[e.fecha]=_normalizarEntradaParaDiff(e); });
   const allDates=Array.from(new Set([...Object.keys(lMap),...Object.keys(rMap)])).sort();
   allDates.forEach(fecha=>{
     const l=lMap[fecha], r=rMap[fecha];
