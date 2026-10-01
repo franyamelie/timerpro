@@ -648,6 +648,45 @@ function captureFormState(){
       // Read nota from textarea only
       const notaEl=row.querySelector('textarea');
       if(notaEl) fEntry.fichajes[i].nota=notaEl.value||fEntry.fichajes[i].nota||'';
+      // Ubicación de este fichaje (pantalla de detalle) — mismo arreglo
+      // "a prueba de balas" que la ubicación principal de abajo: si el
+      // campo tiene algo escrito que el blur todavía no procesó, se lee
+      // aquí directo del DOM para no perderlo al guardar.
+      ['Entrada','Salida'].forEach(tipo=>{
+        const key='ubicacion'+tipo;
+        const lid='loc-fich-'+fEntry.fichajes[i]._fid+'-'+tipo.toLowerCase();
+        const elLoc=document.getElementById(lid);
+        if(!elLoc) return;
+        const val=elLoc.value;
+        const displayed=locLabel(fEntry.fichajes[i][key]);
+        if(val===displayed) return;
+        if(!val){ fEntry.fichajes[i][key]=''; return; }
+        const site=S.sites.find(s=>s.nombre===val||(s.direccion||'')===val);
+        fEntry.fichajes[i][key]=site
+          ? (site.lat&&site.lng
+            ? JSON.stringify({lat:site.lat,lng:site.lng,url:'https://www.google.com/maps?q='+site.lat+','+site.lng,label:site.nombre||site.direccion,acc:site.acc||0})
+            : textToLoc(site.direccion||site.nombre))
+          : textToLoc(val);
+      });
+    });
+    // Ubicación de la jornada principal (campos de arriba del todo) — igual
+    // de "a prueba de balas": si el usuario escribió algo y pulsó Guardar
+    // sin que el campo perdiera el foco antes, se recoge aquí del DOM en
+    // vez de depender solo del evento blur.
+    ['Entrada','Salida'].forEach(tipo=>{
+      const key='ubicacion'+tipo;
+      const elLoc=document.getElementById('loc-input-'+tipo.toLowerCase());
+      if(!elLoc) return;
+      const val=elLoc.value;
+      const displayed=locLabel(fEntry[key]);
+      if(val===displayed) return;
+      if(!val){ fEntry[key]=''; return; }
+      const site=S.sites.find(s=>s.nombre===val||(s.direccion||'')===val);
+      fEntry[key]=site
+        ? (site.lat&&site.lng
+          ? JSON.stringify({lat:site.lat,lng:site.lng,url:'https://www.google.com/maps?q='+site.lat+','+site.lng,label:site.nombre||site.direccion,acc:site.acc||0})
+          : textToLoc(site.direccion||site.nombre))
+        : textToLoc(val);
     });
     const notasEl=document.getElementById('notas-editor');
     if(notasEl && notasEl.innerHTML.trim()){
@@ -10881,6 +10920,17 @@ function computeSyncDiff(local, remote, llabel, rlabel){
       if((l.otNumero||'')!==(r.otNumero||'')) lines.push('número: '+(l.otNumero||'—')+' '+ll+' / '+(r.otNumero||'—')+' '+rl);
       if((l.fecha||'')!==(r.fecha||'')) lines.push('fecha: '+(l.fecha?dlbl(l.fecha):'sin fecha')+' '+ll+' / '+(r.fecha?dlbl(r.fecha):'sin fecha')+' '+rl);
       if((l.tipoTarea||'ot')!==(r.tipoTarea||'ot')) lines.push('tipo de tarea distinto');
+      // Antes esto solo comparaba título/número/fecha/tipo — así que una tarea
+      // con la descripción, el sitio, la O.T. del catálogo o las horas
+      // distintas pasaba como "igual" y la fusión automática en segundo
+      // plano la daba por buena sin avisar, perdiendo esos datos. Se
+      // comparan también el resto de campos de la tarea/OT.
+      if((l.descripcion||'')!==(r.descripcion||'')) lines.push('descripción distinta');
+      if((l.siteId||'')!==(r.siteId||'')) lines.push('sitio vinculado distinto');
+      if((l.workOrderId||'')!==(r.workOrderId||'')) lines.push('O.T. del catálogo distinta');
+      if((l.horaInicio||'')!==(r.horaInicio||'')) lines.push('hora inicio: '+(l.horaInicio||'—')+' '+ll+' / '+(r.horaInicio||'—')+' '+rl);
+      if((l.horaFin||'')!==(r.horaFin||'')) lines.push('hora fin: '+(l.horaFin||'—')+' '+ll+' / '+(r.horaFin||'—')+' '+rl);
+      if(!!l.usaOT!==!!r.usaOT) lines.push('usa O.T. del catálogo: distinto');
       if(lines.length) diff.tasksDiffering.push({id,titulo:l.titulo||r.titulo||'Sin título',lines});
     }
   });
@@ -11859,7 +11909,34 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
                   // If local has a draft or is newer - keep local
                 }
                 // Merge other collections (replace if Drive has them)
-                if((d.tasks||[]).length>0){ await dbClear(ST.tasks); for(const t of d.tasks) await dbPut(ST.tasks,t); }
+                // Las tareas/OT/ESTRAL NUNCA se sustituyen en bloque: se
+                // fusionan por id (se completan campos vacíos de un lado con
+                // los del otro) y se conserva cualquier tarea que solo exista
+                // en este dispositivo todavía, aunque Drive no la tenga. Antes
+                // aquí se borraban TODAS las tareas locales y se ponían solo
+                // las de Drive — si una OT/ESTRAL se acababa de crear aquí y
+                // esta carga automática se disparaba antes de subirla, se
+                // perdía sin avisar.
+                if((d.tasks||[]).length>0){
+                  const _lt={}; S.tasks.forEach(t=>{ if(t.id!=null) _lt[String(t.id)]=t; });
+                  const _rt={}; (d.tasks||[]).forEach(t=>{ if(t.id!=null) _rt[String(t.id)]=t; });
+                  const _allIds=Array.from(new Set([...Object.keys(_lt),...Object.keys(_rt)]));
+                  for(const id of _allIds){
+                    const l=_lt[id], r=_rt[id];
+                    let out;
+                    if(l&&r){
+                      out={...r};
+                      Object.keys(l).forEach(k=>{
+                        const lv=l[k], rv=r[k];
+                        const rEmpty=rv===undefined||rv===null||rv===''||rv===0;
+                        const lEmpty=lv===undefined||lv===null||lv===''||lv===0;
+                        if(rEmpty&&!lEmpty) out[k]=lv;
+                      });
+                    } else out=l||r;
+                    await dbPut(ST.tasks,out);
+                  }
+                  S.tasks=await dbAll(ST.tasks);
+                }
                 if((d.sites||[]).length>0){ await dbClear(ST.sites); for(const s of d.sites) await dbPut(ST.sites,s); }
                 if((d.workorders||[]).length>0){ await dbClear(ST.workorders); for(const w of d.workorders) await dbPut(ST.workorders,w); }
                 if((d.vehicles||[]).length>0){ await dbClear(ST.vehicles); for(const v of d.vehicles) await dbPut(ST.vehicles,v); }
