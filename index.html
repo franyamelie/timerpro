@@ -11019,7 +11019,18 @@ function buildSyncData(){
     workorders:S.workorders||[],
     vehicles:S.vehicles||[],
     dayTags: dayTags||{},
-
+    // Antes esto NO viajaba entre dispositivos (solo vivía en localStorage de
+    // cada aparato): tipos de transporte propios, tipos de tarea propios (si
+    // se añadió alguno más aparte de O.T./ESTRAL) y los precios/dieta "por
+    // defecto". Así que si los cambiabas en el ordenador, en el teléfono
+    // seguían como estaban. Se incluyen aquí para que también se sincronicen.
+    transportTypes: S.transportTypes||[],
+    taskTypes: (typeof taskTypes!=='undefined'?taskTypes:getTaskTypes())||[],
+    dietaDefault: S.dietaDefault||0,
+    precioHoraNormalDefault: S.precioHoraNormalDefault||0,
+    precioHoraExtraDefault: S.precioHoraExtraDefault||0,
+    precioHoraNocturnaDefault: S.precioHoraNocturnaDefault||0,
+    precioHoraFestivaDefault: S.precioHoraFestivaDefault||0,
 
     activeWorkerId, activeCompanyId,
     worker:(()=>{const w=workers.find(x=>x.id===activeWorkerId)||workers[0]||{};
@@ -11089,6 +11100,28 @@ async function importDriveData(d, verifyMode){
     // Restaurar vacaciones/festivos/etc. marcados a mano (día a día)
     dayTags = d.dayTags||{};
     await saveDayTags();
+    // Tipos de transporte y de tarea propios, y precios/dieta por defecto —
+    // antes esto nunca llegaba a sincronizarse (vivía solo en localStorage de
+    // cada aparato). Se fusionan por id (unión, nunca se pierde un tipo que
+    // solo exista en este dispositivo) y los precios por defecto solo se
+    // adoptan de Drive si aquí todavía no se había puesto ninguno.
+    if(d.transportTypes&&d.transportTypes.length){
+      const localTT=S.transportTypes||[];
+      const byId={}; localTT.forEach(t=>{byId[t.id]=t;}); d.transportTypes.forEach(t=>{byId[t.id]={...(byId[t.id]||{}),...t};});
+      S.transportTypes=Object.values(byId);
+      localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));
+    }
+    if(d.taskTypes&&d.taskTypes.length){
+      const localTY=(typeof taskTypes!=='undefined'?taskTypes:getTaskTypes())||[];
+      const byId2={}; localTY.forEach(t=>{byId2[t.id]=t;}); d.taskTypes.forEach(t=>{byId2[t.id]={...(byId2[t.id]||{}),...t};});
+      taskTypes=Object.values(byId2);
+      saveTaskTypes(taskTypes);
+    }
+    if(!S.dietaDefault && d.dietaDefault){ S.dietaDefault=d.dietaDefault; localStorage.setItem('dietaDefault',S.dietaDefault); }
+    if(!S.precioHoraNormalDefault && d.precioHoraNormalDefault){ S.precioHoraNormalDefault=d.precioHoraNormalDefault; localStorage.setItem('precioHoraNormalDefault',S.precioHoraNormalDefault); }
+    if(!S.precioHoraExtraDefault && d.precioHoraExtraDefault){ S.precioHoraExtraDefault=d.precioHoraExtraDefault; localStorage.setItem('precioHoraExtraDefault',S.precioHoraExtraDefault); }
+    if(!S.precioHoraNocturnaDefault && d.precioHoraNocturnaDefault){ S.precioHoraNocturnaDefault=d.precioHoraNocturnaDefault; localStorage.setItem('precioHoraNocturnaDefault',S.precioHoraNocturnaDefault); }
+    if(!S.precioHoraFestivaDefault && d.precioHoraFestivaDefault){ S.precioHoraFestivaDefault=d.precioHoraFestivaDefault; localStorage.setItem('precioHoraFestivaDefault',S.precioHoraFestivaDefault); }
     await loadData();
     syncStatus='ok';
     lastSync=new Date().toLocaleTimeString('es-ES');
@@ -11946,6 +11979,24 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
                 if(d.company&&d.company.nombre) fCompany={...defCompany,...d.company,logo:savedLogo};
                 if(d.activeWorkerId) activeWorkerId=d.activeWorkerId;
                 if(d.activeCompanyId) activeCompanyId=d.activeCompanyId;
+                // Igual que al cargar manualmente: fusionar (no sustituir) los
+                // tipos de transporte/tarea propios y adoptar los precios por
+                // defecto de Drive solo si aquí todavía no había ninguno puesto.
+                if(d.transportTypes&&d.transportTypes.length){
+                  const _byId={}; (S.transportTypes||[]).forEach(t=>{_byId[t.id]=t;}); d.transportTypes.forEach(t=>{_byId[t.id]={...(_byId[t.id]||{}),...t};});
+                  S.transportTypes=Object.values(_byId);
+                  localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));
+                }
+                if(d.taskTypes&&d.taskTypes.length){
+                  const _byId2={}; (typeof taskTypes!=='undefined'?taskTypes:getTaskTypes()).forEach(t=>{_byId2[t.id]=t;}); d.taskTypes.forEach(t=>{_byId2[t.id]={...(_byId2[t.id]||{}),...t};});
+                  taskTypes=Object.values(_byId2);
+                  saveTaskTypes(taskTypes);
+                }
+                if(!S.dietaDefault && d.dietaDefault){ S.dietaDefault=d.dietaDefault; localStorage.setItem('dietaDefault',S.dietaDefault); }
+                if(!S.precioHoraNormalDefault && d.precioHoraNormalDefault){ S.precioHoraNormalDefault=d.precioHoraNormalDefault; localStorage.setItem('precioHoraNormalDefault',S.precioHoraNormalDefault); }
+                if(!S.precioHoraExtraDefault && d.precioHoraExtraDefault){ S.precioHoraExtraDefault=d.precioHoraExtraDefault; localStorage.setItem('precioHoraExtraDefault',S.precioHoraExtraDefault); }
+                if(!S.precioHoraNocturnaDefault && d.precioHoraNocturnaDefault){ S.precioHoraNocturnaDefault=d.precioHoraNocturnaDefault; localStorage.setItem('precioHoraNocturnaDefault',S.precioHoraNocturnaDefault); }
+                if(!S.precioHoraFestivaDefault && d.precioHoraFestivaDefault){ S.precioHoraFestivaDefault=d.precioHoraFestivaDefault; localStorage.setItem('precioHoraFestivaDefault',S.precioHoraFestivaDefault); }
                 await loadData();
                 localStorage.setItem('lastDriveLoad', Date.now().toString());
                 syncStatus='ok';
