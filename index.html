@@ -7525,6 +7525,32 @@ function compararNominaConApp(mesKey, extracted){
   if(app.sueldoBase>0) lineas.push('ℹ️ Sueldo Base (fijo, editable en esta pestaña): '+app.sueldoBase.toFixed(2)+'€');
   if(app.guardia>0) lineas.push('ℹ️ Guardia (fija, editable en esta pestaña): '+app.guardia.toFixed(2)+'€');
   const totalApp=totalPeriodo(app);
+
+  // ── Pacto: Sueldo Base + Guardia (los "2100€") van exentos de retenciones,
+  // o en su defecto el bruto se aumenta para que el neto de esa parte siga siendo esos 2100€ ──
+  const pactado=(app.sueldoBase||0)+(app.guardia||0);
+  if(pactado>0){
+    const sbNom=+extracted.sueldoBaseNomina||0, gNom=+extracted.guardiaNomina||0;
+    const irpf=+extracted.retencionIRPF||0, ss=+extracted.retencionSS||0;
+    lineas.push('');
+    lineas.push('🤝 Pacto Sueldo Base + Guardia sin retenciones ('+pactado.toFixed(2)+'€ pactados):');
+    if(sbNom>0 || gNom>0){
+      const sumaNomina=sbNom+gNom;
+      if(Math.abs(sumaNomina-pactado)<=TOL_E){
+        lineas.push('✅ En la nómina, Sueldo Base ('+sbNom.toFixed(2)+'€) + Guardia ('+gNom.toFixed(2)+'€) suman '+sumaNomina.toFixed(2)+'€, que coincide con lo pactado.');
+      } else if(sumaNomina<pactado){
+        lineas.push('⚠️ En la nómina, Sueldo Base + Guardia suman '+sumaNomina.toFixed(2)+'€, por debajo de los '+pactado.toFixed(2)+'€ pactados (diferencia de '+(sumaNomina-pactado).toFixed(2)+'€). Si se les ha aplicado retención, el bruto debería haberse aumentado para que, tras retenciones, siguiera quedando '+pactado.toFixed(2)+'€ netos.');
+      } else {
+        lineas.push('ℹ️ En la nómina, Sueldo Base + Guardia suman '+sumaNomina.toFixed(2)+'€, por encima de los '+pactado.toFixed(2)+'€ pactados (diferencia de +'+(sumaNomina-pactado).toFixed(2)+'€).');
+      }
+    } else {
+      lineas.push('ℹ️ La nómina no desglosa líneas separadas de "Sueldo Base"/"Guardia" para verificar el importe exacto; revisa que, tras retenciones, esta parte siga llegando íntegra a '+pactado.toFixed(2)+'€.');
+    }
+    if(irpf>0 || ss>0){
+      lineas.push('⚠️ Se han detectado retenciones en la nómina (IRPF: '+irpf.toFixed(2)+'€, Seg. Social: '+ss.toFixed(2)+'€). Según lo pactado, esta parte no debería llevar retención, o el bruto debería haberse incrementado para compensarla y que el neto de esos '+pactado.toFixed(2)+'€ no se vea reducido.');
+    }
+  }
+
   let resumen='📋 Comparación de la nómina del periodo '+periodoLabel(mesKey)+' con lo registrado en la app ('+app.dias+' jornada(s)):\n\n'
     +(lineas.length?lineas.join('\n'):'No hay horas ni dietas/transporte que comparar en ninguno de los dos lados.')
     +'\n\n💰 Total calculado por la app (Sueldo Base + Guardia + horas + dietas + transporte + viajes): '+totalApp.toFixed(2)+'€';
@@ -7567,6 +7593,10 @@ async function subirNomina(file, mesSeleccionado){
       +'  "transporte": 0,\n'
       +'  "salarioBruto": 0,\n'
       +'  "salarioNeto": 0,\n'
+      +'  "sueldoBaseNomina": "importe de la línea \'Sueldo Base\' tal cual aparece en la nómina, si existe esa línea, 0 si no",\n'
+      +'  "guardiaNomina": "importe de la línea \'Guardia\' tal cual aparece en la nómina, si existe esa línea, 0 si no",\n'
+      +'  "retencionIRPF": "importe retenido por IRPF, 0 si no aparece",\n'
+      +'  "retencionSS": "importe retenido por Seguridad Social (cuota obrera), 0 si no aparece",\n'
       +'  "otrosConceptos": [{"concepto":"nombre","importe":0}],\n'
       +'  "observaciones": "cualquier cosa relevante que detectes (descuentos raros, retenciones, pluses, etc.) o vacío"\n'
       +'}\n'
