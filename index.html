@@ -4642,98 +4642,110 @@ function exportXLSX(conPrecios){
 }
 
 
-async function exportPlantilla(){
-  const from = S.resMode==='days'?'':(S.resFrom||firstDayOfMonth());
-  const to = S.resMode==='days'?'':(S.resTo||today());
-  const worker = workers.find(w=>w.id===activeWorkerId)||{};
-  const company = companies.find(c=>c.id===activeCompanyId)||{};
+async function exportPlantilla(opts){
+  // opts (opcional): {from,to,label,tag} — p.ej. desde Nómina para el ciclo 26→25.
+  // Sin opts usa el periodo elegido en el Resumen (como siempre).
+  const o=opts||null;
+  const from = o?o.from:(S.resMode==='days'?'':(S.resFrom||firstDayOfMonth()));
+  const to = o?o.to:(S.resMode==='days'?'':(S.resTo||today()));
+  const worker = workers.find(w=>w.id===activeWorkerId)||fWorker||{};
+  const company = companies.find(c=>c.id===activeCompanyId)||fCompany||{};
+  const esc=x=>String(x||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-  // Generate days: either every day in the range, or just the loose selected days
+  // Días: todo el rango, o solo los días sueltos elegidos en el Resumen
   const days = [];
-  if(S.resMode==='days'){
-    [...(S.resDays||[])].sort().forEach(fecha=>{
-      const[yyyy,mm,dd]=fecha.split('-');
-      days.push({fecha, fDisp:dd+'/'+mm+'/'+yyyy, dia:cap(wday(fecha))});
-    });
+  const pushDay=fecha=>{const[yyyy,mm,dd]=fecha.split('-');const wd=new Date(fecha+'T12:00:00').getDay();days.push({fecha,fDisp:dd+'/'+mm+'/'+yyyy,dia:cap(wday(fecha)),finde:wd===0||wd===6});};
+  if(!o && S.resMode==='days'){
+    [...(S.resDays||[])].sort().forEach(pushDay);
   } else {
     let cur = new Date(from+'T12:00:00');
     const end = new Date(to+'T12:00:00');
     while(cur <= end){
-      const yyyy = cur.getFullYear();
-      const mm = String(cur.getMonth()+1).padStart(2,'0');
-      const dd = String(cur.getDate()).padStart(2,'0');
-      days.push({fecha:yyyy+'-'+mm+'-'+dd, fDisp:dd+'/'+mm+'/'+yyyy, dia:cap(wday(yyyy+'-'+mm+'-'+dd))});
+      pushDay(cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0')+'-'+String(cur.getDate()).padStart(2,'0'));
       cur.setDate(cur.getDate()+1);
     }
   }
-  if(S.resMode==='days'&&!days.length){showAlert('No hay días seleccionados','err');return;}
+  if(!days.length){showAlert('No hay días seleccionados','err');return;}
 
+  const tt=(S.transportTypes&&S.transportTypes.length?S.transportTypes:[{id:'coche',nombre:'Coche'},{id:'camion',nombre:'Camión'}]);
+  const tipos=(taskTypes||[]).map(t=>(t.icono||'')+' '+t.nombre).join(' · ');
+  const periodo=o?(o.label||('Del '+dlbl(from)+' al '+dlbl(to))):(S.resMode==='days'?resumenPeriodoLabel():'Del '+dlbl(from)+' al '+dlbl(to));
+  const eurP=v=>(+v||0)>0?String((+v).toFixed(2)).replace('.',',')+' €':'______';
+
+  // Columnas de la plantilla (al día con la app)
+  const cols=[
+    ['Entrada'],['Salida'],['Descanso<br><small>(min)</small>'],
+    ['H.Normales','g'],['H.Extra','g'],['H.Nocturnas','g'],['H.Festivas','g'],
+    ['Dieta (€)','b'],['Dieta extra<br><small>(€)</small>','b'],
+    ...tt.map(t=>[esc(t.nombre)+'<br><small>(€)</small>','p']),
+    ['Viajes<br><small>(km)</small>','o'],['Otros<br><small>concepto / €</small>','o'],
+    ['Tarea / Nº OT<br><small>(tipo)</small>','y'],['Notas']
+  ];
   const css=`
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:Arial,sans-serif;font-size:11px;color:#1e293b}
     .hdr{background:#1e293b;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center}
     .hdr-title{font-size:13px;font-weight:700}
     .hdr-sub{font-size:10px;color:#94a3b8;margin-top:2px}
+    .info{padding:6px 14px;font-size:10px;color:#334155;background:#f1f5f9;border-bottom:1px solid #cbd5e1}
     table{width:100%;border-collapse:collapse;font-size:11px}
     thead tr{background:#334155;color:#fff}
-    thead th{padding:6px 10px;text-align:center;font-weight:600;white-space:nowrap;border:1px solid #475569}
+    thead th{padding:6px 6px;text-align:center;font-weight:600;border:1px solid #475569;line-height:1.2}
+    thead th small{font-weight:400;opacity:.8}
     thead th:first-child,thead th:nth-child(2){text-align:left}
+    thead th.g{background:#166534}thead th.b{background:#0e7490}thead th.p{background:#6d28d9}thead th.o{background:#c2410c}thead th.y{background:#a16207}
     tbody tr:nth-child(even){background:#f0f4f8}
     tbody tr:nth-child(odd){background:#ffffff}
-    tbody td{padding:6px 10px;border:1px solid #e2e8f0;text-align:center;min-width:70px}
+    tbody tr.finde td{background:#fef3c7}
+    tbody td{padding:7px 6px;border:1px solid #cbd5e1;text-align:center;min-width:46px;height:24px}
     tbody td:first-child{text-align:left;font-weight:600;white-space:nowrap;background:#f8fafc}
     tbody td:nth-child(2){text-align:left;color:#475569;background:#f8fafc}
+    tbody td.nota{min-width:160px}tbody td.tarea{min-width:120px}
     tfoot .tot-row{background:#1e293b;color:#fff}
-    tfoot .tot-row td{padding:7px 10px;border:1px solid #334155;font-weight:700;text-align:center}
+    tfoot .tot-row td{padding:7px 6px;border:1px solid #334155;font-weight:700;text-align:center}
     tfoot .tot-row td:first-child{text-align:left}
-    thead th.green{background:#166534;color:#4ade80}
+    .pie{padding:6px 14px;font-size:9px;color:#64748b}
+    @media print{@page{size:A4 landscape;margin:8mm}tr{page-break-inside:avoid}}
   `;
-
-  let tbody = '';
+  const nCols=cols.length;
+  let tbody='';
   days.forEach(d=>{
-    tbody+=`<tr>
-      <td>${d.fDisp}</td>
-      <td>${d.dia}</td>
-      <td></td><td></td><td></td><td></td>
-      <td></td>
-      <td></td><td></td>
-      <td></td><td></td>
-      <td></td>
-    </tr>`;
+    tbody+=`<tr${d.finde?' class="finde"':''}><td>${d.fDisp}</td><td>${d.dia}</td>`+
+      cols.map((c,i)=>`<td${i===nCols-1?' class="nota"':i===nCols-2?' class="tarea"':''}></td>`).join('')+`</tr>`;
   });
 
-  const ncols = 12;
   const htmlContent=`<!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
 <head><meta charset="UTF-8"><style>${css}</style></head><body>
 <div class="hdr">
   <div>
-    <div class="hdr-title">${company.nombre||'TimerPro'} — Plantilla de jornadas</div>
-    <div class="hdr-sub">${worker.nombre||''} · ${S.resMode==='days'?resumenPeriodoLabel():'Del '+dlbl(from)+' al '+dlbl(to)} · ${days.length} días</div>
+    <div class="hdr-title">${esc(company.nombre||'TimerPro')} — Plantilla de jornadas</div>
+    <div class="hdr-sub">${esc(((worker.nombre||'')+' '+(worker.apellidos||'')).trim())} · ${esc(periodo)} · ${days.length} días</div>
   </div>
   <div style="font-size:10px;color:#94a3b8">Generado: ${new Date().toLocaleDateString('es-ES')}</div>
+</div>
+<div class="info">
+  <b>Precio hora:</b> Normal ${eurP(S.precioHoraNormalDefault)} · Extra ${eurP(S.precioHoraExtraDefault)} · Nocturna ${eurP(S.precioHoraNocturnaDefault)} · Festiva ${eurP(S.precioHoraFestivaDefault)}
+  &nbsp;&nbsp;|&nbsp;&nbsp;<b>Tipos de tarea:</b> ${esc(tipos||'O.T.')}
+  ${o&&o.nomina?'&nbsp;&nbsp;|&nbsp;&nbsp;<b>Nómina:</b> base '+eurP(o.nomina.base)+' + guardia '+eurP(o.nomina.guardia):''}
 </div>
 <table>
   <thead><tr>
     <th>Fecha</th><th>Día</th>
-    <th>H.Normales</th><th>H.Extra</th><th>H.Nocturnas</th><th>H.Festivas</th>
-    <th>Fichajes<br><small>(HH:MM→HH:MM)</small></th>
-    <th>€/h Norm</th><th>€/h Extra</th>
-    <th>Dieta (€)</th><th>Transporte (€)</th>
-    <th class="green">Notas / OT</th>
+    ${cols.map(c=>`<th${c[1]?' class="'+c[1]+'"':''}>${c[0]}</th>`).join('')}
   </tr></thead>
   <tbody>${tbody}</tbody>
   <tfoot>
     <tr class="tot-row">
       <td colspan="2">TOTALES</td>
-      <td></td><td></td><td></td><td></td><td></td>
-      <td></td><td></td><td></td><td></td><td></td>
+      ${cols.map(()=>'<td></td>').join('')}
     </tr>
   </tfoot>
 </table>
+<div class="pie">Si un día tiene varios fichajes, apúntalos en la misma fila (ej. 07:00 / 16:00). Sábados y domingos en amarillo. · TimerPro</div>
 </body></html>`;
 
-  const fname='TimerPro_Plantilla_'+resumenFileTag()+'.xls';
+  const fname='TimerPro_Plantilla_'+(o?(o.tag||(from+'_'+to)):resumenFileTag())+'.xls';
   const blob=new Blob([htmlContent],{type:'application/vnd.ms-excel;charset=utf-8'});
   const file=new File([blob],fname,{type:blob.type});
   if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
@@ -4745,7 +4757,7 @@ async function exportPlantilla(){
   a.href=url;
   a.download=fname;
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
   showAlert('✅ Plantilla descargada ('+days.length+' días)');
 }
 
@@ -5483,7 +5495,7 @@ function renderResumen(){
           h('button',{class:'btn btn-gh btn-full',on:{click:()=>openExportModal('sin')}},'📄 PDF sin importes'),
           h('button',{class:'btn btn-b btn-full',on:{click:()=>exportExcel(false,getResumenEntries(),resumenPeriodoLabel(),resumenFileTag())}},'📊 Excel con importes'),
           h('button',{class:'btn btn-gh btn-full',on:{click:()=>exportExcel(true,getResumenEntries(),resumenPeriodoLabel(),resumenFileTag())}},'📊 Excel sin importes'),
-          h('button',{class:'btn btn-pur btn-full',on:{click:()=>exportPlantilla()}},'📥 Descargar plantilla en blanco'),
+          h('button',{class:'btn btn-full',style:{background:'#7c3aed',color:'#fff'},on:{click:()=>exportPlantilla()}},'📥 Descargar plantilla en blanco'),
           h('button',{class:'btn btn-full',style:{background:'var(--surf2)',border:'1px solid var(--acc)',color:'var(--acc)'},on:{click:()=>{if(!S.customFields)S.customFields=defaultCustomFields();openModal('customExport');}}},'🎛️ Exportación personalizada')
         )
       )
@@ -5798,7 +5810,8 @@ function renderNomina(){
         h('button',{class:'btn btn-full',style:{background:'#7c3aed',color:'#fff'},on:{click:()=>nominaExport('img')}},'🖼️ Imagen'),
         h('button',{class:'btn btn-b btn-full',on:{click:()=>nominaExportExcel()}},'📊 Excel'),
         h('button',{class:'btn btn-gh btn-full',on:{click:()=>nominaExport('print')}},'🖨 Imprimir'),
-        h('button',{class:'btn btn-full',style:{background:'#25D366',color:'#fff',gridColumn:'1 / -1'},on:{click:()=>nominaShareText()}},'💬 Enviar resumen por WhatsApp')
+        h('button',{class:'btn btn-full',style:{background:'#25D366',color:'#fff',gridColumn:'1 / -1'},on:{click:()=>nominaShareText()}},'💬 Enviar resumen por WhatsApp'),
+        h('button',{class:'btn btn-gh btn-full',style:{gridColumn:'1 / -1'},on:{click:()=>{const c=nominaCycleFor(sel.cyc.from);exportPlantilla({from:c.from,to:c.to,label:'Nómina de '+nominaCycleName(c)+' ('+nominaRangoTxt(c.from,c.to)+')',tag:nominaFileTag({cyc:c,parcial:false}),nomina:getNominaCfg()});}}},'📥 Plantilla en blanco de este ciclo (26 → 25)')
       )
     ),
 
@@ -6327,7 +6340,7 @@ function renderSincronizar(){
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'IMPORTAR DESDE PLANTILLA EXCEL'),
       h('p',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'.8rem',lineHeight:1.6}},
-        '1. Descarga la plantilla Excel, rellenala con tus jornadas y arrastrala aqui para importar automaticamente.'
+        '1. Descarga la plantilla Excel (una fila por fichaje: horas, dietas, coche/camión, viajes, otros conceptos y tareas/OT). 2. Rellénala. 3. Arrástrala aquí. Lo importado se SUMA a tus jornadas: no se borra nada de lo que ya tienes.'
       ),
       h('button',{class:'btn btn-g btn-full',style:{marginBottom:'.8rem'},on:{click:downloadTemplate}},
         '📥 Descargar plantilla Excel'
@@ -6374,7 +6387,7 @@ function renderSincronizar(){
       h('p',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.8rem',lineHeight:1.6}},
         'Descarga la plantilla del dia (con tus datos ya rellenados), completa los campos en el PDF y arrastrala aqui para importar.'
       ),
-      h('button',{class:'btn btn-r btn-full',style:{marginBottom:'.6rem'},on:{click:downloadPDFTemplate}},'PDF Descargar plantilla del dia'),
+      h('button',{class:'btn btn-r btn-full',style:{marginBottom:'.6rem'},on:{click:downloadPDFTemplate}},'📄 Descargar plantilla PDF del día (rellenable)'),
 
       h('div',{
         style:{border:'2px dashed var(--red)',borderRadius:'var(--r)',padding:'1.5rem',textAlign:'center',cursor:'pointer',color:'var(--red)',background:'var(--red-lt)'},
@@ -9536,6 +9549,10 @@ async function descargarPlantillaVisual(){
   const ttypes=(S.transportTypes||[{id:'coche',nombre:'Coche'},{id:'camion',nombre:'Camión'}]);
   const _sitiosRaw=await dbAll(ST.sites).catch(()=>S.sites||[]);
   const sitiosExportados=JSON.stringify((_sitiosRaw||[]).map(s=>s.nombre||s.direccion||'').filter(Boolean));
+  const _escP=x=>String(x||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const tiposTarea=(taskTypes&&taskTypes.length?taskTypes:[{id:'ot',nombre:'O.T.',icono:'🔧'}]);
+  const optsTipos=tiposTarea.map(t=>'<option value="'+_escP(t.id)+'">'+_escP((t.icono||'')+' '+t.nombre)+'</option>').join('');
+  const precioDef={n:S.precioHoraNormalDefault||'',e:S.precioHoraExtraDefault||'',noc:S.precioHoraNocturnaDefault||'',f:S.precioHoraFestivaDefault||''};
 
   const html=`<!DOCTYPE html>
 <html lang="es">
@@ -9614,17 +9631,20 @@ input[type=text]:focus,input[type=number]:focus,input[type=time]:focus,input[typ
     <input type="time" class="ent" placeholder="--:--">
     <span>→</span>
     <input type="time" class="sal" placeholder="--:--">
-    <input type="text" placeholder="Nota..." style="flex:1">
+    <input type="number" class="desc" min="0" step="5" placeholder="☕ min" title="Descanso (min)" style="width:62px">
+    <input type="text" class="fnota" placeholder="Nota..." style="flex:1">
   </div>
   <div class="fich-row">
     <span>2.</span>
     <input type="time" class="ent" placeholder="--:--">
     <span>→</span>
     <input type="time" class="sal" placeholder="--:--">
-    <input type="text" placeholder="Nota..." style="flex:1">
+    <input type="number" class="desc" min="0" step="5" placeholder="☕ min" title="Descanso (min)" style="width:62px">
+    <input type="text" class="fnota" placeholder="Nota..." style="flex:1">
   </div>
 </div>
 <button class="btn-add" onclick="addFichaje()">➕ Añadir fichaje</button>
+<div style="font-size:10px;color:#94a3b8;margin-top:4px">☕ = minutos de descanso. Si dejas las horas vacías, se calculan solas con el horario.</div>
 
 <!-- HORAS E IMPORTES -->
 <div class="sec">🕐 Horas e Importes</div>
@@ -9633,15 +9653,15 @@ input[type=text]:focus,input[type=number]:focus,input[type=time]:focus,input[typ
     <span>Tipo</span><span style="text-align:center">Horas</span><span style="text-align:center">€/hora</span><span style="text-align:right">Importe</span>
   </div>
   ${[
-    {id:'norm',label:'Normales'},
-    {id:'ext',label:'Extra'},
-    {id:'noc',label:'Nocturnas'},
-    {id:'fes',label:'Festivas'}
+    {id:'norm',label:'Normales',p:precioDef.n},
+    {id:'ext',label:'Extra',p:precioDef.e},
+    {id:'noc',label:'Nocturnas',p:precioDef.noc},
+    {id:'fes',label:'Festivas',p:precioDef.f}
   ].map(t=>`<div class="horas-grid">
     <label>${t.label}</label>
     <input type="number" id="h_${t.id}" min="0" step="0.5" placeholder="0" oninput="calcTotal()" style="width:60px">
     <div class="precio-row">
-      <input type="number" id="p_${t.id}" min="0" step="0.01" placeholder="0,00" oninput="calcTotal()" style="width:65px">
+      <input type="number" id="p_${t.id}" min="0" step="0.01" placeholder="0,00" value="${t.p||''}" oninput="calcTotal()" style="width:65px">
       <span>€/h</span>
     </div>
     <span class="importe-badge" id="i_${t.id}">—</span>
@@ -9669,7 +9689,7 @@ input[type=text]:focus,input[type=number]:focus,input[type=time]:focus,input[typ
   <label>Transporte</label>
   <div class="inp">
     <select id="transp_tipo">
-      ${ttypes.map(t=>`<option value="${t.nombre}">${t.nombre}</option>`).join('')}
+      ${ttypes.map(t=>`<option value="${_escP(t.id)}">${_escP(t.nombre)}</option>`).join('')}
     </select>
     <select id="transp_sel" onchange="document.getElementById('transp').value=this.value;calcTotal()">
       <option value="">— €</option>
@@ -9684,11 +9704,21 @@ input[type=text]:focus,input[type=number]:focus,input[type=time]:focus,input[typ
 <div id="dietas-extra"></div>
 <button class="btn-add" onclick="addDietaExtra()">➕ Dieta extra</button>
 
+<!-- OTROS CONCEPTOS -->
+<div class="sec">💶 Otros conceptos</div>
+<div id="otros"></div>
+<button class="btn-add" onclick="addOtro()">➕ Otro concepto (parking, peaje, material…)</button>
+
+<!-- VIAJES -->
+<div class="sec">🚗 Viajes (km)</div>
+<div id="viajes"></div>
+<button class="btn-add" onclick="addViaje()">➕ Añadir viaje</button>
+
 <!-- TAREAS / OT -->
-<div class="sec">🔧 Tareas / Órdenes de Trabajo</div>
+<div class="sec">🔧 Tareas / Órdenes de Trabajo (cada una con su tipo)</div>
 <div id="tareas">
   ${[1,2,3].map(i=>`<div class="ot-card" id="ot_${i}">
-    <span class="ot-badge">OT</span>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="ot-badge" style="margin:0">TAREA</span><select class="ot-tipo" style="flex:1">${optsTipos}</select></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
       <div>
         <div style="font-size:10px;color:#92400e;margin-bottom:3px;font-weight:700">Número OT</div>
@@ -9699,6 +9729,7 @@ input[type=text]:focus,input[type=number]:focus,input[type=time]:focus,input[typ
         <input type="text" class="ot-desc" placeholder="Descripción de la tarea" style="width:100%">
       </div>
     </div>
+    <div style="margin-top:6px"><input type="text" class="ot-sitio" list="lista-sitios" placeholder="📍 Sitio (opcional)" style="width:100%"></div>
     <div class="ot-times">
       <label>🕐 Inicio:</label>
       <input type="time" class="ot-ini">
@@ -9707,7 +9738,8 @@ input[type=text]:focus,input[type=number]:focus,input[type=time]:focus,input[typ
     </div>
   </div>`).join('')}
 </div>
-<button class="btn-add" onclick="addOT()">➕ Añadir OT</button>
+<button class="btn-add" onclick="addOT()">➕ Añadir tarea</button>
+<datalist id="lista-sitios"></datalist>
 
 <!-- NOTAS -->
 <div class="sec">📝 Notas</div>
@@ -9751,13 +9783,35 @@ input[type=text]:focus,input[type=number]:focus,input[type=time]:focus,input[typ
 <script>
 var otCount=3;
 var dietaExtraCount=0;
+var OPTS_TIPOS=${JSON.stringify(optsTipos)};
+function save(){ /* guarda los sitios escritos para sugerirlos la próxima vez */
+  ['ubi_ent','ubi_sal'].forEach(function(id){var el=document.getElementById(id);if(el&&el.value)guardarSitioLocal(el.value.trim());});
+}
+function addOtro(){
+  var div=document.createElement('div');
+  div.className='row otro-row';
+  div.style.marginTop='4px';
+  div.innerHTML='<input type="text" placeholder="Concepto (parking, peaje…)" class="otro-conc" style="flex:1"><input type="number" min="0" step="0.01" placeholder="0" class="otro-imp" style="width:70px;margin-left:6px" oninput="calcTotal()"><span style="font-size:12px;color:#64748b;margin-left:4px">€</span><button onclick="this.parentElement.remove();calcTotal()" style="background:#fee2e2;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;color:#dc2626;margin-left:4px">✕</button>';
+  document.getElementById('otros').appendChild(div);
+}
+function addViaje(){
+  var div=document.createElement('div');
+  div.className='viaje-row';
+  div.style.cssText='display:grid;grid-template-columns:1fr 1fr 60px 60px 28px;gap:4px;margin-top:4px;align-items:center';
+  div.innerHTML='<input type="text" class="v-ori" placeholder="Origen" list="lista-sitios"><input type="text" class="v-des" placeholder="Destino" list="lista-sitios"><input type="number" class="v-km" min="0" step="1" placeholder="km" oninput="calcTotal()"><input type="number" class="v-prc" min="0" step="0.01" placeholder="€/km" value="0.19" oninput="calcTotal()"><button onclick="this.parentElement.remove();calcTotal()" style="background:#fee2e2;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;color:#dc2626">✕</button>';
+  document.getElementById('viajes').appendChild(div);
+}
+document.addEventListener('DOMContentLoaded',function(){
+  var dl=document.getElementById('lista-sitios');
+  if(dl) getSitios().forEach(function(s){var o=document.createElement('option');o.value=s;dl.appendChild(o);});
+});
 var fichajeCount=2;
 
 function addFichaje(){
   fichajeCount++;
   var div=document.createElement('div');
   div.className='fich-row';
-  div.innerHTML='<span>'+fichajeCount+'.</span><input type="time" class="ent"><span>→</span><input type="time" class="sal"><input type="text" placeholder="Nota..." style="flex:1"><button onclick="this.parentElement.remove()" style="background:#fee2e2;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;color:#dc2626">✕</button>';
+  div.innerHTML='<span>'+fichajeCount+'.</span><input type="time" class="ent"><span>→</span><input type="time" class="sal"><input type="number" class="desc" min="0" step="5" placeholder="☕ min" title="Descanso (min)" style="width:62px"><input type="text" class="fnota" placeholder="Nota..." style="flex:1"><button onclick="this.parentElement.remove()" style="background:#fee2e2;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;color:#dc2626">✕</button>';
   document.getElementById('fichajes').appendChild(div);
 }
 
@@ -9765,7 +9819,7 @@ function addOT(){
   otCount++;
   var div=document.createElement('div');
   div.className='ot-card';
-  div.innerHTML='<span class="ot-badge">OT</span><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><div><div style="font-size:10px;color:#92400e;margin-bottom:3px;font-weight:700">Número OT</div><input type="text" class="ot-num" placeholder="7941XXXXXX" maxlength="10" style="width:100%"></div><div><div style="font-size:10px;color:#92400e;margin-bottom:3px;font-weight:700">Descripción</div><input type="text" class="ot-desc" placeholder="Descripción" style="width:100%"></div></div><div class="ot-times"><label>🕐 Inicio:</label><input type="time" class="ot-ini"><label>→ Fin:</label><input type="time" class="ot-fin"></div><button onclick="this.parentElement.remove()" style="background:#fee2e2;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;color:#dc2626;margin-top:6px;width:100%">✕ Eliminar</button>';
+  div.innerHTML='<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="ot-badge" style="margin:0">TAREA</span><select class="ot-tipo" style="flex:1">'+OPTS_TIPOS+'</select></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><div><div style="font-size:10px;color:#92400e;margin-bottom:3px;font-weight:700">Número OT</div><input type="text" class="ot-num" placeholder="7941XXXXXX" maxlength="10" style="width:100%"></div><div><div style="font-size:10px;color:#92400e;margin-bottom:3px;font-weight:700">Descripción</div><input type="text" class="ot-desc" placeholder="Descripción" style="width:100%"></div></div><div style="margin-top:6px"><input type="text" class="ot-sitio" list="lista-sitios" placeholder="📍 Sitio (opcional)" style="width:100%"></div><div class="ot-times"><label>🕐 Inicio:</label><input type="time" class="ot-ini"><label>→ Fin:</label><input type="time" class="ot-fin"></div><button onclick="this.parentElement.remove()" style="background:#fee2e2;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;color:#dc2626;margin-top:6px;width:100%">✕ Eliminar</button>';
   document.getElementById('tareas').appendChild(div);
 }
 
@@ -9791,6 +9845,8 @@ function calcTotal(){
   var transp=parseFloat(document.getElementById('transp').value)||0;
   tot+=dieta+transp;
   document.querySelectorAll('.dext-imp').forEach(function(el){tot+=parseFloat(el.value)||0;});
+  document.querySelectorAll('.otro-imp').forEach(function(el){tot+=parseFloat(el.value)||0;});
+  document.querySelectorAll('.viaje-row').forEach(function(r){tot+=(parseFloat(r.querySelector('.v-km').value)||0)*(parseFloat(r.querySelector('.v-prc').value)||0);});
   document.getElementById('total_val').textContent=tot.toFixed(2).replace('.',',')+' €';
   document.getElementById('total_horas').textContent=totH>0?(Math.floor(totH)+'h'+(Math.round((totH%1)*60)>0?' '+Math.round((totH%1)*60)+'m':'')):'0h';
 }
@@ -9834,17 +9890,19 @@ function exportarJSON(){
   var fichajes=[];
   document.querySelectorAll('#fichajes .fich-row').forEach(function(row,i){
     var ents=row.querySelectorAll('input[type=time]');
-    var nota=row.querySelector('input[type=text]');
+    var nota=row.querySelector('.fnota')||row.querySelector('input[type=text]');
+    var desc=row.querySelector('.desc');
     if(ents[0]&&(ents[0].value||ents[1].value)){
-      fichajes.push({entrada:ents[0].value||'',salida:ents[1].value||'',nota:nota?nota.value:'',_fid:Date.now()+i});
+      fichajes.push({entrada:ents[0].value||'',salida:ents[1].value||'',descanso:desc?(parseFloat(desc.value)||0):0,nota:nota?nota.value:'',_fid:Date.now()+i});
     }
   });
   var tareas=[];
   document.querySelectorAll('#tareas .ot-card').forEach(function(card){
     var num=card.querySelector('.ot-num');var desc=card.querySelector('.ot-desc');
     var ini=card.querySelector('.ot-ini');var fin=card.querySelector('.ot-fin');
+    var tipo=card.querySelector('.ot-tipo');var sitio=card.querySelector('.ot-sitio');
     if(num&&(num.value||desc.value)){
-      tareas.push({otNumero:(num.value||'').replace(/\\D/g,'').slice(0,10),titulo:desc?desc.value:'',horaInicio:ini?ini.value:'',horaFin:fin?fin.value:''});
+      tareas.push({otNumero:(num.value||'').replace(/\\D/g,'').slice(0,10),titulo:desc?desc.value:'',horaInicio:ini?ini.value:'',horaFin:fin?fin.value:'',tipoTarea:tipo?tipo.value:'ot',sitio:sitio?sitio.value:''});
     }
   });
   var dietasExtra=[];
@@ -9852,6 +9910,17 @@ function exportarJSON(){
     var conc=row.querySelector('.dext-conc');var imp=row.querySelector('.dext-imp');
     if(conc&&conc.value){dietasExtra.push({concepto:conc.value,importe:parseFloat(imp.value)||0});}
   });
+  var otros=[];
+  document.querySelectorAll('#otros .otro-row').forEach(function(row){
+    var c=row.querySelector('.otro-conc'),im=row.querySelector('.otro-imp');
+    if((c&&c.value)||(im&&parseFloat(im.value))) otros.push({concepto:c?c.value:'',importe:parseFloat(im.value)||0});
+  });
+  var viajes=[];
+  document.querySelectorAll('#viajes .viaje-row').forEach(function(r){
+    var o=r.querySelector('.v-ori').value,d=r.querySelector('.v-des').value,km=parseFloat(r.querySelector('.v-km').value)||0,p=parseFloat(r.querySelector('.v-prc').value)||0;
+    if(o||d||km) viajes.push({origen:o,destino:d,km:km,precioManual:p});
+  });
+  save();
   var data={
     fecha:document.getElementById('fecha').value,
     titulo:document.getElementById('titulo').value,
@@ -9876,7 +9945,9 @@ function exportarJSON(){
     ubicacionSalida:document.getElementById('ubi_sal').value,
     fichajes:fichajes,
     _plantillaTareas:tareas,
-    otrosConceptos:[]
+    otrosConceptos:otros,
+    journeys:viajes,
+    _plantillaVersion:2
   };
   var json=JSON.stringify(data);
   if(navigator.clipboard){
@@ -9906,48 +9977,41 @@ function capturarImagen(){
 async function importarPlantillaJSON(jsonStr){
   try{
     const data=JSON.parse(jsonStr);
-    if(!data.fecha) throw new Error('JSON no válido — falta la fecha');
-
-    // Rellenar fEntry con todos los campos
-    fEntry.fecha=data.fecha;
-    if(data.titulo) fEntry.titulo=data.titulo;
-    if(data.horasNormales) fEntry.horasNormales=data.horasNormales;
-    if(data.precioHoraNormal) fEntry.precioHoraNormal=data.precioHoraNormal;
-    if(data.importeNormales) fEntry.importeNormales=data.importeNormales;
-    if(data.horasExtra) fEntry.horasExtra=data.horasExtra;
-    if(data.precioHoraExtra) fEntry.precioHoraExtra=data.precioHoraExtra;
-    if(data.importeExtra) fEntry.importeExtra=data.importeExtra;
-    if(data.horasNocturnas) fEntry.horasNocturnas=data.horasNocturnas;
-    if(data.precioHoraNocturna) fEntry.precioHoraNocturna=data.precioHoraNocturna;
-    if(data.importeNocturnas) fEntry.importeNocturnas=data.importeNocturnas;
-    if(data.horasFestivas) fEntry.horasFestivas=data.horasFestivas;
-    if(data.precioHoraFestiva) fEntry.precioHoraFestiva=data.precioHoraFestiva;
-    if(data.importeFestivas) fEntry.importeFestivas=data.importeFestivas;
-    if(data.dieta) fEntry.dieta=data.dieta;
-    if(data.transporte) fEntry.transporte=data.transporte;
-    if(data._transportType) fEntry._transportType=data._transportType;
-    if(data.dietasExtra&&data.dietasExtra.length) fEntry.dietasExtra=data.dietasExtra;
-    if(data.notas) fEntry.notas=data.notas;
-    if(data.ubicacionEntrada) fEntry.ubicacionEntrada=textToLoc(data.ubicacionEntrada);
-    if(data.ubicacionSalida) fEntry.ubicacionSalida=textToLoc(data.ubicacionSalida);
-    if(data.fichajes&&data.fichajes.length){
-      fEntry.fichajes=data.fichajes.map(f=>({...defFichaje(),...f,_fid:Date.now()+Math.random()}));
+    const fecha=_fechaImp(data.fecha);
+    if(!fecha) throw new Error('JSON no válido — falta la fecha');
+    const num=_numImp;
+    // Horas, dieta y transporte del día van al fichaje 1 (o a una parte sin horario)
+    const fich=(data.fichajes||[]).filter(f=>f&&(f.entrada||f.salida)).map(f=>({
+      entrada:_horaImp(f.entrada), salida:_horaImp(f.salida), descanso:num(f.descanso), nota:f.nota||'', titulo:f.titulo||''
+    }));
+    const horasDia={horasNormales:num(data.horasNormales),horasExtra:num(data.horasExtra),horasNocturnas:num(data.horasNocturnas),horasFestivas:num(data.horasFestivas)};
+    const hayHorasDia=Object.values(horasDia).some(v=>v>0);
+    const extrasDia={dieta:num(data.dieta),transporte:num(data.transporte),
+      _transportType:num(data.transporte)>0?(_transpTipoImp(data._transportType)||'coche'):''};
+    if(fich.length){
+      // Con horas puestas a mano en la plantilla: van enteras al fichaje 1
+      // (el resto de fichajes calcula las suyas por su horario). Sin horas: todos se calculan solos.
+      if(hayHorasDia){ Object.assign(fich[0],horasDia); fich.slice(1).forEach(f=>{f._sinAutoHoras=true;}); }
+      Object.assign(fich[0],extrasDia);
+      if(data.titulo) fich[0].titulo=fich[0].titulo||data.titulo;
+    } else {
+      fich.push({...horasDia,...extrasDia,titulo:data.titulo||''});
     }
-    if(data.otrosConceptos&&data.otrosConceptos.length) fEntry.otrosConceptos=data.otrosConceptos;
-
-    // Importar tareas si las hay
-    let nTareas=0;
-    for(const t of(data._plantillaTareas||[])){
-      if(!t.titulo&&!t.otNumero) continue;
-      const tarea={...defTask(data.fecha),titulo:t.titulo||'',otNumero:(t.otNumero||'').replace(/\D/g,'').slice(0,10),horaInicio:t.horaInicio||'',horaFin:t.horaFin||'',usaOT:!!(t.otNumero),fecha:data.fecha};
-      const id=await dbPut(ST.tasks,tarea);
-      S.tasks.push({...tarea,id});
-      nTareas++;
-    }
-
-    S.tab='fichar';
-    showAlert('✅ Plantilla importada: '+nTareas+' tareas y jornada del '+dlbl(data.fecha));
-    rerender();
+    // Fichajes sin horas propias cuando el día ya trae horas a mano: no recalcular (evita contar doble)
+    fich.forEach(f=>{ if(f._sinAutoHoras){ f._noAuto=true; } delete f._sinAutoHoras; });
+    const tareas=(data._plantillaTareas||[]).map(t=>({titulo:t.titulo||'',otNumero:t.otNumero||'',tipoTarea:t.tipoTarea||'ot',sitio:t.sitio||'',horaInicio:t.horaInicio||'',horaFin:t.horaFin||''}));
+    const parts={
+      titulo:data.titulo||'', notas:(data.notas||'').replace(/\n/g,'<br>'),
+      precios:{normal:num(data.precioHoraNormal),extra:num(data.precioHoraExtra),nocturna:num(data.precioHoraNocturna),festiva:num(data.precioHoraFestiva)},
+      ubicacionEntrada:data.ubicacionEntrada||'', ubicacionSalida:data.ubicacionSalida||'',
+      fichajes:fich, dietasExtra:data.dietasExtra||[], otrosConceptos:data.otrosConceptos||[],
+      journeys:data.journeys||[], tareas
+    };
+    const r=await mergeImportedDay(fecha,parts);
+    try{ saveLocalBackup(); }catch(e){}
+    // Abrir el día importado para verlo
+    if(typeof goToDay==='function') goToDay(fecha); else { S.tab='fichar'; rerender(); }
+    showAlert('✅ '+dlbl(fecha)+': '+_resumenImport([r]));
   }catch(e){
     showAlert('Error importando: '+e.message,'err');
   }
@@ -10046,137 +10110,415 @@ function drawQR(canvasId, text){
 }
 
 
-// ── PLANTILLA EXCEL PARA IMPORTAR ────────────────────────
+
+// ══════════════════════════════════════════════════════════
+// IMPORTACIÓN COMÚN DE PLANTILLAS (Excel e interactiva)
+// Regla de oro: SUMA a lo que ya hay en la jornada; nunca la reemplaza.
+//  · Un fichaje con el mismo horario que uno existente solo rellena huecos.
+//  · Un fichaje con horario nuevo se añade como fichaje más.
+//  · Dietas extra, otros conceptos, viajes y tareas se añaden si no están ya.
+// ══════════════════════════════════════════════════════════
+function _normTxt(s){ return String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/€/g,'eur').replace(/[^a-z0-9]/g,''); }
+function _numImp(v){
+  if(v===null||v===undefined||v==='') return 0;
+  if(typeof v==='number') return isFinite(v)?v:0;
+  const n=parseFloat(String(v).replace(/\s|€/g,'').replace(',','.'));
+  return isFinite(n)?n:0;
+}
+// Fecha desde Excel: número de serie, dd/mm/aaaa, aaaa-mm-dd o Date
+function _fechaImp(v){
+  if(v===null||v===undefined||v==='') return '';
+  if(v instanceof Date && !isNaN(v)) return v.getFullYear()+'-'+pad(v.getMonth()+1)+'-'+pad(v.getDate());
+  if(typeof v==='number' && v>20000 && v<80000){
+    const d=new Date(Math.round((v-25569)*86400000)); // serie Excel → fecha (UTC)
+    return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate());
+  }
+  const s=String(v).trim();
+  let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m) return m[1]+'-'+pad(+m[2])+'-'+pad(+m[3]);
+  m=s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
+  if(m){ const y=m[3].length===2?'20'+m[3]:m[3]; return y+'-'+pad(+m[2])+'-'+pad(+m[1]); }
+  return '';
+}
+// Hora desde Excel: fracción de día (0.3333), "7:00", "07:00:00", "7.30"
+function _horaImp(v){
+  if(v===null||v===undefined||v==='') return '';
+  if(typeof v==='number'){
+    if(v>=0 && v<1){ const mins=Math.round(v*1440); return pad(Math.floor(mins/60)%24)+':'+pad(mins%60); }
+    if(v>=0 && v<24){ const hh=Math.floor(v), mm=Math.round((v-hh)*100); return pad(hh)+':'+pad(mm<60?mm:0); }
+    return '';
+  }
+  const m=String(v).trim().match(/^(\d{1,2})[:.h](\d{2})/);
+  if(m) return pad(Math.min(23,+m[1]))+':'+pad(Math.min(59,+m[2]));
+  const m2=String(v).trim().match(/^(\d{1,2})$/);
+  return m2?pad(Math.min(23,+m2[1]))+':00':'';
+}
+// Tipo de transporte: acepta id ("coche") o nombre ("Coche", "Camión")
+function _transpTipoImp(v){
+  const n=_normTxt(v); if(!n) return '';
+  const tt=(S.transportTypes||[]).find(t=>_normTxt(t.id)===n||_normTxt(t.nombre)===n);
+  if(tt) return tt.id;
+  if(n.startsWith('cam')) return 'camion';
+  if(n.startsWith('coch')) return 'coche';
+  return '';
+}
+// Tipo de tarea: acepta id ("estral"), nombre ("ESTRAL", "O.T.", "OT")
+function _tipoTareaImp(v){
+  const n=_normTxt(v); if(!n) return 'ot';
+  const tt=(taskTypes||[]).find(t=>_normTxt(t.id)===n||_normTxt(t.nombre)===n);
+  return tt?tt.id:'ot';
+}
+function _siteIdImp(nombre){
+  const n=_normTxt(nombre); if(!n) return '';
+  const s=(S.sites||[]).find(x=>_normTxt(x.nombre)===n);
+  return s?s.id:'';
+}
+const _HORA_KEYS=['horasNormales','horasExtra','horasNocturnas','horasFestivas'];
+const _FICH_FILL_KEYS=['horasNormales','horasExtra','horasNocturnas','horasFestivas','dieta','transporte','_transportType','descanso','titulo','nota','ubicacionEntrada','ubicacionSalida'];
+
+// Si una parte de fichaje trae horario pero ninguna hora, se calculan como
+// en la app: horas netas (menos descanso), máximo 8 normales y el resto extra.
+function _autoHorasParte(p){
+  if(p._noAuto){ delete p._noAuto; p._horasManual=true; return p; }
+  const tieneHoras=_HORA_KEYS.some(k=>(+p[k]||0)>0);
+  if(tieneHoras){ p._horasManual=true; return p; }
+  if(p.entrada&&p.salida&&typeof calcH==='function'){
+    const mins=Math.max(0,calcH(p.entrada,p.salida)*60-(+p.descanso||0));
+    if(mins>0){
+      const net=Math.round(mins*100/60)/100;
+      p.horasNormales=Math.min(8,net);
+      p.horasExtra=Math.round(Math.max(0,net-8)*100)/100;
+    }
+  }
+  return p;
+}
+
+/**
+ * Suma a la jornada de `fecha` lo que trae `parts`:
+ *  {titulo, notas, precios:{normal,extra,nocturna,festiva}, ubicacionEntrada, ubicacionSalida,
+ *   fichajes:[{entrada,salida,descanso,titulo,nota,horasNormales..,dieta,transporte,_transportType,_tareaIdx}],
+ *   dietasExtra:[{concepto,importe}], otrosConceptos:[{concepto,importe}],
+ *   journeys:[{origen,destino,km,precioManual,tipoManual}],
+ *   tareas:[{titulo,otNumero,tipoTarea,sitio,horaInicio,horaFin,descripcion}]}
+ * Devuelve {estado:'nueva'|'sumada'|'sin cambios', cambios, tareasNuevas}
+ */
+async function mergeImportedDay(fecha, parts){
+  // 1) Si es el día abierto en pantalla, guardar antes lo que haya escrito
+  if(fEntry && fEntry.fecha===fecha){
+    try{ captureFormState(); }catch(e){}
+    try{ await saveDraft(); }catch(e){}
+  }
+  const existing=S.entries.find(e=>e.fecha===fecha&&!e._draft)||S.entries.find(e=>e.fecha===fecha);
+  const deep=o=>JSON.parse(JSON.stringify(o));
+  const base=existing?deep(existing):{...defEntry(),fecha,
+    precioHoraNormal:S.precioHoraNormalDefault||0, precioHoraExtra:S.precioHoraExtraDefault||0,
+    precioHoraNocturna:S.precioHoraNocturnaDefault||0, precioHoraFestiva:S.precioHoraFestivaDefault||0};
+  ['fichajes','dietasExtra','otrosConceptos','journeys'].forEach(k=>{ if(!Array.isArray(base[k])) base[k]=[]; });
+  let cambios=0;
+
+  // 2) Jornada antigua sin fichajes pero con datos sueltos → pasan al fichaje 1
+  if(base.fichajes.length===0 && existing && entryHasData(existing)){
+    const f0={...defFichaje(),_fid:Date.now()+Math.random(),entrada:base.horaEntrada||'',salida:base.horaSalida||'',titulo:base.titulo||'',nota:'',_f1Migrado:true};
+    ['horasNormales','horasExtra','horasNocturnas','horasFestivas','dieta','transporte','_transportType'].forEach(k=>{ if(base[k]) f0[k]=base[k]; });
+    f0.descanso=base.timerDeduct||0;
+    base.fichajes.push(f0);
+  }
+
+  // 3) Datos de la jornada: solo rellenan huecos
+  if(parts.titulo && !String(base.titulo||'').replace(/<[^>]*>/g,'').trim()){ base.titulo=parts.titulo; cambios++; }
+  if(parts.notas){
+    const actual=String(base.notas||'');
+    if(!actual.replace(/<[^>]*>/g,'').includes(String(parts.notas).trim())){
+      base.notas=actual?(actual+'<br>'+parts.notas):parts.notas; cambios++;
+    }
+  }
+  const pr=parts.precios||{};
+  [['normal','precioHoraNormal'],['extra','precioHoraExtra'],['nocturna','precioHoraNocturna'],['festiva','precioHoraFestiva']].forEach(([k,f])=>{
+    if((+pr[k]||0)>0 && !(+base[f]||0)){ base[f]=+pr[k]; cambios++; }
+  });
+  ['ubicacionEntrada','ubicacionSalida'].forEach(k=>{
+    if(parts[k] && !base[k]){ base[k]=(typeof textToLoc==='function')?textToLoc(parts[k]):parts[k]; cambios++; }
+  });
+
+  // 4) Fichajes
+  const fichDestino=[]; // fichaje donde acabó cada parte (para enlazar tareas)
+  (parts.fichajes||[]).forEach(raw=>{
+    const p=_autoHorasParte({...raw});
+    let dest=null;
+    if(p.entrada&&p.salida) dest=base.fichajes.find(f=>f.entrada===p.entrada&&f.salida===p.salida);
+    if(!dest && !p.entrada && !p.salida && base.fichajes.length) dest=base.fichajes[0];
+    if(!dest && base.fichajes.length===1){
+      const f=base.fichajes[0];
+      const vacio=!f.entrada&&!f.salida&&!_HORA_KEYS.some(k=>(+f[k]||0)>0)&&!(+f.dieta||0)&&!(+f.transporte||0);
+      if(vacio) dest=f;
+    }
+    if(dest){
+      if(!dest.entrada&&p.entrada){ dest.entrada=p.entrada; cambios++; }
+      if(!dest.salida&&p.salida){ dest.salida=p.salida; cambios++; }
+      _FICH_FILL_KEYS.forEach(k=>{
+        const v=p[k]; if(v===undefined||v===null||v===''||v===0) return;
+        if(dest[k]===undefined||dest[k]===null||dest[k]===''||dest[k]===0){ dest[k]=v; cambios++; }
+      });
+      if((+dest.dieta||0)>0 && !(+dest.dietaPrecioUnit||0)){ dest.dietaCantidad=dest.dietaCantidad||1; dest.dietaPrecioUnit=+dest.dieta; }
+      if((+dest.transporte||0)>0 && !(+dest.transportePrecioUnit||0)){ dest.transporteCantidad=dest.transporteCantidad||1; dest.transportePrecioUnit=+dest.transporte; }
+      if(p._horasManual) dest._horasManual=true;
+    } else {
+      dest={...defFichaje(),_fid:Date.now()+Math.random(),
+        entrada:p.entrada||'',salida:p.salida||'',descanso:+p.descanso||0,titulo:p.titulo||'',nota:p.nota||'',
+        horasNormales:+p.horasNormales||0,horasExtra:+p.horasExtra||0,horasNocturnas:+p.horasNocturnas||0,horasFestivas:+p.horasFestivas||0,
+        dieta:+p.dieta||0,dietaCantidad:1,dietaPrecioUnit:+p.dieta||0,
+        transporte:+p.transporte||0,transporteCantidad:1,transportePrecioUnit:+p.transporte||0,_transportType:p._transportType||'',
+        _horasManual:!!p._horasManual,_f1Migrado:true};
+      base.fichajes.push(dest); cambios++;
+    }
+    fichDestino.push({dest,tareaIdx:p._tareaIdx});
+  });
+  // El tipo de transporte del día = el del fichaje 1 (o el primero que lo tenga)
+  const fT=base.fichajes.find(f=>(+f.transporte||0)>0&&f._transportType);
+  if(fT && !base._transportType) base._transportType=fT._transportType;
+  if(base.fichajes[0]){
+    if(!base.horaEntrada&&base.fichajes[0].entrada) base.horaEntrada=base.fichajes[0].entrada;
+    if(!base.horaSalida&&base.fichajes[0].salida) base.horaSalida=base.fichajes[0].salida;
+    if(!base.timerDeduct&&base.fichajes.length===1&&base.fichajes[0].descanso) base.timerDeduct=base.fichajes[0].descanso;
+  }
+
+  // 5) Conceptos del día (sin duplicar)
+  const mismoConc=(a,b)=>_normTxt(a.concepto)===_normTxt(b.concepto)&&Math.round((+a.importe||0)*100)===Math.round((+b.importe||0)*100);
+  (parts.dietasExtra||[]).filter(d=>d&&(d.concepto||+d.importe)).forEach(d=>{
+    if(!base.dietasExtra.some(x=>mismoConc(x,d))){ base.dietasExtra.push({id:'d'+Date.now()+Math.random().toString(36).slice(2,7),concepto:d.concepto||'Dieta extra',importe:+d.importe||0}); cambios++; }
+  });
+  (parts.otrosConceptos||[]).filter(o=>o&&(o.concepto||+o.importe)).forEach(o=>{
+    if(!base.otrosConceptos.some(x=>mismoConc(x,o))){ base.otrosConceptos.push({id:'o'+Date.now()+Math.random().toString(36).slice(2,7),concepto:o.concepto||'Concepto',importe:+o.importe||0}); cambios++; }
+  });
+  (parts.journeys||[]).filter(j=>j&&(j.origen||j.destino||+j.km)).forEach(j=>{
+    const dup=base.journeys.some(x=>_normTxt(x.origen)===_normTxt(j.origen)&&_normTxt(x.destino)===_normTxt(j.destino)&&Math.round((+x.km||0)*10)===Math.round((+j.km||0)*10));
+    if(!dup){ base.journeys.push({...defJourney(),origen:j.origen||'',destino:j.destino||'',km:+j.km||0,precioManual:(+j.precioManual||0)>0?+j.precioManual:0.19,tipoManual:j.tipoManual||'coche',horaInicio:'',horaFin:''}); cambios++; }
+  });
+
+  // 6) Recalcular totales del día con la misma función de la app
+  if(base.fichajes.length){
+    const prev=fEntry;
+    try{ fEntry=base; recomputeDayAggregates(); } finally { fEntry=prev; }
+  }
+
+  // 7) Tareas / OT (sin duplicar) y enlace con su fichaje
+  let tareasNuevas=0;
+  const idsTareas=[];
+  for(const t of (parts.tareas||[])){
+    if(!t||(!t.titulo&&!t.otNumero)){ idsTareas.push(null); continue; }
+    const ot=String(t.otNumero||'').replace(/\D/g,'').slice(0,10);
+    const tipo=_tipoTareaImp(t.tipoTarea);
+    const ya=(S.tasks||[]).find(x=>x.fecha===fecha&&((ot&&String(x.otNumero||'')===ot)||(!ot&&_normTxt(x.titulo)===_normTxt(t.titulo))));
+    if(ya){ idsTareas.push(ya.id); continue; }
+    const tarea={...defTask(fecha),titulo:t.titulo||'',descripcion:t.descripcion||'',otNumero:ot,usaOT:!!ot,tipoTarea:tipo,
+      siteId:_siteIdImp(t.sitio),horaInicio:t.horaInicio||'',horaFin:t.horaFin||'',fecha};
+    const id=await dbPut(ST.tasks,tarea);
+    S.tasks.push({...tarea,id}); idsTareas.push(id); tareasNuevas++; cambios++;
+  }
+  fichDestino.forEach(({dest,tareaIdx})=>{
+    if(tareaIdx!=null && idsTareas[tareaIdx] && !dest.taskId) dest.taskId=idsTareas[tareaIdx];
+  });
+
+  // 8) Guardar (una sola jornada por fecha)
+  if(!existing && !cambios) return {estado:'sin cambios',cambios:0,tareasNuevas};
+  if(existing && !cambios) return {estado:'sin cambios',cambios:0,tareasNuevas};
+  const toSave={...base,_draft:false,_savedAt:new Date().toISOString()};
+  for(const e of S.entries.filter(x=>x.fecha===fecha&&x.id&&x.id!==toSave.id)){
+    await dbDel(ST.entries,e.id); S.entries=S.entries.filter(x=>x.id!==e.id);
+  }
+  if(toSave.id){
+    await dbPut(ST.entries,toSave);
+    S.entries=S.entries.map(e=>e.id===toSave.id?toSave:e);
+    if(!S.entries.find(e=>e.id===toSave.id)) S.entries.push(toSave);
+  } else {
+    delete toSave.id;
+    const id=await dbPut(ST.entries,toSave); toSave.id=id; S.entries.push(toSave);
+  }
+  // Si es el día abierto, recargarlo para que la pantalla muestre lo importado
+  if(fEntry && fEntry.fecha===fecha){
+    fEntry={...deep(toSave)}; editingEntry=true;
+    try{ localStorage.removeItem('_fEntry'); }catch(e){}
+  }
+  try{ localStorage.setItem('lastSave',new Date().toISOString()); }catch(e){}
+  return {estado:existing?'sumada':'nueva',cambios,tareasNuevas};
+}
+
+// Mensaje final de una importación
+function _resumenImport(res){
+  const n=res.filter(r=>r.estado==='nueva').length;
+  const s=res.filter(r=>r.estado==='sumada').length;
+  const i=res.filter(r=>r.estado==='sin cambios').length;
+  const t=res.reduce((a,r)=>a+(r.tareasNuevas||0),0);
+  const p=[];
+  if(n) p.push(n+' jornada'+(n>1?'s':'')+' nueva'+(n>1?'s':''));
+  if(s) p.push(s+' completada'+(s>1?'s':'')+' (sumado a lo que ya tenías)');
+  if(i) p.push(i+' ya estaba'+(i>1?'n':'')+' igual');
+  if(t) p.push(t+' tarea'+(t>1?'s':'')+' nueva'+(t>1?'s':''));
+  return p.join(' · ')||'Nada que importar';
+}
+
+// ── PLANTILLA EXCEL PARA IMPORTAR (al día con todos los campos actuales) ──
+// Una fila = un fichaje. Varias filas con la misma fecha = varios fichajes del día.
+const PLANTILLA_XLS_COLS=[
+  // [encabezado, clave, ancho, alias de plantillas antiguas]
+  ['Fecha','fecha',11,[]],
+  ['Entrada','entrada',8,['horaentrada']],
+  ['Salida','salida',8,['horasalida']],
+  ['Descanso (min)','descanso',9,['descanso']],
+  ['Título jornada','titulo',22,['titulo']],
+  ['Horas normales','hn',9,['hnormales']],
+  ['€/h normal','pn',9,['preciohnormal','precionormal']],
+  ['Horas extra','he',8,['hextra']],
+  ['€/h extra','pe',8,['preciohextra','precioextra']],
+  ['Horas nocturnas','hnoc',9,['hnocturnas']],
+  ['€/h nocturna','pnoc',9,['preciohnocturnas','preciohnocturna','precionocturna']],
+  ['Horas festivas','hf',9,['hfestivas']],
+  ['€/h festiva','pf',9,['preciohfestivas','preciohfestiva','preciofestiva']],
+  ['Dieta (€)','dieta',8,['dieta']],
+  ['Dieta extra (concepto)','dexc',18,[]],
+  ['Dieta extra (€)','dexi',9,[]],
+  ['Transporte (tipo)','ttipo',11,['tipotransporte']],
+  ['Transporte (€)','transp',10,['transporte']],
+  ['Viaje origen','vori',14,[]],
+  ['Viaje destino','vdes',14,[]],
+  ['Km','km',6,[]],
+  ['€/km','pkm',7,[]],
+  ['Otro concepto','oc',16,[]],
+  ['Otro concepto (€)','oi',9,[]],
+  ['Tipo de tarea','tipo',11,[]],
+  ['Nº OT','ot',12,['numeroot','ot','not']],
+  ['Tarea','tarea',26,[]],
+  ['Sitio','sitio',16,[]],
+  ['Notas','notas',30,['nota']]
+];
+
 async function downloadTemplate(){
   if(!window.XLSX){showAlert('Cargando libreria...','err');setTimeout(downloadTemplate,2000);return;}
   const wb=XLSX.utils.book_new();
+  const tt=(S.transportTypes||[]).map(t=>t.nombre).join(', ')||'Coche, Camión';
+  const tipos=(taskTypes||[]).map(t=>t.nombre).join(', ')||'O.T.';
+  const head=PLANTILLA_XLS_COLS.map(c=>c[0]);
+  const vacia=()=>head.map(()=> '');
+  const ej1=vacia(), ej2=vacia();
+  const set=(row,key,v)=>{ const i=PLANTILLA_XLS_COLS.findIndex(c=>c[1]===key); row[i]=v; };
+  const t1=(taskTypes||[])[0]||{nombre:'O.T.'};
+  set(ej1,'fecha',today()); set(ej1,'entrada','07:00'); set(ej1,'salida','15:00'); set(ej1,'descanso',0);
+  set(ej1,'titulo','EN TRADEMA'); set(ej1,'hn',8); set(ej1,'pn',S.precioHoraNormalDefault||12);
+  set(ej1,'dieta',12); set(ej1,'ttipo',((S.transportTypes||[])[0]||{nombre:'Coche'}).nombre); set(ej1,'transp',4.6);
+  set(ej1,'tipo',t1.nombre); set(ej1,'ot','7941000000'); set(ej1,'tarea','Descripción de la tarea'); set(ej1,'sitio','');
+  set(ej1,'notas','EJEMPLO - borra esta fila');
+  set(ej2,'fecha',today()); set(ej2,'entrada','16:00'); set(ej2,'salida','18:00');
+  set(ej2,'vori','Granada'); set(ej2,'vdes','Motril'); set(ej2,'km',70); set(ej2,'pkm',0.19);
+  set(ej2,'oc','Parking'); set(ej2,'oi',3.5); set(ej2,'notas','EJEMPLO - borra esta fila (2º fichaje del mismo día)');
 
-  // Sheet: Jornadas
   const rows=[
     ['TIMERPRO - PLANTILLA DE JORNADAS'],
-    ['Instrucciones: Rellena una fila por jornada. NO modifiques los encabezados (fila 4).'],
-    ['Formatos: Fecha=YYYY-MM-DD, Horas=numerico (ej: 8 o 7.5), Importe=numerico (ej: 15.50)'],
-    [],
-    [
-      'Fecha','Entrada','Salida',
-      'Horas Normales','Precio/h Normal',
-      'Horas Extra','Precio/h Extra',
-      'Horas Nocturnas','Precio/h Nocturnas',
-      'Horas Festivas','Precio/h Festivas',
-      'Dieta','Transporte','Nota'
-    ],
-    // Example rows
-    [today(),'08:00','16:00', 8,15.50, 0,0, 0,0, 0,0, 10,5,'Ejemplo - borra esta fila'],
-    [today(),'07:30','14:00', 6.5,15.50, 1,20, 0,0, 0,0, 12,0,'']
+    ['Una fila por fichaje. Si un día tiene varios fichajes, pon varias filas con la misma fecha. Al importar se SUMA a lo que ya tengas, no se borra nada.'],
+    ['Fecha: 02/10/2026 o 2026-10-02 · Horas: 07:00 · Números: 7,5 o 7.5 · Si pones entrada y salida y dejas las horas vacías, se calculan solas. Las filas con "EJEMPLO" en Notas se ignoran.'],
+    head, ej1, ej2
   ];
-
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[
-    {wch:12},{wch:8},{wch:8},
-    {wch:14},{wch:14},
-    {wch:12},{wch:12},
-    {wch:16},{wch:16},
-    {wch:14},{wch:14},
-    {wch:8},{wch:10},{wch:30}
-  ];
-  // Style header row (row 5 = index 4)
+  ws['!cols']=PLANTILLA_XLS_COLS.map(c=>({wch:c[2]}));
+  ws['!freeze']={xSplit:1,ySplit:4};
   XLSX.utils.book_append_sheet(wb,ws,'Jornadas');
+
+  const ayuda=[
+    ['VALORES VÁLIDOS'],[],
+    ['Transporte (tipo)',tt],
+    ['Tipo de tarea',tipos],
+    ['Sitios guardados',(S.sites||[]).map(s=>s.nombre).filter(Boolean).join(', ')||'(ninguno)'],
+    [],
+    ['QUÉ HACE CADA COLUMNA'],
+    ['Descanso (min)','Minutos de descanso de ese fichaje (se restan si las horas se calculan solas)'],
+    ['Dieta / Transporte','Importe de ese fichaje'],
+    ['Viaje origen/destino/Km/€/km','Un viaje por fila. €/km vacío = 0,19'],
+    ['Otro concepto','Parking, peajes, material… con su importe'],
+    ['Tipo de tarea / Nº OT / Tarea / Sitio','Crea la tarea en TimerPro y la enlaza con ese fichaje'],
+    [],
+    ['Generada',new Date().toLocaleString('es-ES')]
+  ];
+  const ws2=XLSX.utils.aoa_to_sheet(ayuda); ws2['!cols']=[{wch:30},{wch:80}];
+  XLSX.utils.book_append_sheet(wb,ws2,'Ayuda');
 
   const fname='TimerPro_Plantilla.xlsx';
   const arr=XLSX.write(wb,{bookType:'xlsx',type:'array'});
   const blob=new Blob([arr],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  const file=new File([blob],fname,{type:blob.type});
-
-  if(navigator.share){
-    try{await navigator.share({files:[file],title:'Plantilla TimerPro'});return;}
-    catch(e){if(e.name==='AbortError')return;}
-  }
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');a.href=url;a.download=fname;a.click();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
-  showAlert('Plantilla descargada. Rellenala y arrastrarla aqui para importar.');
+  dlDialog={blob,filename:fname,type:'xlsx',title:'Plantilla Excel lista'};
+  S.modal='dl'; rerender();
 }
 
 async function importFromTemplate(file){
   if(!file)return;
   if(!window.XLSX){showAlert('Cargando libreria...','err');return;}
-
   try{
     const buf=await file.arrayBuffer();
     const wb=XLSX.read(buf,{type:'array'});
     const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
 
-    // Find header row (contains 'Fecha')
-    let headerIdx=-1;
-    for(let i=0;i<rows.length;i++){
-      if(rows[i].some(c=>String(c).toLowerCase().includes('fecha'))){
-        headerIdx=i; break;
-      }
+    // Fila de encabezados = la primera que tiene "Fecha"
+    let headerIdx=rows.findIndex(r=>r.some(c=>_normTxt(c)==='fecha'));
+    if(headerIdx<0){showAlert('No se encontró la fila de encabezados (Fecha…)','err');return;}
+    const headers=rows[headerIdx].map(h=>_normTxt(h));
+    const idx={};
+    PLANTILLA_XLS_COLS.forEach(([h,key,,alias])=>{
+      const names=[_normTxt(h),...alias];
+      const i=headers.findIndex(x=>names.includes(x));
+      if(i>=0) idx[key]=i;
+    });
+    const get=(r,k)=>idx[k]!=null?r[idx[k]]:'';
+
+    // Agrupar filas por fecha
+    const porFecha={}; let omitidas=0;
+    rows.slice(headerIdx+1).forEach(r=>{
+      if(!r||!r.some(c=>c!==''&&c!=null)) return;
+      const notas=String(get(r,'notas')||'');
+      if(/ejemplo/i.test(notas)){ omitidas++; return; }
+      const fecha=_fechaImp(get(r,'fecha'));
+      if(!fecha){ omitidas++; return; }
+      (porFecha[fecha]=porFecha[fecha]||[]).push(r);
+    });
+    const fechas=Object.keys(porFecha).sort();
+    if(!fechas.length){showAlert('No se encontraron filas con fecha válida','err');return;}
+
+    const res=[];
+    for(const fecha of fechas){
+      const parts={fichajes:[],dietasExtra:[],otrosConceptos:[],journeys:[],tareas:[],precios:{}};
+      porFecha[fecha].forEach(r=>{
+        const tit=String(get(r,'titulo')||'').trim();
+        if(tit && !parts.titulo) parts.titulo=tit;
+        const nota=String(get(r,'notas')||'').trim();
+        if(nota) parts.notas=parts.notas?parts.notas+'<br>'+nota:nota;
+        [['pn','normal'],['pe','extra'],['pnoc','nocturna'],['pf','festiva']].forEach(([k,p])=>{ const v=_numImp(get(r,k)); if(v>0&&!parts.precios[p]) parts.precios[p]=v; });
+        let tareaIdx=null;
+        const ot=String(get(r,'ot')||'').trim(), tarea=String(get(r,'tarea')||'').trim();
+        if(ot||tarea){
+          tareaIdx=parts.tareas.length;
+          parts.tareas.push({otNumero:ot,titulo:tarea,tipoTarea:get(r,'tipo'),sitio:get(r,'sitio'),
+            horaInicio:_horaImp(get(r,'entrada')),horaFin:_horaImp(get(r,'salida'))});
+        }
+        const transp=_numImp(get(r,'transp'));
+        parts.fichajes.push({
+          entrada:_horaImp(get(r,'entrada')), salida:_horaImp(get(r,'salida')), descanso:_numImp(get(r,'descanso')),
+          titulo:tit, nota:'',
+          horasNormales:_numImp(get(r,'hn')), horasExtra:_numImp(get(r,'he')),
+          horasNocturnas:_numImp(get(r,'hnoc')), horasFestivas:_numImp(get(r,'hf')),
+          dieta:_numImp(get(r,'dieta')), transporte:transp,
+          _transportType:transp>0?(_transpTipoImp(get(r,'ttipo'))||'coche'):'',
+          _tareaIdx:tareaIdx
+        });
+        const dexc=String(get(r,'dexc')||'').trim(), dexi=_numImp(get(r,'dexi'));
+        if(dexc||dexi) parts.dietasExtra.push({concepto:dexc||'Dieta extra',importe:dexi});
+        const oc=String(get(r,'oc')||'').trim(), oi=_numImp(get(r,'oi'));
+        if(oc||oi) parts.otrosConceptos.push({concepto:oc||'Concepto',importe:oi});
+        const vori=String(get(r,'vori')||'').trim(), vdes=String(get(r,'vdes')||'').trim(), km=_numImp(get(r,'km'));
+        if(vori||vdes||km) parts.journeys.push({origen:vori,destino:vdes,km,precioManual:_numImp(get(r,'pkm'))});
+      });
+      res.push(await mergeImportedDay(fecha,parts));
     }
-    if(headerIdx<0){showAlert('No se encontro la fila de encabezados','err');return;}
-
-    const headers=rows[headerIdx].map(h=>String(h).toLowerCase().trim());
-    const dataRows=rows.slice(headerIdx+1).filter(r=>r[0]&&String(r[0]).match(/\d{4}-\d{2}-\d{2}/));
-
-    if(dataRows.length===0){showAlert('No se encontraron filas con datos validos','err');return;}
-
-    const col=name=>headers.findIndex(h=>h.includes(name));
-    const cFecha=col('fecha'), cEnt=col('entrada'), cSal=col('salida');
-    const cHN=col('normales'), cPN=col('precio/h normal')||col('precio normal');
-    const cHE=col('extra'), cPE=col('precio/h extra')||col('precio extra');
-    const cHNoc=col('nocturnas'), cPNoc=col('precio/h noct')||col('precio noct');
-    const cHF=col('festivas'), cPF=col('precio/h fest')||col('precio fest');
-    const cDieta=col('dieta'), cTransp=col('transporte'), cNota=col('nota');
-
-    let imported=0, skipped=0;
-    for(const row of dataRows){
-      const fecha=String(row[cFecha]||'').trim();
-      if(!fecha.match(/\d{4}-\d{2}-\d{2}/)){skipped++;continue;}
-
-      // Skip example rows
-      const nota=cNota>=0?String(row[cNota]||''):'';
-      if(nota.toLowerCase().includes('ejemplo')){skipped++;continue;}
-
-      const hN=parseFloat(row[cHN])||0;
-      const pN=parseFloat(row[cPN])||0;
-      const hE=parseFloat(row[cHE])||0;
-      const pE=parseFloat(row[cPE])||0;
-      const hNoc=parseFloat(row[cHNoc])||0;
-      const pNoc=parseFloat(row[cPNoc])||0;
-      const hF=parseFloat(row[cHF])||0;
-      const pF=parseFloat(row[cPF])||0;
-
-      const entry={
-        ...defEntry(),
-        fecha,
-        fichajes: (cEnt>=0&&row[cEnt])?[{_fid:Date.now()+imported,entrada:String(row[cEnt]),salida:cSal>=0?String(row[cSal]):'',nota:'',editing:false}]:[],
-        horasNormales:hN, precioHoraNormal:pN, importeNormales:Math.round(hN*pN*100)/100,
-        horasExtra:hE, precioHoraExtra:pE, importeExtra:Math.round(hE*pE*100)/100,
-        horasNocturnas:hNoc, precioHoraNocturna:pNoc, importeNocturnas:Math.round(hNoc*pNoc*100)/100,
-        horasFestivas:hF, precioHoraFestiva:pF, importeFestivas:Math.round(hF*pF*100)/100,
-        dieta:cDieta>=0?parseFloat(row[cDieta])||0:0,
-        transporte:cTransp>=0?parseFloat(row[cTransp])||0:0,
-        notas:nota,
-        _savedAt:new Date().toISOString()
-      };
-
-      // Check if entry for this date already exists
-      const existing=S.entries.find(e=>e.fecha===fecha);
-      if(existing){
-        entry.id=existing.id;
-        await dbPut(ST.entries,entry);
-        S.entries=S.entries.map(e=>e.id===existing.id?{...entry,id:existing.id}:e);
-      } else {
-        const id=await dbPut(ST.entries,entry);
-        S.entries.push({...entry,id});
-      }
-      imported++;
-    }
-
-    showAlert('Importadas '+imported+' jornadas'+(skipped>0?' ('+skipped+' omitidas)':''));
+    try{ saveLocalBackup(); }catch(e){}
+    showAlert('✅ '+_resumenImport(res)+(omitidas?' · '+omitidas+' fila'+(omitidas>1?'s':'')+' omitida'+(omitidas>1?'s':''):''));
     rerender();
-    // auto-sync disabled
   }catch(e){
     showAlert('Error importando: '+e.message,'err');
     console.error(e);
@@ -10184,51 +10526,172 @@ async function importFromTemplate(file){
 }
 
 
+// ── PLANTILLA PDF DEL DÍA (rellenable) — generada en la app, al día con todos los campos ──
+async function _cargarPdfLib(){
+  if(window.PDFLib) return;
+  await new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+    s.onload=res; s.onerror=rej;
+    document.head.appendChild(s);
+  });
+}
+async function buildPlantillaPDFBytes(PDFLib, datos){
+  const {PDFDocument,StandardFonts,rgb}=PDFLib;
+  const d=datos||{};
+  const doc=await PDFDocument.create();
+  const font=await doc.embedFont(StandardFonts.Helvetica);
+  const bold=await doc.embedFont(StandardFonts.HelveticaBold);
+  const form=doc.getForm();
+  const W=595.28, H=841.89, M=28;
+  const VERDE=rgb(0.086,0.639,0.290), NEGRO=rgb(0.06,0.09,0.16), GRIS=rgb(0.39,0.45,0.55), BORDE=rgb(0.70,0.74,0.80), FONDOI=rgb(0.94,0.99,0.95);
+  // WinAnsi: quitar caracteres que la fuente estándar no admite (emojis, etc.)
+  const txt=s=>String(s==null?'':s).normalize('NFC').replace(/[^\x20-\x7E -ÿ€]/g,'');
+  let page, y;
+  const nuevaPagina=(sub,pie)=>{
+    page=doc.addPage([W,H]);
+    page.drawRectangle({x:0,y:H-46,width:W,height:46,color:NEGRO});
+    page.drawText('TimerPro',{x:M,y:H-30,size:16,font:bold,color:rgb(0.29,0.87,0.50)});
+    page.drawText(txt('Control Horario Laboral  |  '+sub),{x:M+92,y:H-29,size:9,font,color:rgb(0.85,0.88,0.92)});
+    page.drawText(txt(d.empresa||''),{x:W-M-200,y:H-29,size:8,font,color:rgb(0.6,0.65,0.72),maxWidth:200});
+    page.drawRectangle({x:0,y:0,width:W,height:20,color:VERDE});
+    page.drawText(txt(pie),{x:M,y:7,size:7,font,color:rgb(1,1,1)});
+    page.drawText('TIMERPRO_IMPORT_V3',{x:W-M-80,y:7,size:7,font:bold,color:rgb(1,1,1)});
+    y=H-62;
+  };
+  const seccion=t=>{
+    y-=6;
+    page.drawRectangle({x:M,y:y-14,width:W-2*M,height:16,color:VERDE});
+    page.drawText(txt(t),{x:M+8,y:y-10,size:9,font:bold,color:rgb(1,1,1)});
+    y-=22;
+  };
+  const etiqueta=(t,x,yy)=>page.drawText(txt(t),{x,y:yy,size:6.5,font,color:GRIS});
+  const campo=(nombre,x,yy,w,h,o)=>{
+    o=o||{};
+    const f=form.createTextField(nombre);
+    if(o.multi) f.enableMultiline();
+    if(o.valor!=null&&o.valor!=='') f.setText(txt(o.valor));
+    f.addToPage(page,{x,y:yy,width:w,height:h,font,borderColor:BORDE,borderWidth:0.8,backgroundColor:o.importe?FONDOI:rgb(1,1,1),textColor:NEGRO});
+    f.setFontSize(o.fs||9);
+    return f;
+  };
+  // Campo con etiqueta encima. Devuelve nada; avanza nada (se maneja y fuera)
+  const lc=(lbl,nombre,x,w,o)=>{ etiqueta(lbl,x,y); campo(nombre,x,y-17,w,15,o); };
 
+  // ═════════ PÁGINA 1: JORNADA ═════════
+  nuevaPagina('Plantilla diaria  -  Jornada','Pág. 1/2  -  Rellena, guarda el PDF y súbelo o fotografíalo para importarlo con la IA');
+  const CW=W-2*M;
+  seccion('1. DATOS GENERALES');
+  lc('FECHA (DD/MM/AAAA)','fecha',M,95,{valor:d.fecha});
+  lc('TRABAJADOR','trabajador',M+105,190,{valor:d.trabajador});
+  lc('EMPRESA','empresa',M+305,CW-305,{valor:d.empresa});
+  y-=26;
+  lc('TÍTULO DE LA JORNADA (ej. EN TRADEMA)','titulo_jornada',M,CW);
+  y-=26;
+
+  seccion('2. FICHAJES DEL DÍA  -  entrada, salida, descanso y trabajo realizado');
+  etiqueta('#',M+2,y); etiqueta('ENTRADA',M+18,y); etiqueta('SALIDA',M+78,y); etiqueta('DESCANSO (min)',M+138,y); etiqueta('DESCRIPCIÓN / TRABAJO REALIZADO',M+208,y);
+  y-=4;
+  for(let i=1;i<=4;i++){
+    page.drawText(String(i),{x:M+3,y:y-24,size:9,font:bold,color:GRIS});
+    campo('f'+i+'_e',M+18,y-30,54,18);
+    campo('f'+i+'_s',M+78,y-30,54,18);
+    campo('f'+i+'_d',M+138,y-30,60,18);
+    campo('f'+i+'_n',M+208,y-38,CW-208,34,{multi:true,fs:8});
+    y-=42;
+  }
+  y-=4;
+
+  seccion('3. HORAS E IMPORTES');
+  const cols4=[['NORMALES','nor',d.pNor],['EXTRA','ext',d.pExt],['NOCTURNAS','noc',d.pNoc],['FESTIVAS','fes',d.pFes]];
+  const cw4=(CW-3*10)/4;
+  cols4.forEach(([t],i)=>page.drawText(t,{x:M+i*(cw4+10),y,size:8,font:bold,color:NEGRO}));
+  y-=12;
+  cols4.forEach(([,k],i)=>{ const x=M+i*(cw4+10); etiqueta('HORAS',x,y); etiqueta('EUR/HORA',x+cw4/3+2,y); etiqueta('IMPORTE',x+2*cw4/3+4,y); });
+  cols4.forEach(([,k,p],i)=>{ const x=M+i*(cw4+10), w=cw4/3-3;
+    campo('h_'+k,x,y-17,w,15); campo('p_'+k,x+cw4/3+2,y-17,w,15,{valor:p}); campo('i_'+k,x+2*cw4/3+4,y-17,w,15,{importe:true}); });
+  y-=30;
+
+  seccion('4. DIETAS, TRANSPORTE Y OTROS CONCEPTOS');
+  const tts=(d.transportes&&d.transportes.length?d.transportes:[{id:'coche',nombre:'Coche'},{id:'camion',nombre:'Camión'}]).slice(0,3);
+  lc('DIETA (EUR)','dieta',M,70);
+  tts.forEach((t,i)=>lc('TRANSPORTE '+String(t.nombre).toUpperCase()+' (EUR)','tr_'+_normTxt(t.id),M+80+i*95,85));
+  const xDE=M+80+tts.length*95;
+  lc('DIETAS EXTRA (concepto: importe)','dietas_extra',xDE,CW-(xDE-M));
+  y-=26;
+  lc('OTROS CONCEPTOS (parking, peaje, material...  concepto: importe)','otros_conceptos',M,CW);
+  y-=26;
+
+  seccion('5. VIAJES');
+  const vc=[['ORIGEN',120],['DESTINO',120],['KM',45],['EUR/KM',50],['IMPORTE',60],['VEHÍCULO',CW-395-25]];
+  let vx=M; vc.forEach(([t,w])=>{ etiqueta(t,vx,y); vx+=w+5; });
+  y-=4;
+  for(let i=1;i<=3;i++){
+    let x=M; const ks=['ori','des','km','prc','imp','veh'];
+    vc.forEach(([,w],j)=>{ campo('v'+i+'_'+ks[j],x,y-18,w,16,{importe:ks[j]==='imp',valor:ks[j]==='prc'?d.pKm:''}); x+=w+5; });
+    y-=21;
+  }
+  y-=6;
+
+  seccion('6. UBICACIÓN Y NOTAS');
+  lc('UBICACIÓN ENTRADA','ubi_ent',M,CW/2-5);
+  lc('UBICACIÓN SALIDA','ubi_sal',M+CW/2+5,CW/2-5);
+  y-=24;
+  etiqueta('NOTAS DEL DÍA',M,y);
+  const hNotas=Math.max(30,y-30);
+  campo('notas',M,y-hNotas,CW,hNotas-4,{multi:true,fs:8});
+
+  // ═════════ PÁGINA 2: TAREAS ═════════
+  nuevaPagina('Plantilla diaria  -  Tareas','Pág. 2/2  -  Tipos de tarea válidos: '+(d.tipos||'O.T.'));
+  for(let i=1;i<=3;i++){
+    seccion('TAREA '+i);
+    lc('TIPO DE TAREA ('+(d.tipos||'O.T.')+')','t'+i+'_tipo',M,CW*0.45);
+    lc('Nº O.T.','t'+i+'_otnum',M+CW*0.45+10,CW*0.25);
+    lc('CÓDIGO O.T.','t'+i+'_otcod',M+CW*0.70+20,CW*0.30-20);
+    y-=26;
+    lc('TÍTULO DE LA TAREA','t'+i+'_tit',M,CW*0.55);
+    lc('FECHA','t'+i+'_fecha',M+CW*0.55+10,80,{valor:d.fecha});
+    lc('INICIO','t'+i+'_hi',M+CW*0.55+100,(CW*0.45-110)/2);
+    lc('FIN','t'+i+'_hf',M+CW*0.55+100+(CW*0.45-110)/2+10,(CW*0.45-110)/2);
+    y-=26;
+    lc('SITIO / LUGAR','t'+i+'_sit',M,CW);
+    y-=24;
+    etiqueta('DESCRIPCIÓN',M,y);
+    campo('t'+i+'_desc',M,y-70,CW,68,{multi:true,fs:8});
+    y-=82;
+    const tv=[['VIAJE: ORIGEN',120,'vori'],['DESTINO',120,'vdes'],['KM',50,'vkm'],['EUR/KM',55,'vprc'],['VEHÍCULO',CW-345-20,'vveh']];
+    let x=M; tv.forEach(([t,w])=>{ etiqueta(t,x,y); x+=w+5; });
+    x=M; tv.forEach(([,w,k])=>{ campo('t'+i+'_'+k,x,y-17,w,15,{valor:k==='vprc'?d.pKm:''}); x+=w+5; });
+    y-=28;
+  }
+  return await doc.save();
+}
 
 async function downloadPDFTemplate(){
   showAlert('Preparando plantilla...');
   try{
-    // Load pdf-lib
-    if(!window.PDFLib){
-      await new Promise((res,rej)=>{
-        const s=document.createElement('script');
-        s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
-        s.onload=res; s.onerror=rej;
-        document.head.appendChild(s);
-      });
-    }
-    // Fetch base template
-    const resp = await fetch('https://franyamelie.github.io/timerpro/TimerPro_Plantilla.pdf');
-    if(!resp.ok) throw new Error('No se pudo cargar la plantilla base');
-    const pdfBytes = await resp.arrayBuffer();
-    const pdfDoc = await window.PDFLib.PDFDocument.load(pdfBytes);
-    const form = pdfDoc.getForm();
-
-    // Pre-fill with current data
-    function setField(name, value){
-      try{ if(value) form.getTextField(name).setText(String(value)); }catch(e){}
-    }
-    setField('fecha', today());
-    setField('trabajador', (fWorker.nombre||'')+' '+(fWorker.apellidos||''));
-    setField('empresa', fCompany.nombre||'');
-
-    const filled = await pdfDoc.save();
-    const blob = new Blob([filled], {type:'application/pdf'});
-    const fname = 'TimerPro_'+today()+'.pdf';
-
-    if(navigator.share && navigator.canShare && navigator.canShare({files:[new File([blob],fname,{type:'application/pdf'})]})){
-      try{ await navigator.share({files:[new File([blob],fname,{type:'application/pdf'})],title:'Plantilla TimerPro'}); return; }
-      catch(e){ if(e.name==='AbortError') return; }
-    }
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download=fname; a.click();
-    showAlert('Plantilla descargada con tus datos pre-rellenados');
+    await _cargarPdfLib();
+    const f=today().split('-');
+    const fmtP=v=>(+v||0)>0?String(+v).replace('.',','):'';
+    const datos={
+      fecha:f[2]+'/'+f[1]+'/'+f[0],
+      trabajador:((fWorker.nombre||'')+' '+(fWorker.apellidos||'')).trim(),
+      empresa:fCompany.nombre||'',
+      pNor:fmtP(S.precioHoraNormalDefault), pExt:fmtP(S.precioHoraExtraDefault),
+      pNoc:fmtP(S.precioHoraNocturnaDefault), pFes:fmtP(S.precioHoraFestivaDefault),
+      pKm:'0,19',
+      transportes:S.transportTypes||[],
+      tipos:(taskTypes||[]).map(t=>t.nombre).join(', ')
+    };
+    const bytes=await buildPlantillaPDFBytes(window.PDFLib,datos);
+    const blob=new Blob([bytes],{type:'application/pdf'});
+    dlDialog={blob,filename:'TimerPro_Plantilla_'+today()+'.pdf',type:'pdf',title:'Plantilla PDF lista (rellenable)'};
+    S.modal='dl'; rerender();
   }catch(e){
-    // Fallback: open static template
+    console.error(e);
+    // Sin conexión para cargar la librería: abrir la plantilla antigua como respaldo
     window.open('https://franyamelie.github.io/timerpro/TimerPro_Plantilla.pdf','_blank');
-    showAlert('Plantilla abierta — rellena fecha, trabajador y empresa manualmente');
+    showAlert('No se pudo generar la plantilla nueva (¿sin conexión?). Se abre la antigua.','err');
   }
 }
 
