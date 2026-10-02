@@ -5653,7 +5653,18 @@ function nominaListaCiclos(){
   return out;
 }
 
+function nominaTopBar(){
+  const v=S.nomVista==='hist'?'hist':'mes';
+  const seg=(id,txt)=>h('button',{class:'btn btn-sm',style:{flex:1,background:v===id?'var(--acc)':'var(--surf2)',color:v===id?'#000':'var(--ink)',border:'1px solid '+(v===id?'var(--acc)':'var(--brd)'),fontWeight:700},
+    on:{click:()=>{S.nomVista=id;rerender();window.scrollTo({top:0});}}},txt);
+  return h('div',{},
+    h('div',{style:{display:'flex',justifyContent:'flex-end',marginBottom:'.3rem'}},
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{captureFormState();S.tab='fichar';rerender();}}},'✕ Cerrar')),
+    h('div',{style:{display:'flex',gap:'.4rem',marginBottom:'.6rem'}},seg('mes','💰 Nómina del mes'),seg('hist','🗂️ Histórico completo'))
+  );
+}
 function renderNomina(){
+  if(S.nomVista==='hist') return h('div',{},nominaTopBar(),renderNominaHistorico());
   const sel=nominaSel();
   const N=computeNomina(sel.from,sel.to);
   const hoy=today();
@@ -5675,9 +5686,7 @@ function renderNomina(){
   const badge=(txt,bg,col)=>h('span',{style:{fontSize:'.68rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'99px',background:bg,color:col}},txt);
 
   return h('div',{},
-    h('div',{style:{display:'flex',justifyContent:'flex-end',marginBottom:'.3rem'}},
-      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{captureFormState();S.tab='fichar';rerender();}}},'✕ Cerrar')
-    ),
+    nominaTopBar(),
 
     // ── Configuración: sueldo base y guardia (se guardan) ──
     h('div',{class:'card'},
@@ -5817,6 +5826,241 @@ function renderNomina(){
   );
 }
 
+
+// ══════════════════════════════════════════════════════════
+// NÓMINA › HISTÓRICO COMPLETO: todos los fichajes desde el primer día
+// registrado hasta el último, agrupados por ciclos 26→25. Los ciclos ya
+// vencidos se muestran como CERRADOS; el que contiene hoy, EN CURSO.
+// ══════════════════════════════════════════════════════════
+function nominaHistCiclos(){
+  const ents=(S.entries||[]).filter(e=>!e._draft&&e.fecha);
+  if(!ents.length) return {ciclos:[],first:null,last:null};
+  const first=ents.reduce((m,e)=>e.fecha<m?e.fecha:m,ents[0].fecha);
+  const last=ents.reduce((m,e)=>e.fecha>m?e.fecha:m,ents[0].fecha);
+  const out=[]; let c=nominaCycleFor(first), guard=0;
+  const lastCyc=nominaCycleFor(last>today()?last:today());
+  while(c.from<=lastCyc.from && guard<240){ out.push(c); c=nominaCycleShift(c,1); guard++; }
+  return {ciclos:out,first,last};
+}
+// Horarios de una jornada: "07:00→15:00 · 16:00→18:00"
+function nominaHorarios(e){
+  const fs=(e.fichajes||[]).filter(f=>f&&(f.entrada||f.salida));
+  if(fs.length) return fs.map(f=>(f.entrada||'—')+'→'+(f.salida||'—')).join(' · ');
+  if(e.horaEntrada||e.horaSalida) return (e.horaEntrada||'—')+'→'+(e.horaSalida||'—');
+  return '';
+}
+function nominaTituloDia(e){ return String(e.titulo||'').replace(/<[^>]*>/g,'').replace(/&nbsp;/g,' ').trim(); }
+function fmtHN(v){ return (Math.round((v||0)*100)/100).toString().replace('.',',')+' h'; }
+
+function renderNominaHistorico(){
+  const H=nominaHistCiclos();
+  const hoy=today();
+  if(!H.ciclos.length) return h('div',{class:'card'},h('div',{class:'empty'},'Todavía no hay jornadas guardadas.'));
+  const filas=H.ciclos.map(c=>({c,N:computeNomina(c.from,c.to),cerrado:c.to<hoy,curso:c.from<=hoy&&hoy<=c.to}));
+  const cerrados=filas.filter(f=>f.cerrado);
+  const sum=(arr,fn)=>arr.reduce((s,x)=>s+fn(x),0);
+  const totCerr=sum(cerrados,f=>f.N.total);
+  const jornadas=sum(filas,f=>f.N.dias.length);
+  const horas=sum(filas,f=>f.N.tot.horas);
+  const extrasTot=sum(filas,f=>f.N.extras);
+  if(!S.nomHistOpen) S.nomHistOpen={};
+  const orden=S.nomHistOrden==='asc'?filas:[...filas].reverse();
+
+  const kpi=(v,l)=>h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.5rem .3rem',textAlign:'center'}},
+    h('div',{style:{fontWeight:800,fontSize:'.95rem'}},v),h('div',{style:{fontSize:'.68rem',color:'var(--ink2)'}},l));
+
+  return h('div',{},
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'🗂️ Histórico de fichajes'),
+      h('div',{style:{fontSize:'.8rem',color:'var(--ink2)',marginBottom:'.6rem'}},
+        'Desde tu primer fichaje ('+fechaCorta(H.first)+') hasta el último ('+fechaCorta(H.last)+')'),
+      h('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'.4rem'}},
+        kpi(cerrados.length+' de '+filas.length,'Ciclos cerrados'),
+        kpi(String(jornadas),'Jornadas fichadas'),
+        kpi(fmtHN(horas),'Horas trabajadas'),
+        kpi(eur(extrasTot),'Extras acumulados')
+      ),
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'.6rem',padding:'.6rem .7rem',background:'var(--surf2)',borderRadius:'var(--r2)',borderLeft:'4px solid var(--acc)'}},
+        h('div',{},h('div',{style:{fontWeight:700,fontSize:'.85rem'}},'Total nóminas cerradas'),
+          h('div',{style:{fontSize:'.68rem',color:'var(--ink3)'}},cerrados.length+' ciclo'+(cerrados.length===1?'':'s')+' · base + guardia + extras')),
+        h('div',{style:{fontWeight:900,fontSize:'1.15rem',color:'var(--acc)'}},eur(totCerr))
+      ),
+      h('div',{style:{display:'flex',gap:'.4rem',marginTop:'.6rem',flexWrap:'wrap'}},
+        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.nomHistOrden=S.nomHistOrden==='asc'?'desc':'asc';rerender();}}},
+          S.nomHistOrden==='asc'?'↕ Más antiguo primero':'↕ Más reciente primero'),
+        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{H.ciclos.forEach(c=>S.nomHistOpen[c.from]=true);rerender();}}},'➕ Desplegar todo'),
+        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.nomHistOpen={};rerender();}}},'➖ Plegar todo')
+      )
+    ),
+
+    ...orden.map(({c,N,cerrado,curso})=>{
+      const abierto=!!S.nomHistOpen[c.from];
+      const esPrimero=c.from===H.ciclos[0].from && H.first>c.from;
+      return h('div',{class:'card',style:{padding:'.6rem .7rem',borderLeft:'4px solid '+(cerrado?'#16a34a':curso?'#f59e0b':'#6366f1')}},
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'.5rem',cursor:'pointer'},
+            on:{click:()=>{S.nomHistOpen[c.from]=!abierto;rerender();}}},
+          h('div',{},
+            h('div',{style:{fontWeight:800,fontSize:'.9rem'}},(abierto?'▾ ':'▸ ')+nominaCycleName(c)),
+            h('div',{style:{fontSize:'.7rem',color:'var(--ink2)'}},nominaRangoTxt(c.from,c.to)),
+            h('div',{style:{fontSize:'.68rem',marginTop:'.15rem',fontWeight:700,color:cerrado?'#16a34a':curso?'#b45309':'#4f46e5'}},
+              (cerrado?'✔ Cerrado':curso?'⏳ En curso':'Futuro')+' · '+N.dias.length+' jorn. · '+fmtHN(N.tot.horas))
+          ),
+          h('div',{style:{textAlign:'right'}},
+            h('div',{style:{fontWeight:900,color:cerrado?'var(--acc)':'var(--ink)'}},eur(N.total)),
+            h('div',{style:{fontSize:'.68rem',color:'var(--ink3)'}},'extras '+eur(N.extras))
+          )
+        ),
+        abierto?h('div',{style:{marginTop:'.5rem',borderTop:'1px solid var(--brd)'}},
+          esPrimero?h('div',{style:{fontSize:'.68rem',color:'var(--ink3)',padding:'.35rem 0'}},'Primer ciclo: tus fichajes empiezan el '+fechaCorta(H.first)+'.'):null,
+          N.dias.length===0?h('div',{style:{fontSize:'.75rem',color:'var(--ink3)',padding:'.4rem 0'}},'Sin fichajes en este ciclo.'):null,
+          ...N.dias.map(d=>{
+            const e=N.entries.find(x=>x.fecha===d.fecha)||{};
+            const hor=nominaHorarios(e), tit=nominaTituloDia(e);
+            return h('div',{style:{padding:'.4rem 0',borderBottom:'1px solid var(--brd)',cursor:'pointer'},
+                on:{click:()=>{ if(typeof goToDay==='function') goToDay(d.fecha); }}},
+              h('div',{style:{display:'flex',justifyContent:'space-between',gap:'.5rem'}},
+                h('div',{style:{fontWeight:700,fontSize:'.8rem'}},cap(wday(d.fecha)).slice(0,3)+' '+fechaCorta(d.fecha)),
+                h('div',{style:{fontSize:'.78rem',whiteSpace:'nowrap'}},
+                  h('span',{style:{color:'var(--ink2)'}},fmtHN(d.x.horas)),
+                  h('span',{style:{color:'#16a34a',fontWeight:700,marginLeft:'.5rem'}},'+'+eur(d.x.total)))
+              ),
+              hor?h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'⏱ '+hor):null,
+              tit?h('div',{style:{fontSize:'.72rem',color:'var(--ink)',marginTop:'.1rem'}},tit):null,
+              h('div',{style:{fontSize:'.68rem',color:'var(--ink3)',marginTop:'.1rem'}},nominaDiaDetalle(d.x)||'Sin extras')
+            );
+          }),
+          h('button',{class:'btn btn-gh btn-sm btn-full',style:{marginTop:'.5rem'},
+            on:{click:()=>{S.nomVista='mes';nominaSelectCycle(c);window.scrollTo({top:0,behavior:'smooth'});}}},'💰 Ver nómina de '+nominaCycleName(c))
+        ):null
+      );
+    }),
+
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'Exportar histórico completo'),
+      h('div',{class:'grid-2',style:{gap:'.5rem'}},
+        h('button',{class:'btn btn-g btn-full',on:{click:()=>nominaHistExport('pdf')}},'📄 PDF'),
+        h('button',{class:'btn btn-b btn-full',on:{click:()=>nominaHistExcel()}},'📊 Excel'),
+        h('button',{class:'btn btn-gh btn-full',style:{gridColumn:'1 / -1'},on:{click:()=>nominaHistExport('print')}},'🖨 Imprimir')
+      )
+    )
+  );
+}
+
+// Informe HTML del histórico (PDF / imprimir)
+function nominaHistReportHTML(paraDoc){
+  const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const H=nominaHistCiclos(); const hoy=today();
+  const wk=(typeof fWorker!=='undefined'&&fWorker)||{}; const co=(typeof fCompany!=='undefined'&&fCompany)||{};
+  const nombre=((wk.nombre||'')+' '+(wk.apellidos||'')).trim();
+  const filas=H.ciclos.map(c=>({c,N:computeNomina(c.from,c.to),cerrado:c.to<hoy,curso:c.from<=hoy&&hoy<=c.to}));
+  const cerrados=filas.filter(f=>f.cerrado);
+  const totCerr=cerrados.reduce((s,f)=>s+f.N.total,0);
+  const resumen=filas.map(f=>`<tr><td><b>${nominaCycleName(f.c)}</b><br><span class="s">${nominaRangoTxt(f.c.from,f.c.to)}</span></td><td>${f.cerrado?'<span style="color:#16a34a;font-weight:700">Cerrado</span>':f.curso?'<span style="color:#b45309;font-weight:700">En curso</span>':'Futuro'}</td><td class="r">${f.N.dias.length}</td><td class="r">${fmtHN(f.N.tot.horas)}</td><td class="r">${eur(f.N.extras)}</td><td class="r">${eur(f.N.total)}</td></tr>`).join('');
+  const detalle=filas.filter(f=>f.N.dias.length).map(f=>{
+    const rows=f.N.dias.map(d=>{const e=f.N.entries.find(x=>x.fecha===d.fecha)||{};const t=nominaTituloDia(e);
+      return `<tr><td>${cap(wday(d.fecha)).slice(0,3)} ${fechaCorta(d.fecha)}</td><td>${esc(nominaHorarios(e)||'—')}${t?'<br><span class="s">'+esc(t)+'</span>':''}</td><td class="r">${fmtHN(d.x.horas)}</td><td class="s">${esc(nominaDiaDetalle(d.x)||'—')}</td><td class="r" style="color:#16a34a">+${eur(d.x.total)}</td></tr>`;}).join('');
+    return `<h3>${nominaCycleName(f.c)} · ${nominaRangoTxt(f.c.from,f.c.to)} — ${f.cerrado?'Cerrado':f.curso?'En curso':'Futuro'} · Total ${eur(f.N.total)}</h3>
+      <table><tr><th>Fecha</th><th>Horario</th><th class="r">Horas</th><th>Conceptos</th><th class="r">Extras</th></tr>${rows}</table>`;
+  }).join('');
+  const css=`.nm{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;background:#fff;padding:22px;width:${paraDoc?'100%':'760px'};box-sizing:border-box}
+    .nm h1{margin:0;font-size:19px}.nm .meta{font-size:11px;color:#475569;margin-top:4px;line-height:1.5}
+    .nm .head{display:flex;justify-content:space-between;gap:12px;border-bottom:3px solid #0f172a;padding-bottom:10px;margin-bottom:14px}
+    .nm h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#475569;margin:16px 0 6px}
+    .nm h3{font-size:12px;margin:14px 0 4px;color:#0f172a;background:#f1f5f9;padding:6px 8px;border-radius:6px}
+    .nm table{width:100%;border-collapse:collapse;font-size:11px}
+    .nm td,.nm th{padding:4px 7px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top}
+    .nm th{background:#f8fafc;color:#64748b}.nm .r{text-align:right;white-space:nowrap;font-weight:700}
+    .nm .s{font-size:10px;color:#64748b}
+    .nm .tot td{background:#f0fdf4;font-weight:800;font-size:13px;color:#166534;border-top:2px solid #166534}
+    .nm .foot{text-align:center;font-size:9px;color:#94a3b8;margin-top:14px}
+    @media print{.nm{padding:0}.nm tr{page-break-inside:avoid}}`;
+  const body=`<div class="nm"><div class="head"><div><h1>Histórico de fichajes y nóminas</h1>
+    <div class="meta">${co.nombre?esc(co.nombre)+'<br>':''}${nombre?'Trabajador: <b>'+esc(nombre)+'</b><br>':''}Del ${fechaCorta(H.first||hoy)} al ${fechaCorta(H.last||hoy)} · Generado: ${new Date().toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div></div></div>
+    <h2>Resumen por ciclos (26 → 25)</h2>
+    <table><tr><th>Ciclo</th><th>Estado</th><th class="r">Jorn.</th><th class="r">Horas</th><th class="r">Extras</th><th class="r">Total</th></tr>${resumen}
+    <tr class="tot"><td colspan="5">TOTAL NÓMINAS CERRADAS (${cerrados.length})</td><td class="r">${eur(totCerr)}</td></tr></table>
+    <h2>Detalle de fichajes</h2>${detalle||'<div class="s">Sin fichajes.</div>'}
+    <div class="foot">TimerPro · Histórico</div></div>`;
+  return {css,body,titulo:'Histórico de fichajes'};
+}
+
+async function nominaHistExport(tipo){
+  try{
+    const tag='Historico_'+today();
+    if(tipo==='print'){
+      const r=nominaHistReportHTML(true);
+      const html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+r.titulo+'</title><style>body{margin:0}'+r.css+'</style></head><body>'+r.body+'</body></html>';
+      const w=window.open('','_blank','width=900,height=700');
+      if(!w){ showAlert('Permite ventanas emergentes para imprimir','err'); return; }
+      w.document.write(html); w.document.close(); setTimeout(()=>w.print(),800);
+      dlDialog={blob:new Blob([html],{type:'text/html;charset=utf-8'}),filename:'TimerPro_'+tag+'.html',type:'html',title:'Guardar histórico en este dispositivo'};
+      S.modal='dl'; rerender(); return;
+    }
+    showAlert('⏳ Generando PDF del histórico...');
+    const canvas=await nominaCanvasFrom(nominaHistReportHTML(false));
+    if(!canvas) return;
+    const blob=nominaPdfFromCanvas(canvas);
+    if(!blob) return;
+    dlDialog={blob,filename:'TimerPro_'+tag+'.pdf',type:'pdf',title:'PDF del histórico listo'};
+    S.modal='dl'; rerender();
+  }catch(e){ console.error(e); showAlert('Error al exportar: '+e.message,'err'); }
+}
+
+function nominaHistExcel(){
+  try{
+    if(!window.XLSX){ showAlert('Cargando librería Excel...','err'); return; }
+    const H=nominaHistCiclos(); const hoy=today();
+    if(!H.ciclos.length){ showAlert('No hay jornadas','err'); return; }
+    const filas=H.ciclos.map(c=>({c,N:computeNomina(c.from,c.to),cerrado:c.to<hoy,curso:c.from<=hoy&&hoy<=c.to}));
+    const wb=XLSX.utils.book_new();
+    const r1=[['TIMERPRO - HISTÓRICO DE NÓMINAS (ciclos 26 → 25)'],[],['Ciclo','Desde','Hasta','Estado','Jornadas','Horas','Sueldo base','Guardia','Extras','Total nómina']];
+    filas.forEach(f=>r1.push([nominaCycleName(f.c),f.c.from,f.c.to,f.cerrado?'Cerrado':f.curso?'En curso':'Futuro',f.N.dias.length,+f.N.tot.horas.toFixed(2),f.N.cfg.base,f.N.cfg.guardia,+f.N.extras.toFixed(2),+f.N.total.toFixed(2)]));
+    const cerr=filas.filter(f=>f.cerrado);
+    r1.push([],['TOTAL CERRADOS','','','',cerr.reduce((s,f)=>s+f.N.dias.length,0),+cerr.reduce((s,f)=>s+f.N.tot.horas,0).toFixed(2),'','',+cerr.reduce((s,f)=>s+f.N.extras,0).toFixed(2),+cerr.reduce((s,f)=>s+f.N.total,0).toFixed(2)]);
+    const ws1=XLSX.utils.aoa_to_sheet(r1); ws1['!cols']=[18,11,11,10,9,8,11,9,10,12].map(w=>({wch:w}));
+    XLSX.utils.book_append_sheet(wb,ws1,'Ciclos');
+    const r2=[['Ciclo','Estado','Fecha','Día','Horario','Título','Horas','H.Norm','H.Extra','H.Noct','H.Fest','Imp.horas','Dietas','Transporte','Viajes','Otros','Extras día']];
+    filas.forEach(f=>f.N.dias.forEach(d=>{const e=f.N.entries.find(x=>x.fecha===d.fecha)||{};const x=d.x;
+      r2.push([nominaCycleName(f.c),f.cerrado?'Cerrado':f.curso?'En curso':'Futuro',d.fecha,cap(wday(d.fecha)),nominaHorarios(e),nominaTituloDia(e),+x.horas.toFixed(2),x.hn,x.he,x.hnoc,x.hfes,
+        +(x.in+x.ie+x.inoc+x.ifes).toFixed(2),+(x.dieta+x.dietasExtra).toFixed(2),+(x.coche+x.camion+x.transpOtro).toFixed(2),+x.viajes.toFixed(2),+x.otros.toFixed(2),+x.total.toFixed(2)]);}));
+    const ws2=XLSX.utils.aoa_to_sheet(r2); ws2['!cols']=r2[0].map((_,i)=>({wch:i===4?24:i===5?30:11}));
+    XLSX.utils.book_append_sheet(wb,ws2,'Fichajes');
+    const arr=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+    dlDialog={blob:new Blob([arr],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),filename:'TimerPro_Historico_'+today()+'.xlsx',type:'xlsx',title:'Excel del histórico listo'};
+    S.modal='dl'; rerender();
+  }catch(e){ console.error(e); showAlert('Error Excel: '+e.message,'err'); }
+}
+
+// Utilidades compartidas: informe → canvas → PDF A4 multipágina
+async function nominaCanvasFrom(r){
+  if(!window.html2canvas){ showAlert('Cargando librería de imagen...','err'); return null; }
+  const wrap=document.createElement('div');
+  wrap.style.cssText='position:fixed;top:0;left:0;z-index:99999;opacity:0.01;pointer-events:none;';
+  wrap.innerHTML='<style>'+r.css+'</style>'+r.body;
+  document.body.appendChild(wrap);
+  await new Promise(res=>setTimeout(res,200));
+  try{ return await html2canvas(wrap.querySelector('.nm'),{scale:2,useCORS:true,allowTaint:true,backgroundColor:'#ffffff',logging:false}); }
+  finally{ document.body.removeChild(wrap); }
+}
+function nominaPdfFromCanvas(canvas){
+  if(!window.jspdf){ showAlert('Cargando librería PDF...','err'); return null; }
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const pw=210, ph=297, m=8, iw=pw-2*m;
+  const pxPerMm=canvas.width/iw, pageHpx=Math.floor((ph-2*m)*pxPerMm);
+  let y=0, first=true;
+  while(y<canvas.height){
+    const sliceH=Math.min(pageHpx,canvas.height-y);
+    const c=document.createElement('canvas'); c.width=canvas.width; c.height=sliceH;
+    const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height);
+    ctx.drawImage(canvas,0,y,canvas.width,sliceH,0,0,canvas.width,sliceH);
+    if(!first) doc.addPage();
+    doc.addImage(c.toDataURL('image/jpeg',0.92),'JPEG',m,m,iw,sliceH/pxPerMm);
+    y+=sliceH; first=false;
+  }
+  return doc.output('blob');
+}
+
 // ── Informe HTML de la nómina (para PDF, imagen e impresión) ──
 function nominaReportHTML(N,sel,paraDoc){
   const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -5893,7 +6137,7 @@ async function nominaExport(tipo){
       return;
     }
     showAlert('⏳ Generando '+(tipo==='pdf'?'PDF':'imagen')+'...');
-    const canvas=await nominaCanvas(N,sel);
+    const canvas=await nominaCanvasFrom(nominaReportHTML(N,sel,false));
     if(!canvas) return;
     if(tipo==='img'){
       canvas.toBlob(blob=>{
