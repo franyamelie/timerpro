@@ -5988,7 +5988,7 @@ async function nominaCargarArchivo(){
     try{
       showAlert('🤖 Leyendo la nómina con la IA...');
       const j=await nominaLeerConIA(file);
-      if(!j){ S.nomCargando=false; nominaAbrirEditor(); return; }
+      if(!j){ S.nomCargando=false; rerender(); showAlert('Sin API Key de Gemini no se puede interpretar la nómina','err'); return; }
       const real=nominaNormalizar(j,file.name);
       if(!real.lineas.length) throw new Error('No se encontraron conceptos en la nómina');
       let cyc=nominaSel().cyc;
@@ -5998,9 +5998,8 @@ async function nominaCargarArchivo(){
       }
       setNominaReal(cyc,real);
       S.nomCargando=false;
-      // Abrir el editor para revisar lo leído antes de darlo por bueno
-      S.nomEdit={cyc,real:JSON.parse(JSON.stringify(real)),revisar:true};
-      showAlert('✅ Nómina de '+nominaCycleName(cyc)+' leída. Revisa los conceptos y pulsa Guardar.');
+      const C=nominaComparar(cyc);
+      showAlert((C&&C.estado==='ok'?'✅ ':'⚠️ ')+'Nómina de '+nominaCycleName(cyc)+' interpretada'+(C&&C.estado==='ok'?': todo cuadra':': hay cosas que revisar'));
       rerender();
     }catch(e){
       S.nomCargando=false; rerender();
@@ -6085,11 +6084,11 @@ function renderNominaReal(sel){
   if(!C){
     return h('div',{class:'card'},titulo,
       h('div',{style:{fontSize:'.8rem',color:'var(--ink2)',marginBottom:'.6rem',lineHeight:1.5}},
-        'Carga la nómina de '+nominaCycleName(sel.cyc)+' (PDF o foto) y TimerPro la compara con lo que has apuntado: conceptos, importes, dónde los ha metido la empresa y si los '+eur(getNominaCfg().base+getNominaCfg().guardia)+' pactados te llegan limpios.'),
-      h('div',{class:'grid-2',style:{gap:'.5rem'}},
-        h('button',{class:'btn btn-g btn-full',on:{click:()=>nominaCargarArchivo()}},'📄 Cargar nómina'),
-        h('button',{class:'btn btn-gh btn-full',on:{click:()=>nominaAbrirEditor()}},'✍️ Meterla a mano')
-      )
+        'Sube la nómina de '+nominaCycleName(sel.cyc)+' y TimerPro, con la IA, la interpreta y la compara con lo que has apuntado: conceptos, importes, dónde los ha metido la empresa y si los '+eur(getNominaCfg().base+getNominaCfg().guardia)+' pactados te llegan limpios.'),
+      h('button',{class:'btn btn-g btn-full',style:{fontSize:'1rem',padding:'.8rem'},on:{click:()=>nominaCargarArchivo()}},'📄 Cargar nómina (PDF o foto)'),
+      h('div',{style:{fontSize:'.7rem',color:'var(--ink3)',textAlign:'center',marginTop:'.4rem'}},'La IA la lee e interpreta sola: conceptos, casillas, mes y comparativa.'),
+      h('div',{style:{textAlign:'center',marginTop:'.3rem'}},
+        h('a',{href:'#',style:{fontSize:'.68rem',color:'var(--ink3)'},on:{click:ev=>{ev.preventDefault();nominaAbrirEditor();}}},'Sin internet: introducirla a mano'))
     );
   }
   const ok=C.estado==='ok';
@@ -6100,7 +6099,7 @@ function renderNominaReal(sel){
     h('div',{style:{padding:'.6rem .7rem',borderRadius:'var(--r2)',background:ok?'#dcfce7':'#fef3c7',color:ok?'#166534':'#92400e',fontWeight:800,fontSize:'.9rem',marginBottom:'.6rem'}},
       ok?'✅ Todo cuadra con lo que has apuntado':'⚠️ Hay cosas que revisar'),
     h('div',{style:{fontSize:'.7rem',color:'var(--ink3)',marginBottom:'.4rem'}},
-      (C.real.archivo?'📎 '+C.real.archivo+' · ':'✍️ Metida a mano · ')+'Extras comparados con el ciclo '+nominaRangoTxt(C.cycEx.from,C.cycEx.to)),
+      (C.real.archivo?'🤖 Interpretada por la IA · 📎 '+C.real.archivo+' · ':'✍️ Metida a mano · ')+'Extras comparados con el ciclo '+nominaRangoTxt(C.cycEx.from,C.cycEx.to)),
 
     // Pacto
     h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.6rem .7rem',marginBottom:'.6rem'}},
@@ -6146,7 +6145,7 @@ function renderNominaReal(sel){
       ...C.avisos.map(a=>h('div',{style:{marginBottom:'.2rem'}},'• '+a))):null,
 
     h('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'.4rem',marginTop:'.6rem'}},
-      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>nominaAbrirEditor()}},'✏️ Editar'),
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{ nominaAbrirEditor(); if(S.nomEdit) S.nomEdit.revisar=!!C.real.archivo; rerender(); }}},'✏️ Corregir'),
       h('button',{class:'btn btn-gh btn-sm',on:{click:()=>nominaCargarArchivo()}},'🔄 Cargar otra'),
       h('button',{class:'btn btn-gh btn-sm',style:{color:'#dc2626'},on:{click:()=>{ if(confirm('¿Quitar la nómina cargada de '+nominaCycleName(sel.cyc)+'?')){ setNominaReal(sel.cyc,null); rerender(); } }}},'🗑️ Quitar')
     ),
@@ -6175,8 +6174,8 @@ function renderNominaEditor(){
   const totalInput=(lbl,k)=>h('div',{class:'field',style:{margin:0}},h('label',{},lbl),
     h('input',{type:'text',inputmode:'decimal',value:R[k]?String(R[k]).replace('.',','):'',placeholder:'auto',on:{change:ev=>{ R[k]=_numImp(ev.target.value); }}}));
   return h('div',{class:'card',style:{borderLeft:'4px solid var(--acc)'}},
-    h('div',{class:'sec-title'},(E.revisar?'🔍 Revisa lo que ha leído la IA':'✍️ Nómina a mano')+' — '+nominaCycleName(E.cyc)),
-    E.revisar?h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',marginBottom:'.5rem'}},'Comprueba que cada concepto está en su casilla correcta (puedes cambiarla) y pulsa Guardar.'):null,
+    h('div',{class:'sec-title'},(E.revisar?'✏️ Corregir lo que ha leído la IA':'✍️ Nómina a mano')+' — '+nominaCycleName(E.cyc)),
+    E.revisar?h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',marginBottom:'.5rem'}},'Solo si algo está mal: cambia la casilla o el importe y pulsa Guardar.'):null,
     h('div',{class:'grid-2',style:{gap:'.5rem',marginBottom:'.5rem'}},
       h('div',{class:'field',style:{margin:0}},h('label',{},'Mes de la nómina'),
         h('select',{on:{change:ev=>{ R.mes=+ev.target.value; }}},...MONTHS.map((m,i)=>h('option',{value:i+1,selected:(i+1)===(+R.mes)},m)))),
