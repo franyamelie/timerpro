@@ -281,8 +281,8 @@ const IMPORTE_OPTS = [0.50, ...Array.from({length:100},(_,i)=>i+1)];
 const isStdAmount = v => IMPORTE_OPTS.includes(Number(v));
 
 // ── INDEXEDDB ────────────────────────────────────────────
-const DB_NAME='TimerProV2',DB_VER=2;
-const ST={entries:'entries',tasks:'tasks',sites:'sites',workorders:'workorders',vehicles:'vehicles',settings:'settings',workers:'workers',companies:'companies',snapshots:'snapshots'};
+const DB_NAME='TimerProV2',DB_VER=3;
+const ST={entries:'entries',tasks:'tasks',sites:'sites',workorders:'workorders',vehicles:'vehicles',settings:'settings',workers:'workers',companies:'companies',snapshots:'snapshots',payslips:'payslips',monthChats:'monthChats'};
 let db;
 function openDB(){
   return new Promise((res,rej)=>{
@@ -336,6 +336,7 @@ if(!localStorage.getItem('themeForceLightV1')){
 const S = {
   tab:'fichar', dark:(localStorage.getItem('darkMode')==='1'),
   entries:[], tasks:[], sites:[], workorders:[], vehicles:[], settings:{},
+  payslips:[], monthChats:[],
   transportTypes:[{id:'coche',nombre:'Coche',precio:0},{id:'camion',nombre:'Camión',precio:0}],
   dietaDefault:0,
   precioHoraNormalDefault:0,
@@ -372,6 +373,46 @@ const defCompany = {nombre:'',cif:'',direccion:'',ciudad:'',cp:'',telefono:'',em
 const defSite = {nombre:'',direccion:'',ciudad:'',telefono:'',notas:'',lat:'',lng:'',acc:0};
 const defWO = {codigo:'',descripcion:'',cliente:'',notas:''};
 const defVehicle = {nombre:'',tipo:'coche',matricula:'',precioPorKm:0.19,notas:''};
+
+// ── NÓMINAS Y CHAT MENSUAL CON IA ─────────────────────────
+// mesKey: 'YYYY-MM'. mesLabel la formatea como "Agosto 2026".
+function mesKeyDe(fecha){ return (fecha||'').slice(0,7); }
+const MESES_NOMBRE=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+function mesLabel(mesKey){
+  if(!mesKey) return '';
+  const [y,m]=mesKey.split('-');
+  const idx=parseInt(m,10)-1;
+  return (MESES_NOMBRE[idx]||m)+' '+y;
+}
+// Lista de meses disponibles: unión de meses con jornadas y meses que ya
+// tengan alguna nómina subida (por si se sube una nómina de un mes sin
+// jornadas registradas todavía), más reciente primero.
+function mesesDisponibles(){
+  const set=new Set();
+  S.entries.forEach(e=>{ if(e.fecha) set.add(mesKeyDe(e.fecha)); });
+  (S.payslips||[]).forEach(p=>{ if(p.mes) set.add(p.mes); });
+  if(set.size===0) set.add(mesKeyDe(today()));
+  return Array.from(set).sort().reverse();
+}
+// Totales que la propia app ya tiene calculados para un mes, para poder
+// compararlos con lo que diga la nómina.
+function computeMonthTotals(mesKey){
+  const t={horasNormales:0,horasExtra:0,horasNocturnas:0,horasFestivas:0,
+    importeNormales:0,importeExtra:0,importeNocturnas:0,importeFestivas:0,
+    dieta:0,transporte:0,otrosConceptos:0,dias:0};
+  S.entries.filter(e=>mesKeyDe(e.fecha)===mesKey).forEach(e=>{
+    t.horasNormales+=(+e.horasNormales||0); t.horasExtra+=(+e.horasExtra||0);
+    t.horasNocturnas+=(+e.horasNocturnas||0); t.horasFestivas+=(+e.horasFestivas||0);
+    t.importeNormales+=(+e.importeNormales||0); t.importeExtra+=(+e.importeExtra||0);
+    t.importeNocturnas+=(+e.importeNocturnas||0); t.importeFestivas+=(+e.importeFestivas||0);
+    t.dieta+=(+e.dieta||0); t.transporte+=(+e.transporte||0);
+    t.otrosConceptos+=(e.otrosConceptos||[]).reduce((s,o)=>s+(+o.importe||0),0);
+    t.dias++;
+  });
+  Object.keys(t).forEach(k=>{ if(k!=='dias') t[k]=Math.round(t[k]*100)/100; });
+  return t;
+}
+const defPayslip = (mes) => ({mes:mes||'', fileName:'', uploadedAt:'', extracted:{}, comparisonSummary:''});
 
 // Formularios
 let fEntry = defEntry();
@@ -858,7 +899,7 @@ const TABS_END = [
   {id:'tarifas',icon:'💶',label:'Tarifas'},
   {id:'vehiculos',icon:'🚗',label:'Vehículos'},
   {id:'resumen',icon:'📊',label:'Resumen'},
-  {id:'nomina',icon:'💰',label:'Nómina'},
+  {id:'nominas',icon:'🧾',label:'Nóminas'},
   {id:'sincronizar',icon:'🔄',label:'Sincronizar'},
   {id:'trabajador',icon:'👤',label:'Trabajador'},
   {id:'empresa',icon:'🏢',label:'Empresa'},
@@ -895,11 +936,11 @@ function renderMain(){
     case 'ordenes':    return renderOrdenes();
     case 'vehiculos':  return renderVehiculos();
     case 'resumen':    return renderResumen();
-    case 'nomina':     return renderNomina();
     case 'sincronizar':return renderSincronizar();
     case 'trabajador': return renderTrabajador();
     case 'empresa':    return renderEmpresa();
     case 'tarifas':    return renderTarifas();
+    case 'nominas':    return renderNominas();
     case 'ia':         return (typeof renderIAChat==='function'?renderIAChat():renderIAFallback());
     default:
       // Tabs de tipos de tarea dinámicos (tipo_estral, tipo_xxx...)
@@ -4642,110 +4683,98 @@ function exportXLSX(conPrecios){
 }
 
 
-async function exportPlantilla(opts){
-  // opts (opcional): {from,to,label,tag} — p.ej. desde Nómina para el ciclo 26→25.
-  // Sin opts usa el periodo elegido en el Resumen (como siempre).
-  const o=opts||null;
-  const from = o?o.from:(S.resMode==='days'?'':(S.resFrom||firstDayOfMonth()));
-  const to = o?o.to:(S.resMode==='days'?'':(S.resTo||today()));
-  const worker = workers.find(w=>w.id===activeWorkerId)||fWorker||{};
-  const company = companies.find(c=>c.id===activeCompanyId)||fCompany||{};
-  const esc=x=>String(x||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function exportPlantilla(){
+  const from = S.resMode==='days'?'':(S.resFrom||firstDayOfMonth());
+  const to = S.resMode==='days'?'':(S.resTo||today());
+  const worker = workers.find(w=>w.id===activeWorkerId)||{};
+  const company = companies.find(c=>c.id===activeCompanyId)||{};
 
-  // Días: todo el rango, o solo los días sueltos elegidos en el Resumen
+  // Generate days: either every day in the range, or just the loose selected days
   const days = [];
-  const pushDay=fecha=>{const[yyyy,mm,dd]=fecha.split('-');const wd=new Date(fecha+'T12:00:00').getDay();days.push({fecha,fDisp:dd+'/'+mm+'/'+yyyy,dia:cap(wday(fecha)),finde:wd===0||wd===6});};
-  if(!o && S.resMode==='days'){
-    [...(S.resDays||[])].sort().forEach(pushDay);
+  if(S.resMode==='days'){
+    [...(S.resDays||[])].sort().forEach(fecha=>{
+      const[yyyy,mm,dd]=fecha.split('-');
+      days.push({fecha, fDisp:dd+'/'+mm+'/'+yyyy, dia:cap(wday(fecha))});
+    });
   } else {
     let cur = new Date(from+'T12:00:00');
     const end = new Date(to+'T12:00:00');
     while(cur <= end){
-      pushDay(cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0')+'-'+String(cur.getDate()).padStart(2,'0'));
+      const yyyy = cur.getFullYear();
+      const mm = String(cur.getMonth()+1).padStart(2,'0');
+      const dd = String(cur.getDate()).padStart(2,'0');
+      days.push({fecha:yyyy+'-'+mm+'-'+dd, fDisp:dd+'/'+mm+'/'+yyyy, dia:cap(wday(yyyy+'-'+mm+'-'+dd))});
       cur.setDate(cur.getDate()+1);
     }
   }
-  if(!days.length){showAlert('No hay días seleccionados','err');return;}
+  if(S.resMode==='days'&&!days.length){showAlert('No hay días seleccionados','err');return;}
 
-  const tt=(S.transportTypes&&S.transportTypes.length?S.transportTypes:[{id:'coche',nombre:'Coche'},{id:'camion',nombre:'Camión'}]);
-  const tipos=(taskTypes||[]).map(t=>(t.icono||'')+' '+t.nombre).join(' · ');
-  const periodo=o?(o.label||('Del '+dlbl(from)+' al '+dlbl(to))):(S.resMode==='days'?resumenPeriodoLabel():'Del '+dlbl(from)+' al '+dlbl(to));
-  const eurP=v=>(+v||0)>0?String((+v).toFixed(2)).replace('.',',')+' €':'______';
-
-  // Columnas de la plantilla (al día con la app)
-  const cols=[
-    ['Entrada'],['Salida'],['Descanso<br><small>(min)</small>'],
-    ['H.Normales','g'],['H.Extra','g'],['H.Nocturnas','g'],['H.Festivas','g'],
-    ['Dieta (€)','b'],['Dieta extra<br><small>(€)</small>','b'],
-    ...tt.map(t=>[esc(t.nombre)+'<br><small>(€)</small>','p']),
-    ['Viajes<br><small>(km)</small>','o'],['Otros<br><small>concepto / €</small>','o'],
-    ['Tarea / Nº OT<br><small>(tipo)</small>','y'],['Notas']
-  ];
   const css=`
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:Arial,sans-serif;font-size:11px;color:#1e293b}
     .hdr{background:#1e293b;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center}
     .hdr-title{font-size:13px;font-weight:700}
     .hdr-sub{font-size:10px;color:#94a3b8;margin-top:2px}
-    .info{padding:6px 14px;font-size:10px;color:#334155;background:#f1f5f9;border-bottom:1px solid #cbd5e1}
     table{width:100%;border-collapse:collapse;font-size:11px}
     thead tr{background:#334155;color:#fff}
-    thead th{padding:6px 6px;text-align:center;font-weight:600;border:1px solid #475569;line-height:1.2}
-    thead th small{font-weight:400;opacity:.8}
+    thead th{padding:6px 10px;text-align:center;font-weight:600;white-space:nowrap;border:1px solid #475569}
     thead th:first-child,thead th:nth-child(2){text-align:left}
-    thead th.g{background:#166534}thead th.b{background:#0e7490}thead th.p{background:#6d28d9}thead th.o{background:#c2410c}thead th.y{background:#a16207}
     tbody tr:nth-child(even){background:#f0f4f8}
     tbody tr:nth-child(odd){background:#ffffff}
-    tbody tr.finde td{background:#fef3c7}
-    tbody td{padding:7px 6px;border:1px solid #cbd5e1;text-align:center;min-width:46px;height:24px}
+    tbody td{padding:6px 10px;border:1px solid #e2e8f0;text-align:center;min-width:70px}
     tbody td:first-child{text-align:left;font-weight:600;white-space:nowrap;background:#f8fafc}
     tbody td:nth-child(2){text-align:left;color:#475569;background:#f8fafc}
-    tbody td.nota{min-width:160px}tbody td.tarea{min-width:120px}
     tfoot .tot-row{background:#1e293b;color:#fff}
-    tfoot .tot-row td{padding:7px 6px;border:1px solid #334155;font-weight:700;text-align:center}
+    tfoot .tot-row td{padding:7px 10px;border:1px solid #334155;font-weight:700;text-align:center}
     tfoot .tot-row td:first-child{text-align:left}
-    .pie{padding:6px 14px;font-size:9px;color:#64748b}
-    @media print{@page{size:A4 landscape;margin:8mm}tr{page-break-inside:avoid}}
+    thead th.green{background:#166534;color:#4ade80}
   `;
-  const nCols=cols.length;
-  let tbody='';
+
+  let tbody = '';
   days.forEach(d=>{
-    tbody+=`<tr${d.finde?' class="finde"':''}><td>${d.fDisp}</td><td>${d.dia}</td>`+
-      cols.map((c,i)=>`<td${i===nCols-1?' class="nota"':i===nCols-2?' class="tarea"':''}></td>`).join('')+`</tr>`;
+    tbody+=`<tr>
+      <td>${d.fDisp}</td>
+      <td>${d.dia}</td>
+      <td></td><td></td><td></td><td></td>
+      <td></td>
+      <td></td><td></td>
+      <td></td><td></td>
+      <td></td>
+    </tr>`;
   });
 
+  const ncols = 12;
   const htmlContent=`<!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
 <head><meta charset="UTF-8"><style>${css}</style></head><body>
 <div class="hdr">
   <div>
-    <div class="hdr-title">${esc(company.nombre||'TimerPro')} — Plantilla de jornadas</div>
-    <div class="hdr-sub">${esc(((worker.nombre||'')+' '+(worker.apellidos||'')).trim())} · ${esc(periodo)} · ${days.length} días</div>
+    <div class="hdr-title">${company.nombre||'TimerPro'} — Plantilla de jornadas</div>
+    <div class="hdr-sub">${worker.nombre||''} · ${S.resMode==='days'?resumenPeriodoLabel():'Del '+dlbl(from)+' al '+dlbl(to)} · ${days.length} días</div>
   </div>
   <div style="font-size:10px;color:#94a3b8">Generado: ${new Date().toLocaleDateString('es-ES')}</div>
-</div>
-<div class="info">
-  <b>Precio hora:</b> Normal ${eurP(S.precioHoraNormalDefault)} · Extra ${eurP(S.precioHoraExtraDefault)} · Nocturna ${eurP(S.precioHoraNocturnaDefault)} · Festiva ${eurP(S.precioHoraFestivaDefault)}
-  &nbsp;&nbsp;|&nbsp;&nbsp;<b>Tipos de tarea:</b> ${esc(tipos||'O.T.')}
-  ${o&&o.nomina?'&nbsp;&nbsp;|&nbsp;&nbsp;<b>Nómina:</b> base '+eurP(o.nomina.base)+' + guardia '+eurP(o.nomina.guardia):''}
 </div>
 <table>
   <thead><tr>
     <th>Fecha</th><th>Día</th>
-    ${cols.map(c=>`<th${c[1]?' class="'+c[1]+'"':''}>${c[0]}</th>`).join('')}
+    <th>H.Normales</th><th>H.Extra</th><th>H.Nocturnas</th><th>H.Festivas</th>
+    <th>Fichajes<br><small>(HH:MM→HH:MM)</small></th>
+    <th>€/h Norm</th><th>€/h Extra</th>
+    <th>Dieta (€)</th><th>Transporte (€)</th>
+    <th class="green">Notas / OT</th>
   </tr></thead>
   <tbody>${tbody}</tbody>
   <tfoot>
     <tr class="tot-row">
       <td colspan="2">TOTALES</td>
-      ${cols.map(()=>'<td></td>').join('')}
+      <td></td><td></td><td></td><td></td><td></td>
+      <td></td><td></td><td></td><td></td><td></td>
     </tr>
   </tfoot>
 </table>
-<div class="pie">Si un día tiene varios fichajes, apúntalos en la misma fila (ej. 07:00 / 16:00). Sábados y domingos en amarillo. · TimerPro</div>
 </body></html>`;
 
-  const fname='TimerPro_Plantilla_'+(o?(o.tag||(from+'_'+to)):resumenFileTag())+'.xls';
+  const fname='TimerPro_Plantilla_'+resumenFileTag()+'.xls';
   const blob=new Blob([htmlContent],{type:'application/vnd.ms-excel;charset=utf-8'});
   const file=new File([blob],fname,{type:blob.type});
   if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
@@ -4757,7 +4786,7 @@ async function exportPlantilla(opts){
   a.href=url;
   a.download=fname;
   a.click();
-  setTimeout(()=>URL.revokeObjectURL(url),1500);
+  URL.revokeObjectURL(url);
   showAlert('✅ Plantilla descargada ('+days.length+' días)');
 }
 
@@ -5495,1165 +5524,12 @@ function renderResumen(){
           h('button',{class:'btn btn-gh btn-full',on:{click:()=>openExportModal('sin')}},'📄 PDF sin importes'),
           h('button',{class:'btn btn-b btn-full',on:{click:()=>exportExcel(false,getResumenEntries(),resumenPeriodoLabel(),resumenFileTag())}},'📊 Excel con importes'),
           h('button',{class:'btn btn-gh btn-full',on:{click:()=>exportExcel(true,getResumenEntries(),resumenPeriodoLabel(),resumenFileTag())}},'📊 Excel sin importes'),
-          h('button',{class:'btn btn-full',style:{background:'#7c3aed',color:'#fff'},on:{click:()=>exportPlantilla()}},'📥 Descargar plantilla en blanco'),
+          h('button',{class:'btn btn-pur btn-full',on:{click:()=>exportPlantilla()}},'📥 Descargar plantilla en blanco'),
           h('button',{class:'btn btn-full',style:{background:'var(--surf2)',border:'1px solid var(--acc)',color:'var(--acc)'},on:{click:()=>{if(!S.customFields)S.customFields=defaultCustomFields();openModal('customExport');}}},'🎛️ Exportación personalizada')
         )
       )
     )
   );
-}
-
-
-
-// ══════════════════════════════════════════════════════════
-// NÓMINA MENSUAL — ciclo del 26 al 25 del mes siguiente.
-// Totalmente independiente del Resumen (no usa S.resFrom/S.resTo/S.resMode).
-// Total = Sueldo base + Guardia + extras de cada jornada del ciclo
-// (horas normales/extra/nocturnas/festivas, dietas, transporte, viajes, otros).
-// ══════════════════════════════════════════════════════════
-const NOMINA_CFG_KEY='tp_nomina_cfg';
-const NOMINA_DIA_INICIO=26; // el ciclo empieza el 26 y cierra el 25 del mes siguiente
-const MESES_CORTOS=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-
-function getNominaCfg(){
-  let c={};
-  try{ c=JSON.parse(localStorage.getItem(NOMINA_CFG_KEY)||'{}')||{}; }catch(ex){ c={}; }
-  const num=(v,def)=>(v===null||v===undefined||v===''||!isFinite(+v))?def:+v;
-  return { base:num(c.base,1600), guardia:num(c.guardia,500),
-    pacto:c.pacto==='bruto'?'bruto':'neto',               // neto = base+guardia llegan limpios de retenciones
-    retPct:(c.retPct===''||c.retPct==null)?'':num(c.retPct,''), // % retención de extras ('' = automático)
-    desfase:c.desfase?1:0,                                 // 1 = la empresa paga los extras en la nómina siguiente
-    actualizado:c.actualizado||'' };
-}
-function setNominaCfg(patch){
-  const c={...getNominaCfg(),...patch,actualizado:new Date().toISOString()};
-  try{ localStorage.setItem(NOMINA_CFG_KEY,JSON.stringify(c)); }catch(ex){}
-  return c;
-}
-function parseImporte(v){
-  const n=parseFloat(String(v||'').replace(/\s|€/g,'').replace(',','.'));
-  return isFinite(n)?Math.max(0,n):0;
-}
-function _ymd(y,m,d){ const x=new Date(y,m,d); return x.getFullYear()+'-'+pad(x.getMonth()+1)+'-'+pad(x.getDate()); }
-
-// Ciclo que contiene una fecha (YYYY-MM-DD) → {from,to}
-function nominaCycleFor(fecha){
-  const [y,m,d]=fecha.split('-').map(Number);
-  const mi=m-1;
-  const startM = d>=NOMINA_DIA_INICIO ? mi : mi-1;
-  return { from:_ymd(y,startM,NOMINA_DIA_INICIO), to:_ymd(y,startM+1,NOMINA_DIA_INICIO-1) };
-}
-// Desplaza un ciclo n meses (n negativo = hacia atrás)
-function nominaCycleShift(cyc,n){
-  const [y,m]=cyc.from.split('-').map(Number);
-  return { from:_ymd(y,m-1+n,NOMINA_DIA_INICIO), to:_ymd(y,m+n,NOMINA_DIA_INICIO-1) };
-}
-// Nombre del ciclo = mes en que cierra (26 ago → 25 sep = Nómina de Septiembre)
-function nominaCycleName(cyc){
-  const [y,m]=cyc.to.split('-').map(Number);
-  return cap(MONTHS[m-1])+' '+y;
-}
-function fechaCorta(s){ const [y,m,d]=s.split('-').map(Number); return d+' '+MESES_CORTOS[m-1]+' '+y; }
-function nominaRangoTxt(from,to){ return fechaCorta(from)+' → '+fechaCorta(to); }
-
-// Extras de UNA jornada (mismos criterios que el Resumen)
-function nominaDayExtras(e){
-  const t=e._transportType||'';
-  const transp=e.transporte||0;
-  const r={
-    hn:e.horasNormales||0, he:e.horasExtra||0, hnoc:e.horasNocturnas||0, hfes:e.horasFestivas||0,
-    in:e.importeNormales||0, ie:e.importeExtra||0, inoc:e.importeNocturnas||0, ifes:e.importeFestivas||0,
-    dieta:e.dieta||0,
-    dietasExtra:(e.dietasExtra||[]).reduce((s,d)=>s+(+d.importe||0),0),
-    coche: t==='coche'?transp:0,
-    camion: t==='camion'?transp:0,
-    transpOtro: (t!=='coche'&&t!=='camion')?transp:0,
-    otros:(e.otrosConceptos||[]).reduce((s,o)=>s+(+o.importe||0),0),
-    km:(e.journeys||[]).reduce((s,j)=>s+(j.km||0),0),
-    viajes:(e.journeys||[]).reduce((s,j)=>s+(j.km||0)*(j.precioManual||0.19),0)
-  };
-  r.horas=r.hn+r.he+r.hnoc+r.hfes;
-  r.total=r.in+r.ie+r.inoc+r.ifes+r.dieta+r.dietasExtra+r.coche+r.camion+r.transpOtro+r.otros+r.viajes;
-  return r;
-}
-
-// Cálculo completo de la nómina en un rango
-function computeNomina(from,to){
-  const cfg=getNominaCfg();
-  const entries=(S.entries||[]).filter(e=>!e._draft&&e.fecha>=from&&e.fecha<=to).sort((a,b)=>a.fecha.localeCompare(b.fecha));
-  const tot={hn:0,he:0,hnoc:0,hfes:0,in:0,ie:0,inoc:0,ifes:0,dieta:0,dietasExtra:0,coche:0,camion:0,transpOtro:0,otros:0,km:0,viajes:0,horas:0,total:0,
-             nDietas:0,nCoche:0,nCamion:0,nTranspOtro:0};
-  const fijo=cfg.base+cfg.guardia;
-  let acum=fijo;
-  const dias=entries.map(e=>{
-    const x=nominaDayExtras(e);
-    Object.keys(x).forEach(k=>{ if(k in tot) tot[k]+=x[k]; });
-    if(x.dieta>0) tot.nDietas++;
-    if(x.coche>0) tot.nCoche++;
-    if(x.camion>0) tot.nCamion++;
-    if(x.transpOtro>0) tot.nTranspOtro++;
-    acum+=x.total;
-    return {fecha:e.fecha,x,acum};
-  });
-  return {from,to,cfg,entries,dias,tot,fijo,extras:tot.total,total:fijo+tot.total};
-}
-
-// Filas del desglose de extras (etiqueta, cantidad/horas, importe, color)
-function nominaDesgloseRows(tot){
-  const fh=v=>(Math.round(v*100)/100).toString().replace('.',',')+' h';
-  return [
-    ['Horas normales', tot.hn>0?fh(tot.hn):'', tot.in,'#22c55e'],
-    ['Horas extra', tot.he>0?fh(tot.he):'', tot.ie,'#f59e0b'],
-    ['Horas nocturnas', tot.hnoc>0?fh(tot.hnoc):'', tot.inoc,'#6366f1'],
-    ['Horas festivas', tot.hfes>0?fh(tot.hfes):'', tot.ifes,'#ef4444'],
-    ['Dietas', tot.nDietas?tot.nDietas+' jorn.':'', tot.dieta,'#06b6d4'],
-    ['Dietas extra', '', tot.dietasExtra,'#0891b2'],
-    ['Transporte coche', tot.nCoche?tot.nCoche+' v.':'', tot.coche,'#8b5cf6'],
-    ['Transporte camión', tot.nCamion?tot.nCamion+' v.':'', tot.camion,'#7c3aed'],
-    ['Transporte otros', tot.nTranspOtro?tot.nTranspOtro+' v.':'', tot.transpOtro,'#a78bfa'],
-    ['Viajes (km)', tot.km>0?Math.round(tot.km)+' km':'', tot.viajes,'#f97316'],
-    ['Otros conceptos', '', tot.otros,'#64748b']
-  ].filter(r=>r[2]>0);
-}
-// Texto corto de los extras de un día
-function nominaDiaDetalle(x){
-  const p=[];
-  const fh=v=>(Math.round(v*100)/100).toString().replace('.',',')+'h';
-  if(x.hn>0) p.push('N '+fh(x.hn));
-  if(x.he>0) p.push('Ext '+fh(x.he));
-  if(x.hnoc>0) p.push('Noc '+fh(x.hnoc));
-  if(x.hfes>0) p.push('Fest '+fh(x.hfes));
-  if(x.dieta+x.dietasExtra>0) p.push('Dieta '+eur(x.dieta+x.dietasExtra));
-  if(x.coche>0) p.push('Coche '+eur(x.coche));
-  if(x.camion>0) p.push('Camión '+eur(x.camion));
-  if(x.transpOtro>0) p.push('Transp. '+eur(x.transpOtro));
-  if(x.viajes>0) p.push('Viajes '+eur(x.viajes));
-  if(x.otros>0) p.push('Otros '+eur(x.otros));
-  return p.join(' · ');
-}
-
-// Ciclo/rango seleccionado actualmente en la pestaña
-function nominaSel(){
-  const cur=nominaCycleFor(today());
-  const cyc=S.nomCycle||cur;
-  const from=S.nomFrom||cyc.from;
-  const to=S.nomTo||cyc.to;
-  const parcial=(from!==cyc.from||to!==cyc.to);
-  return {cur,cyc,from,to,parcial};
-}
-function nominaFileTag(sel){
-  const c=sel.cyc; const [y,m]=c.to.split('-');
-  return 'Nomina_'+y+'-'+m+(sel.parcial?'_'+sel.from+'_'+sel.to:'');
-}
-function nominaSelectCycle(cyc){ S.nomCycle=cyc; S.nomFrom=null; S.nomTo=null; rerender(); }
-
-// Lista de ciclos con jornadas (del más reciente al más antiguo), incluido el actual
-function nominaListaCiclos(){
-  const ents=(S.entries||[]).filter(e=>!e._draft&&e.fecha);
-  const cur=nominaCycleFor(today());
-  const out=[cur];
-  if(ents.length){
-    const first=ents.reduce((m,e)=>e.fecha<m?e.fecha:m,ents[0].fecha);
-    const firstCyc=nominaCycleFor(first);
-    let c=nominaCycleShift(cur,-1), guard=0;
-    while(c.to>=firstCyc.to && guard<120){ out.push(c); c=nominaCycleShift(c,-1); guard++; }
-  }
-  // Si hay jornadas en el futuro (posteriores al ciclo actual), añadirlas arriba
-  const last=ents.length?ents.reduce((m,e)=>e.fecha>m?e.fecha:m,ents[0].fecha):null;
-  if(last&&last>cur.to){
-    let c=nominaCycleShift(cur,1), guard=0;
-    const fut=[];
-    while(c.from<=last&&guard<24){ fut.unshift(c); c=nominaCycleShift(c,1); guard++; }
-    return [...fut,...out];
-  }
-  return out;
-}
-
-function nominaTopBar(){
-  const v=S.nomVista==='hist'?'hist':'mes';
-  const seg=(id,txt)=>h('button',{class:'btn btn-sm',style:{flex:1,background:v===id?'var(--acc)':'var(--surf2)',color:v===id?'#000':'var(--ink)',border:'1px solid '+(v===id?'var(--acc)':'var(--brd)'),fontWeight:700},
-    on:{click:()=>{S.nomVista=id;rerender();window.scrollTo({top:0});}}},txt);
-  return h('div',{},
-    h('div',{style:{display:'flex',justifyContent:'flex-end',marginBottom:'.3rem'}},
-      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{captureFormState();S.tab='fichar';rerender();}}},'✕ Cerrar')),
-    h('div',{style:{display:'flex',gap:'.4rem',marginBottom:'.6rem'}},seg('mes','💰 Nómina del mes'),seg('hist','🗂️ Histórico completo'))
-  );
-}
-function renderNomina(){
-  if(S.nomVista==='hist') return h('div',{},nominaTopBar(),renderNominaHistorico());
-  const sel=nominaSel();
-  const N=computeNomina(sel.from,sel.to);
-  const hoy=today();
-  const cerrado=sel.cyc.to<hoy;
-  const enCurso=sel.cyc.from<=hoy&&hoy<=sel.cyc.to;
-  const diasFaltan=enCurso?Math.round((new Date(sel.cyc.to+'T12:00:00')-new Date(hoy+'T12:00:00'))/86400000):0;
-  const esActual=sel.cyc.from===sel.cur.from;
-
-  const importeInput=(label,key,val)=>h('div',{class:'field',style:{margin:0}},
-    h('label',{},label),
-    h('input',{type:'text',inputmode:'decimal',value:String(val).replace('.',','),
-      on:{
-        focus:ev=>ev.target.select(),
-        change:ev=>{ const v=parseImporte(ev.target.value); setNominaCfg({[key]:v}); showAlert('💾 '+label+' guardado: '+eur(v)); rerender(); },
-        keydown:ev=>{ if(ev.key==='Enter') ev.target.blur(); }
-      }})
-  );
-
-  const badge=(txt,bg,col)=>h('span',{style:{fontSize:'.68rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'99px',background:bg,color:col}},txt);
-
-  return h('div',{},
-    nominaTopBar(),
-
-    // ── Configuración: sueldo base y guardia (se guardan) ──
-    h('div',{class:'card'},
-      h('div',{class:'sec-title'},'⚙️ Conceptos fijos de la nómina'),
-      h('div',{class:'grid-2',style:{gap:'.5rem'}},
-        importeInput('Sueldo base (€)','base',N.cfg.base),
-        importeInput('Guardia (€)','guardia',N.cfg.guardia)
-      ),
-      h('div',{style:{fontSize:'.72rem',color:'var(--ink3)',marginTop:'.5rem'}},
-        'Fijo mensual: '+eur(N.fijo)+' · Se guarda automáticamente al salir del campo.'),
-      h('details',{open:S.nomCfgOpen?true:null,style:{marginTop:'.6rem'},on:{toggle:ev=>{S.nomCfgOpen=ev.target.open;}}},
-        h('summary',{style:{fontSize:'.78rem',fontWeight:700,cursor:'pointer',color:'var(--ink2)'}},'🧾 Cómo comparar con la nómina de la empresa'),
-        h('div',{class:'field',style:{margin:'.5rem 0 0'}},h('label',{},'Lo pactado del fijo'),
-          h('select',{on:{change:ev=>{ setNominaCfg({pacto:ev.target.value}); rerender(); }}},
-            h('option',{value:'neto',selected:N.cfg.pacto!=='bruto'},'Base + guardia LIMPIOS de retenciones (neto)'),
-            h('option',{value:'bruto',selected:N.cfg.pacto==='bruto'},'Base + guardia en BRUTO'))),
-        h('div',{class:'grid-2',style:{gap:'.5rem',marginTop:'.5rem'}},
-          h('div',{class:'field',style:{margin:0}},h('label',{},'% retención de extras'),
-            h('input',{type:'text',inputmode:'decimal',placeholder:'auto',value:N.cfg.retPct===''?'':String(N.cfg.retPct).replace('.',','),
-              on:{change:ev=>{ const v=String(ev.target.value).trim(); setNominaCfg({retPct:v===''?'':_numImp(v)}); rerender(); }}})),
-          h('div',{class:'field',style:{margin:0}},h('label',{},'Extras que paga la nómina'),
-            h('select',{on:{change:ev=>{ setNominaCfg({desfase:ev.target.value==='1'?1:0}); rerender(); }}},
-              h('option',{value:'0',selected:!N.cfg.desfase},'Los del mismo ciclo'),
-              h('option',{value:'1',selected:!!N.cfg.desfase},'Los del ciclo anterior')))
-        ),
-        h('div',{style:{fontSize:'.68rem',color:'var(--ink3)',marginTop:'.35rem'}},'«auto» calcula la retención con los datos de la propia nómina.')
-      )
-    ),
-
-    // ── Periodo seleccionado ──
-    h('div',{class:'card'},
-      h('div',{class:'sec-title'},'📅 Periodo de la nómina (26 → 25)'),
-      h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem'}},
-        h('button',{class:'btn btn-gh btn-sm',title:'Nómina anterior',on:{click:()=>nominaSelectCycle(nominaCycleShift(sel.cyc,-1))}},'◀'),
-        h('div',{style:{flex:1,textAlign:'center'}},
-          h('div',{style:{fontWeight:800,fontSize:'1rem'}},'Nómina de '+nominaCycleName(sel.cyc)),
-          h('div',{style:{fontSize:'.75rem',color:'var(--ink2)'}},nominaRangoTxt(sel.cyc.from,sel.cyc.to)),
-          h('div',{style:{marginTop:'.3rem'}},
-            cerrado?badge('✔ Ciclo cerrado','#dcfce7','#166534')
-              :enCurso?badge('⏳ En curso · '+(diasFaltan===0?'cierra hoy':'faltan '+diasFaltan+' día'+(diasFaltan>1?'s':'')+' para el cierre'),'#fef3c7','#92400e')
-              :badge('Ciclo futuro','#e0e7ff','#3730a3')
-          )
-        ),
-        h('button',{class:'btn btn-gh btn-sm',title:'Nómina siguiente',on:{click:()=>nominaSelectCycle(nominaCycleShift(sel.cyc,1))}},'▶')
-      ),
-      !esActual?h('button',{class:'btn btn-gh btn-full btn-sm',style:{marginTop:'.5rem'},on:{click:()=>nominaSelectCycle(sel.cur)}},'↺ Ir a la nómina en curso'):null,
-
-      // Desglose parcial dentro del ciclo
-      h('div',{style:{marginTop:'.7rem',paddingTop:'.6rem',borderTop:'1px solid var(--brd)'}},
-        h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.35rem'}},'Desglose parcial (opcional): ajusta las fechas'),
-        h('div',{class:'grid-2',style:{gap:'.5rem'}},
-          h('div',{class:'field',style:{margin:0}},h('label',{},'Desde'),
-            h('input',{type:'date',value:sel.from,on:{change:ev=>{ if(ev.target.value){ S.nomFrom=ev.target.value; if(!S.nomTo) S.nomTo=sel.to; rerender(); } }}})),
-          h('div',{class:'field',style:{margin:0}},h('label',{},'Hasta'),
-            h('input',{type:'date',value:sel.to,on:{change:ev=>{ if(ev.target.value){ S.nomTo=ev.target.value; if(!S.nomFrom) S.nomFrom=sel.from; rerender(); } }}}))
-        ),
-        sel.parcial?h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'.5rem',marginTop:'.4rem'}},
-          badge('Parcial: '+nominaRangoTxt(sel.from,sel.to),'#fee2e2','#991b1b'),
-          h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.nomFrom=null;S.nomTo=null;rerender();}}},'↺ Ciclo completo')
-        ):null
-      )
-    ),
-
-    // ── Total nómina ──
-    h('div',{class:'card',style:{textAlign:'center',padding:'1rem .8rem',borderLeft:'4px solid var(--acc)'}},
-      h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',letterSpacing:'.08em',textTransform:'uppercase',fontWeight:700}},
-        sel.parcial?'Total nómina (parcial)':(enCurso?'Total nómina hasta hoy':'Total nómina')),
-      h('div',{style:{fontSize:'2rem',fontWeight:900,color:'var(--acc)',margin:'.2rem 0'}},eur(N.total)),
-      h('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'.4rem',marginTop:'.5rem'}},
-        ...[['Sueldo base',N.cfg.base],['Guardia',N.cfg.guardia],['Extras',N.extras]].map(([l,v])=>
-          h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.45rem .3rem'}},
-            h('div',{style:{fontWeight:800,fontSize:'.9rem'}},eur(v)),
-            h('div',{style:{fontSize:'.68rem',color:'var(--ink2)'}},l)
-          ))
-      ),
-      h('div',{style:{fontSize:'.72rem',color:'var(--ink3)',marginTop:'.5rem'}},
-        N.dias.length+' jornada'+(N.dias.length===1?'':'s')+' · '+(Math.round(N.tot.horas*100)/100).toString().replace('.',',')+' h trabajadas')
-    ),
-
-    // ── Desglose de la nómina ──
-    h('div',{class:'card'},
-      h('div',{class:'sec-title'},'💶 Desglose'),
-      ...[['Sueldo base','',N.cfg.base,'#0ea5e9'],['Guardia','',N.cfg.guardia,'#14b8a6']].concat(nominaDesgloseRows(N.tot)).map(([label,cant,v,color])=>
-        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'.35rem 0',borderBottom:'1px solid var(--brd)'}},
-          h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem'}},
-            h('div',{style:{width:'10px',height:'10px',borderRadius:'50%',background:color,flexShrink:0}}),
-            h('span',{style:{fontSize:'.82rem'}},label),
-            cant?h('span',{style:{fontSize:'.7rem',color:'var(--ink3)'}},cant):null
-          ),
-          h('span',{style:{fontWeight:700,fontSize:'.85rem'}},eur(v))
-        )
-      ),
-      h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.35rem 0',fontSize:'.8rem',color:'var(--ink2)'}},
-        h('span',{},'Subtotal extras'),h('span',{style:{fontWeight:700}},eur(N.extras))),
-      h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.5rem 0',fontWeight:800,fontSize:'1rem',color:'var(--acc)'}},
-        h('span',{},'TOTAL NÓMINA'),h('span',{},eur(N.total)))
-    ),
-
-    // ── Nómina real de la empresa: cargar y comparar ──
-    renderNominaReal(sel),
-
-    // ── Resumen diario con acumulado ──
-    h('div',{class:'card'},
-      h('div',{class:'sec-title'},'📆 Día a día (acumulado)'),
-      N.dias.length===0
-        ? h('div',{class:'empty'},'Aún no hay jornadas guardadas en este periodo. El total parte de '+eur(N.fijo)+' (base + guardia).')
-        : h('div',{},
-            h('div',{style:{display:'flex',justifyContent:'space-between',fontSize:'.72rem',color:'var(--ink2)',padding:'.2rem 0 .4rem',borderBottom:'1px solid var(--brd)'}},
-              h('span',{},'Inicio: base + guardia'),h('span',{style:{fontWeight:700}},eur(N.fijo))),
-            ...N.dias.map(d=>h('div',{style:{padding:'.45rem 0',borderBottom:'1px solid var(--brd)',cursor:'pointer'},
-                on:{click:()=>{ if(typeof goToDay==='function'){ goToDay(d.fecha); } else { selDate=d.fecha; S.tab='calendario'; rerender(); } }}},
-              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:'.5rem'}},
-                h('div',{style:{fontWeight:700,fontSize:'.82rem'}},cap(wday(d.fecha)).slice(0,3)+' '+fechaCorta(d.fecha)),
-                h('div',{style:{textAlign:'right',whiteSpace:'nowrap'}},
-                  h('span',{style:{fontSize:'.8rem',color:'#16a34a',fontWeight:700}},'+'+eur(d.x.total)),
-                  h('span',{style:{fontSize:'.72rem',color:'var(--ink3)',marginLeft:'.4rem'}},'= '+eur(d.acum))
-                )
-              ),
-              h('div',{style:{fontSize:'.7rem',color:'var(--ink2)',marginTop:'.15rem'}},nominaDiaDetalle(d.x)||'Sin extras')
-            ))
-          )
-    ),
-
-    // ── Exportar / compartir ──
-    h('div',{class:'card'},
-      h('div',{class:'sec-title'},'Exportar y compartir'),
-      h('div',{class:'grid-2',style:{gap:'.5rem'}},
-        h('button',{class:'btn btn-g btn-full',on:{click:()=>nominaExport('pdf')}},'📄 PDF'),
-        h('button',{class:'btn btn-full',style:{background:'#7c3aed',color:'#fff'},on:{click:()=>nominaExport('img')}},'🖼️ Imagen'),
-        h('button',{class:'btn btn-b btn-full',on:{click:()=>nominaExportExcel()}},'📊 Excel'),
-        h('button',{class:'btn btn-gh btn-full',on:{click:()=>nominaExport('print')}},'🖨 Imprimir'),
-        h('button',{class:'btn btn-full',style:{background:'#25D366',color:'#fff',gridColumn:'1 / -1'},on:{click:()=>nominaShareText()}},'💬 Enviar resumen por WhatsApp'),
-        h('button',{class:'btn btn-gh btn-full',style:{gridColumn:'1 / -1'},on:{click:()=>{const c=nominaCycleFor(sel.cyc.from);exportPlantilla({from:c.from,to:c.to,label:'Nómina de '+nominaCycleName(c)+' ('+nominaRangoTxt(c.from,c.to)+')',tag:nominaFileTag({cyc:c,parcial:false}),nomina:getNominaCfg()});}}},'📥 Plantilla en blanco de este ciclo (26 → 25)')
-      )
-    ),
-
-    // ── Listado de nóminas mensuales ──
-    h('div',{class:'card'},
-      h('div',{class:'sec-title'},'📚 Nóminas mensuales'),
-      ...nominaListaCiclos().map(c=>{
-        const r=computeNomina(c.from,c.to);
-        const activa=c.from===sel.cyc.from;
-        const cerr=c.to<hoy, cur=c.from<=hoy&&hoy<=c.to;
-        return h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'.5rem',padding:'.5rem .4rem',borderBottom:'1px solid var(--brd)',cursor:'pointer',
-            background:activa?'var(--surf2)':'transparent',borderRadius:'var(--r2)',borderLeft:activa?'3px solid var(--acc)':'3px solid transparent'},
-            on:{click:()=>{ nominaSelectCycle(c); window.scrollTo({top:0,behavior:'smooth'}); }}},
-          h('div',{},
-            h('div',{style:{fontWeight:700,fontSize:'.85rem'}},nominaCycleName(c)+(cur?' · en curso':''),nominaEstadoBadge(c)),
-            h('div',{style:{fontSize:'.7rem',color:'var(--ink2)'}},nominaRangoTxt(c.from,c.to)+' · '+r.dias.length+' jorn.')
-          ),
-          h('div',{style:{textAlign:'right'}},
-            h('div',{style:{fontWeight:800,color:cerr?'var(--acc)':'var(--ink)'}},eur(r.total)),
-            h('div',{style:{fontSize:'.68rem',color:'var(--ink3)'}},'extras '+eur(r.extras))
-          )
-        );
-      })
-    )
-  );
-}
-
-
-
-// ══════════════════════════════════════════════════════════
-// NÓMINA REAL: cargar la nómina de la empresa (PDF o foto) y compararla
-// con lo apuntado en TimerPro. Se guarda una nómina por ciclo 26→25.
-// Pacto por defecto: base + guardia llegan NETOS (limpios de retenciones);
-// los extras llevan sus retenciones; dietas y kilometraje van exentos.
-// ══════════════════════════════════════════════════════════
-const NOMINAS_REALES_KEY='tp_nominas_reales';
-const NOM_CATS=[
-  // [id, etiqueta, tipo: 'fijo' | 'extra' | 'ded', exento]
-  ['base','Sueldo base','fijo',false],
-  ['prorrata','Prorrata pagas extra','fijo',false],
-  ['guardia','Guardia','fijo',false],
-  ['hnormales','Horas normales','extra',false],
-  ['hextra','Horas extra','extra',false],
-  ['hnoc','Horas nocturnas','extra',false],
-  ['hfes','Horas festivas','extra',false],
-  ['dietas','Dietas','extra',true],
-  ['km','Kilometraje / viajes','extra',true],
-  ['transporte','Transporte','extra',false],
-  ['otros','Otros devengos','extra',false],
-  ['irpf','IRPF','ded',false],
-  ['ss','Seguridad Social','ded',false],
-  ['otrasded','Otras deducciones','ded',false]
-];
-const nomCat=id=>NOM_CATS.find(c=>c[0]===id)||NOM_CATS.find(c=>c[0]==='otros');
-const nomCatEsDed=id=>nomCat(id)[2]==='ded';
-
-function getNominasReales(){ try{ return JSON.parse(localStorage.getItem(NOMINAS_REALES_KEY)||'{}')||{}; }catch(e){ return {}; } }
-function saveNominasReales(o){ try{ localStorage.setItem(NOMINAS_REALES_KEY,JSON.stringify(o)); }catch(e){} }
-function getNominaReal(cyc){ return getNominasReales()[cyc.from]||null; }
-function setNominaReal(cyc,real){
-  const all=getNominasReales();
-  if(real) all[cyc.from]={...real,cicloDesde:cyc.from,cicloHasta:cyc.to,actualizada:new Date().toISOString()};
-  else delete all[cyc.from];
-  saveNominasReales(all);
-}
-// Clasificación por palabras clave (líneas a mano o si la IA no da categoría)
-function nomCatFromText(txt,esDed){
-  const t=_normTxt(txt);
-  if(esDed){
-    if(/irpf|retencion/.test(t)) return 'irpf';
-    if(/conting|desempleo|formacion|mei|segsocial|seguridadsocial|cotiz|ss/.test(t)) return 'ss';
-    return 'otrasded';
-  }
-  if(/prorrat|pagaextra|pagasextra/.test(t)) return 'prorrata';
-  if(/salariobase|sueldobase|^base/.test(t)) return 'base';
-  if(/guardia|disponib|reten/.test(t)) return 'guardia';
-  if(/noct/.test(t)) return 'hnoc';
-  if(/festiv|domingo/.test(t)) return 'hfes';
-  if(/extra/.test(t)&&/hora|hext|hrs/.test(t)) return 'hextra';
-  if(/dieta|manutenc/.test(t)) return 'dietas';
-  if(/kilomet|km|locomoc|desplazam/.test(t)) return 'km';
-  if(/transport/.test(t)) return 'transporte';
-  if(/hora/.test(t)) return 'hnormales';
-  return 'otros';
-}
-// Ciclo de una nómina según su mes (la de Septiembre = 26 ago → 25 sep)
-function nominaCycleForMes(anio,mes){ return nominaCycleFor(anio+'-'+pad(mes)+'-15'); }
-
-// ── Lectura con Gemini (PDF o imagen) ──
-async function nominaLeerConIA(file){
-  let key=localStorage.getItem('gemini_api_key')||'';
-  if(!key){
-    key=(prompt('Para leer la nómina automáticamente hace falta tu API Key de Google Gemini (gratis en aistudio.google.com/apikey).\n\nPégala aquí, o cancela para meter la nómina a mano:','')||'').trim();
-    if(!key) return null;
-    localStorage.setItem('gemini_api_key',key);
-  }
-  const base64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=e=>res(String(e.target.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(file); });
-  const mime=file.type||(/\.pdf$/i.test(file.name)?'application/pdf':'image/jpeg');
-  const promptTxt=`Eres un experto en nóminas españolas. Lee esta nómina y responde SOLO con un JSON válido (sin markdown) con esta forma:
-{"empresa":"","periodo":{"mes":1-12,"anio":2026,"desde":"YYYY-MM-DD o vacío","hasta":"YYYY-MM-DD o vacío"},
-"devengos":[{"concepto":"texto tal cual aparece","cantidad":null,"precio":null,"importe":0,"categoria":"base|prorrata|guardia|hnormales|hextra|hnoc|hfes|dietas|km|transporte|otros"}],
-"deducciones":[{"concepto":"texto tal cual","porcentaje":null,"importe":0,"categoria":"irpf|ss|otrasded"}],
-"totalDevengado":0,"totalDeducciones":0,"liquido":0}
-Reglas:
-- Incluye TODAS las líneas de devengos (percepciones salariales y no salariales: dietas, kilometraje, pluses...) y TODAS las deducciones del trabajador (IRPF, contingencias comunes, desempleo, formación profesional, MEI, anticipos...).
-- NO incluyas las bases de cotización ni las aportaciones de la empresa.
-- categoria: base=salario base; prorrata=prorrata de pagas extra; guardia=guardia/disponibilidad/retén; hnormales=horas normales; hextra=horas extraordinarias; hnoc=nocturnidad; hfes=festivos/domingos; dietas=dietas/manutención; km=kilometraje/locomoción; transporte=plus transporte; otros=cualquier otro devengo.
-- Importes en número con punto decimal (1234.56). Líquido = "líquido a percibir" / "total a percibir".
-- NO devuelvas DNI, número de Seguridad Social, IBAN ni cuentas bancarias.`;
-  const body=JSON.stringify({contents:[{role:'user',parts:[{inline_data:{mime_type:mime,data:base64}},{text:promptTxt}]}],
-    generationConfig:{temperature:0,maxOutputTokens:4096,responseMimeType:'application/json'}});
-  const modelos=[localStorage.getItem('gemini_model'),'gemini-flash-latest','gemini-2.5-flash','gemini-2.0-flash'].filter((m,i,a)=>m&&a.indexOf(m)===i);
-  let ultimoErr='';
-  for(const m of modelos){
-    try{
-      const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+m+':generateContent?key='+key,{method:'POST',headers:{'Content-Type':'application/json'},body});
-      if(!res.ok){ ultimoErr='Gemini '+res.status; if(res.status===400||res.status===401||res.status===403){ const t=await res.text(); if(/API key|PERMISSION|API_KEY/i.test(t)) throw new Error('La API Key de Gemini no es válida'); } continue; }
-      const data=await res.json();
-      const text=(data.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('');
-      const j=JSON.parse(text.replace(/```json|```/g,'').trim());
-      if(m!==localStorage.getItem('gemini_model')) localStorage.setItem('gemini_model',m);
-      return j;
-    }catch(e){ ultimoErr=e.message; if(/no es válida/.test(e.message)) throw e; }
-  }
-  throw new Error('No se pudo leer la nómina ('+ultimoErr+')');
-}
-
-// Convierte la respuesta de la IA (o del editor) al formato guardado
-function nominaNormalizar(j,fileName){
-  const lin=[];
-  (j.devengos||[]).forEach(d=>{ const imp=_numImp(d.importe); if(!imp&&!d.concepto) return;
-    const cat=NOM_CATS.some(c=>c[0]===d.categoria&&c[2]!=='ded')?d.categoria:nomCatFromText(d.concepto,false);
-    lin.push({concepto:String(d.concepto||nomCat(cat)[1]).trim(),importe:Math.abs(imp),cat,cantidad:d.cantidad??null,precio:d.precio??null}); });
-  (j.deducciones||[]).forEach(d=>{ const imp=_numImp(d.importe); if(!imp&&!d.concepto) return;
-    const cat=['irpf','ss','otrasded'].includes(d.categoria)?d.categoria:nomCatFromText(d.concepto,true);
-    lin.push({concepto:String(d.concepto||nomCat(cat)[1]).trim(),importe:Math.abs(imp),cat,porcentaje:d.porcentaje??null}); });
-  const p=j.periodo||{};
-  return {empresa:j.empresa||'',mes:+p.mes||null,anio:+p.anio||null,lineas:lin,
-    totalDevengado:_numImp(j.totalDevengado),totalDeducciones:_numImp(j.totalDeducciones),liquido:_numImp(j.liquido),
-    archivo:fileName||'',origen:fileName?'ia':'manual',cargadaEn:new Date().toISOString()};
-}
-
-async function nominaCargarArchivo(){
-  const inp=document.createElement('input');
-  inp.type='file'; inp.accept='application/pdf,image/*';
-  inp.onchange=async ev=>{
-    const file=ev.target.files&&ev.target.files[0]; if(!file) return;
-    if(file.size>15*1024*1024){ showAlert('El archivo es demasiado grande (máx. 15 MB)','err'); return; }
-    S.nomCargando=true; rerender();
-    try{
-      showAlert('🤖 Leyendo la nómina con la IA...');
-      const j=await nominaLeerConIA(file);
-      if(!j){ S.nomCargando=false; rerender(); showAlert('Sin API Key de Gemini no se puede interpretar la nómina','err'); return; }
-      const real=nominaNormalizar(j,file.name);
-      if(!real.lineas.length) throw new Error('No se encontraron conceptos en la nómina');
-      let cyc=nominaSel().cyc;
-      if(real.mes&&real.anio){
-        const c=nominaCycleForMes(real.anio,real.mes);
-        if(c.from!==cyc.from){ cyc=c; S.nomCycle=c; S.nomFrom=null; S.nomTo=null; }
-      }
-      setNominaReal(cyc,real);
-      S.nomCargando=false;
-      const C=nominaComparar(cyc);
-      showAlert((C&&C.estado==='ok'?'✅ ':'⚠️ ')+'Nómina de '+nominaCycleName(cyc)+' interpretada'+(C&&C.estado==='ok'?': todo cuadra':': hay cosas que revisar'));
-      rerender();
-    }catch(e){
-      S.nomCargando=false; rerender();
-      showAlert('No se pudo leer: '+e.message+'. Puedes meterla a mano.','err');
-    }
-  };
-  inp.click();
-}
-function nominaAbrirEditor(){
-  const cyc=nominaSel().cyc;
-  const prev=getNominaReal(cyc);
-  const vacia={empresa:'',mes:+cyc.to.slice(5,7),anio:+cyc.to.slice(0,4),totalDevengado:0,totalDeducciones:0,liquido:0,origen:'manual',cargadaEn:new Date().toISOString(),
-    lineas:[{concepto:'Salario base',importe:0,cat:'base'},{concepto:'Plus guardia',importe:0,cat:'guardia'},{concepto:'IRPF',importe:0,cat:'irpf'},{concepto:'Contingencias comunes',importe:0,cat:'ss'}]};
-  S.nomEdit={cyc,real:JSON.parse(JSON.stringify(prev||vacia))};
-  rerender();
-}
-
-// ── Comparativa ──
-function nominaComparar(cyc){
-  const real=getNominaReal(cyc); if(!real) return null;
-  const cfg=getNominaCfg();
-  const cycEx=cfg.desfase?nominaCycleShift(cyc,-1):cyc;
-  const N=computeNomina(cycEx.from,cycEx.to), t=N.tot;
-  const app={base:cfg.base,prorrata:0,guardia:cfg.guardia,hnormales:t.in,hextra:t.ie,hnoc:t.inoc,hfes:t.ifes,
-    dietas:t.dieta+t.dietasExtra,km:t.viajes,transporte:t.coche+t.camion+t.transpOtro,otros:t.otros};
-  const nom={}; const conceptosPorCat={};
-  (real.lineas||[]).forEach(l=>{ nom[l.cat]=(nom[l.cat]||0)+(+l.importe||0); (conceptosPorCat[l.cat]=conceptosPorCat[l.cat]||[]).push(l.concepto); });
-  const r2=v=>Math.round((+v||0)*100)/100;
-  const filas=NOM_CATS.filter(c=>c[2]!=='ded').map(([cat,label,tipo,exento])=>{
-    const a=r2(app[cat]||0), n=r2(nom[cat]||0);
-    return {cat,label,tipo,exento,app:a,nom:n,dif:r2(n-a),ok:Math.abs(n-a)<=1,conceptos:conceptosPorCat[cat]||[]};
-  }).filter(f=>f.app>0||f.nom>0);
-  const sum=(arr,k)=>r2(arr.reduce((s,f)=>s+f[k],0));
-  const fijoPactado=r2(cfg.base+cfg.guardia);
-  const fijoNom=r2((nom.base||0)+(nom.prorrata||0)+(nom.guardia||0));
-  const extrasF=filas.filter(f=>f.tipo==='extra');
-  const extrasApp=sum(extrasF,'app'), extrasNom=sum(extrasF,'nom');
-  const devengadoLin=r2(filas.reduce((s,f)=>s+f.nom,0));
-  const dedLin=r2(['irpf','ss','otrasded'].reduce((s,k)=>s+(nom[k]||0),0));
-  const devengado=real.totalDevengado||devengadoLin;
-  const deducciones=real.totalDeducciones||dedLin;
-  const liquido=real.liquido||r2(devengado-deducciones);
-  const exentos=r2((nom.dietas||0)+(nom.km||0));
-  const sujetosExtra=Math.max(0,r2(extrasNom-exentos));
-  const baseRet=devengado-exentos;
-  const retPct=(cfg.retPct!==''&&cfg.retPct!=null&&isFinite(+cfg.retPct))?(+cfg.retPct/100):(baseRet>0?deducciones/baseRet:0);
-  const extrasNetos=r2(sujetosExtra*(1-retPct));
-  const limpioFijo=r2(liquido-exentos-extrasNetos);
-  const pactoOk=cfg.pacto==='bruto'?(fijoNom>=fijoPactado-1):(limpioFijo>=fijoPactado-1);
-  // Avisos útiles
-  const avisos=[];
-  const cuadraLin=Math.abs(devengadoLin-devengado)<=1;
-  if(real.totalDevengado&&!cuadraLin) avisos.push('La suma de los conceptos leídos ('+eur(devengadoLin)+') no coincide con el total devengado de la nómina ('+eur(devengado)+'): puede faltar alguna línea. Revísala con ✏️ Editar.');
-  const extrasOk=Math.abs(extrasNom-extrasApp)<=1;
-  const lineasMal=extrasF.filter(f=>!f.ok);
-  if(extrasOk&&lineasMal.length){
-    const faltan=lineasMal.filter(f=>f.dif<0).map(f=>f.label+' ('+eur(-f.dif)+')');
-    const sobran=lineasMal.filter(f=>f.dif>0).map(f=>'«'+f.conceptos.join('», «')+'» ('+eur(f.dif)+')');
-    avisos.push('Los extras cuadran en total, pero la empresa los ha puesto en otra casilla: '+faltan.join(', ')+(sobran.length?' → aparecen en '+sobran.join(', '):'')+'.');
-  } else if(!extrasOk){
-    avisos.push(extrasNom<extrasApp
-      ?'Te faltan '+eur(extrasApp-extrasNom)+' de extras respecto a lo que apuntaste'+(cfg.desfase?'':' (si tu empresa paga los extras al mes siguiente, activa «Extras del ciclo anterior» en la configuración)')+'.'
-      :'Te han pagado '+eur(extrasNom-extrasApp)+' más de extras de lo que apuntaste'+(cfg.desfase?'':' (puede que incluya extras de otro mes)')+'.');
-  }
-  const estado=(pactoOk&&extrasOk&&(!real.totalDevengado||cuadraLin))?'ok':'revisar';
-  return {real,cfg,cycEx,filas,fijoPactado,fijoNom,extrasApp,extrasNom,devengado,deducciones,liquido,exentos,sujetosExtra,retPct,extrasNetos,limpioFijo,pactoOk,extrasOk,avisos,estado,
-    irpf:r2(nom.irpf||0),ss:r2(nom.ss||0),otrasded:r2(nom.otrasded||0)};
-}
-function nominaEstadoBadge(cyc){
-  const c=nominaComparar(cyc); if(!c) return null;
-  return c.estado==='ok'
-    ?h('span',{style:{fontSize:'.62rem',fontWeight:700,padding:'.1rem .4rem',borderRadius:'99px',background:'#dcfce7',color:'#166534',marginLeft:'.3rem'}},'🧾 ✅')
-    :h('span',{style:{fontSize:'.62rem',fontWeight:700,padding:'.1rem .4rem',borderRadius:'99px',background:'#fef3c7',color:'#92400e',marginLeft:'.3rem'}},'🧾 ⚠️');
-}
-
-// ── Tarjeta en la pestaña Nómina ──
-function renderNominaReal(sel){
-  if(S.nomEdit && S.nomEdit.cyc.from===sel.cyc.from) return renderNominaEditor();
-  const C=nominaComparar(sel.cyc);
-  const titulo=h('div',{class:'sec-title'},'🧾 Nómina de la empresa — comparativa');
-  if(S.nomCargando) return h('div',{class:'card'},titulo,h('div',{class:'empty'},'🤖 Leyendo la nómina... un momento'));
-  if(!C){
-    return h('div',{class:'card'},titulo,
-      h('div',{style:{fontSize:'.8rem',color:'var(--ink2)',marginBottom:'.6rem',lineHeight:1.5}},
-        'Sube la nómina de '+nominaCycleName(sel.cyc)+' y TimerPro, con la IA, la interpreta y la compara con lo que has apuntado: conceptos, importes, dónde los ha metido la empresa y si los '+eur(getNominaCfg().base+getNominaCfg().guardia)+' pactados te llegan limpios.'),
-      h('button',{class:'btn btn-g btn-full',style:{fontSize:'1rem',padding:'.8rem'},on:{click:()=>nominaCargarArchivo()}},'📄 Cargar nómina (PDF o foto)'),
-      h('div',{style:{fontSize:'.7rem',color:'var(--ink3)',textAlign:'center',marginTop:'.4rem'}},'La IA la lee e interpreta sola: conceptos, casillas, mes y comparativa.'),
-      h('div',{style:{textAlign:'center',marginTop:'.3rem'}},
-        h('a',{href:'#',style:{fontSize:'.68rem',color:'var(--ink3)'},on:{click:ev=>{ev.preventDefault();nominaAbrirEditor();}}},'Sin internet: introducirla a mano'))
-    );
-  }
-  const ok=C.estado==='ok';
-  const fila=(lbl,v,o)=>h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.25rem 0',fontSize:o&&o.big?'.95rem':'.8rem',fontWeight:o&&o.bold?800:400,color:o&&o.color||'inherit'}},h('span',{},lbl),h('span',{style:{fontWeight:700}},v));
-  const pct=v=>(Math.round(v*1000)/10).toString().replace('.',',')+' %';
-  return h('div',{class:'card',style:{borderLeft:'4px solid '+(ok?'#16a34a':'#f59e0b')}},
-    titulo,
-    h('div',{style:{padding:'.6rem .7rem',borderRadius:'var(--r2)',background:ok?'#dcfce7':'#fef3c7',color:ok?'#166534':'#92400e',fontWeight:800,fontSize:'.9rem',marginBottom:'.6rem'}},
-      ok?'✅ Todo cuadra con lo que has apuntado':'⚠️ Hay cosas que revisar'),
-    h('div',{style:{fontSize:'.7rem',color:'var(--ink3)',marginBottom:'.4rem'}},
-      (C.real.archivo?'🤖 Interpretada por la IA · 📎 '+C.real.archivo+' · ':'✍️ Metida a mano · ')+'Extras comparados con el ciclo '+nominaRangoTxt(C.cycEx.from,C.cycEx.to)),
-
-    // Pacto
-    h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.6rem .7rem',marginBottom:'.6rem'}},
-      h('div',{style:{fontWeight:800,fontSize:'.82rem',marginBottom:'.3rem'}},(C.pactoOk?'✅ ':'⚠️ ')+(C.cfg.pacto==='bruto'?'Fijo pactado en bruto':'Fijo pactado limpio de retenciones')+': '+eur(C.fijoPactado)),
-      C.cfg.pacto==='bruto'
-        ?fila('Base + guardia en la nómina (bruto)',eur(C.fijoNom))
-        :h('div',{},
-          fila('Líquido recibido',eur(C.liquido)),
-          fila('− Dietas y km (exentos)',eur(C.exentos)),
-          fila('− Extras netos (estimado, '+pct(C.retPct)+' retención)',eur(C.extrasNetos)),
-          fila('= Te ha llegado limpio de base + guardia',eur(C.limpioFijo),{bold:true,color:C.pactoOk?'#16a34a':'#b45309'}),
-          !C.pactoOk?h('div',{style:{fontSize:'.75rem',color:'#b45309',marginTop:'.2rem'}},'Faltan '+eur(C.fijoPactado-C.limpioFijo)+' para llegar a lo pactado.'):null
-        )
-    ),
-
-    // Totales de la nómina
-    h('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'.4rem',marginBottom:'.6rem'}},
-      ...[['Devengado',C.devengado],['Deducciones',C.deducciones],['Líquido',C.liquido]].map(([l,v])=>
-        h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.45rem .3rem',textAlign:'center'}},
-          h('div',{style:{fontWeight:800,fontSize:'.88rem'}},eur(v)),h('div',{style:{fontSize:'.66rem',color:'var(--ink2)'}},l)))
-    ),
-    (C.irpf||C.ss)?h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.5rem'}},
-      'IRPF '+eur(C.irpf)+' · Seguridad Social '+eur(C.ss)+(C.otrasded?' · Otras '+eur(C.otrasded):'')):null,
-
-    // Tabla concepto a concepto
-    h('div',{style:{display:'grid',gridTemplateColumns:'1.6fr 1fr 1fr 1fr',gap:'.2rem',fontSize:'.66rem',fontWeight:700,color:'var(--ink3)',padding:'.2rem 0',borderBottom:'1px solid var(--brd)'}},
-      h('span',{},'Concepto'),h('span',{style:{textAlign:'right'}},'Apuntado'),h('span',{style:{textAlign:'right'}},'Nómina'),h('span',{style:{textAlign:'right'}},'Dif.')),
-    ...C.filas.map(f=>h('div',{style:{padding:'.3rem 0',borderBottom:'1px solid var(--brd)'}},
-      h('div',{style:{display:'grid',gridTemplateColumns:'1.6fr 1fr 1fr 1fr',gap:'.2rem',fontSize:'.78rem',alignItems:'baseline'}},
-        h('span',{style:{fontWeight:600}},(f.ok?'✅ ':'⚠️ ')+f.label+(f.exento?' ·ex':'')),
-        h('span',{style:{textAlign:'right'}},eur(f.app)),
-        h('span',{style:{textAlign:'right'}},eur(f.nom)),
-        h('span',{style:{textAlign:'right',fontWeight:700,color:f.ok?'#16a34a':(f.dif<0?'#dc2626':'#b45309')}},(f.dif>0?'+':'')+eur(f.dif))
-      ),
-      f.conceptos.length?h('div',{style:{fontSize:'.66rem',color:'var(--ink3)'}},'En la nómina: '+f.conceptos.join(' · ')):null
-    )),
-    h('div',{style:{display:'grid',gridTemplateColumns:'1.6fr 1fr 1fr 1fr',gap:'.2rem',fontSize:'.8rem',fontWeight:800,padding:'.4rem 0'}},
-      h('span',{},'Total extras'),h('span',{style:{textAlign:'right'}},eur(C.extrasApp)),h('span',{style:{textAlign:'right'}},eur(C.extrasNom)),
-      h('span',{style:{textAlign:'right',color:C.extrasOk?'#16a34a':'#dc2626'}},((C.extrasNom-C.extrasApp)>0?'+':'')+eur(C.extrasNom-C.extrasApp))),
-    h('div',{style:{fontSize:'.64rem',color:'var(--ink3)'}},'·ex = exento de retención (dietas y kilometraje).'),
-
-    C.avisos.length?h('div',{style:{marginTop:'.5rem',padding:'.5rem .6rem',background:'#fff7ed',border:'1px solid #fed7aa',borderRadius:'var(--r2)',fontSize:'.75rem',color:'#9a3412',lineHeight:1.45}},
-      ...C.avisos.map(a=>h('div',{style:{marginBottom:'.2rem'}},'• '+a))):null,
-
-    h('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'.4rem',marginTop:'.6rem'}},
-      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{ nominaAbrirEditor(); if(S.nomEdit) S.nomEdit.revisar=!!C.real.archivo; rerender(); }}},'✏️ Corregir'),
-      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>nominaCargarArchivo()}},'🔄 Cargar otra'),
-      h('button',{class:'btn btn-gh btn-sm',style:{color:'#dc2626'},on:{click:()=>{ if(confirm('¿Quitar la nómina cargada de '+nominaCycleName(sel.cyc)+'?')){ setNominaReal(sel.cyc,null); rerender(); } }}},'🗑️ Quitar')
-    ),
-    h('div',{style:{fontSize:'.64rem',color:'var(--ink3)',marginTop:'.5rem',lineHeight:1.4}},
-      'La parte «limpia» es una estimación: reparte las retenciones de la nómina entre todos los conceptos sujetos. Para la cifra exacta, confírmalo con tu gestoría.')
-  );
-}
-
-// ── Editor (revisar lo leído por la IA o meter a mano) ──
-function renderNominaEditor(){
-  const E=S.nomEdit, R=E.real;
-  const catOpts=(sel,ded)=>NOM_CATS.filter(c=>ded?c[2]==='ded':c[2]!=='ded').map(c=>h('option',{value:c[0],selected:c[0]===sel},c[1]));
-  const lineaRow=(l,i)=>{
-    const ded=nomCatEsDed(l.cat);
-    return h('div',{style:{display:'grid',gridTemplateColumns:'1.5fr 1.2fr .9fr auto',gap:'.3rem',alignItems:'center',marginBottom:'.3rem'}},
-      h('input',{type:'text',value:l.concepto||'',placeholder:'Concepto',style:{fontSize:'.78rem',padding:'.35rem .4rem'},
-        on:{change:ev=>{ l.concepto=ev.target.value; }}}),
-      h('select',{style:{fontSize:'.75rem',padding:'.3rem'},on:{change:ev=>{ l.cat=ev.target.value; }}},...catOpts(l.cat,ded)),
-      h('input',{type:'text',inputmode:'decimal',value:l.importe?String(l.importe).replace('.',','):'',placeholder:'0,00',style:{fontSize:'.78rem',padding:'.35rem .4rem',textAlign:'right'},
-        on:{change:ev=>{ l.importe=_numImp(ev.target.value); }}}),
-      h('button',{class:'btn btn-gh btn-sm',style:{color:'#dc2626',padding:'.2rem .45rem'},on:{click:()=>{ R.lineas.splice(i,1); rerender(); }}},'✕')
-    );
-  };
-  const dev=R.lineas.map((l,i)=>({l,i})).filter(x=>!nomCatEsDed(x.l.cat));
-  const ded=R.lineas.map((l,i)=>({l,i})).filter(x=>nomCatEsDed(x.l.cat));
-  const totalInput=(lbl,k)=>h('div',{class:'field',style:{margin:0}},h('label',{},lbl),
-    h('input',{type:'text',inputmode:'decimal',value:R[k]?String(R[k]).replace('.',','):'',placeholder:'auto',on:{change:ev=>{ R[k]=_numImp(ev.target.value); }}}));
-  return h('div',{class:'card',style:{borderLeft:'4px solid var(--acc)'}},
-    h('div',{class:'sec-title'},(E.revisar?'✏️ Corregir lo que ha leído la IA':'✍️ Nómina a mano')+' — '+nominaCycleName(E.cyc)),
-    E.revisar?h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',marginBottom:'.5rem'}},'Solo si algo está mal: cambia la casilla o el importe y pulsa Guardar.'):null,
-    h('div',{class:'grid-2',style:{gap:'.5rem',marginBottom:'.5rem'}},
-      h('div',{class:'field',style:{margin:0}},h('label',{},'Mes de la nómina'),
-        h('select',{on:{change:ev=>{ R.mes=+ev.target.value; }}},...MONTHS.map((m,i)=>h('option',{value:i+1,selected:(i+1)===(+R.mes)},m)))),
-      h('div',{class:'field',style:{margin:0}},h('label',{},'Año'),
-        h('input',{type:'number',value:R.anio||'',on:{change:ev=>{ R.anio=+ev.target.value; }}}))
-    ),
-    h('div',{style:{fontWeight:700,fontSize:'.78rem',margin:'.4rem 0 .3rem'}},'➕ Devengos (lo que te pagan)'),
-    ...dev.map(x=>lineaRow(x.l,x.i)),
-    h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{ R.lineas.push({concepto:'',importe:0,cat:'otros'}); rerender(); }}},'➕ Añadir devengo'),
-    h('div',{style:{fontWeight:700,fontSize:'.78rem',margin:'.7rem 0 .3rem'}},'➖ Deducciones (lo que te quitan)'),
-    ...ded.map(x=>lineaRow(x.l,x.i)),
-    h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{ R.lineas.push({concepto:'',importe:0,cat:'otrasded'}); rerender(); }}},'➕ Añadir deducción'),
-    h('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'.4rem',marginTop:'.7rem'}},
-      totalInput('Total devengado','totalDevengado'),totalInput('Total deducciones','totalDeducciones'),totalInput('Líquido a percibir','liquido')),
-    h('div',{style:{fontSize:'.66rem',color:'var(--ink3)',marginTop:'.3rem'}},'Si dejas los totales vacíos, se calculan con las líneas.'),
-    h('div',{class:'grid-2',style:{gap:'.5rem',marginTop:'.7rem'}},
-      h('button',{class:'btn btn-g btn-full',on:{click:()=>{
-        captureNominaEditor();
-        R.lineas=R.lineas.filter(l=>l.concepto||l.importe);
-        let cyc=E.cyc;
-        if(R.mes&&R.anio){ const c=nominaCycleForMes(R.anio,R.mes); if(c.from!==cyc.from){ if(getNominaReal(cyc)&&getNominaReal(cyc).cargadaEn===R.cargadaEn) setNominaReal(cyc,null); cyc=c; S.nomCycle=c; S.nomFrom=null; S.nomTo=null; } }
-        setNominaReal(cyc,R); S.nomEdit=null; showAlert('💾 Nómina de '+nominaCycleName(cyc)+' guardada'); rerender();
-      }}},'💾 Guardar'),
-      h('button',{class:'btn btn-gh btn-full',on:{click:()=>{ S.nomEdit=null; rerender(); }}},'Cancelar')
-    )
-  );
-}
-// Recoge lo escrito en el campo con el foco (por si no saltó el "change")
-function captureNominaEditor(){ try{ const a=document.activeElement; if(a&&a.blur) a.blur(); }catch(e){} }
-
-// Sincronización con Drive: configuración y nóminas cargadas
-function nominaSyncPayload(){ return {nominaCfg:getNominaCfg(),nominasReales:getNominasReales()}; }
-function applyNominaSync(d){
-  try{
-    if(d&&d.nominaCfg){
-      const loc=getNominaCfg(), rem=d.nominaCfg;
-      if((rem.actualizado||'')>(loc.actualizado||'')) localStorage.setItem(NOMINA_CFG_KEY,JSON.stringify(rem));
-    }
-    if(d&&d.nominasReales&&typeof d.nominasReales==='object'){
-      const loc=getNominasReales();
-      Object.entries(d.nominasReales).forEach(([k,v])=>{ if(!loc[k]||(v.actualizada||'')>(loc[k].actualizada||'')) loc[k]=v; });
-      saveNominasReales(loc);
-    }
-  }catch(e){ console.warn('Sync nómina:',e); }
-}
-
-// Sección de comparativa para el informe PDF / imagen / impresión
-function nominaComparativaHTML(cyc,esc){
-  const C=nominaComparar(cyc); if(!C) return '';
-  const ok=C.estado==='ok';
-  const filas=C.filas.map(f=>`<tr><td>${f.ok?'✔':'!'} ${esc(f.label)}${f.exento?' <span style="color:#64748b">(exento)</span>':''}${f.conceptos.length?'<br><span style="font-size:10px;color:#64748b">Nómina: '+esc(f.conceptos.join(' · '))+'</span>':''}</td><td class="r">${eur(f.app)}</td><td class="r">${eur(f.nom)}</td><td class="r" style="color:${f.ok?'#16a34a':(f.dif<0?'#dc2626':'#b45309')}">${f.dif>0?'+':''}${eur(f.dif)}</td></tr>`).join('');
-  const pacto=C.cfg.pacto==='bruto'
-    ?`<tr><td>Base + guardia en la nómina (bruto)</td><td class="r">${eur(C.fijoNom)}</td></tr>`
-    :`<tr><td>Líquido recibido</td><td class="r">${eur(C.liquido)}</td></tr><tr><td>− Dietas y km exentos</td><td class="r">${eur(C.exentos)}</td></tr><tr><td>− Extras netos (estimado, ${(Math.round(C.retPct*1000)/10).toString().replace('.',',')} % ret.)</td><td class="r">${eur(C.extrasNetos)}</td></tr><tr class="tot"><td>= Limpio de base + guardia (pactado ${eur(C.fijoPactado)})</td><td class="r">${eur(C.limpioFijo)}</td></tr>`;
-  return `<h2>Comparativa con la nómina de la empresa</h2>
-    <div style="padding:8px 10px;border-radius:8px;font-weight:800;font-size:13px;margin-bottom:8px;background:${ok?'#dcfce7':'#fef3c7'};color:${ok?'#166534':'#92400e'}">${ok?'✔ Todo cuadra con lo apuntado':'! Hay cosas que revisar'} · Devengado ${eur(C.devengado)} · Deducciones ${eur(C.deducciones)} · Líquido ${eur(C.liquido)}</div>
-    <table><tr><th>Concepto</th><th class="r">Apuntado</th><th class="r">Nómina</th><th class="r">Dif.</th></tr>${filas}
-    <tr class="tot"><td>Total extras</td><td class="r">${eur(C.extrasApp)}</td><td class="r">${eur(C.extrasNom)}</td><td class="r">${(C.extrasNom-C.extrasApp)>0?'+':''}${eur(C.extrasNom-C.extrasApp)}</td></tr></table>
-    <h2>Pacto: fijo ${C.cfg.pacto==='bruto'?'en bruto':'limpio de retenciones'} — ${C.pactoOk?'✔ se cumple':'! no se cumple'}</h2>
-    <table>${pacto}</table>
-    ${C.avisos.length?'<div style="margin-top:8px;padding:8px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;font-size:11px;color:#9a3412">'+C.avisos.map(a=>'• '+esc(a)).join('<br>')+'</div>':''}`;
-}
-
-// ══════════════════════════════════════════════════════════
-// NÓMINA › HISTÓRICO COMPLETO: todos los fichajes desde el primer día
-// registrado hasta el último, agrupados por ciclos 26→25. Los ciclos ya
-// vencidos se muestran como CERRADOS; el que contiene hoy, EN CURSO.
-// ══════════════════════════════════════════════════════════
-function nominaHistCiclos(){
-  const ents=(S.entries||[]).filter(e=>!e._draft&&e.fecha);
-  if(!ents.length) return {ciclos:[],first:null,last:null};
-  const first=ents.reduce((m,e)=>e.fecha<m?e.fecha:m,ents[0].fecha);
-  const last=ents.reduce((m,e)=>e.fecha>m?e.fecha:m,ents[0].fecha);
-  const out=[]; let c=nominaCycleFor(first), guard=0;
-  const lastCyc=nominaCycleFor(last>today()?last:today());
-  while(c.from<=lastCyc.from && guard<240){ out.push(c); c=nominaCycleShift(c,1); guard++; }
-  return {ciclos:out,first,last};
-}
-// Horarios de una jornada: "07:00→15:00 · 16:00→18:00"
-function nominaHorarios(e){
-  const fs=(e.fichajes||[]).filter(f=>f&&(f.entrada||f.salida));
-  if(fs.length) return fs.map(f=>(f.entrada||'—')+'→'+(f.salida||'—')).join(' · ');
-  if(e.horaEntrada||e.horaSalida) return (e.horaEntrada||'—')+'→'+(e.horaSalida||'—');
-  return '';
-}
-function nominaTituloDia(e){ return String(e.titulo||'').replace(/<[^>]*>/g,'').replace(/&nbsp;/g,' ').trim(); }
-function fmtHN(v){ return (Math.round((v||0)*100)/100).toString().replace('.',',')+' h'; }
-
-function renderNominaHistorico(){
-  const H=nominaHistCiclos();
-  const hoy=today();
-  if(!H.ciclos.length) return h('div',{class:'card'},h('div',{class:'empty'},'Todavía no hay jornadas guardadas.'));
-  const filas=H.ciclos.map(c=>({c,N:computeNomina(c.from,c.to),cerrado:c.to<hoy,curso:c.from<=hoy&&hoy<=c.to}));
-  const cerrados=filas.filter(f=>f.cerrado);
-  const sum=(arr,fn)=>arr.reduce((s,x)=>s+fn(x),0);
-  const totCerr=sum(cerrados,f=>f.N.total);
-  const jornadas=sum(filas,f=>f.N.dias.length);
-  const horas=sum(filas,f=>f.N.tot.horas);
-  const extrasTot=sum(filas,f=>f.N.extras);
-  if(!S.nomHistOpen) S.nomHistOpen={};
-  const orden=S.nomHistOrden==='asc'?filas:[...filas].reverse();
-
-  const kpi=(v,l)=>h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.5rem .3rem',textAlign:'center'}},
-    h('div',{style:{fontWeight:800,fontSize:'.95rem'}},v),h('div',{style:{fontSize:'.68rem',color:'var(--ink2)'}},l));
-
-  return h('div',{},
-    h('div',{class:'card'},
-      h('div',{class:'sec-title'},'🗂️ Histórico de fichajes'),
-      h('div',{style:{fontSize:'.8rem',color:'var(--ink2)',marginBottom:'.6rem'}},
-        'Desde tu primer fichaje ('+fechaCorta(H.first)+') hasta el último ('+fechaCorta(H.last)+')'),
-      h('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'.4rem'}},
-        kpi(cerrados.length+' de '+filas.length,'Ciclos cerrados'),
-        kpi(String(jornadas),'Jornadas fichadas'),
-        kpi(fmtHN(horas),'Horas trabajadas'),
-        kpi(eur(extrasTot),'Extras acumulados')
-      ),
-      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'.6rem',padding:'.6rem .7rem',background:'var(--surf2)',borderRadius:'var(--r2)',borderLeft:'4px solid var(--acc)'}},
-        h('div',{},h('div',{style:{fontWeight:700,fontSize:'.85rem'}},'Total nóminas cerradas'),
-          h('div',{style:{fontSize:'.68rem',color:'var(--ink3)'}},cerrados.length+' ciclo'+(cerrados.length===1?'':'s')+' · base + guardia + extras')),
-        h('div',{style:{fontWeight:900,fontSize:'1.15rem',color:'var(--acc)'}},eur(totCerr))
-      ),
-      h('div',{style:{display:'flex',gap:'.4rem',marginTop:'.6rem',flexWrap:'wrap'}},
-        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.nomHistOrden=S.nomHistOrden==='asc'?'desc':'asc';rerender();}}},
-          S.nomHistOrden==='asc'?'↕ Más antiguo primero':'↕ Más reciente primero'),
-        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{H.ciclos.forEach(c=>S.nomHistOpen[c.from]=true);rerender();}}},'➕ Desplegar todo'),
-        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.nomHistOpen={};rerender();}}},'➖ Plegar todo')
-      )
-    ),
-
-    ...orden.map(({c,N,cerrado,curso})=>{
-      const abierto=!!S.nomHistOpen[c.from];
-      const esPrimero=c.from===H.ciclos[0].from && H.first>c.from;
-      return h('div',{class:'card',style:{padding:'.6rem .7rem',borderLeft:'4px solid '+(cerrado?'#16a34a':curso?'#f59e0b':'#6366f1')}},
-        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'.5rem',cursor:'pointer'},
-            on:{click:()=>{S.nomHistOpen[c.from]=!abierto;rerender();}}},
-          h('div',{},
-            h('div',{style:{fontWeight:800,fontSize:'.9rem'}},(abierto?'▾ ':'▸ ')+nominaCycleName(c),nominaEstadoBadge(c)),
-            h('div',{style:{fontSize:'.7rem',color:'var(--ink2)'}},nominaRangoTxt(c.from,c.to)),
-            h('div',{style:{fontSize:'.68rem',marginTop:'.15rem',fontWeight:700,color:cerrado?'#16a34a':curso?'#b45309':'#4f46e5'}},
-              (cerrado?'✔ Cerrado':curso?'⏳ En curso':'Futuro')+' · '+N.dias.length+' jorn. · '+fmtHN(N.tot.horas))
-          ),
-          h('div',{style:{textAlign:'right'}},
-            h('div',{style:{fontWeight:900,color:cerrado?'var(--acc)':'var(--ink)'}},eur(N.total)),
-            h('div',{style:{fontSize:'.68rem',color:'var(--ink3)'}},'extras '+eur(N.extras))
-          )
-        ),
-        abierto?h('div',{style:{marginTop:'.5rem',borderTop:'1px solid var(--brd)'}},
-          esPrimero?h('div',{style:{fontSize:'.68rem',color:'var(--ink3)',padding:'.35rem 0'}},'Primer ciclo: tus fichajes empiezan el '+fechaCorta(H.first)+'.'):null,
-          N.dias.length===0?h('div',{style:{fontSize:'.75rem',color:'var(--ink3)',padding:'.4rem 0'}},'Sin fichajes en este ciclo.'):null,
-          ...N.dias.map(d=>{
-            const e=N.entries.find(x=>x.fecha===d.fecha)||{};
-            const hor=nominaHorarios(e), tit=nominaTituloDia(e);
-            return h('div',{style:{padding:'.4rem 0',borderBottom:'1px solid var(--brd)',cursor:'pointer'},
-                on:{click:()=>{ if(typeof goToDay==='function') goToDay(d.fecha); }}},
-              h('div',{style:{display:'flex',justifyContent:'space-between',gap:'.5rem'}},
-                h('div',{style:{fontWeight:700,fontSize:'.8rem'}},cap(wday(d.fecha)).slice(0,3)+' '+fechaCorta(d.fecha)),
-                h('div',{style:{fontSize:'.78rem',whiteSpace:'nowrap'}},
-                  h('span',{style:{color:'var(--ink2)'}},fmtHN(d.x.horas)),
-                  h('span',{style:{color:'#16a34a',fontWeight:700,marginLeft:'.5rem'}},'+'+eur(d.x.total)))
-              ),
-              hor?h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'⏱ '+hor):null,
-              tit?h('div',{style:{fontSize:'.72rem',color:'var(--ink)',marginTop:'.1rem'}},tit):null,
-              h('div',{style:{fontSize:'.68rem',color:'var(--ink3)',marginTop:'.1rem'}},nominaDiaDetalle(d.x)||'Sin extras')
-            );
-          }),
-          h('button',{class:'btn btn-gh btn-sm btn-full',style:{marginTop:'.5rem'},
-            on:{click:()=>{S.nomVista='mes';nominaSelectCycle(c);window.scrollTo({top:0,behavior:'smooth'});}}},'💰 Ver nómina de '+nominaCycleName(c))
-        ):null
-      );
-    }),
-
-    h('div',{class:'card'},
-      h('div',{class:'sec-title'},'Exportar histórico completo'),
-      h('div',{class:'grid-2',style:{gap:'.5rem'}},
-        h('button',{class:'btn btn-g btn-full',on:{click:()=>nominaHistExport('pdf')}},'📄 PDF'),
-        h('button',{class:'btn btn-b btn-full',on:{click:()=>nominaHistExcel()}},'📊 Excel'),
-        h('button',{class:'btn btn-gh btn-full',style:{gridColumn:'1 / -1'},on:{click:()=>nominaHistExport('print')}},'🖨 Imprimir')
-      )
-    )
-  );
-}
-
-// Informe HTML del histórico (PDF / imprimir)
-function nominaHistReportHTML(paraDoc){
-  const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  const H=nominaHistCiclos(); const hoy=today();
-  const wk=(typeof fWorker!=='undefined'&&fWorker)||{}; const co=(typeof fCompany!=='undefined'&&fCompany)||{};
-  const nombre=((wk.nombre||'')+' '+(wk.apellidos||'')).trim();
-  const filas=H.ciclos.map(c=>({c,N:computeNomina(c.from,c.to),cerrado:c.to<hoy,curso:c.from<=hoy&&hoy<=c.to}));
-  const cerrados=filas.filter(f=>f.cerrado);
-  const totCerr=cerrados.reduce((s,f)=>s+f.N.total,0);
-  const resumen=filas.map(f=>`<tr><td><b>${nominaCycleName(f.c)}</b><br><span class="s">${nominaRangoTxt(f.c.from,f.c.to)}</span></td><td>${f.cerrado?'<span style="color:#16a34a;font-weight:700">Cerrado</span>':f.curso?'<span style="color:#b45309;font-weight:700">En curso</span>':'Futuro'}</td><td class="r">${f.N.dias.length}</td><td class="r">${fmtHN(f.N.tot.horas)}</td><td class="r">${eur(f.N.extras)}</td><td class="r">${eur(f.N.total)}</td></tr>`).join('');
-  const detalle=filas.filter(f=>f.N.dias.length).map(f=>{
-    const rows=f.N.dias.map(d=>{const e=f.N.entries.find(x=>x.fecha===d.fecha)||{};const t=nominaTituloDia(e);
-      return `<tr><td>${cap(wday(d.fecha)).slice(0,3)} ${fechaCorta(d.fecha)}</td><td>${esc(nominaHorarios(e)||'—')}${t?'<br><span class="s">'+esc(t)+'</span>':''}</td><td class="r">${fmtHN(d.x.horas)}</td><td class="s">${esc(nominaDiaDetalle(d.x)||'—')}</td><td class="r" style="color:#16a34a">+${eur(d.x.total)}</td></tr>`;}).join('');
-    return `<h3>${nominaCycleName(f.c)} · ${nominaRangoTxt(f.c.from,f.c.to)} — ${f.cerrado?'Cerrado':f.curso?'En curso':'Futuro'} · Total ${eur(f.N.total)}</h3>
-      <table><tr><th>Fecha</th><th>Horario</th><th class="r">Horas</th><th>Conceptos</th><th class="r">Extras</th></tr>${rows}</table>`;
-  }).join('');
-  const css=`.nm{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;background:#fff;padding:22px;width:${paraDoc?'100%':'760px'};box-sizing:border-box}
-    .nm h1{margin:0;font-size:19px}.nm .meta{font-size:11px;color:#475569;margin-top:4px;line-height:1.5}
-    .nm .head{display:flex;justify-content:space-between;gap:12px;border-bottom:3px solid #0f172a;padding-bottom:10px;margin-bottom:14px}
-    .nm h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#475569;margin:16px 0 6px}
-    .nm h3{font-size:12px;margin:14px 0 4px;color:#0f172a;background:#f1f5f9;padding:6px 8px;border-radius:6px}
-    .nm table{width:100%;border-collapse:collapse;font-size:11px}
-    .nm td,.nm th{padding:4px 7px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top}
-    .nm th{background:#f8fafc;color:#64748b}.nm .r{text-align:right;white-space:nowrap;font-weight:700}
-    .nm .s{font-size:10px;color:#64748b}
-    .nm .tot td{background:#f0fdf4;font-weight:800;font-size:13px;color:#166534;border-top:2px solid #166534}
-    .nm .foot{text-align:center;font-size:9px;color:#94a3b8;margin-top:14px}
-    @media print{.nm{padding:0}.nm tr{page-break-inside:avoid}}`;
-  const body=`<div class="nm"><div class="head"><div><h1>Histórico de fichajes y nóminas</h1>
-    <div class="meta">${co.nombre?esc(co.nombre)+'<br>':''}${nombre?'Trabajador: <b>'+esc(nombre)+'</b><br>':''}Del ${fechaCorta(H.first||hoy)} al ${fechaCorta(H.last||hoy)} · Generado: ${new Date().toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div></div></div>
-    <h2>Resumen por ciclos (26 → 25)</h2>
-    <table><tr><th>Ciclo</th><th>Estado</th><th class="r">Jorn.</th><th class="r">Horas</th><th class="r">Extras</th><th class="r">Total</th></tr>${resumen}
-    <tr class="tot"><td colspan="5">TOTAL NÓMINAS CERRADAS (${cerrados.length})</td><td class="r">${eur(totCerr)}</td></tr></table>
-    <h2>Detalle de fichajes</h2>${detalle||'<div class="s">Sin fichajes.</div>'}
-    <div class="foot">TimerPro · Histórico</div></div>`;
-  return {css,body,titulo:'Histórico de fichajes'};
-}
-
-async function nominaHistExport(tipo){
-  try{
-    const tag='Historico_'+today();
-    if(tipo==='print'){
-      const r=nominaHistReportHTML(true);
-      const html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+r.titulo+'</title><style>body{margin:0}'+r.css+'</style></head><body>'+r.body+'</body></html>';
-      const w=window.open('','_blank','width=900,height=700');
-      if(!w){ showAlert('Permite ventanas emergentes para imprimir','err'); return; }
-      w.document.write(html); w.document.close(); setTimeout(()=>w.print(),800);
-      dlDialog={blob:new Blob([html],{type:'text/html;charset=utf-8'}),filename:'TimerPro_'+tag+'.html',type:'html',title:'Guardar histórico en este dispositivo'};
-      S.modal='dl'; rerender(); return;
-    }
-    showAlert('⏳ Generando PDF del histórico...');
-    const canvas=await nominaCanvasFrom(nominaHistReportHTML(false));
-    if(!canvas) return;
-    const blob=nominaPdfFromCanvas(canvas);
-    if(!blob) return;
-    dlDialog={blob,filename:'TimerPro_'+tag+'.pdf',type:'pdf',title:'PDF del histórico listo'};
-    S.modal='dl'; rerender();
-  }catch(e){ console.error(e); showAlert('Error al exportar: '+e.message,'err'); }
-}
-
-function nominaHistExcel(){
-  try{
-    if(!window.XLSX){ showAlert('Cargando librería Excel...','err'); return; }
-    const H=nominaHistCiclos(); const hoy=today();
-    if(!H.ciclos.length){ showAlert('No hay jornadas','err'); return; }
-    const filas=H.ciclos.map(c=>({c,N:computeNomina(c.from,c.to),cerrado:c.to<hoy,curso:c.from<=hoy&&hoy<=c.to}));
-    const wb=XLSX.utils.book_new();
-    const r1=[['TIMERPRO - HISTÓRICO DE NÓMINAS (ciclos 26 → 25)'],[],['Ciclo','Desde','Hasta','Estado','Jornadas','Horas','Sueldo base','Guardia','Extras','Total nómina']];
-    filas.forEach(f=>r1.push([nominaCycleName(f.c),f.c.from,f.c.to,f.cerrado?'Cerrado':f.curso?'En curso':'Futuro',f.N.dias.length,+f.N.tot.horas.toFixed(2),f.N.cfg.base,f.N.cfg.guardia,+f.N.extras.toFixed(2),+f.N.total.toFixed(2)]));
-    const cerr=filas.filter(f=>f.cerrado);
-    r1.push([],['TOTAL CERRADOS','','','',cerr.reduce((s,f)=>s+f.N.dias.length,0),+cerr.reduce((s,f)=>s+f.N.tot.horas,0).toFixed(2),'','',+cerr.reduce((s,f)=>s+f.N.extras,0).toFixed(2),+cerr.reduce((s,f)=>s+f.N.total,0).toFixed(2)]);
-    const ws1=XLSX.utils.aoa_to_sheet(r1); ws1['!cols']=[18,11,11,10,9,8,11,9,10,12].map(w=>({wch:w}));
-    XLSX.utils.book_append_sheet(wb,ws1,'Ciclos');
-    const r2=[['Ciclo','Estado','Fecha','Día','Horario','Título','Horas','H.Norm','H.Extra','H.Noct','H.Fest','Imp.horas','Dietas','Transporte','Viajes','Otros','Extras día']];
-    filas.forEach(f=>f.N.dias.forEach(d=>{const e=f.N.entries.find(x=>x.fecha===d.fecha)||{};const x=d.x;
-      r2.push([nominaCycleName(f.c),f.cerrado?'Cerrado':f.curso?'En curso':'Futuro',d.fecha,cap(wday(d.fecha)),nominaHorarios(e),nominaTituloDia(e),+x.horas.toFixed(2),x.hn,x.he,x.hnoc,x.hfes,
-        +(x.in+x.ie+x.inoc+x.ifes).toFixed(2),+(x.dieta+x.dietasExtra).toFixed(2),+(x.coche+x.camion+x.transpOtro).toFixed(2),+x.viajes.toFixed(2),+x.otros.toFixed(2),+x.total.toFixed(2)]);}));
-    const ws2=XLSX.utils.aoa_to_sheet(r2); ws2['!cols']=r2[0].map((_,i)=>({wch:i===4?24:i===5?30:11}));
-    XLSX.utils.book_append_sheet(wb,ws2,'Fichajes');
-    const arr=XLSX.write(wb,{bookType:'xlsx',type:'array'});
-    dlDialog={blob:new Blob([arr],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),filename:'TimerPro_Historico_'+today()+'.xlsx',type:'xlsx',title:'Excel del histórico listo'};
-    S.modal='dl'; rerender();
-  }catch(e){ console.error(e); showAlert('Error Excel: '+e.message,'err'); }
-}
-
-// Utilidades compartidas: informe → canvas → PDF A4 multipágina
-async function nominaCanvasFrom(r){
-  if(!window.html2canvas){ showAlert('Cargando librería de imagen...','err'); return null; }
-  const wrap=document.createElement('div');
-  wrap.style.cssText='position:fixed;top:0;left:0;z-index:99999;opacity:0.01;pointer-events:none;';
-  wrap.innerHTML='<style>'+r.css+'</style>'+r.body;
-  document.body.appendChild(wrap);
-  await new Promise(res=>setTimeout(res,200));
-  try{ return await html2canvas(wrap.querySelector('.nm'),{scale:2,useCORS:true,allowTaint:true,backgroundColor:'#ffffff',logging:false}); }
-  finally{ document.body.removeChild(wrap); }
-}
-function nominaPdfFromCanvas(canvas){
-  if(!window.jspdf){ showAlert('Cargando librería PDF...','err'); return null; }
-  const {jsPDF}=window.jspdf;
-  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-  const pw=210, ph=297, m=8, iw=pw-2*m;
-  const pxPerMm=canvas.width/iw, pageHpx=Math.floor((ph-2*m)*pxPerMm);
-  let y=0, first=true;
-  while(y<canvas.height){
-    const sliceH=Math.min(pageHpx,canvas.height-y);
-    const c=document.createElement('canvas'); c.width=canvas.width; c.height=sliceH;
-    const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height);
-    ctx.drawImage(canvas,0,y,canvas.width,sliceH,0,0,canvas.width,sliceH);
-    if(!first) doc.addPage();
-    doc.addImage(c.toDataURL('image/jpeg',0.92),'JPEG',m,m,iw,sliceH/pxPerMm);
-    y+=sliceH; first=false;
-  }
-  return doc.output('blob');
-}
-
-// ── Informe HTML de la nómina (para PDF, imagen e impresión) ──
-function nominaReportHTML(N,sel,paraDoc){
-  const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  const wk=(typeof fWorker!=='undefined'&&fWorker)||{};
-  const co=(typeof fCompany!=='undefined'&&fCompany)||{};
-  const nombre=((wk.nombre||'')+' '+(wk.apellidos||'')).trim();
-  const filas=[['Sueldo base','',N.cfg.base],['Guardia','',N.cfg.guardia]].concat(nominaDesgloseRows(N.tot).map(r=>[r[0],r[1],r[2]]));
-  const desglose=filas.map(([l,c,v])=>`<tr><td>${esc(l)}</td><td style="color:#64748b">${esc(c)}</td><td class="r">${eur(v)}</td></tr>`).join('');
-  const dias=N.dias.map(d=>`<tr><td>${cap(wday(d.fecha)).slice(0,3)} ${fechaCorta(d.fecha)}</td><td style="font-size:10px;color:#475569">${esc(nominaDiaDetalle(d.x)||'Sin extras')}</td><td class="r" style="color:#16a34a">+${eur(d.x.total)}</td><td class="r">${eur(d.acum)}</td></tr>`).join('');
-  const titulo='Nómina de '+nominaCycleName(sel.cyc)+(sel.parcial?' (parcial)':'');
-  const css=`
-    .nm{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;background:#fff;padding:22px;width:${paraDoc?'100%':'760px'};box-sizing:border-box}
-    .nm h1{margin:0;font-size:19px}.nm .meta{font-size:11px;color:#475569;margin-top:4px;line-height:1.5}
-    .nm .head{display:flex;justify-content:space-between;gap:12px;border-bottom:3px solid #0f172a;padding-bottom:10px;margin-bottom:14px}
-    .nm .per{text-align:right;font-size:11px;color:#334155}
-    .nm .big{background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;border-radius:10px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
-    .nm .big .v{font-size:28px;font-weight:900;color:#4ade80}
-    .nm .kp{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
-    .nm .kp div{background:#f1f5f9;border-radius:8px;padding:8px;text-align:center;font-size:10px;color:#475569}
-    .nm .kp b{display:block;font-size:14px;color:#0f172a}
-    .nm h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#475569;margin:16px 0 6px}
-    .nm table{width:100%;border-collapse:collapse;font-size:12px}
-    .nm td,.nm th{padding:5px 8px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top}
-    .nm th{background:#f8fafc;color:#64748b;font-size:11px}
-    .nm .r{text-align:right;white-space:nowrap;font-weight:700}
-    .nm .tot td{background:#f0fdf4;font-weight:800;font-size:14px;color:#166534;border-top:2px solid #166534}
-    .nm .foot{text-align:center;font-size:9px;color:#94a3b8;margin-top:14px}
-    @media print{.nm{padding:0}.nm tr{page-break-inside:avoid}}`;
-  const body=`<div class="nm">
-    <div class="head">
-      <div><h1>${esc(titulo)}</h1>
-        <div class="meta">${co.nombre?esc(co.nombre)+'<br>':''}${nombre?'Trabajador: <b>'+esc(nombre)+'</b><br>':''}Generado: ${new Date().toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div></div>
-      <div class="per">Periodo<br><b>${fechaCorta(sel.from)}</b><br>al<br><b>${fechaCorta(sel.to)}</b><br>${N.dias.length} jornadas</div>
-    </div>
-    <div class="big"><div><div style="font-size:10px;letter-spacing:.1em;opacity:.7">TOTAL NÓMINA</div><div style="font-size:11px;opacity:.7;margin-top:2px">${(Math.round(N.tot.horas*100)/100).toString().replace('.',',')} h trabajadas</div></div><div class="v">${eur(N.total)}</div></div>
-    <div class="kp"><div><b>${eur(N.cfg.base)}</b>Sueldo base</div><div><b>${eur(N.cfg.guardia)}</b>Guardia</div><div><b>${eur(N.extras)}</b>Extras</div></div>
-    <h2>Desglose</h2>
-    <table>${desglose}<tr><td colspan="2" style="color:#475569">Subtotal extras</td><td class="r">${eur(N.extras)}</td></tr><tr class="tot"><td colspan="2">TOTAL NÓMINA</td><td class="r">${eur(N.total)}</td></tr></table>
-    ${nominaComparativaHTML(sel.cyc,esc)}
-    <h2>Día a día</h2>
-    ${N.dias.length?`<table><tr><th>Fecha</th><th>Conceptos</th><th class="r">Extras día</th><th class="r">Acumulado</th></tr><tr><td colspan="3" style="color:#475569">Inicio (base + guardia)</td><td class="r">${eur(N.fijo)}</td></tr>${dias}</table>`:'<div style="font-size:12px;color:#64748b">Sin jornadas en el periodo.</div>'}
-    <div class="foot">TimerPro · Nómina ${esc(nominaRangoTxt(sel.from,sel.to))}</div>
-  </div>`;
-  return {css,body,titulo};
-}
-
-// Renderiza el informe fuera de pantalla y devuelve un canvas
-async function nominaCanvas(N,sel){
-  if(!window.html2canvas){ showAlert('Cargando librería de imagen...','err'); return null; }
-  const r=nominaReportHTML(N,sel,false);
-  const wrap=document.createElement('div');
-  wrap.style.cssText='position:fixed;top:0;left:0;z-index:99999;opacity:0.01;pointer-events:none;';
-  wrap.innerHTML='<style>'+r.css+'</style>'+r.body;
-  document.body.appendChild(wrap);
-  await new Promise(res=>setTimeout(res,200));
-  try{
-    return await html2canvas(wrap.querySelector('.nm'),{scale:2,useCORS:true,allowTaint:true,backgroundColor:'#ffffff',logging:false});
-  } finally { document.body.removeChild(wrap); }
-}
-
-async function nominaExport(tipo){
-  const sel=nominaSel();
-  const N=computeNomina(sel.from,sel.to);
-  const tag=nominaFileTag(sel);
-  try{
-    if(tipo==='print'){
-      const r=nominaReportHTML(N,sel,true);
-      const html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+r.titulo+'</title><style>body{margin:0}'+r.css+'</style></head><body>'+r.body+'</body></html>';
-      const w=window.open('','_blank','width=900,height=700');
-      if(!w){ showAlert('Permite ventanas emergentes para imprimir','err'); return; }
-      w.document.write(html); w.document.close();
-      setTimeout(()=>w.print(),800);
-      dlDialog={blob:new Blob([html],{type:'text/html;charset=utf-8'}),filename:'TimerPro_'+tag+'.html',type:'html',title:'Guardar nómina en este dispositivo'};
-      S.modal='dl'; rerender();
-      return;
-    }
-    showAlert('⏳ Generando '+(tipo==='pdf'?'PDF':'imagen')+'...');
-    const canvas=await nominaCanvasFrom(nominaReportHTML(N,sel,false));
-    if(!canvas) return;
-    if(tipo==='img'){
-      canvas.toBlob(blob=>{
-        dlDialog={blob,filename:'TimerPro_'+tag+'.png',type:'png',title:'Imagen de la nómina lista'};
-        S.modal='dl'; rerender();
-      },'image/png');
-      return;
-    }
-    // PDF A4 multipágina a partir del canvas
-    if(!window.jspdf){ showAlert('Cargando librería PDF...','err'); return; }
-    const {jsPDF}=window.jspdf;
-    const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-    const pw=210, ph=297, m=8, iw=pw-2*m;
-    const pxPerMm=canvas.width/iw;
-    const pageHpx=Math.floor((ph-2*m)*pxPerMm);
-    let y=0, first=true;
-    while(y<canvas.height){
-      const sliceH=Math.min(pageHpx,canvas.height-y);
-      const c=document.createElement('canvas'); c.width=canvas.width; c.height=sliceH;
-      const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height);
-      ctx.drawImage(canvas,0,y,canvas.width,sliceH,0,0,canvas.width,sliceH);
-      if(!first) doc.addPage();
-      doc.addImage(c.toDataURL('image/jpeg',0.92),'JPEG',m,m,iw,sliceH/pxPerMm);
-      y+=sliceH; first=false;
-    }
-    const blob=doc.output('blob');
-    dlDialog={blob,filename:'TimerPro_'+tag+'.pdf',type:'pdf',title:'PDF de la nómina listo'};
-    S.modal='dl'; rerender();
-  }catch(e){ console.error(e); showAlert('Error al exportar: '+e.message,'err'); }
-}
-
-function nominaExportExcel(){
-  try{
-    if(!window.XLSX){ showAlert('Cargando librería Excel...','err'); return; }
-    const sel=nominaSel();
-    const N=computeNomina(sel.from,sel.to);
-    const wk=(typeof fWorker!=='undefined'&&fWorker)||{};
-    const co=(typeof fCompany!=='undefined'&&fCompany)||{};
-    const wb=XLSX.utils.book_new();
-    const r1=[['TIMERPRO - NÓMINA '+nominaCycleName(sel.cyc).toUpperCase()+(sel.parcial?' (PARCIAL)':'')],
-      ['Trabajador:',((wk.nombre||'')+' '+(wk.apellidos||'')).trim(),'','Empresa:',co.nombre||''],
-      ['Periodo:',sel.from+' a '+sel.to],[],
-      ['Concepto','Cantidad','Importe (€)'],
-      ['Sueldo base','',+N.cfg.base.toFixed(2)],['Guardia','',+N.cfg.guardia.toFixed(2)],
-      ...nominaDesgloseRows(N.tot).map(r=>[r[0],r[1],+r[2].toFixed(2)]),
-      [],['Subtotal extras','',+N.extras.toFixed(2)],['TOTAL NÓMINA','',+N.total.toFixed(2)]];
-    const ws1=XLSX.utils.aoa_to_sheet(r1); ws1['!cols']=[{wch:22},{wch:14},{wch:14},{wch:10},{wch:20}];
-    XLSX.utils.book_append_sheet(wb,ws1,'Nómina');
-    const r2=[['Fecha','Día','H.Norm','Imp.Norm','H.Extra','Imp.Extra','H.Noct','Imp.Noct','H.Fest','Imp.Fest','Dietas','Coche','Camión','Transp.otros','Km','Viajes','Otros','Extras día','Acumulado nómina'],
-      ['','Inicio (base + guardia)','','','','','','','','','','','','','','','','',+N.fijo.toFixed(2)]];
-    N.dias.forEach(d=>{ const x=d.x; r2.push([d.fecha,cap(wday(d.fecha)),x.hn,+x.in.toFixed(2),x.he,+x.ie.toFixed(2),x.hnoc,+x.inoc.toFixed(2),x.hfes,+x.ifes.toFixed(2),
-      +(x.dieta+x.dietasExtra).toFixed(2),+x.coche.toFixed(2),+x.camion.toFixed(2),+x.transpOtro.toFixed(2),x.km,+x.viajes.toFixed(2),+x.otros.toFixed(2),+x.total.toFixed(2),+d.acum.toFixed(2)]); });
-    const ws2=XLSX.utils.aoa_to_sheet(r2); ws2['!cols']=r2[0].map((_,i)=>({wch:i===1?20:11}));
-    XLSX.utils.book_append_sheet(wb,ws2,'Día a día');
-    const C=nominaComparar(sel.cyc);
-    if(C){
-      const r3=[['COMPARATIVA CON LA NÓMINA DE LA EMPRESA — '+nominaCycleName(sel.cyc).toUpperCase()],
-        ['Estado',C.estado==='ok'?'Todo cuadra':'Hay cosas que revisar'],
-        ['Extras comparados con el ciclo',C.cycEx.from+' a '+C.cycEx.to],[],
-        ['Concepto','Apuntado (TimerPro)','Nómina','Diferencia','En la nómina aparece como'],
-        ...C.filas.map(f=>[f.label+(f.exento?' (exento)':''),f.app,f.nom,+(f.dif).toFixed(2),f.conceptos.join(' · ')]),
-        ['TOTAL EXTRAS',+C.extrasApp.toFixed(2),+C.extrasNom.toFixed(2),+(C.extrasNom-C.extrasApp).toFixed(2)],[],
-        ['Total devengado','', +C.devengado.toFixed(2)],['Total deducciones','',+C.deducciones.toFixed(2)],['IRPF','',C.irpf],['Seguridad Social','',C.ss],['Líquido a percibir','',+C.liquido.toFixed(2)],[],
-        ['PACTO: fijo '+(C.cfg.pacto==='bruto'?'en bruto':'limpio de retenciones'),+C.fijoPactado.toFixed(2)],
-        ...(C.cfg.pacto==='bruto'?[['Base + guardia en nómina (bruto)',+C.fijoNom.toFixed(2)]]:[
-          ['Dietas y km exentos',+C.exentos.toFixed(2)],['Extras netos (estimado, '+(Math.round(C.retPct*1000)/10)+'% ret.)',+C.extrasNetos.toFixed(2)],
-          ['Limpio de base + guardia',+C.limpioFijo.toFixed(2)]]),
-        ['¿Se cumple el pacto?',C.pactoOk?'Sí':'No'],[],
-        ...C.avisos.map(a=>['Aviso',a]),
-        ...(C.real.lineas||[]).length?[[],['LÍNEAS DE LA NÓMINA'],['Concepto','Casilla','Importe'],...C.real.lineas.map(l=>[l.concepto,nomCat(l.cat)[1],l.importe])]:[]];
-      const ws3=XLSX.utils.aoa_to_sheet(r3); ws3['!cols']=[{wch:38},{wch:20},{wch:14},{wch:12},{wch:40}];
-      XLSX.utils.book_append_sheet(wb,ws3,'Comparativa');
-    }
-    const arr=XLSX.write(wb,{bookType:'xlsx',type:'array'});
-    dlDialog={blob:new Blob([arr],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),filename:'TimerPro_'+nominaFileTag(sel)+'.xlsx',type:'xlsx',title:'Excel de la nómina listo'};
-    S.modal='dl'; rerender();
-  }catch(e){ console.error(e); showAlert('Error Excel: '+e.message,'err'); }
-}
-
-function nominaShareText(){
-  const sel=nominaSel();
-  const N=computeNomina(sel.from,sel.to);
-  const L=[];
-  L.push('💰 NÓMINA '+nominaCycleName(sel.cyc).toUpperCase()+(sel.parcial?' (parcial)':''));
-  L.push('📅 '+nominaRangoTxt(sel.from,sel.to));
-  L.push('─────────────────────────');
-  L.push('• Sueldo base: '+eur(N.cfg.base));
-  L.push('• Guardia: '+eur(N.cfg.guardia));
-  nominaDesgloseRows(N.tot).forEach(r=>L.push('• '+r[0]+(r[1]?' ('+r[1]+')':'')+': '+eur(r[2])));
-  L.push('─────────────────────────');
-  L.push('Extras: '+eur(N.extras)+' · '+N.dias.length+' jornadas');
-  L.push('💶 TOTAL: '+eur(N.total));
-  const C=nominaComparar(sel.cyc);
-  if(C){
-    L.push('─────────────────────────');
-    L.push('🧾 NÓMINA EMPRESA: '+(C.estado==='ok'?'✅ todo cuadra':'⚠️ revisar'));
-    L.push('• Devengado '+eur(C.devengado)+' · Deducciones '+eur(C.deducciones)+' · Líquido '+eur(C.liquido));
-    L.push('• Extras apuntados '+eur(C.extrasApp)+' / en nómina '+eur(C.extrasNom));
-    if(C.cfg.pacto!=='bruto') L.push('• Limpio de base + guardia: '+eur(C.limpioFijo)+' (pactado '+eur(C.fijoPactado)+')');
-    C.avisos.forEach(a=>L.push('⚠️ '+a));
-  }
-  L.push('─ TimerPro ─');
-  window.open('https://wa.me/?text='+encodeURIComponent(L.join('\n')),'_blank');
 }
 
 
@@ -6768,7 +5644,7 @@ function renderSincronizar(){
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'IMPORTAR DESDE PLANTILLA EXCEL'),
       h('p',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'.8rem',lineHeight:1.6}},
-        '1. Descarga la plantilla Excel (una fila por fichaje: horas, dietas, coche/camión, viajes, otros conceptos y tareas/OT). 2. Rellénala. 3. Arrástrala aquí. Lo importado se SUMA a tus jornadas: no se borra nada de lo que ya tienes.'
+        '1. Descarga la plantilla Excel, rellenala con tus jornadas y arrastrala aqui para importar automaticamente.'
       ),
       h('button',{class:'btn btn-g btn-full',style:{marginBottom:'.8rem'},on:{click:downloadTemplate}},
         '📥 Descargar plantilla Excel'
@@ -6815,7 +5691,7 @@ function renderSincronizar(){
       h('p',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.8rem',lineHeight:1.6}},
         'Descarga la plantilla del dia (con tus datos ya rellenados), completa los campos en el PDF y arrastrala aqui para importar.'
       ),
-      h('button',{class:'btn btn-r btn-full',style:{marginBottom:'.6rem'},on:{click:downloadPDFTemplate}},'📄 Descargar plantilla PDF del día (rellenable)'),
+      h('button',{class:'btn btn-r btn-full',style:{marginBottom:'.6rem'},on:{click:downloadPDFTemplate}},'PDF Descargar plantilla del dia'),
 
       h('div',{
         style:{border:'2px dashed var(--red)',borderRadius:'var(--r)',padding:'1.5rem',textAlign:'center',cursor:'pointer',color:'var(--red)',background:'var(--red-lt)'},
@@ -8520,6 +7396,288 @@ async function sendIAMsg(){
   },100);
 }
 
+// ══════════════════════════════════════════════════════════
+// NÓMINAS: subir (foto o PDF), reconocer con IA, comparar con lo
+// calculado por la app, y chat independiente guardado por mes.
+// ══════════════════════════════════════════════════════════
+let nominaMesActual=null;
+
+// Convierte la primera página de un PDF en imagen (reutiliza pdf.js, que ya
+// se usa en otra parte de la app) para poder tratarla igual que una foto —
+// así la nómina se puede subir en foto O en PDF indistintamente, con el
+// mismo camino de lectura por IA.
+async function _pdfPaginaAImagen(file){
+  if(!window.pdfjsLib){
+    await new Promise((res,rej)=>{
+      const s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      s.onload=()=>{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; res(); };
+      s.onerror=rej; document.head.appendChild(s);
+    });
+  }
+  const buf=await file.arrayBuffer();
+  const pdf=await window.pdfjsLib.getDocument({data:buf}).promise;
+  const page=await pdf.getPage(1);
+  const viewport=page.getViewport({scale:2});
+  const canvas=document.createElement('canvas');
+  canvas.width=viewport.width; canvas.height=viewport.height;
+  await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+  return canvas.toDataURL('image/jpeg',0.88);
+}
+
+// Compara lo que dice la nómina (extraído por la IA) con lo que la app ya
+// tiene calculado para ese mes, y arma un resumen en español de lo que
+// coincide y lo que no.
+function compararNominaConApp(mesKey, extracted){
+  const app=computeMonthTotals(mesKey);
+  const TOL_H=0.1, TOL_E=1; // tolerancia para no marcar redondeos como "distinto"
+  const lineas=[];
+  const campoH=(label,kApp,kNom)=>{
+    const a=app[kApp]||0, n=+extracted[kNom]||0;
+    if(n===0 && a===0) return;
+    if(Math.abs(a-n)<=TOL_H) lineas.push('✅ '+label+': coincide ('+a.toFixed(2)+'h)');
+    else lineas.push('⚠️ '+label+': la app tiene '+a.toFixed(2)+'h, la nómina pone '+n.toFixed(2)+'h (diferencia de '+(n-a>=0?'+':'')+(n-a).toFixed(2)+'h)');
+  };
+  const campoE=(label,kApp,kNom)=>{
+    const a=app[kApp]||0, n=+extracted[kNom]||0;
+    if(n===0 && a===0) return;
+    if(Math.abs(a-n)<=TOL_E) lineas.push('✅ '+label+': coincide ('+a.toFixed(2)+'€)');
+    else lineas.push('⚠️ '+label+': la app tiene '+a.toFixed(2)+'€, la nómina pone '+n.toFixed(2)+'€ (diferencia de '+(n-a>=0?'+':'')+(n-a).toFixed(2)+'€)');
+  };
+  campoH('Horas normales','horasNormales','horasNormales');
+  campoH('Horas extra','horasExtra','horasExtra');
+  campoH('Horas nocturnas','horasNocturnas','horasNocturnas');
+  campoH('Horas festivas','horasFestivas','horasFestivas');
+  campoE('Dietas','dieta','dietas');
+  campoE('Transporte','transporte','transporte');
+  let resumen='📋 Comparación de la nómina de '+mesLabel(mesKey)+' con lo registrado en la app ('+app.dias+' jornada(s)):\n\n'
+    +(lineas.length?lineas.join('\n'):'No hay horas ni dietas/transporte que comparar en ninguno de los dos lados.');
+  if(extracted.salarioNeto) resumen+='\n\n💶 Salario neto en la nómina: '+(+extracted.salarioNeto).toFixed(2)+'€';
+  if(extracted.salarioBruto) resumen+='\n💶 Salario bruto en la nómina: '+(+extracted.salarioBruto).toFixed(2)+'€';
+  if((extracted.otrosConceptos||[]).length){
+    resumen+='\n\n📌 Otros conceptos en la nómina:';
+    extracted.otrosConceptos.forEach(o=>{ resumen+='\n  • '+(o.concepto||'')+': '+(+o.importe||0).toFixed(2)+'€'; });
+  }
+  if(extracted.observaciones) resumen+='\n\n📝 '+extracted.observaciones;
+  return resumen;
+}
+
+async function subirNomina(file, mesSeleccionado){
+  if(!file) return;
+  const geminiKey=localStorage.getItem('gemini_api_key')||'';
+  if(!geminiKey){ showAlert('Necesitas una API Key de Gemini. Ve a la pestaña IA y configúrala primero (gratis en aistudio.google.com/apikey).','err'); return; }
+  showAlert('🤖 Leyendo nómina con IA...');
+  try{
+    let dataUrl;
+    if(file.type==='application/pdf'){
+      dataUrl=await _pdfPaginaAImagen(file);
+    } else if(file.type.startsWith('image/')){
+      dataUrl=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=e=>res(e.target.result); r.onerror=rej; r.readAsDataURL(file); });
+    } else {
+      showAlert('Solo se admiten imágenes o PDF','err'); return;
+    }
+    const base64=dataUrl.split(',')[1];
+    const mediaType='image/jpeg';
+    const prompt='Analiza esta imagen de una nómina (hoja de salario) laboral española y extrae TODOS los datos visibles.\n'
+      +'Responde ÚNICAMENTE con un JSON válido sin texto adicional ni markdown:\n'
+      +'{\n'
+      +'  "mes": "YYYY-MM (el mes/periodo que corresponde esta nómina, tu mejor estimación)",\n'
+      +'  "horasNormales": 0,\n'
+      +'  "horasExtra": 0,\n'
+      +'  "horasNocturnas": 0,\n'
+      +'  "horasFestivas": 0,\n'
+      +'  "dietas": 0,\n'
+      +'  "transporte": 0,\n'
+      +'  "salarioBruto": 0,\n'
+      +'  "salarioNeto": 0,\n'
+      +'  "otrosConceptos": [{"concepto":"nombre","importe":0}],\n'
+      +'  "observaciones": "cualquier cosa relevante que detectes (descuentos raros, retenciones, pluses, etc.) o vacío"\n'
+      +'}\n'
+      +'Si algún dato no aparece en la nómina, pon 0 o "" según corresponda. No inventes datos.';
+    const _mImg=localStorage.getItem('gemini_model')||'gemini-flash-latest';
+    const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+_mImg+':generateContent?key='+geminiKey,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        contents:[{role:'user',parts:[{inline_data:{mime_type:mediaType,data:base64}},{text:prompt}]}],
+        generationConfig:{maxOutputTokens:1200,temperature:0.1}
+      })
+    });
+    if(!res.ok){ const err=await res.text(); throw new Error('Error Gemini '+res.status+': '+err.slice(0,200)); }
+    const data=await res.json();
+    const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'';
+    const clean=text.replace(/```json|```/g,'').trim();
+    const extracted=JSON.parse(clean);
+
+    let mesFinal=mesSeleccionado;
+    const mesDetectado=/^\d{4}-\d{2}$/.test(extracted.mes||'')?extracted.mes:'';
+    if(mesDetectado && mesDetectado!==mesSeleccionado){
+      const usar=confirm('La IA cree que esta nómina es de '+mesLabel(mesDetectado)+', pero la estás subiendo en '+mesLabel(mesSeleccionado)+'.\n\n¿La asocio a '+mesLabel(mesDetectado)+' (Aceptar) o la dejo en '+mesLabel(mesSeleccionado)+' (Cancelar)?');
+      if(usar) mesFinal=mesDetectado;
+    }
+
+    const comparisonSummary=compararNominaConApp(mesFinal, extracted);
+
+    const payslip={...defPayslip(mesFinal), fileName:file.name||'nómina', uploadedAt:new Date().toISOString(), extracted, comparisonSummary};
+    const id=await dbPut(ST.payslips, payslip);
+    S.payslips.push({...payslip,id});
+
+    // El resumen de la comparación se añade como mensaje de la IA en el chat
+    // de ese mes, para que el chat "arranque" ya mostrando lo detectado.
+    let chatRec=(S.monthChats||[]).find(c=>c.mes===mesFinal);
+    if(!chatRec){
+      chatRec={mes:mesFinal, messages:[]};
+      const cid=await dbPut(ST.monthChats, chatRec);
+      chatRec.id=cid;
+      S.monthChats.push(chatRec);
+    }
+    chatRec.messages.push({role:'assistant',content:comparisonSummary});
+    await dbPut(ST.monthChats, chatRec);
+
+    nominaMesActual=mesFinal;
+    showAlert('✅ Nómina analizada y asociada a '+mesLabel(mesFinal));
+    rerender();
+  }catch(e){
+    showAlert('Error al leer la nómina: '+e.message,'err');
+    console.error(e);
+  }
+}
+
+async function borrarNomina(id){
+  ask('¿Eliminar esta nómina? (el chat de ese mes no se borra)', async()=>{
+    await dbDel(ST.payslips, id);
+    S.payslips=S.payslips.filter(p=>p.id!==id);
+    showAlert('Nómina eliminada');
+    rerender();
+  });
+}
+
+async function enviarMensajeNomina(mesKey){
+  const inp=document.getElementById('nomina-chat-input');
+  if(!inp||!inp.value.trim()) return;
+  const userMsg=inp.value.trim();
+  inp.value='';
+  let chatRec=(S.monthChats||[]).find(c=>c.mes===mesKey);
+  if(!chatRec){
+    chatRec={mes:mesKey, messages:[]};
+    const cid=await dbPut(ST.monthChats, chatRec);
+    chatRec.id=cid;
+    S.monthChats.push(chatRec);
+  }
+  chatRec.messages.push({role:'user',content:userMsg});
+  rerender();
+  setTimeout(()=>{const el=document.getElementById('nomina-chat-msgs');if(el)el.scrollTop=el.scrollHeight;},50);
+
+  const geminiKey=localStorage.getItem('gemini_api_key')||'';
+  if(!geminiKey){
+    chatRec.messages.push({role:'assistant',content:'Necesitas una API Key de Gemini. Ve a la pestaña IA y configúrala primero (gratis en aistudio.google.com/apikey).'});
+    await dbPut(ST.monthChats, chatRec); rerender(); return;
+  }
+  const app=computeMonthTotals(mesKey);
+  const ultimaNomina=[...(S.payslips||[])].filter(p=>p.mes===mesKey).sort((a,b)=>(b.uploadedAt||'').localeCompare(a.uploadedAt||''))[0];
+  const context='Eres el asistente de nóminas de TimerPro (app de control horario), hablando sobre el mes de '+mesLabel(mesKey)+' del usuario.\n'
+    +'Datos calculados por la app para ese mes: '+JSON.stringify(app)+'\n'
+    +(ultimaNomina?('Última nómina subida y leída por IA para ese mes: '+JSON.stringify(ultimaNomina.extracted)+'\n'):'El usuario todavía no ha subido ninguna nómina para este mes.\n')
+    +'Ayuda al usuario a aclarar dudas, diferencias o cálculos de ese mes. Responde en español, conciso y claro.';
+  try{
+    const cleanMsgs=chatRec.messages.filter(m=>!m.content.startsWith('Error:')).slice(-10);
+    const geminiContents=cleanMsgs.map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:m.content}]}));
+    const body=JSON.stringify({systemInstruction:{parts:[{text:context}]},contents:geminiContents,generationConfig:{maxOutputTokens:800,temperature:0.5}});
+    const modelo=localStorage.getItem('gemini_model')||'gemini-flash-latest';
+    const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+modelo+':generateContent?key='+geminiKey,{method:'POST',headers:{'Content-Type':'application/json'},body});
+    if(!res.ok) throw new Error('Error '+res.status+': '+(await res.text()).slice(0,200));
+    const data=await res.json();
+    const reply=data.candidates?.[0]?.content?.parts?.[0]?.text||'Sin respuesta';
+    chatRec.messages.push({role:'assistant',content:reply});
+  }catch(e){
+    chatRec.messages.push({role:'assistant',content:'Error: '+e.message});
+  }
+  await dbPut(ST.monthChats, chatRec);
+  rerender();
+  setTimeout(()=>{const el=document.getElementById('nomina-chat-msgs');if(el)el.scrollTop=el.scrollHeight;},100);
+}
+
+function renderNominas(){
+  const meses=mesesDisponibles();
+  if(!nominaMesActual || !meses.includes(nominaMesActual)) nominaMesActual=meses[0];
+  const mesKey=nominaMesActual;
+  const app=computeMonthTotals(mesKey);
+  const payslipsDelMes=(S.payslips||[]).filter(p=>p.mes===mesKey).sort((a,b)=>(b.uploadedAt||'').localeCompare(a.uploadedAt||''));
+  const chatRec=(S.monthChats||[]).find(c=>c.mes===mesKey);
+  const msgs=chatRec?chatRec.messages:[];
+
+  return h('div',{},
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'🧾 Nóminas por mes'),
+      h('select',{
+        style:{width:'100%',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.5rem',color:'var(--ink)',fontWeight:700},
+        on:{change:ev=>{ nominaMesActual=ev.target.value; rerender(); }}
+      },
+        ...meses.map(m=>h('option',{value:m,selected:m===mesKey},mesLabel(m)))
+      )
+    ),
+
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'Totales de '+mesLabel(mesKey)+' según la app'),
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.4rem',fontSize:'.85rem'}},
+        h('div',{},'Horas normales: '+fmtH(app.horasNormales)),
+        h('div',{},'Horas extra: '+fmtH(app.horasExtra)),
+        h('div',{},'Horas nocturnas: '+fmtH(app.horasNocturnas)),
+        h('div',{},'Horas festivas: '+fmtH(app.horasFestivas)),
+        h('div',{},'Dietas: '+eur(app.dieta)),
+        h('div',{},'Transporte: '+eur(app.transporte))
+      ),
+      h('div',{style:{marginTop:'.4rem',fontWeight:700,color:'var(--acc)'}},
+        'Importe total calculado: '+eur(app.importeNormales+app.importeExtra+app.importeNocturnas+app.importeFestivas+app.dieta+app.transporte+app.otrosConceptos)
+      ),
+      h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginTop:'.2rem'}},app.dias+' jornada(s) registradas este mes')
+    ),
+
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'Subir nómina de '+mesLabel(mesKey)),
+      h('div',{style:{fontSize:'.78rem',color:'var(--ink2)',marginBottom:'.5rem'}},
+        'Foto o PDF de la nómina — la IA la lee, detecta el mes y la compara con lo que ya tienes calculado aquí.'),
+      h('input',{type:'file',accept:'image/*,application/pdf',
+        on:{change:ev=>{ const f=ev.target.files[0]; if(f) subirNomina(f, mesKey); ev.target.value=''; }}
+      }),
+      payslipsDelMes.length===0
+        ? h('div',{style:{fontSize:'.78rem',color:'var(--ink3)',marginTop:'.6rem'}},'Todavía no hay ninguna nómina subida para este mes.')
+        : h('div',{style:{marginTop:'.6rem',display:'flex',flexDirection:'column',gap:'.4rem'}},
+            ...payslipsDelMes.map(p=>h('div',{style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.5rem .7rem'}},
+              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+                h('div',{style:{fontWeight:700,fontSize:'.82rem'}},'📄 '+(p.fileName||'Nómina')),
+                h('button',{class:'btn btn-r btn-sm',on:{click:()=>borrarNomina(p.id)}},'✕')
+              ),
+              h('div',{style:{fontSize:'.7rem',color:'var(--ink3)',marginTop:'.1rem'}},
+                p.uploadedAt?new Date(p.uploadedAt).toLocaleString('es-ES'):'')
+            ))
+          )
+    ),
+
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'💬 Chat de '+mesLabel(mesKey)),
+      h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.4rem'}},'Este chat es independiente para cada mes y queda guardado.'),
+      h('div',{id:'nomina-chat-msgs',style:{display:'flex',flexDirection:'column',gap:'.5rem',maxHeight:'40vh',overflowY:'auto',padding:'.3rem 0'}},
+        msgs.length===0
+          ? h('div',{style:{color:'var(--ink3)',fontSize:'.8rem',textAlign:'center',padding:'1.5rem'}},'Sube una nómina o escribe tu duda sobre este mes.')
+          : msgs.map(m=>h('div',{style:{
+              alignSelf:m.role==='user'?'flex-end':'flex-start',
+              background:m.role==='user'?'var(--acc)':'var(--surf2)',
+              color:m.role==='user'?'#000':'var(--ink)',
+              maxWidth:'92%',padding:'.5rem .8rem',borderRadius:'var(--r2)',fontSize:'.83rem',
+              lineHeight:1.5,whiteSpace:'pre-wrap'
+            }},m.content))
+      ),
+      h('div',{style:{display:'flex',gap:'.5rem',marginTop:'.4rem'}},
+        h('input',{type:'text',id:'nomina-chat-input',placeholder:'Pregunta algo sobre '+mesLabel(mesKey)+'...',
+          style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.6rem .8rem',color:'var(--ink)',fontSize:'.85rem'},
+          on:{keydown:ev=>{ if(ev.key==='Enter'&&!ev.shiftKey){ ev.preventDefault(); enviarMensajeNomina(mesKey); } }}
+        }),
+        h('button',{class:'btn btn-g',on:{click:()=>enviarMensajeNomina(mesKey)}},'Enviar')
+      )
+    )
+  );
+}
+
 
 function renderModal(){
   if(S.modal==='backupReminder') return renderModalBackupReminder();
@@ -9977,10 +9135,6 @@ async function descargarPlantillaVisual(){
   const ttypes=(S.transportTypes||[{id:'coche',nombre:'Coche'},{id:'camion',nombre:'Camión'}]);
   const _sitiosRaw=await dbAll(ST.sites).catch(()=>S.sites||[]);
   const sitiosExportados=JSON.stringify((_sitiosRaw||[]).map(s=>s.nombre||s.direccion||'').filter(Boolean));
-  const _escP=x=>String(x||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  const tiposTarea=(taskTypes&&taskTypes.length?taskTypes:[{id:'ot',nombre:'O.T.',icono:'🔧'}]);
-  const optsTipos=tiposTarea.map(t=>'<option value="'+_escP(t.id)+'">'+_escP((t.icono||'')+' '+t.nombre)+'</option>').join('');
-  const precioDef={n:S.precioHoraNormalDefault||'',e:S.precioHoraExtraDefault||'',noc:S.precioHoraNocturnaDefault||'',f:S.precioHoraFestivaDefault||''};
 
   const html=`<!DOCTYPE html>
 <html lang="es">
@@ -10059,20 +9213,17 @@ input[type=text]:focus,input[type=number]:focus,input[type=time]:focus,input[typ
     <input type="time" class="ent" placeholder="--:--">
     <span>→</span>
     <input type="time" class="sal" placeholder="--:--">
-    <input type="number" class="desc" min="0" step="5" placeholder="☕ min" title="Descanso (min)" style="width:62px">
-    <input type="text" class="fnota" placeholder="Nota..." style="flex:1">
+    <input type="text" placeholder="Nota..." style="flex:1">
   </div>
   <div class="fich-row">
     <span>2.</span>
     <input type="time" class="ent" placeholder="--:--">
     <span>→</span>
     <input type="time" class="sal" placeholder="--:--">
-    <input type="number" class="desc" min="0" step="5" placeholder="☕ min" title="Descanso (min)" style="width:62px">
-    <input type="text" class="fnota" placeholder="Nota..." style="flex:1">
+    <input type="text" placeholder="Nota..." style="flex:1">
   </div>
 </div>
 <button class="btn-add" onclick="addFichaje()">➕ Añadir fichaje</button>
-<div style="font-size:10px;color:#94a3b8;margin-top:4px">☕ = minutos de descanso. Si dejas las horas vacías, se calculan solas con el horario.</div>
 
 <!-- HORAS E IMPORTES -->
 <div class="sec">🕐 Horas e Importes</div>
@@ -10081,15 +9232,15 @@ input[type=text]:focus,input[type=number]:focus,input[type=time]:focus,input[typ
     <span>Tipo</span><span style="text-align:center">Horas</span><span style="text-align:center">€/hora</span><span style="text-align:right">Importe</span>
   </div>
   ${[
-    {id:'norm',label:'Normales',p:precioDef.n},
-    {id:'ext',label:'Extra',p:precioDef.e},
-    {id:'noc',label:'Nocturnas',p:precioDef.noc},
-    {id:'fes',label:'Festivas',p:precioDef.f}
+    {id:'norm',label:'Normales'},
+    {id:'ext',label:'Extra'},
+    {id:'noc',label:'Nocturnas'},
+    {id:'fes',label:'Festivas'}
   ].map(t=>`<div class="horas-grid">
     <label>${t.label}</label>
     <input type="number" id="h_${t.id}" min="0" step="0.5" placeholder="0" oninput="calcTotal()" style="width:60px">
     <div class="precio-row">
-      <input type="number" id="p_${t.id}" min="0" step="0.01" placeholder="0,00" value="${t.p||''}" oninput="calcTotal()" style="width:65px">
+      <input type="number" id="p_${t.id}" min="0" step="0.01" placeholder="0,00" oninput="calcTotal()" style="width:65px">
       <span>€/h</span>
     </div>
     <span class="importe-badge" id="i_${t.id}">—</span>
@@ -10117,7 +9268,7 @@ input[type=text]:focus,input[type=number]:focus,input[type=time]:focus,input[typ
   <label>Transporte</label>
   <div class="inp">
     <select id="transp_tipo">
-      ${ttypes.map(t=>`<option value="${_escP(t.id)}">${_escP(t.nombre)}</option>`).join('')}
+      ${ttypes.map(t=>`<option value="${t.nombre}">${t.nombre}</option>`).join('')}
     </select>
     <select id="transp_sel" onchange="document.getElementById('transp').value=this.value;calcTotal()">
       <option value="">— €</option>
@@ -10132,21 +9283,11 @@ input[type=text]:focus,input[type=number]:focus,input[type=time]:focus,input[typ
 <div id="dietas-extra"></div>
 <button class="btn-add" onclick="addDietaExtra()">➕ Dieta extra</button>
 
-<!-- OTROS CONCEPTOS -->
-<div class="sec">💶 Otros conceptos</div>
-<div id="otros"></div>
-<button class="btn-add" onclick="addOtro()">➕ Otro concepto (parking, peaje, material…)</button>
-
-<!-- VIAJES -->
-<div class="sec">🚗 Viajes (km)</div>
-<div id="viajes"></div>
-<button class="btn-add" onclick="addViaje()">➕ Añadir viaje</button>
-
 <!-- TAREAS / OT -->
-<div class="sec">🔧 Tareas / Órdenes de Trabajo (cada una con su tipo)</div>
+<div class="sec">🔧 Tareas / Órdenes de Trabajo</div>
 <div id="tareas">
   ${[1,2,3].map(i=>`<div class="ot-card" id="ot_${i}">
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="ot-badge" style="margin:0">TAREA</span><select class="ot-tipo" style="flex:1">${optsTipos}</select></div>
+    <span class="ot-badge">OT</span>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
       <div>
         <div style="font-size:10px;color:#92400e;margin-bottom:3px;font-weight:700">Número OT</div>
@@ -10157,7 +9298,6 @@ input[type=text]:focus,input[type=number]:focus,input[type=time]:focus,input[typ
         <input type="text" class="ot-desc" placeholder="Descripción de la tarea" style="width:100%">
       </div>
     </div>
-    <div style="margin-top:6px"><input type="text" class="ot-sitio" list="lista-sitios" placeholder="📍 Sitio (opcional)" style="width:100%"></div>
     <div class="ot-times">
       <label>🕐 Inicio:</label>
       <input type="time" class="ot-ini">
@@ -10166,8 +9306,7 @@ input[type=text]:focus,input[type=number]:focus,input[type=time]:focus,input[typ
     </div>
   </div>`).join('')}
 </div>
-<button class="btn-add" onclick="addOT()">➕ Añadir tarea</button>
-<datalist id="lista-sitios"></datalist>
+<button class="btn-add" onclick="addOT()">➕ Añadir OT</button>
 
 <!-- NOTAS -->
 <div class="sec">📝 Notas</div>
@@ -10211,35 +9350,13 @@ input[type=text]:focus,input[type=number]:focus,input[type=time]:focus,input[typ
 <script>
 var otCount=3;
 var dietaExtraCount=0;
-var OPTS_TIPOS=${JSON.stringify(optsTipos)};
-function save(){ /* guarda los sitios escritos para sugerirlos la próxima vez */
-  ['ubi_ent','ubi_sal'].forEach(function(id){var el=document.getElementById(id);if(el&&el.value)guardarSitioLocal(el.value.trim());});
-}
-function addOtro(){
-  var div=document.createElement('div');
-  div.className='row otro-row';
-  div.style.marginTop='4px';
-  div.innerHTML='<input type="text" placeholder="Concepto (parking, peaje…)" class="otro-conc" style="flex:1"><input type="number" min="0" step="0.01" placeholder="0" class="otro-imp" style="width:70px;margin-left:6px" oninput="calcTotal()"><span style="font-size:12px;color:#64748b;margin-left:4px">€</span><button onclick="this.parentElement.remove();calcTotal()" style="background:#fee2e2;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;color:#dc2626;margin-left:4px">✕</button>';
-  document.getElementById('otros').appendChild(div);
-}
-function addViaje(){
-  var div=document.createElement('div');
-  div.className='viaje-row';
-  div.style.cssText='display:grid;grid-template-columns:1fr 1fr 60px 60px 28px;gap:4px;margin-top:4px;align-items:center';
-  div.innerHTML='<input type="text" class="v-ori" placeholder="Origen" list="lista-sitios"><input type="text" class="v-des" placeholder="Destino" list="lista-sitios"><input type="number" class="v-km" min="0" step="1" placeholder="km" oninput="calcTotal()"><input type="number" class="v-prc" min="0" step="0.01" placeholder="€/km" value="0.19" oninput="calcTotal()"><button onclick="this.parentElement.remove();calcTotal()" style="background:#fee2e2;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;color:#dc2626">✕</button>';
-  document.getElementById('viajes').appendChild(div);
-}
-document.addEventListener('DOMContentLoaded',function(){
-  var dl=document.getElementById('lista-sitios');
-  if(dl) getSitios().forEach(function(s){var o=document.createElement('option');o.value=s;dl.appendChild(o);});
-});
 var fichajeCount=2;
 
 function addFichaje(){
   fichajeCount++;
   var div=document.createElement('div');
   div.className='fich-row';
-  div.innerHTML='<span>'+fichajeCount+'.</span><input type="time" class="ent"><span>→</span><input type="time" class="sal"><input type="number" class="desc" min="0" step="5" placeholder="☕ min" title="Descanso (min)" style="width:62px"><input type="text" class="fnota" placeholder="Nota..." style="flex:1"><button onclick="this.parentElement.remove()" style="background:#fee2e2;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;color:#dc2626">✕</button>';
+  div.innerHTML='<span>'+fichajeCount+'.</span><input type="time" class="ent"><span>→</span><input type="time" class="sal"><input type="text" placeholder="Nota..." style="flex:1"><button onclick="this.parentElement.remove()" style="background:#fee2e2;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;color:#dc2626">✕</button>';
   document.getElementById('fichajes').appendChild(div);
 }
 
@@ -10247,7 +9364,7 @@ function addOT(){
   otCount++;
   var div=document.createElement('div');
   div.className='ot-card';
-  div.innerHTML='<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span class="ot-badge" style="margin:0">TAREA</span><select class="ot-tipo" style="flex:1">'+OPTS_TIPOS+'</select></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><div><div style="font-size:10px;color:#92400e;margin-bottom:3px;font-weight:700">Número OT</div><input type="text" class="ot-num" placeholder="7941XXXXXX" maxlength="10" style="width:100%"></div><div><div style="font-size:10px;color:#92400e;margin-bottom:3px;font-weight:700">Descripción</div><input type="text" class="ot-desc" placeholder="Descripción" style="width:100%"></div></div><div style="margin-top:6px"><input type="text" class="ot-sitio" list="lista-sitios" placeholder="📍 Sitio (opcional)" style="width:100%"></div><div class="ot-times"><label>🕐 Inicio:</label><input type="time" class="ot-ini"><label>→ Fin:</label><input type="time" class="ot-fin"></div><button onclick="this.parentElement.remove()" style="background:#fee2e2;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;color:#dc2626;margin-top:6px;width:100%">✕ Eliminar</button>';
+  div.innerHTML='<span class="ot-badge">OT</span><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><div><div style="font-size:10px;color:#92400e;margin-bottom:3px;font-weight:700">Número OT</div><input type="text" class="ot-num" placeholder="7941XXXXXX" maxlength="10" style="width:100%"></div><div><div style="font-size:10px;color:#92400e;margin-bottom:3px;font-weight:700">Descripción</div><input type="text" class="ot-desc" placeholder="Descripción" style="width:100%"></div></div><div class="ot-times"><label>🕐 Inicio:</label><input type="time" class="ot-ini"><label>→ Fin:</label><input type="time" class="ot-fin"></div><button onclick="this.parentElement.remove()" style="background:#fee2e2;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;color:#dc2626;margin-top:6px;width:100%">✕ Eliminar</button>';
   document.getElementById('tareas').appendChild(div);
 }
 
@@ -10273,8 +9390,6 @@ function calcTotal(){
   var transp=parseFloat(document.getElementById('transp').value)||0;
   tot+=dieta+transp;
   document.querySelectorAll('.dext-imp').forEach(function(el){tot+=parseFloat(el.value)||0;});
-  document.querySelectorAll('.otro-imp').forEach(function(el){tot+=parseFloat(el.value)||0;});
-  document.querySelectorAll('.viaje-row').forEach(function(r){tot+=(parseFloat(r.querySelector('.v-km').value)||0)*(parseFloat(r.querySelector('.v-prc').value)||0);});
   document.getElementById('total_val').textContent=tot.toFixed(2).replace('.',',')+' €';
   document.getElementById('total_horas').textContent=totH>0?(Math.floor(totH)+'h'+(Math.round((totH%1)*60)>0?' '+Math.round((totH%1)*60)+'m':'')):'0h';
 }
@@ -10318,19 +9433,17 @@ function exportarJSON(){
   var fichajes=[];
   document.querySelectorAll('#fichajes .fich-row').forEach(function(row,i){
     var ents=row.querySelectorAll('input[type=time]');
-    var nota=row.querySelector('.fnota')||row.querySelector('input[type=text]');
-    var desc=row.querySelector('.desc');
+    var nota=row.querySelector('input[type=text]');
     if(ents[0]&&(ents[0].value||ents[1].value)){
-      fichajes.push({entrada:ents[0].value||'',salida:ents[1].value||'',descanso:desc?(parseFloat(desc.value)||0):0,nota:nota?nota.value:'',_fid:Date.now()+i});
+      fichajes.push({entrada:ents[0].value||'',salida:ents[1].value||'',nota:nota?nota.value:'',_fid:Date.now()+i});
     }
   });
   var tareas=[];
   document.querySelectorAll('#tareas .ot-card').forEach(function(card){
     var num=card.querySelector('.ot-num');var desc=card.querySelector('.ot-desc');
     var ini=card.querySelector('.ot-ini');var fin=card.querySelector('.ot-fin');
-    var tipo=card.querySelector('.ot-tipo');var sitio=card.querySelector('.ot-sitio');
     if(num&&(num.value||desc.value)){
-      tareas.push({otNumero:(num.value||'').replace(/\\D/g,'').slice(0,10),titulo:desc?desc.value:'',horaInicio:ini?ini.value:'',horaFin:fin?fin.value:'',tipoTarea:tipo?tipo.value:'ot',sitio:sitio?sitio.value:''});
+      tareas.push({otNumero:(num.value||'').replace(/\\D/g,'').slice(0,10),titulo:desc?desc.value:'',horaInicio:ini?ini.value:'',horaFin:fin?fin.value:''});
     }
   });
   var dietasExtra=[];
@@ -10338,17 +9451,6 @@ function exportarJSON(){
     var conc=row.querySelector('.dext-conc');var imp=row.querySelector('.dext-imp');
     if(conc&&conc.value){dietasExtra.push({concepto:conc.value,importe:parseFloat(imp.value)||0});}
   });
-  var otros=[];
-  document.querySelectorAll('#otros .otro-row').forEach(function(row){
-    var c=row.querySelector('.otro-conc'),im=row.querySelector('.otro-imp');
-    if((c&&c.value)||(im&&parseFloat(im.value))) otros.push({concepto:c?c.value:'',importe:parseFloat(im.value)||0});
-  });
-  var viajes=[];
-  document.querySelectorAll('#viajes .viaje-row').forEach(function(r){
-    var o=r.querySelector('.v-ori').value,d=r.querySelector('.v-des').value,km=parseFloat(r.querySelector('.v-km').value)||0,p=parseFloat(r.querySelector('.v-prc').value)||0;
-    if(o||d||km) viajes.push({origen:o,destino:d,km:km,precioManual:p});
-  });
-  save();
   var data={
     fecha:document.getElementById('fecha').value,
     titulo:document.getElementById('titulo').value,
@@ -10373,9 +9475,7 @@ function exportarJSON(){
     ubicacionSalida:document.getElementById('ubi_sal').value,
     fichajes:fichajes,
     _plantillaTareas:tareas,
-    otrosConceptos:otros,
-    journeys:viajes,
-    _plantillaVersion:2
+    otrosConceptos:[]
   };
   var json=JSON.stringify(data);
   if(navigator.clipboard){
@@ -10405,41 +9505,48 @@ function capturarImagen(){
 async function importarPlantillaJSON(jsonStr){
   try{
     const data=JSON.parse(jsonStr);
-    const fecha=_fechaImp(data.fecha);
-    if(!fecha) throw new Error('JSON no válido — falta la fecha');
-    const num=_numImp;
-    // Horas, dieta y transporte del día van al fichaje 1 (o a una parte sin horario)
-    const fich=(data.fichajes||[]).filter(f=>f&&(f.entrada||f.salida)).map(f=>({
-      entrada:_horaImp(f.entrada), salida:_horaImp(f.salida), descanso:num(f.descanso), nota:f.nota||'', titulo:f.titulo||''
-    }));
-    const horasDia={horasNormales:num(data.horasNormales),horasExtra:num(data.horasExtra),horasNocturnas:num(data.horasNocturnas),horasFestivas:num(data.horasFestivas)};
-    const hayHorasDia=Object.values(horasDia).some(v=>v>0);
-    const extrasDia={dieta:num(data.dieta),transporte:num(data.transporte),
-      _transportType:num(data.transporte)>0?(_transpTipoImp(data._transportType)||'coche'):''};
-    if(fich.length){
-      // Con horas puestas a mano en la plantilla: van enteras al fichaje 1
-      // (el resto de fichajes calcula las suyas por su horario). Sin horas: todos se calculan solos.
-      if(hayHorasDia){ Object.assign(fich[0],horasDia); fich.slice(1).forEach(f=>{f._sinAutoHoras=true;}); }
-      Object.assign(fich[0],extrasDia);
-      if(data.titulo) fich[0].titulo=fich[0].titulo||data.titulo;
-    } else {
-      fich.push({...horasDia,...extrasDia,titulo:data.titulo||''});
+    if(!data.fecha) throw new Error('JSON no válido — falta la fecha');
+
+    // Rellenar fEntry con todos los campos
+    fEntry.fecha=data.fecha;
+    if(data.titulo) fEntry.titulo=data.titulo;
+    if(data.horasNormales) fEntry.horasNormales=data.horasNormales;
+    if(data.precioHoraNormal) fEntry.precioHoraNormal=data.precioHoraNormal;
+    if(data.importeNormales) fEntry.importeNormales=data.importeNormales;
+    if(data.horasExtra) fEntry.horasExtra=data.horasExtra;
+    if(data.precioHoraExtra) fEntry.precioHoraExtra=data.precioHoraExtra;
+    if(data.importeExtra) fEntry.importeExtra=data.importeExtra;
+    if(data.horasNocturnas) fEntry.horasNocturnas=data.horasNocturnas;
+    if(data.precioHoraNocturna) fEntry.precioHoraNocturna=data.precioHoraNocturna;
+    if(data.importeNocturnas) fEntry.importeNocturnas=data.importeNocturnas;
+    if(data.horasFestivas) fEntry.horasFestivas=data.horasFestivas;
+    if(data.precioHoraFestiva) fEntry.precioHoraFestiva=data.precioHoraFestiva;
+    if(data.importeFestivas) fEntry.importeFestivas=data.importeFestivas;
+    if(data.dieta) fEntry.dieta=data.dieta;
+    if(data.transporte) fEntry.transporte=data.transporte;
+    if(data._transportType) fEntry._transportType=data._transportType;
+    if(data.dietasExtra&&data.dietasExtra.length) fEntry.dietasExtra=data.dietasExtra;
+    if(data.notas) fEntry.notas=data.notas;
+    if(data.ubicacionEntrada) fEntry.ubicacionEntrada=textToLoc(data.ubicacionEntrada);
+    if(data.ubicacionSalida) fEntry.ubicacionSalida=textToLoc(data.ubicacionSalida);
+    if(data.fichajes&&data.fichajes.length){
+      fEntry.fichajes=data.fichajes.map(f=>({...defFichaje(),...f,_fid:Date.now()+Math.random()}));
     }
-    // Fichajes sin horas propias cuando el día ya trae horas a mano: no recalcular (evita contar doble)
-    fich.forEach(f=>{ if(f._sinAutoHoras){ f._noAuto=true; } delete f._sinAutoHoras; });
-    const tareas=(data._plantillaTareas||[]).map(t=>({titulo:t.titulo||'',otNumero:t.otNumero||'',tipoTarea:t.tipoTarea||'ot',sitio:t.sitio||'',horaInicio:t.horaInicio||'',horaFin:t.horaFin||''}));
-    const parts={
-      titulo:data.titulo||'', notas:(data.notas||'').replace(/\n/g,'<br>'),
-      precios:{normal:num(data.precioHoraNormal),extra:num(data.precioHoraExtra),nocturna:num(data.precioHoraNocturna),festiva:num(data.precioHoraFestiva)},
-      ubicacionEntrada:data.ubicacionEntrada||'', ubicacionSalida:data.ubicacionSalida||'',
-      fichajes:fich, dietasExtra:data.dietasExtra||[], otrosConceptos:data.otrosConceptos||[],
-      journeys:data.journeys||[], tareas
-    };
-    const r=await mergeImportedDay(fecha,parts);
-    try{ saveLocalBackup(); }catch(e){}
-    // Abrir el día importado para verlo
-    if(typeof goToDay==='function') goToDay(fecha); else { S.tab='fichar'; rerender(); }
-    showAlert('✅ '+dlbl(fecha)+': '+_resumenImport([r]));
+    if(data.otrosConceptos&&data.otrosConceptos.length) fEntry.otrosConceptos=data.otrosConceptos;
+
+    // Importar tareas si las hay
+    let nTareas=0;
+    for(const t of(data._plantillaTareas||[])){
+      if(!t.titulo&&!t.otNumero) continue;
+      const tarea={...defTask(data.fecha),titulo:t.titulo||'',otNumero:(t.otNumero||'').replace(/\D/g,'').slice(0,10),horaInicio:t.horaInicio||'',horaFin:t.horaFin||'',usaOT:!!(t.otNumero),fecha:data.fecha};
+      const id=await dbPut(ST.tasks,tarea);
+      S.tasks.push({...tarea,id});
+      nTareas++;
+    }
+
+    S.tab='fichar';
+    showAlert('✅ Plantilla importada: '+nTareas+' tareas y jornada del '+dlbl(data.fecha));
+    rerender();
   }catch(e){
     showAlert('Error importando: '+e.message,'err');
   }
@@ -10538,415 +9645,137 @@ function drawQR(canvasId, text){
 }
 
 
-
-// ══════════════════════════════════════════════════════════
-// IMPORTACIÓN COMÚN DE PLANTILLAS (Excel e interactiva)
-// Regla de oro: SUMA a lo que ya hay en la jornada; nunca la reemplaza.
-//  · Un fichaje con el mismo horario que uno existente solo rellena huecos.
-//  · Un fichaje con horario nuevo se añade como fichaje más.
-//  · Dietas extra, otros conceptos, viajes y tareas se añaden si no están ya.
-// ══════════════════════════════════════════════════════════
-function _normTxt(s){ return String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/€/g,'eur').replace(/[^a-z0-9]/g,''); }
-function _numImp(v){
-  if(v===null||v===undefined||v==='') return 0;
-  if(typeof v==='number') return isFinite(v)?v:0;
-  const n=parseFloat(String(v).replace(/\s|€/g,'').replace(',','.'));
-  return isFinite(n)?n:0;
-}
-// Fecha desde Excel: número de serie, dd/mm/aaaa, aaaa-mm-dd o Date
-function _fechaImp(v){
-  if(v===null||v===undefined||v==='') return '';
-  if(v instanceof Date && !isNaN(v)) return v.getFullYear()+'-'+pad(v.getMonth()+1)+'-'+pad(v.getDate());
-  if(typeof v==='number' && v>20000 && v<80000){
-    const d=new Date(Math.round((v-25569)*86400000)); // serie Excel → fecha (UTC)
-    return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate());
-  }
-  const s=String(v).trim();
-  let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if(m) return m[1]+'-'+pad(+m[2])+'-'+pad(+m[3]);
-  m=s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
-  if(m){ const y=m[3].length===2?'20'+m[3]:m[3]; return y+'-'+pad(+m[2])+'-'+pad(+m[1]); }
-  return '';
-}
-// Hora desde Excel: fracción de día (0.3333), "7:00", "07:00:00", "7.30"
-function _horaImp(v){
-  if(v===null||v===undefined||v==='') return '';
-  if(typeof v==='number'){
-    if(v>=0 && v<1){ const mins=Math.round(v*1440); return pad(Math.floor(mins/60)%24)+':'+pad(mins%60); }
-    if(v>=0 && v<24){ const hh=Math.floor(v), mm=Math.round((v-hh)*100); return pad(hh)+':'+pad(mm<60?mm:0); }
-    return '';
-  }
-  const m=String(v).trim().match(/^(\d{1,2})[:.h](\d{2})/);
-  if(m) return pad(Math.min(23,+m[1]))+':'+pad(Math.min(59,+m[2]));
-  const m2=String(v).trim().match(/^(\d{1,2})$/);
-  return m2?pad(Math.min(23,+m2[1]))+':00':'';
-}
-// Tipo de transporte: acepta id ("coche") o nombre ("Coche", "Camión")
-function _transpTipoImp(v){
-  const n=_normTxt(v); if(!n) return '';
-  const tt=(S.transportTypes||[]).find(t=>_normTxt(t.id)===n||_normTxt(t.nombre)===n);
-  if(tt) return tt.id;
-  if(n.startsWith('cam')) return 'camion';
-  if(n.startsWith('coch')) return 'coche';
-  return '';
-}
-// Tipo de tarea: acepta id ("estral"), nombre ("ESTRAL", "O.T.", "OT")
-function _tipoTareaImp(v){
-  const n=_normTxt(v); if(!n) return 'ot';
-  const tt=(taskTypes||[]).find(t=>_normTxt(t.id)===n||_normTxt(t.nombre)===n);
-  return tt?tt.id:'ot';
-}
-function _siteIdImp(nombre){
-  const n=_normTxt(nombre); if(!n) return '';
-  const s=(S.sites||[]).find(x=>_normTxt(x.nombre)===n);
-  return s?s.id:'';
-}
-const _HORA_KEYS=['horasNormales','horasExtra','horasNocturnas','horasFestivas'];
-const _FICH_FILL_KEYS=['horasNormales','horasExtra','horasNocturnas','horasFestivas','dieta','transporte','_transportType','descanso','titulo','nota','ubicacionEntrada','ubicacionSalida'];
-
-// Si una parte de fichaje trae horario pero ninguna hora, se calculan como
-// en la app: horas netas (menos descanso), máximo 8 normales y el resto extra.
-function _autoHorasParte(p){
-  if(p._noAuto){ delete p._noAuto; p._horasManual=true; return p; }
-  const tieneHoras=_HORA_KEYS.some(k=>(+p[k]||0)>0);
-  if(tieneHoras){ p._horasManual=true; return p; }
-  if(p.entrada&&p.salida&&typeof calcH==='function'){
-    const mins=Math.max(0,calcH(p.entrada,p.salida)*60-(+p.descanso||0));
-    if(mins>0){
-      const net=Math.round(mins*100/60)/100;
-      p.horasNormales=Math.min(8,net);
-      p.horasExtra=Math.round(Math.max(0,net-8)*100)/100;
-    }
-  }
-  return p;
-}
-
-/**
- * Suma a la jornada de `fecha` lo que trae `parts`:
- *  {titulo, notas, precios:{normal,extra,nocturna,festiva}, ubicacionEntrada, ubicacionSalida,
- *   fichajes:[{entrada,salida,descanso,titulo,nota,horasNormales..,dieta,transporte,_transportType,_tareaIdx}],
- *   dietasExtra:[{concepto,importe}], otrosConceptos:[{concepto,importe}],
- *   journeys:[{origen,destino,km,precioManual,tipoManual}],
- *   tareas:[{titulo,otNumero,tipoTarea,sitio,horaInicio,horaFin,descripcion}]}
- * Devuelve {estado:'nueva'|'sumada'|'sin cambios', cambios, tareasNuevas}
- */
-async function mergeImportedDay(fecha, parts){
-  // 1) Si es el día abierto en pantalla, guardar antes lo que haya escrito
-  if(fEntry && fEntry.fecha===fecha){
-    try{ captureFormState(); }catch(e){}
-    try{ await saveDraft(); }catch(e){}
-  }
-  const existing=S.entries.find(e=>e.fecha===fecha&&!e._draft)||S.entries.find(e=>e.fecha===fecha);
-  const deep=o=>JSON.parse(JSON.stringify(o));
-  const base=existing?deep(existing):{...defEntry(),fecha,
-    precioHoraNormal:S.precioHoraNormalDefault||0, precioHoraExtra:S.precioHoraExtraDefault||0,
-    precioHoraNocturna:S.precioHoraNocturnaDefault||0, precioHoraFestiva:S.precioHoraFestivaDefault||0};
-  ['fichajes','dietasExtra','otrosConceptos','journeys'].forEach(k=>{ if(!Array.isArray(base[k])) base[k]=[]; });
-  let cambios=0;
-
-  // 2) Jornada antigua sin fichajes pero con datos sueltos → pasan al fichaje 1
-  if(base.fichajes.length===0 && existing && entryHasData(existing)){
-    const f0={...defFichaje(),_fid:Date.now()+Math.random(),entrada:base.horaEntrada||'',salida:base.horaSalida||'',titulo:base.titulo||'',nota:'',_f1Migrado:true};
-    ['horasNormales','horasExtra','horasNocturnas','horasFestivas','dieta','transporte','_transportType'].forEach(k=>{ if(base[k]) f0[k]=base[k]; });
-    f0.descanso=base.timerDeduct||0;
-    base.fichajes.push(f0);
-  }
-
-  // 3) Datos de la jornada: solo rellenan huecos
-  if(parts.titulo && !String(base.titulo||'').replace(/<[^>]*>/g,'').trim()){ base.titulo=parts.titulo; cambios++; }
-  if(parts.notas){
-    const actual=String(base.notas||'');
-    if(!actual.replace(/<[^>]*>/g,'').includes(String(parts.notas).trim())){
-      base.notas=actual?(actual+'<br>'+parts.notas):parts.notas; cambios++;
-    }
-  }
-  const pr=parts.precios||{};
-  [['normal','precioHoraNormal'],['extra','precioHoraExtra'],['nocturna','precioHoraNocturna'],['festiva','precioHoraFestiva']].forEach(([k,f])=>{
-    if((+pr[k]||0)>0 && !(+base[f]||0)){ base[f]=+pr[k]; cambios++; }
-  });
-  ['ubicacionEntrada','ubicacionSalida'].forEach(k=>{
-    if(parts[k] && !base[k]){ base[k]=(typeof textToLoc==='function')?textToLoc(parts[k]):parts[k]; cambios++; }
-  });
-
-  // 4) Fichajes
-  const fichDestino=[]; // fichaje donde acabó cada parte (para enlazar tareas)
-  (parts.fichajes||[]).forEach(raw=>{
-    const p=_autoHorasParte({...raw});
-    let dest=null;
-    if(p.entrada&&p.salida) dest=base.fichajes.find(f=>f.entrada===p.entrada&&f.salida===p.salida);
-    if(!dest && !p.entrada && !p.salida && base.fichajes.length) dest=base.fichajes[0];
-    if(!dest && base.fichajes.length===1){
-      const f=base.fichajes[0];
-      const vacio=!f.entrada&&!f.salida&&!_HORA_KEYS.some(k=>(+f[k]||0)>0)&&!(+f.dieta||0)&&!(+f.transporte||0);
-      if(vacio) dest=f;
-    }
-    if(dest){
-      if(!dest.entrada&&p.entrada){ dest.entrada=p.entrada; cambios++; }
-      if(!dest.salida&&p.salida){ dest.salida=p.salida; cambios++; }
-      _FICH_FILL_KEYS.forEach(k=>{
-        const v=p[k]; if(v===undefined||v===null||v===''||v===0) return;
-        if(dest[k]===undefined||dest[k]===null||dest[k]===''||dest[k]===0){ dest[k]=v; cambios++; }
-      });
-      if((+dest.dieta||0)>0 && !(+dest.dietaPrecioUnit||0)){ dest.dietaCantidad=dest.dietaCantidad||1; dest.dietaPrecioUnit=+dest.dieta; }
-      if((+dest.transporte||0)>0 && !(+dest.transportePrecioUnit||0)){ dest.transporteCantidad=dest.transporteCantidad||1; dest.transportePrecioUnit=+dest.transporte; }
-      if(p._horasManual) dest._horasManual=true;
-    } else {
-      dest={...defFichaje(),_fid:Date.now()+Math.random(),
-        entrada:p.entrada||'',salida:p.salida||'',descanso:+p.descanso||0,titulo:p.titulo||'',nota:p.nota||'',
-        horasNormales:+p.horasNormales||0,horasExtra:+p.horasExtra||0,horasNocturnas:+p.horasNocturnas||0,horasFestivas:+p.horasFestivas||0,
-        dieta:+p.dieta||0,dietaCantidad:1,dietaPrecioUnit:+p.dieta||0,
-        transporte:+p.transporte||0,transporteCantidad:1,transportePrecioUnit:+p.transporte||0,_transportType:p._transportType||'',
-        _horasManual:!!p._horasManual,_f1Migrado:true};
-      base.fichajes.push(dest); cambios++;
-    }
-    fichDestino.push({dest,tareaIdx:p._tareaIdx});
-  });
-  // El tipo de transporte del día = el del fichaje 1 (o el primero que lo tenga)
-  const fT=base.fichajes.find(f=>(+f.transporte||0)>0&&f._transportType);
-  if(fT && !base._transportType) base._transportType=fT._transportType;
-  if(base.fichajes[0]){
-    if(!base.horaEntrada&&base.fichajes[0].entrada) base.horaEntrada=base.fichajes[0].entrada;
-    if(!base.horaSalida&&base.fichajes[0].salida) base.horaSalida=base.fichajes[0].salida;
-    if(!base.timerDeduct&&base.fichajes.length===1&&base.fichajes[0].descanso) base.timerDeduct=base.fichajes[0].descanso;
-  }
-
-  // 5) Conceptos del día (sin duplicar)
-  const mismoConc=(a,b)=>_normTxt(a.concepto)===_normTxt(b.concepto)&&Math.round((+a.importe||0)*100)===Math.round((+b.importe||0)*100);
-  (parts.dietasExtra||[]).filter(d=>d&&(d.concepto||+d.importe)).forEach(d=>{
-    if(!base.dietasExtra.some(x=>mismoConc(x,d))){ base.dietasExtra.push({id:'d'+Date.now()+Math.random().toString(36).slice(2,7),concepto:d.concepto||'Dieta extra',importe:+d.importe||0}); cambios++; }
-  });
-  (parts.otrosConceptos||[]).filter(o=>o&&(o.concepto||+o.importe)).forEach(o=>{
-    if(!base.otrosConceptos.some(x=>mismoConc(x,o))){ base.otrosConceptos.push({id:'o'+Date.now()+Math.random().toString(36).slice(2,7),concepto:o.concepto||'Concepto',importe:+o.importe||0}); cambios++; }
-  });
-  (parts.journeys||[]).filter(j=>j&&(j.origen||j.destino||+j.km)).forEach(j=>{
-    const dup=base.journeys.some(x=>_normTxt(x.origen)===_normTxt(j.origen)&&_normTxt(x.destino)===_normTxt(j.destino)&&Math.round((+x.km||0)*10)===Math.round((+j.km||0)*10));
-    if(!dup){ base.journeys.push({...defJourney(),origen:j.origen||'',destino:j.destino||'',km:+j.km||0,precioManual:(+j.precioManual||0)>0?+j.precioManual:0.19,tipoManual:j.tipoManual||'coche',horaInicio:'',horaFin:''}); cambios++; }
-  });
-
-  // 6) Recalcular totales del día con la misma función de la app
-  if(base.fichajes.length){
-    const prev=fEntry;
-    try{ fEntry=base; recomputeDayAggregates(); } finally { fEntry=prev; }
-  }
-
-  // 7) Tareas / OT (sin duplicar) y enlace con su fichaje
-  let tareasNuevas=0;
-  const idsTareas=[];
-  for(const t of (parts.tareas||[])){
-    if(!t||(!t.titulo&&!t.otNumero)){ idsTareas.push(null); continue; }
-    const ot=String(t.otNumero||'').replace(/\D/g,'').slice(0,10);
-    const tipo=_tipoTareaImp(t.tipoTarea);
-    const ya=(S.tasks||[]).find(x=>x.fecha===fecha&&((ot&&String(x.otNumero||'')===ot)||(!ot&&_normTxt(x.titulo)===_normTxt(t.titulo))));
-    if(ya){ idsTareas.push(ya.id); continue; }
-    const tarea={...defTask(fecha),titulo:t.titulo||'',descripcion:t.descripcion||'',otNumero:ot,usaOT:!!ot,tipoTarea:tipo,
-      siteId:_siteIdImp(t.sitio),horaInicio:t.horaInicio||'',horaFin:t.horaFin||'',fecha};
-    const id=await dbPut(ST.tasks,tarea);
-    S.tasks.push({...tarea,id}); idsTareas.push(id); tareasNuevas++; cambios++;
-  }
-  fichDestino.forEach(({dest,tareaIdx})=>{
-    if(tareaIdx!=null && idsTareas[tareaIdx] && !dest.taskId) dest.taskId=idsTareas[tareaIdx];
-  });
-
-  // 8) Guardar (una sola jornada por fecha)
-  if(!existing && !cambios) return {estado:'sin cambios',cambios:0,tareasNuevas};
-  if(existing && !cambios) return {estado:'sin cambios',cambios:0,tareasNuevas};
-  const toSave={...base,_draft:false,_savedAt:new Date().toISOString()};
-  for(const e of S.entries.filter(x=>x.fecha===fecha&&x.id&&x.id!==toSave.id)){
-    await dbDel(ST.entries,e.id); S.entries=S.entries.filter(x=>x.id!==e.id);
-  }
-  if(toSave.id){
-    await dbPut(ST.entries,toSave);
-    S.entries=S.entries.map(e=>e.id===toSave.id?toSave:e);
-    if(!S.entries.find(e=>e.id===toSave.id)) S.entries.push(toSave);
-  } else {
-    delete toSave.id;
-    const id=await dbPut(ST.entries,toSave); toSave.id=id; S.entries.push(toSave);
-  }
-  // Si es el día abierto, recargarlo para que la pantalla muestre lo importado
-  if(fEntry && fEntry.fecha===fecha){
-    fEntry={...deep(toSave)}; editingEntry=true;
-    try{ localStorage.removeItem('_fEntry'); }catch(e){}
-  }
-  try{ localStorage.setItem('lastSave',new Date().toISOString()); }catch(e){}
-  return {estado:existing?'sumada':'nueva',cambios,tareasNuevas};
-}
-
-// Mensaje final de una importación
-function _resumenImport(res){
-  const n=res.filter(r=>r.estado==='nueva').length;
-  const s=res.filter(r=>r.estado==='sumada').length;
-  const i=res.filter(r=>r.estado==='sin cambios').length;
-  const t=res.reduce((a,r)=>a+(r.tareasNuevas||0),0);
-  const p=[];
-  if(n) p.push(n+' jornada'+(n>1?'s':'')+' nueva'+(n>1?'s':''));
-  if(s) p.push(s+' completada'+(s>1?'s':'')+' (sumado a lo que ya tenías)');
-  if(i) p.push(i+' ya estaba'+(i>1?'n':'')+' igual');
-  if(t) p.push(t+' tarea'+(t>1?'s':'')+' nueva'+(t>1?'s':''));
-  return p.join(' · ')||'Nada que importar';
-}
-
-// ── PLANTILLA EXCEL PARA IMPORTAR (al día con todos los campos actuales) ──
-// Una fila = un fichaje. Varias filas con la misma fecha = varios fichajes del día.
-const PLANTILLA_XLS_COLS=[
-  // [encabezado, clave, ancho, alias de plantillas antiguas]
-  ['Fecha','fecha',11,[]],
-  ['Entrada','entrada',8,['horaentrada']],
-  ['Salida','salida',8,['horasalida']],
-  ['Descanso (min)','descanso',9,['descanso']],
-  ['Título jornada','titulo',22,['titulo']],
-  ['Horas normales','hn',9,['hnormales']],
-  ['€/h normal','pn',9,['preciohnormal','precionormal']],
-  ['Horas extra','he',8,['hextra']],
-  ['€/h extra','pe',8,['preciohextra','precioextra']],
-  ['Horas nocturnas','hnoc',9,['hnocturnas']],
-  ['€/h nocturna','pnoc',9,['preciohnocturnas','preciohnocturna','precionocturna']],
-  ['Horas festivas','hf',9,['hfestivas']],
-  ['€/h festiva','pf',9,['preciohfestivas','preciohfestiva','preciofestiva']],
-  ['Dieta (€)','dieta',8,['dieta']],
-  ['Dieta extra (concepto)','dexc',18,[]],
-  ['Dieta extra (€)','dexi',9,[]],
-  ['Transporte (tipo)','ttipo',11,['tipotransporte']],
-  ['Transporte (€)','transp',10,['transporte']],
-  ['Viaje origen','vori',14,[]],
-  ['Viaje destino','vdes',14,[]],
-  ['Km','km',6,[]],
-  ['€/km','pkm',7,[]],
-  ['Otro concepto','oc',16,[]],
-  ['Otro concepto (€)','oi',9,[]],
-  ['Tipo de tarea','tipo',11,[]],
-  ['Nº OT','ot',12,['numeroot','ot','not']],
-  ['Tarea','tarea',26,[]],
-  ['Sitio','sitio',16,[]],
-  ['Notas','notas',30,['nota']]
-];
-
+// ── PLANTILLA EXCEL PARA IMPORTAR ────────────────────────
 async function downloadTemplate(){
   if(!window.XLSX){showAlert('Cargando libreria...','err');setTimeout(downloadTemplate,2000);return;}
   const wb=XLSX.utils.book_new();
-  const tt=(S.transportTypes||[]).map(t=>t.nombre).join(', ')||'Coche, Camión';
-  const tipos=(taskTypes||[]).map(t=>t.nombre).join(', ')||'O.T.';
-  const head=PLANTILLA_XLS_COLS.map(c=>c[0]);
-  const vacia=()=>head.map(()=> '');
-  const ej1=vacia(), ej2=vacia();
-  const set=(row,key,v)=>{ const i=PLANTILLA_XLS_COLS.findIndex(c=>c[1]===key); row[i]=v; };
-  const t1=(taskTypes||[])[0]||{nombre:'O.T.'};
-  set(ej1,'fecha',today()); set(ej1,'entrada','07:00'); set(ej1,'salida','15:00'); set(ej1,'descanso',0);
-  set(ej1,'titulo','EN TRADEMA'); set(ej1,'hn',8); set(ej1,'pn',S.precioHoraNormalDefault||12);
-  set(ej1,'dieta',12); set(ej1,'ttipo',((S.transportTypes||[])[0]||{nombre:'Coche'}).nombre); set(ej1,'transp',4.6);
-  set(ej1,'tipo',t1.nombre); set(ej1,'ot','7941000000'); set(ej1,'tarea','Descripción de la tarea'); set(ej1,'sitio','');
-  set(ej1,'notas','EJEMPLO - borra esta fila');
-  set(ej2,'fecha',today()); set(ej2,'entrada','16:00'); set(ej2,'salida','18:00');
-  set(ej2,'vori','Granada'); set(ej2,'vdes','Motril'); set(ej2,'km',70); set(ej2,'pkm',0.19);
-  set(ej2,'oc','Parking'); set(ej2,'oi',3.5); set(ej2,'notas','EJEMPLO - borra esta fila (2º fichaje del mismo día)');
 
+  // Sheet: Jornadas
   const rows=[
     ['TIMERPRO - PLANTILLA DE JORNADAS'],
-    ['Una fila por fichaje. Si un día tiene varios fichajes, pon varias filas con la misma fecha. Al importar se SUMA a lo que ya tengas, no se borra nada.'],
-    ['Fecha: 02/10/2026 o 2026-10-02 · Horas: 07:00 · Números: 7,5 o 7.5 · Si pones entrada y salida y dejas las horas vacías, se calculan solas. Las filas con "EJEMPLO" en Notas se ignoran.'],
-    head, ej1, ej2
+    ['Instrucciones: Rellena una fila por jornada. NO modifiques los encabezados (fila 4).'],
+    ['Formatos: Fecha=YYYY-MM-DD, Horas=numerico (ej: 8 o 7.5), Importe=numerico (ej: 15.50)'],
+    [],
+    [
+      'Fecha','Entrada','Salida',
+      'Horas Normales','Precio/h Normal',
+      'Horas Extra','Precio/h Extra',
+      'Horas Nocturnas','Precio/h Nocturnas',
+      'Horas Festivas','Precio/h Festivas',
+      'Dieta','Transporte','Nota'
+    ],
+    // Example rows
+    [today(),'08:00','16:00', 8,15.50, 0,0, 0,0, 0,0, 10,5,'Ejemplo - borra esta fila'],
+    [today(),'07:30','14:00', 6.5,15.50, 1,20, 0,0, 0,0, 12,0,'']
   ];
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=PLANTILLA_XLS_COLS.map(c=>({wch:c[2]}));
-  ws['!freeze']={xSplit:1,ySplit:4};
-  XLSX.utils.book_append_sheet(wb,ws,'Jornadas');
 
-  const ayuda=[
-    ['VALORES VÁLIDOS'],[],
-    ['Transporte (tipo)',tt],
-    ['Tipo de tarea',tipos],
-    ['Sitios guardados',(S.sites||[]).map(s=>s.nombre).filter(Boolean).join(', ')||'(ninguno)'],
-    [],
-    ['QUÉ HACE CADA COLUMNA'],
-    ['Descanso (min)','Minutos de descanso de ese fichaje (se restan si las horas se calculan solas)'],
-    ['Dieta / Transporte','Importe de ese fichaje'],
-    ['Viaje origen/destino/Km/€/km','Un viaje por fila. €/km vacío = 0,19'],
-    ['Otro concepto','Parking, peajes, material… con su importe'],
-    ['Tipo de tarea / Nº OT / Tarea / Sitio','Crea la tarea en TimerPro y la enlaza con ese fichaje'],
-    [],
-    ['Generada',new Date().toLocaleString('es-ES')]
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[
+    {wch:12},{wch:8},{wch:8},
+    {wch:14},{wch:14},
+    {wch:12},{wch:12},
+    {wch:16},{wch:16},
+    {wch:14},{wch:14},
+    {wch:8},{wch:10},{wch:30}
   ];
-  const ws2=XLSX.utils.aoa_to_sheet(ayuda); ws2['!cols']=[{wch:30},{wch:80}];
-  XLSX.utils.book_append_sheet(wb,ws2,'Ayuda');
+  // Style header row (row 5 = index 4)
+  XLSX.utils.book_append_sheet(wb,ws,'Jornadas');
 
   const fname='TimerPro_Plantilla.xlsx';
   const arr=XLSX.write(wb,{bookType:'xlsx',type:'array'});
   const blob=new Blob([arr],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  dlDialog={blob,filename:fname,type:'xlsx',title:'Plantilla Excel lista'};
-  S.modal='dl'; rerender();
+  const file=new File([blob],fname,{type:blob.type});
+
+  if(navigator.share){
+    try{await navigator.share({files:[file],title:'Plantilla TimerPro'});return;}
+    catch(e){if(e.name==='AbortError')return;}
+  }
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=fname;a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  showAlert('Plantilla descargada. Rellenala y arrastrarla aqui para importar.');
 }
 
 async function importFromTemplate(file){
   if(!file)return;
   if(!window.XLSX){showAlert('Cargando libreria...','err');return;}
+
   try{
     const buf=await file.arrayBuffer();
     const wb=XLSX.read(buf,{type:'array'});
     const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
 
-    // Fila de encabezados = la primera que tiene "Fecha"
-    let headerIdx=rows.findIndex(r=>r.some(c=>_normTxt(c)==='fecha'));
-    if(headerIdx<0){showAlert('No se encontró la fila de encabezados (Fecha…)','err');return;}
-    const headers=rows[headerIdx].map(h=>_normTxt(h));
-    const idx={};
-    PLANTILLA_XLS_COLS.forEach(([h,key,,alias])=>{
-      const names=[_normTxt(h),...alias];
-      const i=headers.findIndex(x=>names.includes(x));
-      if(i>=0) idx[key]=i;
-    });
-    const get=(r,k)=>idx[k]!=null?r[idx[k]]:'';
-
-    // Agrupar filas por fecha
-    const porFecha={}; let omitidas=0;
-    rows.slice(headerIdx+1).forEach(r=>{
-      if(!r||!r.some(c=>c!==''&&c!=null)) return;
-      const notas=String(get(r,'notas')||'');
-      if(/ejemplo/i.test(notas)){ omitidas++; return; }
-      const fecha=_fechaImp(get(r,'fecha'));
-      if(!fecha){ omitidas++; return; }
-      (porFecha[fecha]=porFecha[fecha]||[]).push(r);
-    });
-    const fechas=Object.keys(porFecha).sort();
-    if(!fechas.length){showAlert('No se encontraron filas con fecha válida','err');return;}
-
-    const res=[];
-    for(const fecha of fechas){
-      const parts={fichajes:[],dietasExtra:[],otrosConceptos:[],journeys:[],tareas:[],precios:{}};
-      porFecha[fecha].forEach(r=>{
-        const tit=String(get(r,'titulo')||'').trim();
-        if(tit && !parts.titulo) parts.titulo=tit;
-        const nota=String(get(r,'notas')||'').trim();
-        if(nota) parts.notas=parts.notas?parts.notas+'<br>'+nota:nota;
-        [['pn','normal'],['pe','extra'],['pnoc','nocturna'],['pf','festiva']].forEach(([k,p])=>{ const v=_numImp(get(r,k)); if(v>0&&!parts.precios[p]) parts.precios[p]=v; });
-        let tareaIdx=null;
-        const ot=String(get(r,'ot')||'').trim(), tarea=String(get(r,'tarea')||'').trim();
-        if(ot||tarea){
-          tareaIdx=parts.tareas.length;
-          parts.tareas.push({otNumero:ot,titulo:tarea,tipoTarea:get(r,'tipo'),sitio:get(r,'sitio'),
-            horaInicio:_horaImp(get(r,'entrada')),horaFin:_horaImp(get(r,'salida'))});
-        }
-        const transp=_numImp(get(r,'transp'));
-        parts.fichajes.push({
-          entrada:_horaImp(get(r,'entrada')), salida:_horaImp(get(r,'salida')), descanso:_numImp(get(r,'descanso')),
-          titulo:tit, nota:'',
-          horasNormales:_numImp(get(r,'hn')), horasExtra:_numImp(get(r,'he')),
-          horasNocturnas:_numImp(get(r,'hnoc')), horasFestivas:_numImp(get(r,'hf')),
-          dieta:_numImp(get(r,'dieta')), transporte:transp,
-          _transportType:transp>0?(_transpTipoImp(get(r,'ttipo'))||'coche'):'',
-          _tareaIdx:tareaIdx
-        });
-        const dexc=String(get(r,'dexc')||'').trim(), dexi=_numImp(get(r,'dexi'));
-        if(dexc||dexi) parts.dietasExtra.push({concepto:dexc||'Dieta extra',importe:dexi});
-        const oc=String(get(r,'oc')||'').trim(), oi=_numImp(get(r,'oi'));
-        if(oc||oi) parts.otrosConceptos.push({concepto:oc||'Concepto',importe:oi});
-        const vori=String(get(r,'vori')||'').trim(), vdes=String(get(r,'vdes')||'').trim(), km=_numImp(get(r,'km'));
-        if(vori||vdes||km) parts.journeys.push({origen:vori,destino:vdes,km,precioManual:_numImp(get(r,'pkm'))});
-      });
-      res.push(await mergeImportedDay(fecha,parts));
+    // Find header row (contains 'Fecha')
+    let headerIdx=-1;
+    for(let i=0;i<rows.length;i++){
+      if(rows[i].some(c=>String(c).toLowerCase().includes('fecha'))){
+        headerIdx=i; break;
+      }
     }
-    try{ saveLocalBackup(); }catch(e){}
-    showAlert('✅ '+_resumenImport(res)+(omitidas?' · '+omitidas+' fila'+(omitidas>1?'s':'')+' omitida'+(omitidas>1?'s':''):''));
+    if(headerIdx<0){showAlert('No se encontro la fila de encabezados','err');return;}
+
+    const headers=rows[headerIdx].map(h=>String(h).toLowerCase().trim());
+    const dataRows=rows.slice(headerIdx+1).filter(r=>r[0]&&String(r[0]).match(/\d{4}-\d{2}-\d{2}/));
+
+    if(dataRows.length===0){showAlert('No se encontraron filas con datos validos','err');return;}
+
+    const col=name=>headers.findIndex(h=>h.includes(name));
+    const cFecha=col('fecha'), cEnt=col('entrada'), cSal=col('salida');
+    const cHN=col('normales'), cPN=col('precio/h normal')||col('precio normal');
+    const cHE=col('extra'), cPE=col('precio/h extra')||col('precio extra');
+    const cHNoc=col('nocturnas'), cPNoc=col('precio/h noct')||col('precio noct');
+    const cHF=col('festivas'), cPF=col('precio/h fest')||col('precio fest');
+    const cDieta=col('dieta'), cTransp=col('transporte'), cNota=col('nota');
+
+    let imported=0, skipped=0;
+    for(const row of dataRows){
+      const fecha=String(row[cFecha]||'').trim();
+      if(!fecha.match(/\d{4}-\d{2}-\d{2}/)){skipped++;continue;}
+
+      // Skip example rows
+      const nota=cNota>=0?String(row[cNota]||''):'';
+      if(nota.toLowerCase().includes('ejemplo')){skipped++;continue;}
+
+      const hN=parseFloat(row[cHN])||0;
+      const pN=parseFloat(row[cPN])||0;
+      const hE=parseFloat(row[cHE])||0;
+      const pE=parseFloat(row[cPE])||0;
+      const hNoc=parseFloat(row[cHNoc])||0;
+      const pNoc=parseFloat(row[cPNoc])||0;
+      const hF=parseFloat(row[cHF])||0;
+      const pF=parseFloat(row[cPF])||0;
+
+      const entry={
+        ...defEntry(),
+        fecha,
+        fichajes: (cEnt>=0&&row[cEnt])?[{_fid:Date.now()+imported,entrada:String(row[cEnt]),salida:cSal>=0?String(row[cSal]):'',nota:'',editing:false}]:[],
+        horasNormales:hN, precioHoraNormal:pN, importeNormales:Math.round(hN*pN*100)/100,
+        horasExtra:hE, precioHoraExtra:pE, importeExtra:Math.round(hE*pE*100)/100,
+        horasNocturnas:hNoc, precioHoraNocturna:pNoc, importeNocturnas:Math.round(hNoc*pNoc*100)/100,
+        horasFestivas:hF, precioHoraFestiva:pF, importeFestivas:Math.round(hF*pF*100)/100,
+        dieta:cDieta>=0?parseFloat(row[cDieta])||0:0,
+        transporte:cTransp>=0?parseFloat(row[cTransp])||0:0,
+        notas:nota,
+        _savedAt:new Date().toISOString()
+      };
+
+      // Check if entry for this date already exists
+      const existing=S.entries.find(e=>e.fecha===fecha);
+      if(existing){
+        entry.id=existing.id;
+        await dbPut(ST.entries,entry);
+        S.entries=S.entries.map(e=>e.id===existing.id?{...entry,id:existing.id}:e);
+      } else {
+        const id=await dbPut(ST.entries,entry);
+        S.entries.push({...entry,id});
+      }
+      imported++;
+    }
+
+    showAlert('Importadas '+imported+' jornadas'+(skipped>0?' ('+skipped+' omitidas)':''));
     rerender();
+    // auto-sync disabled
   }catch(e){
     showAlert('Error importando: '+e.message,'err');
     console.error(e);
@@ -10954,172 +9783,51 @@ async function importFromTemplate(file){
 }
 
 
-// ── PLANTILLA PDF DEL DÍA (rellenable) — generada en la app, al día con todos los campos ──
-async function _cargarPdfLib(){
-  if(window.PDFLib) return;
-  await new Promise((res,rej)=>{
-    const s=document.createElement('script');
-    s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
-    s.onload=res; s.onerror=rej;
-    document.head.appendChild(s);
-  });
-}
-async function buildPlantillaPDFBytes(PDFLib, datos){
-  const {PDFDocument,StandardFonts,rgb}=PDFLib;
-  const d=datos||{};
-  const doc=await PDFDocument.create();
-  const font=await doc.embedFont(StandardFonts.Helvetica);
-  const bold=await doc.embedFont(StandardFonts.HelveticaBold);
-  const form=doc.getForm();
-  const W=595.28, H=841.89, M=28;
-  const VERDE=rgb(0.086,0.639,0.290), NEGRO=rgb(0.06,0.09,0.16), GRIS=rgb(0.39,0.45,0.55), BORDE=rgb(0.70,0.74,0.80), FONDOI=rgb(0.94,0.99,0.95);
-  // WinAnsi: quitar caracteres que la fuente estándar no admite (emojis, etc.)
-  const txt=s=>String(s==null?'':s).normalize('NFC').replace(/[^\x20-\x7E -ÿ€]/g,'');
-  let page, y;
-  const nuevaPagina=(sub,pie)=>{
-    page=doc.addPage([W,H]);
-    page.drawRectangle({x:0,y:H-46,width:W,height:46,color:NEGRO});
-    page.drawText('TimerPro',{x:M,y:H-30,size:16,font:bold,color:rgb(0.29,0.87,0.50)});
-    page.drawText(txt('Control Horario Laboral  |  '+sub),{x:M+92,y:H-29,size:9,font,color:rgb(0.85,0.88,0.92)});
-    page.drawText(txt(d.empresa||''),{x:W-M-200,y:H-29,size:8,font,color:rgb(0.6,0.65,0.72),maxWidth:200});
-    page.drawRectangle({x:0,y:0,width:W,height:20,color:VERDE});
-    page.drawText(txt(pie),{x:M,y:7,size:7,font,color:rgb(1,1,1)});
-    page.drawText('TIMERPRO_IMPORT_V3',{x:W-M-80,y:7,size:7,font:bold,color:rgb(1,1,1)});
-    y=H-62;
-  };
-  const seccion=t=>{
-    y-=6;
-    page.drawRectangle({x:M,y:y-14,width:W-2*M,height:16,color:VERDE});
-    page.drawText(txt(t),{x:M+8,y:y-10,size:9,font:bold,color:rgb(1,1,1)});
-    y-=22;
-  };
-  const etiqueta=(t,x,yy)=>page.drawText(txt(t),{x,y:yy,size:6.5,font,color:GRIS});
-  const campo=(nombre,x,yy,w,h,o)=>{
-    o=o||{};
-    const f=form.createTextField(nombre);
-    if(o.multi) f.enableMultiline();
-    if(o.valor!=null&&o.valor!=='') f.setText(txt(o.valor));
-    f.addToPage(page,{x,y:yy,width:w,height:h,font,borderColor:BORDE,borderWidth:0.8,backgroundColor:o.importe?FONDOI:rgb(1,1,1),textColor:NEGRO});
-    f.setFontSize(o.fs||9);
-    return f;
-  };
-  // Campo con etiqueta encima. Devuelve nada; avanza nada (se maneja y fuera)
-  const lc=(lbl,nombre,x,w,o)=>{ etiqueta(lbl,x,y); campo(nombre,x,y-17,w,15,o); };
 
-  // ═════════ PÁGINA 1: JORNADA ═════════
-  nuevaPagina('Plantilla diaria  -  Jornada','Pág. 1/2  -  Rellena, guarda el PDF y súbelo o fotografíalo para importarlo con la IA');
-  const CW=W-2*M;
-  seccion('1. DATOS GENERALES');
-  lc('FECHA (DD/MM/AAAA)','fecha',M,95,{valor:d.fecha});
-  lc('TRABAJADOR','trabajador',M+105,190,{valor:d.trabajador});
-  lc('EMPRESA','empresa',M+305,CW-305,{valor:d.empresa});
-  y-=26;
-  lc('TÍTULO DE LA JORNADA (ej. EN TRADEMA)','titulo_jornada',M,CW);
-  y-=26;
-
-  seccion('2. FICHAJES DEL DÍA  -  entrada, salida, descanso y trabajo realizado');
-  etiqueta('#',M+2,y); etiqueta('ENTRADA',M+18,y); etiqueta('SALIDA',M+78,y); etiqueta('DESCANSO (min)',M+138,y); etiqueta('DESCRIPCIÓN / TRABAJO REALIZADO',M+208,y);
-  y-=4;
-  for(let i=1;i<=4;i++){
-    page.drawText(String(i),{x:M+3,y:y-24,size:9,font:bold,color:GRIS});
-    campo('f'+i+'_e',M+18,y-30,54,18);
-    campo('f'+i+'_s',M+78,y-30,54,18);
-    campo('f'+i+'_d',M+138,y-30,60,18);
-    campo('f'+i+'_n',M+208,y-38,CW-208,34,{multi:true,fs:8});
-    y-=42;
-  }
-  y-=4;
-
-  seccion('3. HORAS E IMPORTES');
-  const cols4=[['NORMALES','nor',d.pNor],['EXTRA','ext',d.pExt],['NOCTURNAS','noc',d.pNoc],['FESTIVAS','fes',d.pFes]];
-  const cw4=(CW-3*10)/4;
-  cols4.forEach(([t],i)=>page.drawText(t,{x:M+i*(cw4+10),y,size:8,font:bold,color:NEGRO}));
-  y-=12;
-  cols4.forEach(([,k],i)=>{ const x=M+i*(cw4+10); etiqueta('HORAS',x,y); etiqueta('EUR/HORA',x+cw4/3+2,y); etiqueta('IMPORTE',x+2*cw4/3+4,y); });
-  cols4.forEach(([,k,p],i)=>{ const x=M+i*(cw4+10), w=cw4/3-3;
-    campo('h_'+k,x,y-17,w,15); campo('p_'+k,x+cw4/3+2,y-17,w,15,{valor:p}); campo('i_'+k,x+2*cw4/3+4,y-17,w,15,{importe:true}); });
-  y-=30;
-
-  seccion('4. DIETAS, TRANSPORTE Y OTROS CONCEPTOS');
-  const tts=(d.transportes&&d.transportes.length?d.transportes:[{id:'coche',nombre:'Coche'},{id:'camion',nombre:'Camión'}]).slice(0,3);
-  lc('DIETA (EUR)','dieta',M,70);
-  tts.forEach((t,i)=>lc('TRANSPORTE '+String(t.nombre).toUpperCase()+' (EUR)','tr_'+_normTxt(t.id),M+80+i*95,85));
-  const xDE=M+80+tts.length*95;
-  lc('DIETAS EXTRA (concepto: importe)','dietas_extra',xDE,CW-(xDE-M));
-  y-=26;
-  lc('OTROS CONCEPTOS (parking, peaje, material...  concepto: importe)','otros_conceptos',M,CW);
-  y-=26;
-
-  seccion('5. VIAJES');
-  const vc=[['ORIGEN',120],['DESTINO',120],['KM',45],['EUR/KM',50],['IMPORTE',60],['VEHÍCULO',CW-395-25]];
-  let vx=M; vc.forEach(([t,w])=>{ etiqueta(t,vx,y); vx+=w+5; });
-  y-=4;
-  for(let i=1;i<=3;i++){
-    let x=M; const ks=['ori','des','km','prc','imp','veh'];
-    vc.forEach(([,w],j)=>{ campo('v'+i+'_'+ks[j],x,y-18,w,16,{importe:ks[j]==='imp',valor:ks[j]==='prc'?d.pKm:''}); x+=w+5; });
-    y-=21;
-  }
-  y-=6;
-
-  seccion('6. UBICACIÓN Y NOTAS');
-  lc('UBICACIÓN ENTRADA','ubi_ent',M,CW/2-5);
-  lc('UBICACIÓN SALIDA','ubi_sal',M+CW/2+5,CW/2-5);
-  y-=24;
-  etiqueta('NOTAS DEL DÍA',M,y);
-  const hNotas=Math.max(30,y-30);
-  campo('notas',M,y-hNotas,CW,hNotas-4,{multi:true,fs:8});
-
-  // ═════════ PÁGINA 2: TAREAS ═════════
-  nuevaPagina('Plantilla diaria  -  Tareas','Pág. 2/2  -  Tipos de tarea válidos: '+(d.tipos||'O.T.'));
-  for(let i=1;i<=3;i++){
-    seccion('TAREA '+i);
-    lc('TIPO DE TAREA ('+(d.tipos||'O.T.')+')','t'+i+'_tipo',M,CW*0.45);
-    lc('Nº O.T.','t'+i+'_otnum',M+CW*0.45+10,CW*0.25);
-    lc('CÓDIGO O.T.','t'+i+'_otcod',M+CW*0.70+20,CW*0.30-20);
-    y-=26;
-    lc('TÍTULO DE LA TAREA','t'+i+'_tit',M,CW*0.55);
-    lc('FECHA','t'+i+'_fecha',M+CW*0.55+10,80,{valor:d.fecha});
-    lc('INICIO','t'+i+'_hi',M+CW*0.55+100,(CW*0.45-110)/2);
-    lc('FIN','t'+i+'_hf',M+CW*0.55+100+(CW*0.45-110)/2+10,(CW*0.45-110)/2);
-    y-=26;
-    lc('SITIO / LUGAR','t'+i+'_sit',M,CW);
-    y-=24;
-    etiqueta('DESCRIPCIÓN',M,y);
-    campo('t'+i+'_desc',M,y-70,CW,68,{multi:true,fs:8});
-    y-=82;
-    const tv=[['VIAJE: ORIGEN',120,'vori'],['DESTINO',120,'vdes'],['KM',50,'vkm'],['EUR/KM',55,'vprc'],['VEHÍCULO',CW-345-20,'vveh']];
-    let x=M; tv.forEach(([t,w])=>{ etiqueta(t,x,y); x+=w+5; });
-    x=M; tv.forEach(([,w,k])=>{ campo('t'+i+'_'+k,x,y-17,w,15,{valor:k==='vprc'?d.pKm:''}); x+=w+5; });
-    y-=28;
-  }
-  return await doc.save();
-}
 
 async function downloadPDFTemplate(){
   showAlert('Preparando plantilla...');
   try{
-    await _cargarPdfLib();
-    const f=today().split('-');
-    const fmtP=v=>(+v||0)>0?String(+v).replace('.',','):'';
-    const datos={
-      fecha:f[2]+'/'+f[1]+'/'+f[0],
-      trabajador:((fWorker.nombre||'')+' '+(fWorker.apellidos||'')).trim(),
-      empresa:fCompany.nombre||'',
-      pNor:fmtP(S.precioHoraNormalDefault), pExt:fmtP(S.precioHoraExtraDefault),
-      pNoc:fmtP(S.precioHoraNocturnaDefault), pFes:fmtP(S.precioHoraFestivaDefault),
-      pKm:'0,19',
-      transportes:S.transportTypes||[],
-      tipos:(taskTypes||[]).map(t=>t.nombre).join(', ')
-    };
-    const bytes=await buildPlantillaPDFBytes(window.PDFLib,datos);
-    const blob=new Blob([bytes],{type:'application/pdf'});
-    dlDialog={blob,filename:'TimerPro_Plantilla_'+today()+'.pdf',type:'pdf',title:'Plantilla PDF lista (rellenable)'};
-    S.modal='dl'; rerender();
+    // Load pdf-lib
+    if(!window.PDFLib){
+      await new Promise((res,rej)=>{
+        const s=document.createElement('script');
+        s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+        s.onload=res; s.onerror=rej;
+        document.head.appendChild(s);
+      });
+    }
+    // Fetch base template
+    const resp = await fetch('https://franyamelie.github.io/timerpro/TimerPro_Plantilla.pdf');
+    if(!resp.ok) throw new Error('No se pudo cargar la plantilla base');
+    const pdfBytes = await resp.arrayBuffer();
+    const pdfDoc = await window.PDFLib.PDFDocument.load(pdfBytes);
+    const form = pdfDoc.getForm();
+
+    // Pre-fill with current data
+    function setField(name, value){
+      try{ if(value) form.getTextField(name).setText(String(value)); }catch(e){}
+    }
+    setField('fecha', today());
+    setField('trabajador', (fWorker.nombre||'')+' '+(fWorker.apellidos||''));
+    setField('empresa', fCompany.nombre||'');
+
+    const filled = await pdfDoc.save();
+    const blob = new Blob([filled], {type:'application/pdf'});
+    const fname = 'TimerPro_'+today()+'.pdf';
+
+    if(navigator.share && navigator.canShare && navigator.canShare({files:[new File([blob],fname,{type:'application/pdf'})]})){
+      try{ await navigator.share({files:[new File([blob],fname,{type:'application/pdf'})],title:'Plantilla TimerPro'}); return; }
+      catch(e){ if(e.name==='AbortError') return; }
+    }
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=fname; a.click();
+    showAlert('Plantilla descargada con tus datos pre-rellenados');
   }catch(e){
-    console.error(e);
-    // Sin conexión para cargar la librería: abrir la plantilla antigua como respaldo
+    // Fallback: open static template
     window.open('https://franyamelie.github.io/timerpro/TimerPro_Plantilla.pdf','_blank');
-    showAlert('No se pudo generar la plantilla nueva (¿sin conexión?). Se abre la antigua.','err');
+    showAlert('Plantilla abierta — rellena fecha, trabajador y empresa manualmente');
   }
 }
 
@@ -12678,12 +11386,16 @@ function buildSyncData(){
     // seguían como estaban. Se incluyen aquí para que también se sincronicen.
     transportTypes: S.transportTypes||[],
     taskTypes: (typeof taskTypes!=='undefined'?taskTypes:getTaskTypes())||[],
-    ...(typeof nominaSyncPayload==='function'?nominaSyncPayload():{}),
     dietaDefault: S.dietaDefault||0,
     precioHoraNormalDefault: S.precioHoraNormalDefault||0,
     precioHoraExtraDefault: S.precioHoraExtraDefault||0,
     precioHoraNocturnaDefault: S.precioHoraNocturnaDefault||0,
     precioHoraFestivaDefault: S.precioHoraFestivaDefault||0,
+    // Nóminas leídas por IA y el chat guardado de cada mes — no se guarda el
+    // archivo original (la foto/PDF), solo lo que la IA extrajo de él y el
+    // resumen de comparación, para no disparar el tamaño de la sincronización.
+    payslips: (S.payslips||[]).map(p=>({id:p.id,mes:p.mes||'',fileName:p.fileName||'',uploadedAt:p.uploadedAt||'',extracted:p.extracted||{},comparisonSummary:p.comparisonSummary||''})),
+    monthChats: (S.monthChats||[]).map(c=>({id:c.id,mes:c.mes||'',messages:c.messages||[]})),
 
     activeWorkerId, activeCompanyId,
     worker:(()=>{const w=workers.find(x=>x.id===activeWorkerId)||workers[0]||{};
@@ -12738,6 +11450,8 @@ async function importDriveData(d, verifyMode){
     for(const s of(d.sites||[]))    await dbPut(ST.sites,s);
     for(const w of(d.workorders||[]))await dbPut(ST.workorders,w);
     for(const v of(d.vehicles||[])) await dbPut(ST.vehicles,v);
+    for(const p of(d.payslips||[])) await dbPut(ST.payslips,p);
+    for(const c of(d.monthChats||[])) await dbPut(ST.monthChats,c);
     for(const w of(d.workers||[])){
       const local = localWorkerMap[w.id]||{};
       await dbPut(ST.workers,{...w, foto:w.foto||local.foto||'', firma:w.firma||local.firma||''});
@@ -12770,7 +11484,6 @@ async function importDriveData(d, verifyMode){
       taskTypes=Object.values(byId2);
       saveTaskTypes(taskTypes);
     }
-    if(typeof applyNominaSync==='function') applyNominaSync(d);
     if(!S.dietaDefault && d.dietaDefault){ S.dietaDefault=d.dietaDefault; localStorage.setItem('dietaDefault',S.dietaDefault); }
     if(!S.precioHoraNormalDefault && d.precioHoraNormalDefault){ S.precioHoraNormalDefault=d.precioHoraNormalDefault; localStorage.setItem('precioHoraNormalDefault',S.precioHoraNormalDefault); }
     if(!S.precioHoraExtraDefault && d.precioHoraExtraDefault){ S.precioHoraExtraDefault=d.precioHoraExtraDefault; localStorage.setItem('precioHoraExtraDefault',S.precioHoraExtraDefault); }
@@ -12905,11 +11618,49 @@ async function mergeDriveData(d){
     const sinIdDrive = driveTasks.filter(t=>t.id==null);
     const tasksFinal = [...mergedTasks, ...sinIdLocal, ...sinIdDrive];
 
+    // Nóminas: igual que las tareas, unión por id completando campos vacíos.
+    const localPay=[...(S.payslips||[])];
+    const drivePay=d.payslips||[];
+    const lpMap={}; localPay.forEach(p=>{ if(p.id!=null) lpMap[String(p.id)]=p; });
+    const rpMap={}; drivePay.forEach(p=>{ if(p.id!=null) rpMap[String(p.id)]=p; });
+    const allPayIds=Array.from(new Set([...Object.keys(lpMap),...Object.keys(rpMap)]));
+    const payslipsFinal=allPayIds.map(id=>{
+      const l=lpMap[id], r=rpMap[id];
+      if(l&&r){
+        const out={...r};
+        Object.keys(l).forEach(k=>{ if(_esVacioMerge(r[k]) && !_esVacioMerge(l[k])) out[k]=l[k]; });
+        return out;
+      }
+      return l||r;
+    }).concat(localPay.filter(p=>p.id==null), drivePay.filter(p=>p.id==null));
+
+    // Chat de cada mes: unión de mensajes de los dos lados (nunca se pierde
+    // una pregunta o respuesta escrita en un dispositivo por fusionar con el
+    // otro), evitando duplicar el mismo mensaje si ya está en ambos.
+    const localChats=[...(S.monthChats||[])];
+    const driveChats=d.monthChats||[];
+    const allChatMonths=Array.from(new Set([...localChats.map(c=>c.mes),...driveChats.map(c=>c.mes)].filter(Boolean)));
+    const monthChatsFinal=allChatMonths.map(mes=>{
+      const l=localChats.find(c=>c.mes===mes);
+      const r=driveChats.find(c=>c.mes===mes);
+      if(l&&r){
+        const vistos=new Set();
+        const msgs=[];
+        [...(l.messages||[]),...(r.messages||[])].forEach(m=>{
+          const k=m.role+'|'+m.content;
+          if(vistos.has(k)) return;
+          vistos.add(k); msgs.push(m);
+        });
+        return {...r, id:l.id!=null?l.id:r.id, mes, messages:msgs};
+      }
+      return l||r;
+    });
+
     // Fusionar etiquetas de días (vacaciones/festivo/etc.): unión de local + Drive, Drive gana en conflicto
     const mergedTags = {...dayTags, ...(d.dayTags||{})};
 
     // Save merged data
-    const mergedData = {...d, entries: merged, tasks: tasksFinal, dayTags: mergedTags};
+    const mergedData = {...d, entries: merged, tasks: tasksFinal, payslips: payslipsFinal, monthChats: monthChatsFinal, dayTags: mergedTags};
     await importDriveData(mergedData, false);
     showAlert('✅ Fusionado: '+merged.length+' jornadas, '+tasksFinal.length+' tareas/OT');
 
@@ -12925,9 +11676,9 @@ async function mergeDriveData(d){
 
 // ── CARGA INICIAL ─────────────────────────────────────────
 async function loadData(){
-  [S.entries,S.tasks,S.sites,S.workorders,S.vehicles,workers,companies]=await Promise.all([
+  [S.entries,S.tasks,S.sites,S.workorders,S.vehicles,workers,companies,S.payslips,S.monthChats]=await Promise.all([
     dbAll(ST.entries),dbAll(ST.tasks),dbAll(ST.sites),dbAll(ST.workorders),dbAll(ST.vehicles),
-    dbAll(ST.workers),dbAll(ST.companies)
+    dbAll(ST.workers),dbAll(ST.companies),dbAll(ST.payslips),dbAll(ST.monthChats)
   ]);
   // Load active worker/company
   const settings=(await dbAll(ST.settings))[0]||{};
@@ -13624,6 +12375,44 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
                   }
                   S.tasks=await dbAll(ST.tasks);
                 }
+                // Nóminas y chats mensuales: mismo criterio — fusión por id
+                // (nóminas) o por mes uniendo mensajes (chats), nunca sustitución.
+                if((d.payslips||[]).length>0){
+                  const _lp={}; (S.payslips||[]).forEach(p=>{ if(p.id!=null) _lp[String(p.id)]=p; });
+                  const _rp={}; (d.payslips||[]).forEach(p=>{ if(p.id!=null) _rp[String(p.id)]=p; });
+                  const _allPIds=Array.from(new Set([...Object.keys(_lp),...Object.keys(_rp)]));
+                  for(const id of _allPIds){
+                    const l=_lp[id], r=_rp[id];
+                    let out;
+                    if(l&&r){
+                      out={...r};
+                      Object.keys(l).forEach(k=>{
+                        const lv=l[k], rv=r[k];
+                        const rEmpty=rv===undefined||rv===null||rv===''||rv===0;
+                        const lEmpty=lv===undefined||lv===null||lv===''||lv===0;
+                        if(rEmpty&&!lEmpty) out[k]=lv;
+                      });
+                    } else out=l||r;
+                    await dbPut(ST.payslips,out);
+                  }
+                  S.payslips=await dbAll(ST.payslips);
+                }
+                if((d.monthChats||[]).length>0){
+                  const localChatsB=S.monthChats||[];
+                  for(const r of d.monthChats){
+                    const l=localChatsB.find(c=>c.mes===r.mes);
+                    if(l){
+                      const vistos=new Set(); const msgs=[];
+                      [...(l.messages||[]),...(r.messages||[])].forEach(m=>{
+                        const k=m.role+'|'+m.content; if(vistos.has(k)) return; vistos.add(k); msgs.push(m);
+                      });
+                      await dbPut(ST.monthChats,{...l,messages:msgs});
+                    } else {
+                      await dbPut(ST.monthChats,{mes:r.mes,messages:r.messages||[]});
+                    }
+                  }
+                  S.monthChats=await dbAll(ST.monthChats);
+                }
                 if((d.sites||[]).length>0){ await dbClear(ST.sites); for(const s of d.sites) await dbPut(ST.sites,s); }
                 if((d.workorders||[]).length>0){ await dbClear(ST.workorders); for(const w of d.workorders) await dbPut(ST.workorders,w); }
                 if((d.vehicles||[]).length>0){ await dbClear(ST.vehicles); for(const v of d.vehicles) await dbPut(ST.vehicles,v); }
@@ -13646,7 +12435,6 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
                   taskTypes=Object.values(_byId2);
                   saveTaskTypes(taskTypes);
                 }
-                if(typeof applyNominaSync==='function') applyNominaSync(d);
                 if(!S.dietaDefault && d.dietaDefault){ S.dietaDefault=d.dietaDefault; localStorage.setItem('dietaDefault',S.dietaDefault); }
                 if(!S.precioHoraNormalDefault && d.precioHoraNormalDefault){ S.precioHoraNormalDefault=d.precioHoraNormalDefault; localStorage.setItem('precioHoraNormalDefault',S.precioHoraNormalDefault); }
                 if(!S.precioHoraExtraDefault && d.precioHoraExtraDefault){ S.precioHoraExtraDefault=d.precioHoraExtraDefault; localStorage.setItem('precioHoraExtraDefault',S.precioHoraExtraDefault); }
