@@ -858,6 +858,7 @@ const TABS_END = [
   {id:'tarifas',icon:'💶',label:'Tarifas'},
   {id:'vehiculos',icon:'🚗',label:'Vehículos'},
   {id:'resumen',icon:'📊',label:'Resumen'},
+  {id:'nomina',icon:'💰',label:'Nómina'},
   {id:'sincronizar',icon:'🔄',label:'Sincronizar'},
   {id:'trabajador',icon:'👤',label:'Trabajador'},
   {id:'empresa',icon:'🏢',label:'Empresa'},
@@ -894,6 +895,7 @@ function renderMain(){
     case 'ordenes':    return renderOrdenes();
     case 'vehiculos':  return renderVehiculos();
     case 'resumen':    return renderResumen();
+    case 'nomina':     return renderNomina();
     case 'sincronizar':return renderSincronizar();
     case 'trabajador': return renderTrabajador();
     case 'empresa':    return renderEmpresa();
@@ -5487,6 +5489,486 @@ function renderResumen(){
       )
     )
   );
+}
+
+
+
+// ══════════════════════════════════════════════════════════
+// NÓMINA MENSUAL — ciclo del 26 al 25 del mes siguiente.
+// Totalmente independiente del Resumen (no usa S.resFrom/S.resTo/S.resMode).
+// Total = Sueldo base + Guardia + extras de cada jornada del ciclo
+// (horas normales/extra/nocturnas/festivas, dietas, transporte, viajes, otros).
+// ══════════════════════════════════════════════════════════
+const NOMINA_CFG_KEY='tp_nomina_cfg';
+const NOMINA_DIA_INICIO=26; // el ciclo empieza el 26 y cierra el 25 del mes siguiente
+const MESES_CORTOS=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+
+function getNominaCfg(){
+  let c={};
+  try{ c=JSON.parse(localStorage.getItem(NOMINA_CFG_KEY)||'{}')||{}; }catch(ex){ c={}; }
+  const num=(v,def)=>(v===null||v===undefined||v===''||!isFinite(+v))?def:+v;
+  return { base:num(c.base,1600), guardia:num(c.guardia,500) };
+}
+function setNominaCfg(patch){
+  const c={...getNominaCfg(),...patch};
+  try{ localStorage.setItem(NOMINA_CFG_KEY,JSON.stringify(c)); }catch(ex){}
+  return c;
+}
+function parseImporte(v){
+  const n=parseFloat(String(v||'').replace(/\s|€/g,'').replace(',','.'));
+  return isFinite(n)?Math.max(0,n):0;
+}
+function _ymd(y,m,d){ const x=new Date(y,m,d); return x.getFullYear()+'-'+pad(x.getMonth()+1)+'-'+pad(x.getDate()); }
+
+// Ciclo que contiene una fecha (YYYY-MM-DD) → {from,to}
+function nominaCycleFor(fecha){
+  const [y,m,d]=fecha.split('-').map(Number);
+  const mi=m-1;
+  const startM = d>=NOMINA_DIA_INICIO ? mi : mi-1;
+  return { from:_ymd(y,startM,NOMINA_DIA_INICIO), to:_ymd(y,startM+1,NOMINA_DIA_INICIO-1) };
+}
+// Desplaza un ciclo n meses (n negativo = hacia atrás)
+function nominaCycleShift(cyc,n){
+  const [y,m]=cyc.from.split('-').map(Number);
+  return { from:_ymd(y,m-1+n,NOMINA_DIA_INICIO), to:_ymd(y,m+n,NOMINA_DIA_INICIO-1) };
+}
+// Nombre del ciclo = mes en que cierra (26 ago → 25 sep = Nómina de Septiembre)
+function nominaCycleName(cyc){
+  const [y,m]=cyc.to.split('-').map(Number);
+  return cap(MONTHS[m-1])+' '+y;
+}
+function fechaCorta(s){ const [y,m,d]=s.split('-').map(Number); return d+' '+MESES_CORTOS[m-1]+' '+y; }
+function nominaRangoTxt(from,to){ return fechaCorta(from)+' → '+fechaCorta(to); }
+
+// Extras de UNA jornada (mismos criterios que el Resumen)
+function nominaDayExtras(e){
+  const t=e._transportType||'';
+  const transp=e.transporte||0;
+  const r={
+    hn:e.horasNormales||0, he:e.horasExtra||0, hnoc:e.horasNocturnas||0, hfes:e.horasFestivas||0,
+    in:e.importeNormales||0, ie:e.importeExtra||0, inoc:e.importeNocturnas||0, ifes:e.importeFestivas||0,
+    dieta:e.dieta||0,
+    dietasExtra:(e.dietasExtra||[]).reduce((s,d)=>s+(+d.importe||0),0),
+    coche: t==='coche'?transp:0,
+    camion: t==='camion'?transp:0,
+    transpOtro: (t!=='coche'&&t!=='camion')?transp:0,
+    otros:(e.otrosConceptos||[]).reduce((s,o)=>s+(+o.importe||0),0),
+    km:(e.journeys||[]).reduce((s,j)=>s+(j.km||0),0),
+    viajes:(e.journeys||[]).reduce((s,j)=>s+(j.km||0)*(j.precioManual||0.19),0)
+  };
+  r.horas=r.hn+r.he+r.hnoc+r.hfes;
+  r.total=r.in+r.ie+r.inoc+r.ifes+r.dieta+r.dietasExtra+r.coche+r.camion+r.transpOtro+r.otros+r.viajes;
+  return r;
+}
+
+// Cálculo completo de la nómina en un rango
+function computeNomina(from,to){
+  const cfg=getNominaCfg();
+  const entries=(S.entries||[]).filter(e=>!e._draft&&e.fecha>=from&&e.fecha<=to).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  const tot={hn:0,he:0,hnoc:0,hfes:0,in:0,ie:0,inoc:0,ifes:0,dieta:0,dietasExtra:0,coche:0,camion:0,transpOtro:0,otros:0,km:0,viajes:0,horas:0,total:0,
+             nDietas:0,nCoche:0,nCamion:0,nTranspOtro:0};
+  const fijo=cfg.base+cfg.guardia;
+  let acum=fijo;
+  const dias=entries.map(e=>{
+    const x=nominaDayExtras(e);
+    Object.keys(x).forEach(k=>{ if(k in tot) tot[k]+=x[k]; });
+    if(x.dieta>0) tot.nDietas++;
+    if(x.coche>0) tot.nCoche++;
+    if(x.camion>0) tot.nCamion++;
+    if(x.transpOtro>0) tot.nTranspOtro++;
+    acum+=x.total;
+    return {fecha:e.fecha,x,acum};
+  });
+  return {from,to,cfg,entries,dias,tot,fijo,extras:tot.total,total:fijo+tot.total};
+}
+
+// Filas del desglose de extras (etiqueta, cantidad/horas, importe, color)
+function nominaDesgloseRows(tot){
+  const fh=v=>(Math.round(v*100)/100).toString().replace('.',',')+' h';
+  return [
+    ['Horas normales', tot.hn>0?fh(tot.hn):'', tot.in,'#22c55e'],
+    ['Horas extra', tot.he>0?fh(tot.he):'', tot.ie,'#f59e0b'],
+    ['Horas nocturnas', tot.hnoc>0?fh(tot.hnoc):'', tot.inoc,'#6366f1'],
+    ['Horas festivas', tot.hfes>0?fh(tot.hfes):'', tot.ifes,'#ef4444'],
+    ['Dietas', tot.nDietas?tot.nDietas+' jorn.':'', tot.dieta,'#06b6d4'],
+    ['Dietas extra', '', tot.dietasExtra,'#0891b2'],
+    ['Transporte coche', tot.nCoche?tot.nCoche+' v.':'', tot.coche,'#8b5cf6'],
+    ['Transporte camión', tot.nCamion?tot.nCamion+' v.':'', tot.camion,'#7c3aed'],
+    ['Transporte otros', tot.nTranspOtro?tot.nTranspOtro+' v.':'', tot.transpOtro,'#a78bfa'],
+    ['Viajes (km)', tot.km>0?Math.round(tot.km)+' km':'', tot.viajes,'#f97316'],
+    ['Otros conceptos', '', tot.otros,'#64748b']
+  ].filter(r=>r[2]>0);
+}
+// Texto corto de los extras de un día
+function nominaDiaDetalle(x){
+  const p=[];
+  const fh=v=>(Math.round(v*100)/100).toString().replace('.',',')+'h';
+  if(x.hn>0) p.push('N '+fh(x.hn));
+  if(x.he>0) p.push('Ext '+fh(x.he));
+  if(x.hnoc>0) p.push('Noc '+fh(x.hnoc));
+  if(x.hfes>0) p.push('Fest '+fh(x.hfes));
+  if(x.dieta+x.dietasExtra>0) p.push('Dieta '+eur(x.dieta+x.dietasExtra));
+  if(x.coche>0) p.push('Coche '+eur(x.coche));
+  if(x.camion>0) p.push('Camión '+eur(x.camion));
+  if(x.transpOtro>0) p.push('Transp. '+eur(x.transpOtro));
+  if(x.viajes>0) p.push('Viajes '+eur(x.viajes));
+  if(x.otros>0) p.push('Otros '+eur(x.otros));
+  return p.join(' · ');
+}
+
+// Ciclo/rango seleccionado actualmente en la pestaña
+function nominaSel(){
+  const cur=nominaCycleFor(today());
+  const cyc=S.nomCycle||cur;
+  const from=S.nomFrom||cyc.from;
+  const to=S.nomTo||cyc.to;
+  const parcial=(from!==cyc.from||to!==cyc.to);
+  return {cur,cyc,from,to,parcial};
+}
+function nominaFileTag(sel){
+  const c=sel.cyc; const [y,m]=c.to.split('-');
+  return 'Nomina_'+y+'-'+m+(sel.parcial?'_'+sel.from+'_'+sel.to:'');
+}
+function nominaSelectCycle(cyc){ S.nomCycle=cyc; S.nomFrom=null; S.nomTo=null; rerender(); }
+
+// Lista de ciclos con jornadas (del más reciente al más antiguo), incluido el actual
+function nominaListaCiclos(){
+  const ents=(S.entries||[]).filter(e=>!e._draft&&e.fecha);
+  const cur=nominaCycleFor(today());
+  const out=[cur];
+  if(ents.length){
+    const first=ents.reduce((m,e)=>e.fecha<m?e.fecha:m,ents[0].fecha);
+    const firstCyc=nominaCycleFor(first);
+    let c=nominaCycleShift(cur,-1), guard=0;
+    while(c.to>=firstCyc.to && guard<120){ out.push(c); c=nominaCycleShift(c,-1); guard++; }
+  }
+  // Si hay jornadas en el futuro (posteriores al ciclo actual), añadirlas arriba
+  const last=ents.length?ents.reduce((m,e)=>e.fecha>m?e.fecha:m,ents[0].fecha):null;
+  if(last&&last>cur.to){
+    let c=nominaCycleShift(cur,1), guard=0;
+    const fut=[];
+    while(c.from<=last&&guard<24){ fut.unshift(c); c=nominaCycleShift(c,1); guard++; }
+    return [...fut,...out];
+  }
+  return out;
+}
+
+function renderNomina(){
+  const sel=nominaSel();
+  const N=computeNomina(sel.from,sel.to);
+  const hoy=today();
+  const cerrado=sel.cyc.to<hoy;
+  const enCurso=sel.cyc.from<=hoy&&hoy<=sel.cyc.to;
+  const diasFaltan=enCurso?Math.round((new Date(sel.cyc.to+'T12:00:00')-new Date(hoy+'T12:00:00'))/86400000):0;
+  const esActual=sel.cyc.from===sel.cur.from;
+
+  const importeInput=(label,key,val)=>h('div',{class:'field',style:{margin:0}},
+    h('label',{},label),
+    h('input',{type:'text',inputmode:'decimal',value:String(val).replace('.',','),
+      on:{
+        focus:ev=>ev.target.select(),
+        change:ev=>{ const v=parseImporte(ev.target.value); setNominaCfg({[key]:v}); showAlert('💾 '+label+' guardado: '+eur(v)); rerender(); },
+        keydown:ev=>{ if(ev.key==='Enter') ev.target.blur(); }
+      }})
+  );
+
+  const badge=(txt,bg,col)=>h('span',{style:{fontSize:'.68rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'99px',background:bg,color:col}},txt);
+
+  return h('div',{},
+    h('div',{style:{display:'flex',justifyContent:'flex-end',marginBottom:'.3rem'}},
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{captureFormState();S.tab='fichar';rerender();}}},'✕ Cerrar')
+    ),
+
+    // ── Configuración: sueldo base y guardia (se guardan) ──
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'⚙️ Conceptos fijos de la nómina'),
+      h('div',{class:'grid-2',style:{gap:'.5rem'}},
+        importeInput('Sueldo base (€)','base',N.cfg.base),
+        importeInput('Guardia (€)','guardia',N.cfg.guardia)
+      ),
+      h('div',{style:{fontSize:'.72rem',color:'var(--ink3)',marginTop:'.5rem'}},
+        'Fijo mensual: '+eur(N.fijo)+' · Se guarda automáticamente al salir del campo.')
+    ),
+
+    // ── Periodo seleccionado ──
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'📅 Periodo de la nómina (26 → 25)'),
+      h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem'}},
+        h('button',{class:'btn btn-gh btn-sm',title:'Nómina anterior',on:{click:()=>nominaSelectCycle(nominaCycleShift(sel.cyc,-1))}},'◀'),
+        h('div',{style:{flex:1,textAlign:'center'}},
+          h('div',{style:{fontWeight:800,fontSize:'1rem'}},'Nómina de '+nominaCycleName(sel.cyc)),
+          h('div',{style:{fontSize:'.75rem',color:'var(--ink2)'}},nominaRangoTxt(sel.cyc.from,sel.cyc.to)),
+          h('div',{style:{marginTop:'.3rem'}},
+            cerrado?badge('✔ Ciclo cerrado','#dcfce7','#166534')
+              :enCurso?badge('⏳ En curso · '+(diasFaltan===0?'cierra hoy':'faltan '+diasFaltan+' día'+(diasFaltan>1?'s':'')+' para el cierre'),'#fef3c7','#92400e')
+              :badge('Ciclo futuro','#e0e7ff','#3730a3')
+          )
+        ),
+        h('button',{class:'btn btn-gh btn-sm',title:'Nómina siguiente',on:{click:()=>nominaSelectCycle(nominaCycleShift(sel.cyc,1))}},'▶')
+      ),
+      !esActual?h('button',{class:'btn btn-gh btn-full btn-sm',style:{marginTop:'.5rem'},on:{click:()=>nominaSelectCycle(sel.cur)}},'↺ Ir a la nómina en curso'):null,
+
+      // Desglose parcial dentro del ciclo
+      h('div',{style:{marginTop:'.7rem',paddingTop:'.6rem',borderTop:'1px solid var(--brd)'}},
+        h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.35rem'}},'Desglose parcial (opcional): ajusta las fechas'),
+        h('div',{class:'grid-2',style:{gap:'.5rem'}},
+          h('div',{class:'field',style:{margin:0}},h('label',{},'Desde'),
+            h('input',{type:'date',value:sel.from,on:{change:ev=>{ if(ev.target.value){ S.nomFrom=ev.target.value; if(!S.nomTo) S.nomTo=sel.to; rerender(); } }}})),
+          h('div',{class:'field',style:{margin:0}},h('label',{},'Hasta'),
+            h('input',{type:'date',value:sel.to,on:{change:ev=>{ if(ev.target.value){ S.nomTo=ev.target.value; if(!S.nomFrom) S.nomFrom=sel.from; rerender(); } }}}))
+        ),
+        sel.parcial?h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'.5rem',marginTop:'.4rem'}},
+          badge('Parcial: '+nominaRangoTxt(sel.from,sel.to),'#fee2e2','#991b1b'),
+          h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{S.nomFrom=null;S.nomTo=null;rerender();}}},'↺ Ciclo completo')
+        ):null
+      )
+    ),
+
+    // ── Total nómina ──
+    h('div',{class:'card',style:{textAlign:'center',padding:'1rem .8rem',borderLeft:'4px solid var(--acc)'}},
+      h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',letterSpacing:'.08em',textTransform:'uppercase',fontWeight:700}},
+        sel.parcial?'Total nómina (parcial)':(enCurso?'Total nómina hasta hoy':'Total nómina')),
+      h('div',{style:{fontSize:'2rem',fontWeight:900,color:'var(--acc)',margin:'.2rem 0'}},eur(N.total)),
+      h('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'.4rem',marginTop:'.5rem'}},
+        ...[['Sueldo base',N.cfg.base],['Guardia',N.cfg.guardia],['Extras',N.extras]].map(([l,v])=>
+          h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.45rem .3rem'}},
+            h('div',{style:{fontWeight:800,fontSize:'.9rem'}},eur(v)),
+            h('div',{style:{fontSize:'.68rem',color:'var(--ink2)'}},l)
+          ))
+      ),
+      h('div',{style:{fontSize:'.72rem',color:'var(--ink3)',marginTop:'.5rem'}},
+        N.dias.length+' jornada'+(N.dias.length===1?'':'s')+' · '+(Math.round(N.tot.horas*100)/100).toString().replace('.',',')+' h trabajadas')
+    ),
+
+    // ── Desglose de la nómina ──
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'💶 Desglose'),
+      ...[['Sueldo base','',N.cfg.base,'#0ea5e9'],['Guardia','',N.cfg.guardia,'#14b8a6']].concat(nominaDesgloseRows(N.tot)).map(([label,cant,v,color])=>
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'.35rem 0',borderBottom:'1px solid var(--brd)'}},
+          h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem'}},
+            h('div',{style:{width:'10px',height:'10px',borderRadius:'50%',background:color,flexShrink:0}}),
+            h('span',{style:{fontSize:'.82rem'}},label),
+            cant?h('span',{style:{fontSize:'.7rem',color:'var(--ink3)'}},cant):null
+          ),
+          h('span',{style:{fontWeight:700,fontSize:'.85rem'}},eur(v))
+        )
+      ),
+      h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.35rem 0',fontSize:'.8rem',color:'var(--ink2)'}},
+        h('span',{},'Subtotal extras'),h('span',{style:{fontWeight:700}},eur(N.extras))),
+      h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.5rem 0',fontWeight:800,fontSize:'1rem',color:'var(--acc)'}},
+        h('span',{},'TOTAL NÓMINA'),h('span',{},eur(N.total)))
+    ),
+
+    // ── Resumen diario con acumulado ──
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'📆 Día a día (acumulado)'),
+      N.dias.length===0
+        ? h('div',{class:'empty'},'Aún no hay jornadas guardadas en este periodo. El total parte de '+eur(N.fijo)+' (base + guardia).')
+        : h('div',{},
+            h('div',{style:{display:'flex',justifyContent:'space-between',fontSize:'.72rem',color:'var(--ink2)',padding:'.2rem 0 .4rem',borderBottom:'1px solid var(--brd)'}},
+              h('span',{},'Inicio: base + guardia'),h('span',{style:{fontWeight:700}},eur(N.fijo))),
+            ...N.dias.map(d=>h('div',{style:{padding:'.45rem 0',borderBottom:'1px solid var(--brd)',cursor:'pointer'},
+                on:{click:()=>{ if(typeof goToDay==='function'){ goToDay(d.fecha); } else { selDate=d.fecha; S.tab='calendario'; rerender(); } }}},
+              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:'.5rem'}},
+                h('div',{style:{fontWeight:700,fontSize:'.82rem'}},cap(wday(d.fecha)).slice(0,3)+' '+fechaCorta(d.fecha)),
+                h('div',{style:{textAlign:'right',whiteSpace:'nowrap'}},
+                  h('span',{style:{fontSize:'.8rem',color:'#16a34a',fontWeight:700}},'+'+eur(d.x.total)),
+                  h('span',{style:{fontSize:'.72rem',color:'var(--ink3)',marginLeft:'.4rem'}},'= '+eur(d.acum))
+                )
+              ),
+              h('div',{style:{fontSize:'.7rem',color:'var(--ink2)',marginTop:'.15rem'}},nominaDiaDetalle(d.x)||'Sin extras')
+            ))
+          )
+    ),
+
+    // ── Exportar / compartir ──
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'Exportar y compartir'),
+      h('div',{class:'grid-2',style:{gap:'.5rem'}},
+        h('button',{class:'btn btn-g btn-full',on:{click:()=>nominaExport('pdf')}},'📄 PDF'),
+        h('button',{class:'btn btn-full',style:{background:'#7c3aed',color:'#fff'},on:{click:()=>nominaExport('img')}},'🖼️ Imagen'),
+        h('button',{class:'btn btn-b btn-full',on:{click:()=>nominaExportExcel()}},'📊 Excel'),
+        h('button',{class:'btn btn-gh btn-full',on:{click:()=>nominaExport('print')}},'🖨 Imprimir'),
+        h('button',{class:'btn btn-full',style:{background:'#25D366',color:'#fff',gridColumn:'1 / -1'},on:{click:()=>nominaShareText()}},'💬 Enviar resumen por WhatsApp')
+      )
+    ),
+
+    // ── Listado de nóminas mensuales ──
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'📚 Nóminas mensuales'),
+      ...nominaListaCiclos().map(c=>{
+        const r=computeNomina(c.from,c.to);
+        const activa=c.from===sel.cyc.from;
+        const cerr=c.to<hoy, cur=c.from<=hoy&&hoy<=c.to;
+        return h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'.5rem',padding:'.5rem .4rem',borderBottom:'1px solid var(--brd)',cursor:'pointer',
+            background:activa?'var(--surf2)':'transparent',borderRadius:'var(--r2)',borderLeft:activa?'3px solid var(--acc)':'3px solid transparent'},
+            on:{click:()=>{ nominaSelectCycle(c); window.scrollTo({top:0,behavior:'smooth'}); }}},
+          h('div',{},
+            h('div',{style:{fontWeight:700,fontSize:'.85rem'}},nominaCycleName(c)+(cur?' · en curso':'')),
+            h('div',{style:{fontSize:'.7rem',color:'var(--ink2)'}},nominaRangoTxt(c.from,c.to)+' · '+r.dias.length+' jorn.')
+          ),
+          h('div',{style:{textAlign:'right'}},
+            h('div',{style:{fontWeight:800,color:cerr?'var(--acc)':'var(--ink)'}},eur(r.total)),
+            h('div',{style:{fontSize:'.68rem',color:'var(--ink3)'}},'extras '+eur(r.extras))
+          )
+        );
+      })
+    )
+  );
+}
+
+// ── Informe HTML de la nómina (para PDF, imagen e impresión) ──
+function nominaReportHTML(N,sel,paraDoc){
+  const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const wk=(typeof fWorker!=='undefined'&&fWorker)||{};
+  const co=(typeof fCompany!=='undefined'&&fCompany)||{};
+  const nombre=((wk.nombre||'')+' '+(wk.apellidos||'')).trim();
+  const filas=[['Sueldo base','',N.cfg.base],['Guardia','',N.cfg.guardia]].concat(nominaDesgloseRows(N.tot).map(r=>[r[0],r[1],r[2]]));
+  const desglose=filas.map(([l,c,v])=>`<tr><td>${esc(l)}</td><td style="color:#64748b">${esc(c)}</td><td class="r">${eur(v)}</td></tr>`).join('');
+  const dias=N.dias.map(d=>`<tr><td>${cap(wday(d.fecha)).slice(0,3)} ${fechaCorta(d.fecha)}</td><td style="font-size:10px;color:#475569">${esc(nominaDiaDetalle(d.x)||'Sin extras')}</td><td class="r" style="color:#16a34a">+${eur(d.x.total)}</td><td class="r">${eur(d.acum)}</td></tr>`).join('');
+  const titulo='Nómina de '+nominaCycleName(sel.cyc)+(sel.parcial?' (parcial)':'');
+  const css=`
+    .nm{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;background:#fff;padding:22px;width:${paraDoc?'100%':'760px'};box-sizing:border-box}
+    .nm h1{margin:0;font-size:19px}.nm .meta{font-size:11px;color:#475569;margin-top:4px;line-height:1.5}
+    .nm .head{display:flex;justify-content:space-between;gap:12px;border-bottom:3px solid #0f172a;padding-bottom:10px;margin-bottom:14px}
+    .nm .per{text-align:right;font-size:11px;color:#334155}
+    .nm .big{background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;border-radius:10px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+    .nm .big .v{font-size:28px;font-weight:900;color:#4ade80}
+    .nm .kp{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+    .nm .kp div{background:#f1f5f9;border-radius:8px;padding:8px;text-align:center;font-size:10px;color:#475569}
+    .nm .kp b{display:block;font-size:14px;color:#0f172a}
+    .nm h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#475569;margin:16px 0 6px}
+    .nm table{width:100%;border-collapse:collapse;font-size:12px}
+    .nm td,.nm th{padding:5px 8px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top}
+    .nm th{background:#f8fafc;color:#64748b;font-size:11px}
+    .nm .r{text-align:right;white-space:nowrap;font-weight:700}
+    .nm .tot td{background:#f0fdf4;font-weight:800;font-size:14px;color:#166534;border-top:2px solid #166534}
+    .nm .foot{text-align:center;font-size:9px;color:#94a3b8;margin-top:14px}
+    @media print{.nm{padding:0}.nm tr{page-break-inside:avoid}}`;
+  const body=`<div class="nm">
+    <div class="head">
+      <div><h1>${esc(titulo)}</h1>
+        <div class="meta">${co.nombre?esc(co.nombre)+'<br>':''}${nombre?'Trabajador: <b>'+esc(nombre)+'</b><br>':''}Generado: ${new Date().toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div></div>
+      <div class="per">Periodo<br><b>${fechaCorta(sel.from)}</b><br>al<br><b>${fechaCorta(sel.to)}</b><br>${N.dias.length} jornadas</div>
+    </div>
+    <div class="big"><div><div style="font-size:10px;letter-spacing:.1em;opacity:.7">TOTAL NÓMINA</div><div style="font-size:11px;opacity:.7;margin-top:2px">${(Math.round(N.tot.horas*100)/100).toString().replace('.',',')} h trabajadas</div></div><div class="v">${eur(N.total)}</div></div>
+    <div class="kp"><div><b>${eur(N.cfg.base)}</b>Sueldo base</div><div><b>${eur(N.cfg.guardia)}</b>Guardia</div><div><b>${eur(N.extras)}</b>Extras</div></div>
+    <h2>Desglose</h2>
+    <table>${desglose}<tr><td colspan="2" style="color:#475569">Subtotal extras</td><td class="r">${eur(N.extras)}</td></tr><tr class="tot"><td colspan="2">TOTAL NÓMINA</td><td class="r">${eur(N.total)}</td></tr></table>
+    <h2>Día a día</h2>
+    ${N.dias.length?`<table><tr><th>Fecha</th><th>Conceptos</th><th class="r">Extras día</th><th class="r">Acumulado</th></tr><tr><td colspan="3" style="color:#475569">Inicio (base + guardia)</td><td class="r">${eur(N.fijo)}</td></tr>${dias}</table>`:'<div style="font-size:12px;color:#64748b">Sin jornadas en el periodo.</div>'}
+    <div class="foot">TimerPro · Nómina ${esc(nominaRangoTxt(sel.from,sel.to))}</div>
+  </div>`;
+  return {css,body,titulo};
+}
+
+// Renderiza el informe fuera de pantalla y devuelve un canvas
+async function nominaCanvas(N,sel){
+  if(!window.html2canvas){ showAlert('Cargando librería de imagen...','err'); return null; }
+  const r=nominaReportHTML(N,sel,false);
+  const wrap=document.createElement('div');
+  wrap.style.cssText='position:fixed;top:0;left:0;z-index:99999;opacity:0.01;pointer-events:none;';
+  wrap.innerHTML='<style>'+r.css+'</style>'+r.body;
+  document.body.appendChild(wrap);
+  await new Promise(res=>setTimeout(res,200));
+  try{
+    return await html2canvas(wrap.querySelector('.nm'),{scale:2,useCORS:true,allowTaint:true,backgroundColor:'#ffffff',logging:false});
+  } finally { document.body.removeChild(wrap); }
+}
+
+async function nominaExport(tipo){
+  const sel=nominaSel();
+  const N=computeNomina(sel.from,sel.to);
+  const tag=nominaFileTag(sel);
+  try{
+    if(tipo==='print'){
+      const r=nominaReportHTML(N,sel,true);
+      const html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+r.titulo+'</title><style>body{margin:0}'+r.css+'</style></head><body>'+r.body+'</body></html>';
+      const w=window.open('','_blank','width=900,height=700');
+      if(!w){ showAlert('Permite ventanas emergentes para imprimir','err'); return; }
+      w.document.write(html); w.document.close();
+      setTimeout(()=>w.print(),800);
+      dlDialog={blob:new Blob([html],{type:'text/html;charset=utf-8'}),filename:'TimerPro_'+tag+'.html',type:'html',title:'Guardar nómina en este dispositivo'};
+      S.modal='dl'; rerender();
+      return;
+    }
+    showAlert('⏳ Generando '+(tipo==='pdf'?'PDF':'imagen')+'...');
+    const canvas=await nominaCanvas(N,sel);
+    if(!canvas) return;
+    if(tipo==='img'){
+      canvas.toBlob(blob=>{
+        dlDialog={blob,filename:'TimerPro_'+tag+'.png',type:'png',title:'Imagen de la nómina lista'};
+        S.modal='dl'; rerender();
+      },'image/png');
+      return;
+    }
+    // PDF A4 multipágina a partir del canvas
+    if(!window.jspdf){ showAlert('Cargando librería PDF...','err'); return; }
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    const pw=210, ph=297, m=8, iw=pw-2*m;
+    const pxPerMm=canvas.width/iw;
+    const pageHpx=Math.floor((ph-2*m)*pxPerMm);
+    let y=0, first=true;
+    while(y<canvas.height){
+      const sliceH=Math.min(pageHpx,canvas.height-y);
+      const c=document.createElement('canvas'); c.width=canvas.width; c.height=sliceH;
+      const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height);
+      ctx.drawImage(canvas,0,y,canvas.width,sliceH,0,0,canvas.width,sliceH);
+      if(!first) doc.addPage();
+      doc.addImage(c.toDataURL('image/jpeg',0.92),'JPEG',m,m,iw,sliceH/pxPerMm);
+      y+=sliceH; first=false;
+    }
+    const blob=doc.output('blob');
+    dlDialog={blob,filename:'TimerPro_'+tag+'.pdf',type:'pdf',title:'PDF de la nómina listo'};
+    S.modal='dl'; rerender();
+  }catch(e){ console.error(e); showAlert('Error al exportar: '+e.message,'err'); }
+}
+
+function nominaExportExcel(){
+  try{
+    if(!window.XLSX){ showAlert('Cargando librería Excel...','err'); return; }
+    const sel=nominaSel();
+    const N=computeNomina(sel.from,sel.to);
+    const wk=(typeof fWorker!=='undefined'&&fWorker)||{};
+    const co=(typeof fCompany!=='undefined'&&fCompany)||{};
+    const wb=XLSX.utils.book_new();
+    const r1=[['TIMERPRO - NÓMINA '+nominaCycleName(sel.cyc).toUpperCase()+(sel.parcial?' (PARCIAL)':'')],
+      ['Trabajador:',((wk.nombre||'')+' '+(wk.apellidos||'')).trim(),'','Empresa:',co.nombre||''],
+      ['Periodo:',sel.from+' a '+sel.to],[],
+      ['Concepto','Cantidad','Importe (€)'],
+      ['Sueldo base','',+N.cfg.base.toFixed(2)],['Guardia','',+N.cfg.guardia.toFixed(2)],
+      ...nominaDesgloseRows(N.tot).map(r=>[r[0],r[1],+r[2].toFixed(2)]),
+      [],['Subtotal extras','',+N.extras.toFixed(2)],['TOTAL NÓMINA','',+N.total.toFixed(2)]];
+    const ws1=XLSX.utils.aoa_to_sheet(r1); ws1['!cols']=[{wch:22},{wch:14},{wch:14},{wch:10},{wch:20}];
+    XLSX.utils.book_append_sheet(wb,ws1,'Nómina');
+    const r2=[['Fecha','Día','H.Norm','Imp.Norm','H.Extra','Imp.Extra','H.Noct','Imp.Noct','H.Fest','Imp.Fest','Dietas','Coche','Camión','Transp.otros','Km','Viajes','Otros','Extras día','Acumulado nómina'],
+      ['','Inicio (base + guardia)','','','','','','','','','','','','','','','','',+N.fijo.toFixed(2)]];
+    N.dias.forEach(d=>{ const x=d.x; r2.push([d.fecha,cap(wday(d.fecha)),x.hn,+x.in.toFixed(2),x.he,+x.ie.toFixed(2),x.hnoc,+x.inoc.toFixed(2),x.hfes,+x.ifes.toFixed(2),
+      +(x.dieta+x.dietasExtra).toFixed(2),+x.coche.toFixed(2),+x.camion.toFixed(2),+x.transpOtro.toFixed(2),x.km,+x.viajes.toFixed(2),+x.otros.toFixed(2),+x.total.toFixed(2),+d.acum.toFixed(2)]); });
+    const ws2=XLSX.utils.aoa_to_sheet(r2); ws2['!cols']=r2[0].map((_,i)=>({wch:i===1?20:11}));
+    XLSX.utils.book_append_sheet(wb,ws2,'Día a día');
+    const arr=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+    dlDialog={blob:new Blob([arr],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),filename:'TimerPro_'+nominaFileTag(sel)+'.xlsx',type:'xlsx',title:'Excel de la nómina listo'};
+    S.modal='dl'; rerender();
+  }catch(e){ console.error(e); showAlert('Error Excel: '+e.message,'err'); }
+}
+
+function nominaShareText(){
+  const sel=nominaSel();
+  const N=computeNomina(sel.from,sel.to);
+  const L=[];
+  L.push('💰 NÓMINA '+nominaCycleName(sel.cyc).toUpperCase()+(sel.parcial?' (parcial)':''));
+  L.push('📅 '+nominaRangoTxt(sel.from,sel.to));
+  L.push('─────────────────────────');
+  L.push('• Sueldo base: '+eur(N.cfg.base));
+  L.push('• Guardia: '+eur(N.cfg.guardia));
+  nominaDesgloseRows(N.tot).forEach(r=>L.push('• '+r[0]+(r[1]?' ('+r[1]+')':'')+': '+eur(r[2])));
+  L.push('─────────────────────────');
+  L.push('Extras: '+eur(N.extras)+' · '+N.dias.length+' jornadas');
+  L.push('💶 TOTAL: '+eur(N.total));
+  L.push('─ TimerPro ─');
+  window.open('https://wa.me/?text='+encodeURIComponent(L.join('\n')),'_blank');
 }
 
 
