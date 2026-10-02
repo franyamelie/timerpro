@@ -12554,6 +12554,55 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     ['click','touchstart','keydown','scroll','input','mousedown'].forEach(ev=>
       document.addEventListener(ev, trackActivity, {passive:true})
     );
+
+    // ── LIMPIEZA DE COLOR DE FONDO EN CAMPOS DE TEXTO (notas/título) ──
+    // Un texto pegado desde Word/WhatsApp/email puede traer un color de
+    // fondo que se queda guardado en el HTML del campo aunque no se note a
+    // simple vista. Si luego se copia ESE texto desde la app hacia otra
+    // (p.ej. Parte Diario), el color de fondo viaja con él. Se limpia en
+    // los dos sentidos para que nunca aparezca: al pegar DENTRO de la app
+    // (para que no se llegue a guardar) y al copiar FUERA de la app (para
+    // que el texto que ya se había guardado con color tampoco lo arrastre).
+    function _limpiarFondoHTML(root){
+      root.querySelectorAll('*').forEach(n=>{
+        n.style.removeProperty('background-color');
+        n.style.removeProperty('background');
+        n.removeAttribute('bgcolor');
+      });
+      root.style.removeProperty('background-color');
+      root.style.removeProperty('background');
+      return root.innerHTML;
+    }
+    document.addEventListener('paste', function(ev){
+      const target=ev.target;
+      const editable=target && target.closest && target.closest('[contenteditable="true"]');
+      if(!editable) return;
+      ev.preventDefault();
+      const cd=ev.clipboardData||window.clipboardData;
+      const html=cd?cd.getData('text/html'):'';
+      const text=cd?(cd.getData('text/plain')||''):'';
+      const tmp=document.createElement('div');
+      if(html){ tmp.innerHTML=html; _limpiarFondoHTML(tmp); }
+      else { tmp.innerText=text; }
+      document.execCommand('insertHTML', false, tmp.innerHTML);
+      if(editable.id==='notas-editor') syncNotasFromEditor();
+    });
+    document.addEventListener('copy', function(ev){
+      const sel=window.getSelection();
+      if(!sel||sel.rangeCount===0||sel.isCollapsed) return;
+      const anchor=sel.anchorNode;
+      const node=anchor&&(anchor.nodeType===1?anchor:anchor.parentElement);
+      const editable=node&&node.closest&&node.closest('[contenteditable="true"]');
+      if(!editable || !ev.clipboardData) return;
+      const range=sel.getRangeAt(0);
+      const tmp=document.createElement('div');
+      tmp.appendChild(range.cloneContents());
+      const cleanHtml=_limpiarFondoHTML(tmp);
+      ev.clipboardData.setData('text/html', cleanHtml);
+      ev.clipboardData.setData('text/plain', tmp.textContent||'');
+      ev.preventDefault();
+    });
+
     // Start first idle timer
     // ── CONTINUOUS FORM SAVE (every 500ms) ──────────────
     // Saves ALL visible form field values to fEntry/fTask
