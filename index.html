@@ -375,50 +375,88 @@ const defWO = {codigo:'',descripcion:'',cliente:'',notas:''};
 const defVehicle = {nombre:'',tipo:'coche',matricula:'',precioPorKm:0.19,notas:''};
 
 // ── NÓMINAS Y CHAT MENSUAL CON IA ─────────────────────────
-// mesKey: 'YYYY-MM'. mesLabel la formatea como "Agosto 2026".
-function mesKeyDe(fecha){ return (fecha||'').slice(0,7); }
+// La nómina NO se calcula por mes natural, sino por PERIODO DE NÓMINA: del
+// día 26 de un mes al día 25 del mes siguiente (el cierre habitual de
+// nómina). periodoKey ('YYYY-MM') identifica el periodo por el mes en el
+// que CIERRA (termina el día 25) — ej: el periodo 26-sep al 25-oct es
+// '2026-10'. periodoLabel lo muestra como "26 sep – 25 oct 2026".
 const MESES_NOMBRE=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const MESES_ABR=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+function mesKeyDe(fecha){ return (fecha||'').slice(0,7); } // se mantiene por compatibilidad con el resto de la app
 function mesLabel(mesKey){
   if(!mesKey) return '';
   const [y,m]=mesKey.split('-');
   const idx=parseInt(m,10)-1;
   return (MESES_NOMBRE[idx]||m)+' '+y;
 }
-// Lista de meses disponibles: unión de meses con jornadas y meses que ya
-// tengan alguna nómina subida (por si se sube una nómina de un mes sin
-// jornadas registradas todavía), más reciente primero.
+// 'YYYY-MM-DD' -> periodoKey ('YYYY-MM') al que pertenece esa fecha.
+function periodoKeyDe(fecha){
+  if(!fecha) return '';
+  const d=new Date(fecha+'T00:00:00');
+  let y=d.getFullYear(), m=d.getMonth(); // m: 0-based
+  if(d.getDate()>=26){ m+=1; if(m>11){ m=0; y+=1; } }
+  return y+'-'+String(m+1).padStart(2,'0');
+}
+// periodoKey -> {inicio,fin} en 'YYYY-MM-DD' (el periodo que CIERRA ese mes).
+function periodoRangoDe(periodoKey){
+  const [y,m]=periodoKey.split('-').map(Number); // m: 1-based
+  const pad2=n=>String(n).padStart(2,'0');
+  const fin=new Date(y, m-1, 25);
+  const inicio=new Date(y, m-2, 26);
+  const fmt=dt=>dt.getFullYear()+'-'+pad2(dt.getMonth()+1)+'-'+pad2(dt.getDate());
+  return {inicio:fmt(inicio), fin:fmt(fin)};
+}
+function periodoLabel(periodoKey){
+  if(!periodoKey) return '';
+  const {inicio,fin}=periodoRangoDe(periodoKey);
+  const di=new Date(inicio+'T00:00:00'), df=new Date(fin+'T00:00:00');
+  return '26 '+MESES_ABR[di.getMonth()]+' – 25 '+MESES_ABR[df.getMonth()]+' '+df.getFullYear();
+}
+// true si el periodo ya ha cerrado (su día 25 ya pasó), false si está en curso.
+function periodoEstaCerrado(periodoKey){
+  const {fin}=periodoRangoDe(periodoKey);
+  return fin < today();
+}
+// Lista de periodos disponibles: unión de periodos con jornadas y periodos
+// que ya tengan alguna nómina subida (por si se sube una nómina de un
+// periodo sin jornadas registradas todavía), más reciente primero. Siempre
+// incluye el periodo en curso aunque no tenga jornadas aún.
 function mesesDisponibles(){
   const set=new Set();
-  S.entries.forEach(e=>{ if(e.fecha) set.add(mesKeyDe(e.fecha)); });
+  S.entries.forEach(e=>{ if(e.fecha) set.add(periodoKeyDe(e.fecha)); });
   (S.payslips||[]).forEach(p=>{ if(p.mes) set.add(p.mes); });
-  if(set.size===0) set.add(mesKeyDe(today()));
+  set.add(periodoKeyDe(today()));
   return Array.from(set).sort().reverse();
 }
-// Totales que la propia app ya tiene calculados para un mes, para poder
-// compararlos con lo que diga la nómina.
-function computeMonthTotals(mesKey){
+// Totales que la propia app ya tiene calculados para un periodo de nómina
+// (26 al 25), para poder compararlos con lo que diga la nómina real.
+function computeMonthTotals(periodoKey){
+  const {inicio,fin}=periodoRangoDe(periodoKey);
   const t={horasNormales:0,horasExtra:0,horasNocturnas:0,horasFestivas:0,
     importeNormales:0,importeExtra:0,importeNocturnas:0,importeFestivas:0,
-    dieta:0,transporte:0,otrosConceptos:0,dias:0,sueldoBase:0,guardia:0};
-  S.entries.filter(e=>mesKeyDe(e.fecha)===mesKey).forEach(e=>{
+    dieta:0,transporte:0,viajes:0,km:0,otrosConceptos:0,dias:0,sueldoBase:0,guardia:0};
+  S.entries.filter(e=>e.fecha>=inicio && e.fecha<=fin).forEach(e=>{
     t.horasNormales+=(+e.horasNormales||0); t.horasExtra+=(+e.horasExtra||0);
     t.horasNocturnas+=(+e.horasNocturnas||0); t.horasFestivas+=(+e.horasFestivas||0);
     t.importeNormales+=(+e.importeNormales||0); t.importeExtra+=(+e.importeExtra||0);
     t.importeNocturnas+=(+e.importeNocturnas||0); t.importeFestivas+=(+e.importeFestivas||0);
     t.dieta+=(+e.dieta||0); t.transporte+=(+e.transporte||0);
+    (e.journeys||[]).forEach(j=>{ t.km+=(+j.km||0); t.viajes+=(+j.km||0)*(+j.precioManual||0.19); });
     t.otrosConceptos+=(e.otrosConceptos||[]).reduce((s,o)=>s+(+o.importe||0),0);
     t.dias++;
   });
-  // Sueldo Base y Guardia son importes FIJOS mensuales (se configuran en la
-  // pestaña Tarifas). Antes se podían rellenar ahí pero no se sumaban en
-  // ningún sitio de la app — se añaden aquí para que el total de un mes
-  // completo coincida con lo que realmente cobra el usuario cada mes.
-  if(t.dias>0){
-    t.sueldoBase=getTarifa('sueldoBase',0);
-    t.guardia=getTarifa('guardia',0);
-  }
+  // Sueldo Base y Guardia son importes FIJOS por periodo (editables aquí
+  // mismo en Nóminas, y guardados en la pestaña Tarifas). Se suman siempre
+  // que el periodo tenga jornadas o sea el periodo en curso, para que el
+  // total coincida con lo que realmente cobra el usuario cada nómina.
+  t.sueldoBase=getTarifa('sueldoBase',0);
+  t.guardia=getTarifa('guardia',0);
   Object.keys(t).forEach(k=>{ if(k!=='dias') t[k]=Math.round(t[k]*100)/100; });
   return t;
+}
+function totalPeriodo(app){
+  return app.importeNormales+app.importeExtra+app.importeNocturnas+app.importeFestivas
+    +app.dieta+app.transporte+app.viajes+app.otrosConceptos+app.sueldoBase+app.guardia;
 }
 const defPayslip = (mes) => ({mes:mes||'', fileName:'', uploadedAt:'', extracted:{}, comparisonSummary:''});
 
@@ -7463,12 +7501,13 @@ function compararNominaConApp(mesKey, extracted){
   campoH('Horas festivas','horasFestivas','horasFestivas');
   campoE('Dietas','dieta','dietas');
   campoE('Transporte','transporte','transporte');
-  if(app.sueldoBase>0) lineas.push('ℹ️ Sueldo Base (fijo, de Tarifas): '+app.sueldoBase.toFixed(2)+'€');
-  if(app.guardia>0) lineas.push('ℹ️ Guardia (fija, de Tarifas): '+app.guardia.toFixed(2)+'€');
-  const totalApp=app.importeNormales+app.importeExtra+app.importeNocturnas+app.importeFestivas+app.dieta+app.transporte+app.otrosConceptos+app.sueldoBase+app.guardia;
-  let resumen='📋 Comparación de la nómina de '+mesLabel(mesKey)+' con lo registrado en la app ('+app.dias+' jornada(s)):\n\n'
+  if(app.viajes>0) lineas.push('ℹ️ Viajes/km registrados en la app: '+app.viajes.toFixed(2)+'€ ('+app.km.toFixed(0)+' km)');
+  if(app.sueldoBase>0) lineas.push('ℹ️ Sueldo Base (fijo, editable en esta pestaña): '+app.sueldoBase.toFixed(2)+'€');
+  if(app.guardia>0) lineas.push('ℹ️ Guardia (fija, editable en esta pestaña): '+app.guardia.toFixed(2)+'€');
+  const totalApp=totalPeriodo(app);
+  let resumen='📋 Comparación de la nómina del periodo '+periodoLabel(mesKey)+' con lo registrado en la app ('+app.dias+' jornada(s)):\n\n'
     +(lineas.length?lineas.join('\n'):'No hay horas ni dietas/transporte que comparar en ninguno de los dos lados.')
-    +'\n\n💰 Total calculado por la app (horas + dietas + transporte + Sueldo Base + Guardia): '+totalApp.toFixed(2)+'€';
+    +'\n\n💰 Total calculado por la app (Sueldo Base + Guardia + horas + dietas + transporte + viajes): '+totalApp.toFixed(2)+'€';
   if(extracted.salarioNeto) resumen+='\n\n💶 Salario neto en la nómina: '+(+extracted.salarioNeto).toFixed(2)+'€';
   if(extracted.salarioBruto) resumen+='\n💶 Salario bruto en la nómina: '+(+extracted.salarioBruto).toFixed(2)+'€';
   if((extracted.otrosConceptos||[]).length){
@@ -7529,7 +7568,7 @@ async function subirNomina(file, mesSeleccionado){
     let mesFinal=mesSeleccionado;
     const mesDetectado=/^\d{4}-\d{2}$/.test(extracted.mes||'')?extracted.mes:'';
     if(mesDetectado && mesDetectado!==mesSeleccionado){
-      const usar=confirm('La IA cree que esta nómina es de '+mesLabel(mesDetectado)+', pero la estás subiendo en '+mesLabel(mesSeleccionado)+'.\n\n¿La asocio a '+mesLabel(mesDetectado)+' (Aceptar) o la dejo en '+mesLabel(mesSeleccionado)+' (Cancelar)?');
+      const usar=confirm('La IA cree que esta nómina es de '+periodoLabel(mesDetectado)+', pero la estás subiendo en '+periodoLabel(mesSeleccionado)+'.\n\n¿La asocio a '+periodoLabel(mesDetectado)+' (Aceptar) o la dejo en '+periodoLabel(mesSeleccionado)+' (Cancelar)?');
       if(usar) mesFinal=mesDetectado;
     }
     if(mesFinal!==mesSeleccionado){ nominaPreview[mesFinal]=nominaPreview[mesSeleccionado]; delete nominaPreview[mesSeleccionado]; }
@@ -7553,7 +7592,7 @@ async function subirNomina(file, mesSeleccionado){
     await dbPut(ST.monthChats, chatRec);
 
     nominaMesActual=mesFinal;
-    showAlert('✅ Nómina analizada y asociada a '+mesLabel(mesFinal));
+    showAlert('✅ Nómina analizada y asociada a '+periodoLabel(mesFinal));
     rerender();
   }catch(e){
     showAlert('Error al leer la nómina: '+e.message,'err');
@@ -7573,17 +7612,18 @@ async function borrarNomina(id){
 // Texto plano con los totales de un mes (horas, dietas, transporte, Sueldo
 // Base, Guardia e importe total) — para compartirlo o pasarlo a PDF.
 function resumenTotalesTexto(mesKey, app){
-  const total=app.importeNormales+app.importeExtra+app.importeNocturnas+app.importeFestivas+app.dieta+app.transporte+app.otrosConceptos+app.sueldoBase+app.guardia;
-  let t='🧾 TimerPro — Totales de '+mesLabel(mesKey)+'\n\n'
+  let t='🧾 TimerPro — Nómina del periodo '+periodoLabel(mesKey)+(periodoEstaCerrado(mesKey)?' (cerrado)':' (en curso)')+'\n\n'
+    +'Sueldo Base: '+eur(app.sueldoBase)+'\n'
+    +'Guardia: '+eur(app.guardia)+'\n\n'
     +'Horas normales: '+fmtH(app.horasNormales)+' ('+eur(app.importeNormales)+')\n'
     +'Horas extra: '+fmtH(app.horasExtra)+' ('+eur(app.importeExtra)+')\n'
     +'Horas nocturnas: '+fmtH(app.horasNocturnas)+' ('+eur(app.importeNocturnas)+')\n'
     +'Horas festivas: '+fmtH(app.horasFestivas)+' ('+eur(app.importeFestivas)+')\n'
     +'Dietas: '+eur(app.dieta)+'\n'
-    +'Transporte: '+eur(app.transporte)+'\n';
-  if(app.sueldoBase) t+='Sueldo Base: '+eur(app.sueldoBase)+'\n';
-  if(app.guardia) t+='Guardia: '+eur(app.guardia)+'\n';
-  t+='\nIMPORTE TOTAL: '+eur(total)+'\n\n'+app.dias+' jornada(s) registradas este mes';
+    +'Transporte: '+eur(app.transporte)+'\n'
+    +'Viajes/km ('+app.km.toFixed(0)+' km): '+eur(app.viajes)+'\n';
+  if(app.otrosConceptos) t+='Otros conceptos: '+eur(app.otrosConceptos)+'\n';
+  t+='\nIMPORTE TOTAL: '+eur(totalPeriodo(app))+'\n\n'+app.dias+' jornada(s) registradas en este periodo';
   return t;
 }
 // Genera un PDF sencillo con esos totales (reutiliza jsPDF, ya cargado para
@@ -7594,14 +7634,14 @@ async function exportarResumenNominaPDF(mesKey, app){
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
   const texto=resumenTotalesTexto(mesKey,app);
-  doc.setFontSize(14); doc.text('TimerPro — Totales de '+mesLabel(mesKey),15,18);
+  doc.setFontSize(14); doc.text('TimerPro — Totales de '+periodoLabel(mesKey),15,18);
   doc.setFontSize(10);
   doc.text(doc.splitTextToSize(texto.split('\n').slice(2).join('\n'),180),15,30);
   const fname='totales_'+mesKey+'.pdf';
   try{
     const blob=doc.output('blob');
     if(navigator.share && navigator.canShare && navigator.canShare({files:[new File([blob],fname,{type:'application/pdf'})]})){
-      await navigator.share({files:[new File([blob],fname,{type:'application/pdf'})],title:'Totales '+mesLabel(mesKey)});
+      await navigator.share({files:[new File([blob],fname,{type:'application/pdf'})],title:'Totales '+periodoLabel(mesKey)});
       return;
     }
   }catch(e){ if(e&&e.name==='AbortError') return; }
@@ -7619,11 +7659,11 @@ async function compartirResumenNomina(mesKey, texto){
       const blob=await (await fetch(dataUrl)).blob();
       const file=new File([blob], 'nomina_'+mesKey+'.jpg', {type:blob.type||'image/jpeg'});
       if(navigator.canShare({files:[file]})){
-        await navigator.share({files:[file], title:'Nómina '+mesLabel(mesKey), text:texto});
+        await navigator.share({files:[file], title:'Nómina '+periodoLabel(mesKey), text:texto});
         return;
       }
     }
-    if(navigator.share){ await navigator.share({title:'Nómina '+mesLabel(mesKey), text:texto}); return; }
+    if(navigator.share){ await navigator.share({title:'Nómina '+periodoLabel(mesKey), text:texto}); return; }
   }catch(e){ if(e&&e.name==='AbortError') return; }
   // Sin navigator.share disponible (p.ej. en ordenador): copiar al portapapeles
   try{ await navigator.clipboard.writeText(texto); showAlert('📋 Resumen copiado — pégalo donde quieras'); }
@@ -7653,7 +7693,7 @@ async function enviarMensajeNomina(mesKey){
   }
   const app=computeMonthTotals(mesKey);
   const ultimaNomina=[...(S.payslips||[])].filter(p=>p.mes===mesKey).sort((a,b)=>(b.uploadedAt||'').localeCompare(a.uploadedAt||''))[0];
-  const context='Eres el asistente de nóminas de TimerPro (app de control horario), hablando sobre el mes de '+mesLabel(mesKey)+' del usuario.\n'
+  const context='Eres el asistente de nóminas de TimerPro (app de control horario), hablando sobre el mes de '+periodoLabel(mesKey)+' del usuario.\n'
     +'Datos calculados por la app para ese mes: '+JSON.stringify(app)+'\n'
     +(ultimaNomina?('Última nómina subida y leída por IA para ese mes: '+JSON.stringify(ultimaNomina.extracted)+'\n'):'El usuario todavía no ha subido ninguna nómina para este mes.\n')
     +'Ayuda al usuario a aclarar dudas, diferencias o cálculos de ese mes. Responde en español, conciso y claro.';
@@ -7691,27 +7731,42 @@ function renderNominas(){
         style:{width:'100%',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.5rem',color:'var(--ink)',fontWeight:700},
         on:{change:ev=>{ nominaMesActual=ev.target.value; rerender(); }}
       },
-        ...meses.map(m=>h('option',{value:m,selected:m===mesKey},mesLabel(m)))
+        ...meses.map(m=>h('option',{value:m,selected:m===mesKey},periodoLabel(m)))
       )
     ),
 
+    // Misma tarjeta sencilla de "Totales" que ya tenías y te gustaba —
+    // solo se le han AÑADIDO dos campos editables (Sueldo Base y Guardia)
+    // y una línea de Viajes/km, sin cambiar su forma.
     h('div',{class:'card'},
-      h('div',{class:'sec-title'},'Totales de '+mesLabel(mesKey)+' según la app'),
-      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.4rem',fontSize:'.85rem'}},
+      h('div',{class:'sec-title'},'Totales de '+periodoLabel(mesKey)+' según la app'+(periodoEstaCerrado(mesKey)?' (cerrado)':' (en curso)')),
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.4rem',fontSize:'.85rem',alignItems:'end'}},
+        h('div',{},
+          h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'Sueldo Base'),
+          h('input',{type:'number',min:'0',step:'0.01',value:app.sueldoBase||'',placeholder:'1600.00',
+            style:{width:'100%',fontWeight:700},
+            on:{change:ev=>{ const t=getTarifas(); t.sueldoBase=parseFloat(ev.target.value)||0; saveTarifas(t); rerender(); }}
+          })
+        ),
+        h('div',{},
+          h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'Guardia'),
+          h('input',{type:'number',min:'0',step:'0.01',value:app.guardia||'',placeholder:'500.00',
+            style:{width:'100%',fontWeight:700},
+            on:{change:ev=>{ const t=getTarifas(); t.guardia=parseFloat(ev.target.value)||0; saveTarifas(t); rerender(); }}
+          })
+        ),
         h('div',{},'Horas normales: '+fmtH(app.horasNormales)),
         h('div',{},'Horas extra: '+fmtH(app.horasExtra)),
         h('div',{},'Horas nocturnas: '+fmtH(app.horasNocturnas)),
         h('div',{},'Horas festivas: '+fmtH(app.horasFestivas)),
         h('div',{},'Dietas: '+eur(app.dieta)),
         h('div',{},'Transporte: '+eur(app.transporte)),
-        h('div',{},'Sueldo Base: '+eur(app.sueldoBase)),
-        h('div',{},'Guardia: '+eur(app.guardia))
+        h('div',{},'Viajes ('+app.km.toFixed(0)+' km): '+eur(app.viajes))
       ),
       h('div',{style:{marginTop:'.4rem',fontWeight:700,color:'var(--acc)'}},
-        'Importe total calculado: '+eur(app.importeNormales+app.importeExtra+app.importeNocturnas+app.importeFestivas+app.dieta+app.transporte+app.otrosConceptos+app.sueldoBase+app.guardia)
+        'Importe total calculado: '+eur(totalPeriodo(app))
       ),
-      h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginTop:'.2rem'}},app.dias+' jornada(s) registradas este mes'),
-      (!app.sueldoBase&&!app.guardia)?h('div',{style:{fontSize:'.72rem',color:'var(--ink3)',marginTop:'.2rem'}},'No tienes Sueldo Base ni Guardia configurados en Tarifas — si cobras un importe fijo al mes, ponlo ahí para que se sume aquí.'):null,
+      h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginTop:'.2rem'}},app.dias+' jornada(s) registradas en este periodo'),
       h('div',{style:{display:'flex',gap:'.4rem',marginTop:'.6rem'}},
         h('button',{class:'btn btn-gh btn-sm',style:{flex:1},on:{click:()=>compartirResumenNomina(mesKey, resumenTotalesTexto(mesKey,app))}},'📤 Compartir'),
         h('button',{class:'btn btn-gh btn-sm',style:{flex:1},on:{click:()=>exportarResumenNominaPDF(mesKey,app)}},'📄 PDF')
@@ -7719,7 +7774,7 @@ function renderNominas(){
     ),
 
     h('div',{class:'card'},
-      h('div',{class:'sec-title'},'Subir nómina de '+mesLabel(mesKey)),
+      h('div',{class:'sec-title'},'Subir nómina de '+periodoLabel(mesKey)),
       h('div',{style:{fontSize:'.78rem',color:'var(--ink2)',marginBottom:'.5rem'}},
         'Foto o PDF de la nómina — la IA la lee, detecta el mes y la compara con lo que ya tienes calculado aquí.'),
       h('input',{type:'file',accept:'image/*,application/pdf',
@@ -7746,7 +7801,7 @@ function renderNominas(){
     ),
 
     h('div',{class:'card'},
-      h('div',{class:'sec-title'},'💬 Chat de '+mesLabel(mesKey)),
+      h('div',{class:'sec-title'},'💬 Chat de '+periodoLabel(mesKey)),
       h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.4rem'}},'Este chat es independiente para cada mes y queda guardado.'),
       h('div',{id:'nomina-chat-msgs',style:{display:'flex',flexDirection:'column',gap:'.5rem',maxHeight:'40vh',overflowY:'auto',padding:'.3rem 0'}},
         msgs.length===0
@@ -7760,7 +7815,7 @@ function renderNominas(){
             }},m.content))
       ),
       h('div',{style:{display:'flex',gap:'.5rem',marginTop:'.4rem'}},
-        h('input',{type:'text',id:'nomina-chat-input',placeholder:'Pregunta algo sobre '+mesLabel(mesKey)+'...',
+        h('input',{type:'text',id:'nomina-chat-input',placeholder:'Pregunta algo sobre '+periodoLabel(mesKey)+'...',
           style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.6rem .8rem',color:'var(--ink)',fontSize:'.85rem'},
           on:{keydown:ev=>{ if(ev.key==='Enter'&&!ev.shiftKey){ ev.preventDefault(); enviarMensajeNomina(mesKey); } }}
         }),
