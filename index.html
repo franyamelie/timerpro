@@ -5519,10 +5519,14 @@ function getNominaCfg(){
   let c={};
   try{ c=JSON.parse(localStorage.getItem(NOMINA_CFG_KEY)||'{}')||{}; }catch(ex){ c={}; }
   const num=(v,def)=>(v===null||v===undefined||v===''||!isFinite(+v))?def:+v;
-  return { base:num(c.base,1600), guardia:num(c.guardia,500) };
+  return { base:num(c.base,1600), guardia:num(c.guardia,500),
+    pacto:c.pacto==='bruto'?'bruto':'neto',               // neto = base+guardia llegan limpios de retenciones
+    retPct:(c.retPct===''||c.retPct==null)?'':num(c.retPct,''), // % retención de extras ('' = automático)
+    desfase:c.desfase?1:0,                                 // 1 = la empresa paga los extras en la nómina siguiente
+    actualizado:c.actualizado||'' };
 }
 function setNominaCfg(patch){
-  const c={...getNominaCfg(),...patch};
+  const c={...getNominaCfg(),...patch,actualizado:new Date().toISOString()};
   try{ localStorage.setItem(NOMINA_CFG_KEY,JSON.stringify(c)); }catch(ex){}
   return c;
 }
@@ -5708,7 +5712,24 @@ function renderNomina(){
         importeInput('Guardia (€)','guardia',N.cfg.guardia)
       ),
       h('div',{style:{fontSize:'.72rem',color:'var(--ink3)',marginTop:'.5rem'}},
-        'Fijo mensual: '+eur(N.fijo)+' · Se guarda automáticamente al salir del campo.')
+        'Fijo mensual: '+eur(N.fijo)+' · Se guarda automáticamente al salir del campo.'),
+      h('details',{open:S.nomCfgOpen?true:null,style:{marginTop:'.6rem'},on:{toggle:ev=>{S.nomCfgOpen=ev.target.open;}}},
+        h('summary',{style:{fontSize:'.78rem',fontWeight:700,cursor:'pointer',color:'var(--ink2)'}},'🧾 Cómo comparar con la nómina de la empresa'),
+        h('div',{class:'field',style:{margin:'.5rem 0 0'}},h('label',{},'Lo pactado del fijo'),
+          h('select',{on:{change:ev=>{ setNominaCfg({pacto:ev.target.value}); rerender(); }}},
+            h('option',{value:'neto',selected:N.cfg.pacto!=='bruto'},'Base + guardia LIMPIOS de retenciones (neto)'),
+            h('option',{value:'bruto',selected:N.cfg.pacto==='bruto'},'Base + guardia en BRUTO'))),
+        h('div',{class:'grid-2',style:{gap:'.5rem',marginTop:'.5rem'}},
+          h('div',{class:'field',style:{margin:0}},h('label',{},'% retención de extras'),
+            h('input',{type:'text',inputmode:'decimal',placeholder:'auto',value:N.cfg.retPct===''?'':String(N.cfg.retPct).replace('.',','),
+              on:{change:ev=>{ const v=String(ev.target.value).trim(); setNominaCfg({retPct:v===''?'':_numImp(v)}); rerender(); }}})),
+          h('div',{class:'field',style:{margin:0}},h('label',{},'Extras que paga la nómina'),
+            h('select',{on:{change:ev=>{ setNominaCfg({desfase:ev.target.value==='1'?1:0}); rerender(); }}},
+              h('option',{value:'0',selected:!N.cfg.desfase},'Los del mismo ciclo'),
+              h('option',{value:'1',selected:!!N.cfg.desfase},'Los del ciclo anterior')))
+        ),
+        h('div',{style:{fontSize:'.68rem',color:'var(--ink3)',marginTop:'.35rem'}},'«auto» calcula la retención con los datos de la propia nómina.')
+      )
     ),
 
     // ── Periodo seleccionado ──
@@ -5780,6 +5801,9 @@ function renderNomina(){
         h('span',{},'TOTAL NÓMINA'),h('span',{},eur(N.total)))
     ),
 
+    // ── Nómina real de la empresa: cargar y comparar ──
+    renderNominaReal(sel),
+
     // ── Resumen diario con acumulado ──
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'📆 Día a día (acumulado)'),
@@ -5826,7 +5850,7 @@ function renderNomina(){
             background:activa?'var(--surf2)':'transparent',borderRadius:'var(--r2)',borderLeft:activa?'3px solid var(--acc)':'3px solid transparent'},
             on:{click:()=>{ nominaSelectCycle(c); window.scrollTo({top:0,behavior:'smooth'}); }}},
           h('div',{},
-            h('div',{style:{fontWeight:700,fontSize:'.85rem'}},nominaCycleName(c)+(cur?' · en curso':'')),
+            h('div',{style:{fontWeight:700,fontSize:'.85rem'}},nominaCycleName(c)+(cur?' · en curso':''),nominaEstadoBadge(c)),
             h('div',{style:{fontSize:'.7rem',color:'var(--ink2)'}},nominaRangoTxt(c.from,c.to)+' · '+r.dias.length+' jorn.')
           ),
           h('div',{style:{textAlign:'right'}},
@@ -5839,6 +5863,382 @@ function renderNomina(){
   );
 }
 
+
+
+// ══════════════════════════════════════════════════════════
+// NÓMINA REAL: cargar la nómina de la empresa (PDF o foto) y compararla
+// con lo apuntado en TimerPro. Se guarda una nómina por ciclo 26→25.
+// Pacto por defecto: base + guardia llegan NETOS (limpios de retenciones);
+// los extras llevan sus retenciones; dietas y kilometraje van exentos.
+// ══════════════════════════════════════════════════════════
+const NOMINAS_REALES_KEY='tp_nominas_reales';
+const NOM_CATS=[
+  // [id, etiqueta, tipo: 'fijo' | 'extra' | 'ded', exento]
+  ['base','Sueldo base','fijo',false],
+  ['prorrata','Prorrata pagas extra','fijo',false],
+  ['guardia','Guardia','fijo',false],
+  ['hnormales','Horas normales','extra',false],
+  ['hextra','Horas extra','extra',false],
+  ['hnoc','Horas nocturnas','extra',false],
+  ['hfes','Horas festivas','extra',false],
+  ['dietas','Dietas','extra',true],
+  ['km','Kilometraje / viajes','extra',true],
+  ['transporte','Transporte','extra',false],
+  ['otros','Otros devengos','extra',false],
+  ['irpf','IRPF','ded',false],
+  ['ss','Seguridad Social','ded',false],
+  ['otrasded','Otras deducciones','ded',false]
+];
+const nomCat=id=>NOM_CATS.find(c=>c[0]===id)||NOM_CATS.find(c=>c[0]==='otros');
+const nomCatEsDed=id=>nomCat(id)[2]==='ded';
+
+function getNominasReales(){ try{ return JSON.parse(localStorage.getItem(NOMINAS_REALES_KEY)||'{}')||{}; }catch(e){ return {}; } }
+function saveNominasReales(o){ try{ localStorage.setItem(NOMINAS_REALES_KEY,JSON.stringify(o)); }catch(e){} }
+function getNominaReal(cyc){ return getNominasReales()[cyc.from]||null; }
+function setNominaReal(cyc,real){
+  const all=getNominasReales();
+  if(real) all[cyc.from]={...real,cicloDesde:cyc.from,cicloHasta:cyc.to,actualizada:new Date().toISOString()};
+  else delete all[cyc.from];
+  saveNominasReales(all);
+}
+// Clasificación por palabras clave (líneas a mano o si la IA no da categoría)
+function nomCatFromText(txt,esDed){
+  const t=_normTxt(txt);
+  if(esDed){
+    if(/irpf|retencion/.test(t)) return 'irpf';
+    if(/conting|desempleo|formacion|mei|segsocial|seguridadsocial|cotiz|ss/.test(t)) return 'ss';
+    return 'otrasded';
+  }
+  if(/prorrat|pagaextra|pagasextra/.test(t)) return 'prorrata';
+  if(/salariobase|sueldobase|^base/.test(t)) return 'base';
+  if(/guardia|disponib|reten/.test(t)) return 'guardia';
+  if(/noct/.test(t)) return 'hnoc';
+  if(/festiv|domingo/.test(t)) return 'hfes';
+  if(/extra/.test(t)&&/hora|hext|hrs/.test(t)) return 'hextra';
+  if(/dieta|manutenc/.test(t)) return 'dietas';
+  if(/kilomet|km|locomoc|desplazam/.test(t)) return 'km';
+  if(/transport/.test(t)) return 'transporte';
+  if(/hora/.test(t)) return 'hnormales';
+  return 'otros';
+}
+// Ciclo de una nómina según su mes (la de Septiembre = 26 ago → 25 sep)
+function nominaCycleForMes(anio,mes){ return nominaCycleFor(anio+'-'+pad(mes)+'-15'); }
+
+// ── Lectura con Gemini (PDF o imagen) ──
+async function nominaLeerConIA(file){
+  let key=localStorage.getItem('gemini_api_key')||'';
+  if(!key){
+    key=(prompt('Para leer la nómina automáticamente hace falta tu API Key de Google Gemini (gratis en aistudio.google.com/apikey).\n\nPégala aquí, o cancela para meter la nómina a mano:','')||'').trim();
+    if(!key) return null;
+    localStorage.setItem('gemini_api_key',key);
+  }
+  const base64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=e=>res(String(e.target.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(file); });
+  const mime=file.type||(/\.pdf$/i.test(file.name)?'application/pdf':'image/jpeg');
+  const promptTxt=`Eres un experto en nóminas españolas. Lee esta nómina y responde SOLO con un JSON válido (sin markdown) con esta forma:
+{"empresa":"","periodo":{"mes":1-12,"anio":2026,"desde":"YYYY-MM-DD o vacío","hasta":"YYYY-MM-DD o vacío"},
+"devengos":[{"concepto":"texto tal cual aparece","cantidad":null,"precio":null,"importe":0,"categoria":"base|prorrata|guardia|hnormales|hextra|hnoc|hfes|dietas|km|transporte|otros"}],
+"deducciones":[{"concepto":"texto tal cual","porcentaje":null,"importe":0,"categoria":"irpf|ss|otrasded"}],
+"totalDevengado":0,"totalDeducciones":0,"liquido":0}
+Reglas:
+- Incluye TODAS las líneas de devengos (percepciones salariales y no salariales: dietas, kilometraje, pluses...) y TODAS las deducciones del trabajador (IRPF, contingencias comunes, desempleo, formación profesional, MEI, anticipos...).
+- NO incluyas las bases de cotización ni las aportaciones de la empresa.
+- categoria: base=salario base; prorrata=prorrata de pagas extra; guardia=guardia/disponibilidad/retén; hnormales=horas normales; hextra=horas extraordinarias; hnoc=nocturnidad; hfes=festivos/domingos; dietas=dietas/manutención; km=kilometraje/locomoción; transporte=plus transporte; otros=cualquier otro devengo.
+- Importes en número con punto decimal (1234.56). Líquido = "líquido a percibir" / "total a percibir".
+- NO devuelvas DNI, número de Seguridad Social, IBAN ni cuentas bancarias.`;
+  const body=JSON.stringify({contents:[{role:'user',parts:[{inline_data:{mime_type:mime,data:base64}},{text:promptTxt}]}],
+    generationConfig:{temperature:0,maxOutputTokens:4096,responseMimeType:'application/json'}});
+  const modelos=[localStorage.getItem('gemini_model'),'gemini-flash-latest','gemini-2.5-flash','gemini-2.0-flash'].filter((m,i,a)=>m&&a.indexOf(m)===i);
+  let ultimoErr='';
+  for(const m of modelos){
+    try{
+      const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+m+':generateContent?key='+key,{method:'POST',headers:{'Content-Type':'application/json'},body});
+      if(!res.ok){ ultimoErr='Gemini '+res.status; if(res.status===400||res.status===401||res.status===403){ const t=await res.text(); if(/API key|PERMISSION|API_KEY/i.test(t)) throw new Error('La API Key de Gemini no es válida'); } continue; }
+      const data=await res.json();
+      const text=(data.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('');
+      const j=JSON.parse(text.replace(/```json|```/g,'').trim());
+      if(m!==localStorage.getItem('gemini_model')) localStorage.setItem('gemini_model',m);
+      return j;
+    }catch(e){ ultimoErr=e.message; if(/no es válida/.test(e.message)) throw e; }
+  }
+  throw new Error('No se pudo leer la nómina ('+ultimoErr+')');
+}
+
+// Convierte la respuesta de la IA (o del editor) al formato guardado
+function nominaNormalizar(j,fileName){
+  const lin=[];
+  (j.devengos||[]).forEach(d=>{ const imp=_numImp(d.importe); if(!imp&&!d.concepto) return;
+    const cat=NOM_CATS.some(c=>c[0]===d.categoria&&c[2]!=='ded')?d.categoria:nomCatFromText(d.concepto,false);
+    lin.push({concepto:String(d.concepto||nomCat(cat)[1]).trim(),importe:Math.abs(imp),cat,cantidad:d.cantidad??null,precio:d.precio??null}); });
+  (j.deducciones||[]).forEach(d=>{ const imp=_numImp(d.importe); if(!imp&&!d.concepto) return;
+    const cat=['irpf','ss','otrasded'].includes(d.categoria)?d.categoria:nomCatFromText(d.concepto,true);
+    lin.push({concepto:String(d.concepto||nomCat(cat)[1]).trim(),importe:Math.abs(imp),cat,porcentaje:d.porcentaje??null}); });
+  const p=j.periodo||{};
+  return {empresa:j.empresa||'',mes:+p.mes||null,anio:+p.anio||null,lineas:lin,
+    totalDevengado:_numImp(j.totalDevengado),totalDeducciones:_numImp(j.totalDeducciones),liquido:_numImp(j.liquido),
+    archivo:fileName||'',origen:fileName?'ia':'manual',cargadaEn:new Date().toISOString()};
+}
+
+async function nominaCargarArchivo(){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='application/pdf,image/*';
+  inp.onchange=async ev=>{
+    const file=ev.target.files&&ev.target.files[0]; if(!file) return;
+    if(file.size>15*1024*1024){ showAlert('El archivo es demasiado grande (máx. 15 MB)','err'); return; }
+    S.nomCargando=true; rerender();
+    try{
+      showAlert('🤖 Leyendo la nómina con la IA...');
+      const j=await nominaLeerConIA(file);
+      if(!j){ S.nomCargando=false; nominaAbrirEditor(); return; }
+      const real=nominaNormalizar(j,file.name);
+      if(!real.lineas.length) throw new Error('No se encontraron conceptos en la nómina');
+      let cyc=nominaSel().cyc;
+      if(real.mes&&real.anio){
+        const c=nominaCycleForMes(real.anio,real.mes);
+        if(c.from!==cyc.from){ cyc=c; S.nomCycle=c; S.nomFrom=null; S.nomTo=null; }
+      }
+      setNominaReal(cyc,real);
+      S.nomCargando=false;
+      // Abrir el editor para revisar lo leído antes de darlo por bueno
+      S.nomEdit={cyc,real:JSON.parse(JSON.stringify(real)),revisar:true};
+      showAlert('✅ Nómina de '+nominaCycleName(cyc)+' leída. Revisa los conceptos y pulsa Guardar.');
+      rerender();
+    }catch(e){
+      S.nomCargando=false; rerender();
+      showAlert('No se pudo leer: '+e.message+'. Puedes meterla a mano.','err');
+    }
+  };
+  inp.click();
+}
+function nominaAbrirEditor(){
+  const cyc=nominaSel().cyc;
+  const prev=getNominaReal(cyc);
+  const vacia={empresa:'',mes:+cyc.to.slice(5,7),anio:+cyc.to.slice(0,4),totalDevengado:0,totalDeducciones:0,liquido:0,origen:'manual',cargadaEn:new Date().toISOString(),
+    lineas:[{concepto:'Salario base',importe:0,cat:'base'},{concepto:'Plus guardia',importe:0,cat:'guardia'},{concepto:'IRPF',importe:0,cat:'irpf'},{concepto:'Contingencias comunes',importe:0,cat:'ss'}]};
+  S.nomEdit={cyc,real:JSON.parse(JSON.stringify(prev||vacia))};
+  rerender();
+}
+
+// ── Comparativa ──
+function nominaComparar(cyc){
+  const real=getNominaReal(cyc); if(!real) return null;
+  const cfg=getNominaCfg();
+  const cycEx=cfg.desfase?nominaCycleShift(cyc,-1):cyc;
+  const N=computeNomina(cycEx.from,cycEx.to), t=N.tot;
+  const app={base:cfg.base,prorrata:0,guardia:cfg.guardia,hnormales:t.in,hextra:t.ie,hnoc:t.inoc,hfes:t.ifes,
+    dietas:t.dieta+t.dietasExtra,km:t.viajes,transporte:t.coche+t.camion+t.transpOtro,otros:t.otros};
+  const nom={}; const conceptosPorCat={};
+  (real.lineas||[]).forEach(l=>{ nom[l.cat]=(nom[l.cat]||0)+(+l.importe||0); (conceptosPorCat[l.cat]=conceptosPorCat[l.cat]||[]).push(l.concepto); });
+  const r2=v=>Math.round((+v||0)*100)/100;
+  const filas=NOM_CATS.filter(c=>c[2]!=='ded').map(([cat,label,tipo,exento])=>{
+    const a=r2(app[cat]||0), n=r2(nom[cat]||0);
+    return {cat,label,tipo,exento,app:a,nom:n,dif:r2(n-a),ok:Math.abs(n-a)<=1,conceptos:conceptosPorCat[cat]||[]};
+  }).filter(f=>f.app>0||f.nom>0);
+  const sum=(arr,k)=>r2(arr.reduce((s,f)=>s+f[k],0));
+  const fijoPactado=r2(cfg.base+cfg.guardia);
+  const fijoNom=r2((nom.base||0)+(nom.prorrata||0)+(nom.guardia||0));
+  const extrasF=filas.filter(f=>f.tipo==='extra');
+  const extrasApp=sum(extrasF,'app'), extrasNom=sum(extrasF,'nom');
+  const devengadoLin=r2(filas.reduce((s,f)=>s+f.nom,0));
+  const dedLin=r2(['irpf','ss','otrasded'].reduce((s,k)=>s+(nom[k]||0),0));
+  const devengado=real.totalDevengado||devengadoLin;
+  const deducciones=real.totalDeducciones||dedLin;
+  const liquido=real.liquido||r2(devengado-deducciones);
+  const exentos=r2((nom.dietas||0)+(nom.km||0));
+  const sujetosExtra=Math.max(0,r2(extrasNom-exentos));
+  const baseRet=devengado-exentos;
+  const retPct=(cfg.retPct!==''&&cfg.retPct!=null&&isFinite(+cfg.retPct))?(+cfg.retPct/100):(baseRet>0?deducciones/baseRet:0);
+  const extrasNetos=r2(sujetosExtra*(1-retPct));
+  const limpioFijo=r2(liquido-exentos-extrasNetos);
+  const pactoOk=cfg.pacto==='bruto'?(fijoNom>=fijoPactado-1):(limpioFijo>=fijoPactado-1);
+  // Avisos útiles
+  const avisos=[];
+  const cuadraLin=Math.abs(devengadoLin-devengado)<=1;
+  if(real.totalDevengado&&!cuadraLin) avisos.push('La suma de los conceptos leídos ('+eur(devengadoLin)+') no coincide con el total devengado de la nómina ('+eur(devengado)+'): puede faltar alguna línea. Revísala con ✏️ Editar.');
+  const extrasOk=Math.abs(extrasNom-extrasApp)<=1;
+  const lineasMal=extrasF.filter(f=>!f.ok);
+  if(extrasOk&&lineasMal.length){
+    const faltan=lineasMal.filter(f=>f.dif<0).map(f=>f.label+' ('+eur(-f.dif)+')');
+    const sobran=lineasMal.filter(f=>f.dif>0).map(f=>'«'+f.conceptos.join('», «')+'» ('+eur(f.dif)+')');
+    avisos.push('Los extras cuadran en total, pero la empresa los ha puesto en otra casilla: '+faltan.join(', ')+(sobran.length?' → aparecen en '+sobran.join(', '):'')+'.');
+  } else if(!extrasOk){
+    avisos.push(extrasNom<extrasApp
+      ?'Te faltan '+eur(extrasApp-extrasNom)+' de extras respecto a lo que apuntaste'+(cfg.desfase?'':' (si tu empresa paga los extras al mes siguiente, activa «Extras del ciclo anterior» en la configuración)')+'.'
+      :'Te han pagado '+eur(extrasNom-extrasApp)+' más de extras de lo que apuntaste'+(cfg.desfase?'':' (puede que incluya extras de otro mes)')+'.');
+  }
+  const estado=(pactoOk&&extrasOk&&(!real.totalDevengado||cuadraLin))?'ok':'revisar';
+  return {real,cfg,cycEx,filas,fijoPactado,fijoNom,extrasApp,extrasNom,devengado,deducciones,liquido,exentos,sujetosExtra,retPct,extrasNetos,limpioFijo,pactoOk,extrasOk,avisos,estado,
+    irpf:r2(nom.irpf||0),ss:r2(nom.ss||0),otrasded:r2(nom.otrasded||0)};
+}
+function nominaEstadoBadge(cyc){
+  const c=nominaComparar(cyc); if(!c) return null;
+  return c.estado==='ok'
+    ?h('span',{style:{fontSize:'.62rem',fontWeight:700,padding:'.1rem .4rem',borderRadius:'99px',background:'#dcfce7',color:'#166534',marginLeft:'.3rem'}},'🧾 ✅')
+    :h('span',{style:{fontSize:'.62rem',fontWeight:700,padding:'.1rem .4rem',borderRadius:'99px',background:'#fef3c7',color:'#92400e',marginLeft:'.3rem'}},'🧾 ⚠️');
+}
+
+// ── Tarjeta en la pestaña Nómina ──
+function renderNominaReal(sel){
+  if(S.nomEdit && S.nomEdit.cyc.from===sel.cyc.from) return renderNominaEditor();
+  const C=nominaComparar(sel.cyc);
+  const titulo=h('div',{class:'sec-title'},'🧾 Nómina de la empresa — comparativa');
+  if(S.nomCargando) return h('div',{class:'card'},titulo,h('div',{class:'empty'},'🤖 Leyendo la nómina... un momento'));
+  if(!C){
+    return h('div',{class:'card'},titulo,
+      h('div',{style:{fontSize:'.8rem',color:'var(--ink2)',marginBottom:'.6rem',lineHeight:1.5}},
+        'Carga la nómina de '+nominaCycleName(sel.cyc)+' (PDF o foto) y TimerPro la compara con lo que has apuntado: conceptos, importes, dónde los ha metido la empresa y si los '+eur(getNominaCfg().base+getNominaCfg().guardia)+' pactados te llegan limpios.'),
+      h('div',{class:'grid-2',style:{gap:'.5rem'}},
+        h('button',{class:'btn btn-g btn-full',on:{click:()=>nominaCargarArchivo()}},'📄 Cargar nómina'),
+        h('button',{class:'btn btn-gh btn-full',on:{click:()=>nominaAbrirEditor()}},'✍️ Meterla a mano')
+      )
+    );
+  }
+  const ok=C.estado==='ok';
+  const fila=(lbl,v,o)=>h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.25rem 0',fontSize:o&&o.big?'.95rem':'.8rem',fontWeight:o&&o.bold?800:400,color:o&&o.color||'inherit'}},h('span',{},lbl),h('span',{style:{fontWeight:700}},v));
+  const pct=v=>(Math.round(v*1000)/10).toString().replace('.',',')+' %';
+  return h('div',{class:'card',style:{borderLeft:'4px solid '+(ok?'#16a34a':'#f59e0b')}},
+    titulo,
+    h('div',{style:{padding:'.6rem .7rem',borderRadius:'var(--r2)',background:ok?'#dcfce7':'#fef3c7',color:ok?'#166534':'#92400e',fontWeight:800,fontSize:'.9rem',marginBottom:'.6rem'}},
+      ok?'✅ Todo cuadra con lo que has apuntado':'⚠️ Hay cosas que revisar'),
+    h('div',{style:{fontSize:'.7rem',color:'var(--ink3)',marginBottom:'.4rem'}},
+      (C.real.archivo?'📎 '+C.real.archivo+' · ':'✍️ Metida a mano · ')+'Extras comparados con el ciclo '+nominaRangoTxt(C.cycEx.from,C.cycEx.to)),
+
+    // Pacto
+    h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.6rem .7rem',marginBottom:'.6rem'}},
+      h('div',{style:{fontWeight:800,fontSize:'.82rem',marginBottom:'.3rem'}},(C.pactoOk?'✅ ':'⚠️ ')+(C.cfg.pacto==='bruto'?'Fijo pactado en bruto':'Fijo pactado limpio de retenciones')+': '+eur(C.fijoPactado)),
+      C.cfg.pacto==='bruto'
+        ?fila('Base + guardia en la nómina (bruto)',eur(C.fijoNom))
+        :h('div',{},
+          fila('Líquido recibido',eur(C.liquido)),
+          fila('− Dietas y km (exentos)',eur(C.exentos)),
+          fila('− Extras netos (estimado, '+pct(C.retPct)+' retención)',eur(C.extrasNetos)),
+          fila('= Te ha llegado limpio de base + guardia',eur(C.limpioFijo),{bold:true,color:C.pactoOk?'#16a34a':'#b45309'}),
+          !C.pactoOk?h('div',{style:{fontSize:'.75rem',color:'#b45309',marginTop:'.2rem'}},'Faltan '+eur(C.fijoPactado-C.limpioFijo)+' para llegar a lo pactado.'):null
+        )
+    ),
+
+    // Totales de la nómina
+    h('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'.4rem',marginBottom:'.6rem'}},
+      ...[['Devengado',C.devengado],['Deducciones',C.deducciones],['Líquido',C.liquido]].map(([l,v])=>
+        h('div',{style:{background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.45rem .3rem',textAlign:'center'}},
+          h('div',{style:{fontWeight:800,fontSize:'.88rem'}},eur(v)),h('div',{style:{fontSize:'.66rem',color:'var(--ink2)'}},l)))
+    ),
+    (C.irpf||C.ss)?h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.5rem'}},
+      'IRPF '+eur(C.irpf)+' · Seguridad Social '+eur(C.ss)+(C.otrasded?' · Otras '+eur(C.otrasded):'')):null,
+
+    // Tabla concepto a concepto
+    h('div',{style:{display:'grid',gridTemplateColumns:'1.6fr 1fr 1fr 1fr',gap:'.2rem',fontSize:'.66rem',fontWeight:700,color:'var(--ink3)',padding:'.2rem 0',borderBottom:'1px solid var(--brd)'}},
+      h('span',{},'Concepto'),h('span',{style:{textAlign:'right'}},'Apuntado'),h('span',{style:{textAlign:'right'}},'Nómina'),h('span',{style:{textAlign:'right'}},'Dif.')),
+    ...C.filas.map(f=>h('div',{style:{padding:'.3rem 0',borderBottom:'1px solid var(--brd)'}},
+      h('div',{style:{display:'grid',gridTemplateColumns:'1.6fr 1fr 1fr 1fr',gap:'.2rem',fontSize:'.78rem',alignItems:'baseline'}},
+        h('span',{style:{fontWeight:600}},(f.ok?'✅ ':'⚠️ ')+f.label+(f.exento?' ·ex':'')),
+        h('span',{style:{textAlign:'right'}},eur(f.app)),
+        h('span',{style:{textAlign:'right'}},eur(f.nom)),
+        h('span',{style:{textAlign:'right',fontWeight:700,color:f.ok?'#16a34a':(f.dif<0?'#dc2626':'#b45309')}},(f.dif>0?'+':'')+eur(f.dif))
+      ),
+      f.conceptos.length?h('div',{style:{fontSize:'.66rem',color:'var(--ink3)'}},'En la nómina: '+f.conceptos.join(' · ')):null
+    )),
+    h('div',{style:{display:'grid',gridTemplateColumns:'1.6fr 1fr 1fr 1fr',gap:'.2rem',fontSize:'.8rem',fontWeight:800,padding:'.4rem 0'}},
+      h('span',{},'Total extras'),h('span',{style:{textAlign:'right'}},eur(C.extrasApp)),h('span',{style:{textAlign:'right'}},eur(C.extrasNom)),
+      h('span',{style:{textAlign:'right',color:C.extrasOk?'#16a34a':'#dc2626'}},((C.extrasNom-C.extrasApp)>0?'+':'')+eur(C.extrasNom-C.extrasApp))),
+    h('div',{style:{fontSize:'.64rem',color:'var(--ink3)'}},'·ex = exento de retención (dietas y kilometraje).'),
+
+    C.avisos.length?h('div',{style:{marginTop:'.5rem',padding:'.5rem .6rem',background:'#fff7ed',border:'1px solid #fed7aa',borderRadius:'var(--r2)',fontSize:'.75rem',color:'#9a3412',lineHeight:1.45}},
+      ...C.avisos.map(a=>h('div',{style:{marginBottom:'.2rem'}},'• '+a))):null,
+
+    h('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'.4rem',marginTop:'.6rem'}},
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>nominaAbrirEditor()}},'✏️ Editar'),
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>nominaCargarArchivo()}},'🔄 Cargar otra'),
+      h('button',{class:'btn btn-gh btn-sm',style:{color:'#dc2626'},on:{click:()=>{ if(confirm('¿Quitar la nómina cargada de '+nominaCycleName(sel.cyc)+'?')){ setNominaReal(sel.cyc,null); rerender(); } }}},'🗑️ Quitar')
+    ),
+    h('div',{style:{fontSize:'.64rem',color:'var(--ink3)',marginTop:'.5rem',lineHeight:1.4}},
+      'La parte «limpia» es una estimación: reparte las retenciones de la nómina entre todos los conceptos sujetos. Para la cifra exacta, confírmalo con tu gestoría.')
+  );
+}
+
+// ── Editor (revisar lo leído por la IA o meter a mano) ──
+function renderNominaEditor(){
+  const E=S.nomEdit, R=E.real;
+  const catOpts=(sel,ded)=>NOM_CATS.filter(c=>ded?c[2]==='ded':c[2]!=='ded').map(c=>h('option',{value:c[0],selected:c[0]===sel},c[1]));
+  const lineaRow=(l,i)=>{
+    const ded=nomCatEsDed(l.cat);
+    return h('div',{style:{display:'grid',gridTemplateColumns:'1.5fr 1.2fr .9fr auto',gap:'.3rem',alignItems:'center',marginBottom:'.3rem'}},
+      h('input',{type:'text',value:l.concepto||'',placeholder:'Concepto',style:{fontSize:'.78rem',padding:'.35rem .4rem'},
+        on:{change:ev=>{ l.concepto=ev.target.value; }}}),
+      h('select',{style:{fontSize:'.75rem',padding:'.3rem'},on:{change:ev=>{ l.cat=ev.target.value; }}},...catOpts(l.cat,ded)),
+      h('input',{type:'text',inputmode:'decimal',value:l.importe?String(l.importe).replace('.',','):'',placeholder:'0,00',style:{fontSize:'.78rem',padding:'.35rem .4rem',textAlign:'right'},
+        on:{change:ev=>{ l.importe=_numImp(ev.target.value); }}}),
+      h('button',{class:'btn btn-gh btn-sm',style:{color:'#dc2626',padding:'.2rem .45rem'},on:{click:()=>{ R.lineas.splice(i,1); rerender(); }}},'✕')
+    );
+  };
+  const dev=R.lineas.map((l,i)=>({l,i})).filter(x=>!nomCatEsDed(x.l.cat));
+  const ded=R.lineas.map((l,i)=>({l,i})).filter(x=>nomCatEsDed(x.l.cat));
+  const totalInput=(lbl,k)=>h('div',{class:'field',style:{margin:0}},h('label',{},lbl),
+    h('input',{type:'text',inputmode:'decimal',value:R[k]?String(R[k]).replace('.',','):'',placeholder:'auto',on:{change:ev=>{ R[k]=_numImp(ev.target.value); }}}));
+  return h('div',{class:'card',style:{borderLeft:'4px solid var(--acc)'}},
+    h('div',{class:'sec-title'},(E.revisar?'🔍 Revisa lo que ha leído la IA':'✍️ Nómina a mano')+' — '+nominaCycleName(E.cyc)),
+    E.revisar?h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',marginBottom:'.5rem'}},'Comprueba que cada concepto está en su casilla correcta (puedes cambiarla) y pulsa Guardar.'):null,
+    h('div',{class:'grid-2',style:{gap:'.5rem',marginBottom:'.5rem'}},
+      h('div',{class:'field',style:{margin:0}},h('label',{},'Mes de la nómina'),
+        h('select',{on:{change:ev=>{ R.mes=+ev.target.value; }}},...MONTHS.map((m,i)=>h('option',{value:i+1,selected:(i+1)===(+R.mes)},m)))),
+      h('div',{class:'field',style:{margin:0}},h('label',{},'Año'),
+        h('input',{type:'number',value:R.anio||'',on:{change:ev=>{ R.anio=+ev.target.value; }}}))
+    ),
+    h('div',{style:{fontWeight:700,fontSize:'.78rem',margin:'.4rem 0 .3rem'}},'➕ Devengos (lo que te pagan)'),
+    ...dev.map(x=>lineaRow(x.l,x.i)),
+    h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{ R.lineas.push({concepto:'',importe:0,cat:'otros'}); rerender(); }}},'➕ Añadir devengo'),
+    h('div',{style:{fontWeight:700,fontSize:'.78rem',margin:'.7rem 0 .3rem'}},'➖ Deducciones (lo que te quitan)'),
+    ...ded.map(x=>lineaRow(x.l,x.i)),
+    h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{ R.lineas.push({concepto:'',importe:0,cat:'otrasded'}); rerender(); }}},'➕ Añadir deducción'),
+    h('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'.4rem',marginTop:'.7rem'}},
+      totalInput('Total devengado','totalDevengado'),totalInput('Total deducciones','totalDeducciones'),totalInput('Líquido a percibir','liquido')),
+    h('div',{style:{fontSize:'.66rem',color:'var(--ink3)',marginTop:'.3rem'}},'Si dejas los totales vacíos, se calculan con las líneas.'),
+    h('div',{class:'grid-2',style:{gap:'.5rem',marginTop:'.7rem'}},
+      h('button',{class:'btn btn-g btn-full',on:{click:()=>{
+        captureNominaEditor();
+        R.lineas=R.lineas.filter(l=>l.concepto||l.importe);
+        let cyc=E.cyc;
+        if(R.mes&&R.anio){ const c=nominaCycleForMes(R.anio,R.mes); if(c.from!==cyc.from){ if(getNominaReal(cyc)&&getNominaReal(cyc).cargadaEn===R.cargadaEn) setNominaReal(cyc,null); cyc=c; S.nomCycle=c; S.nomFrom=null; S.nomTo=null; } }
+        setNominaReal(cyc,R); S.nomEdit=null; showAlert('💾 Nómina de '+nominaCycleName(cyc)+' guardada'); rerender();
+      }}},'💾 Guardar'),
+      h('button',{class:'btn btn-gh btn-full',on:{click:()=>{ S.nomEdit=null; rerender(); }}},'Cancelar')
+    )
+  );
+}
+// Recoge lo escrito en el campo con el foco (por si no saltó el "change")
+function captureNominaEditor(){ try{ const a=document.activeElement; if(a&&a.blur) a.blur(); }catch(e){} }
+
+// Sincronización con Drive: configuración y nóminas cargadas
+function nominaSyncPayload(){ return {nominaCfg:getNominaCfg(),nominasReales:getNominasReales()}; }
+function applyNominaSync(d){
+  try{
+    if(d&&d.nominaCfg){
+      const loc=getNominaCfg(), rem=d.nominaCfg;
+      if((rem.actualizado||'')>(loc.actualizado||'')) localStorage.setItem(NOMINA_CFG_KEY,JSON.stringify(rem));
+    }
+    if(d&&d.nominasReales&&typeof d.nominasReales==='object'){
+      const loc=getNominasReales();
+      Object.entries(d.nominasReales).forEach(([k,v])=>{ if(!loc[k]||(v.actualizada||'')>(loc[k].actualizada||'')) loc[k]=v; });
+      saveNominasReales(loc);
+    }
+  }catch(e){ console.warn('Sync nómina:',e); }
+}
+
+// Sección de comparativa para el informe PDF / imagen / impresión
+function nominaComparativaHTML(cyc,esc){
+  const C=nominaComparar(cyc); if(!C) return '';
+  const ok=C.estado==='ok';
+  const filas=C.filas.map(f=>`<tr><td>${f.ok?'✔':'!'} ${esc(f.label)}${f.exento?' <span style="color:#64748b">(exento)</span>':''}${f.conceptos.length?'<br><span style="font-size:10px;color:#64748b">Nómina: '+esc(f.conceptos.join(' · '))+'</span>':''}</td><td class="r">${eur(f.app)}</td><td class="r">${eur(f.nom)}</td><td class="r" style="color:${f.ok?'#16a34a':(f.dif<0?'#dc2626':'#b45309')}">${f.dif>0?'+':''}${eur(f.dif)}</td></tr>`).join('');
+  const pacto=C.cfg.pacto==='bruto'
+    ?`<tr><td>Base + guardia en la nómina (bruto)</td><td class="r">${eur(C.fijoNom)}</td></tr>`
+    :`<tr><td>Líquido recibido</td><td class="r">${eur(C.liquido)}</td></tr><tr><td>− Dietas y km exentos</td><td class="r">${eur(C.exentos)}</td></tr><tr><td>− Extras netos (estimado, ${(Math.round(C.retPct*1000)/10).toString().replace('.',',')} % ret.)</td><td class="r">${eur(C.extrasNetos)}</td></tr><tr class="tot"><td>= Limpio de base + guardia (pactado ${eur(C.fijoPactado)})</td><td class="r">${eur(C.limpioFijo)}</td></tr>`;
+  return `<h2>Comparativa con la nómina de la empresa</h2>
+    <div style="padding:8px 10px;border-radius:8px;font-weight:800;font-size:13px;margin-bottom:8px;background:${ok?'#dcfce7':'#fef3c7'};color:${ok?'#166534':'#92400e'}">${ok?'✔ Todo cuadra con lo apuntado':'! Hay cosas que revisar'} · Devengado ${eur(C.devengado)} · Deducciones ${eur(C.deducciones)} · Líquido ${eur(C.liquido)}</div>
+    <table><tr><th>Concepto</th><th class="r">Apuntado</th><th class="r">Nómina</th><th class="r">Dif.</th></tr>${filas}
+    <tr class="tot"><td>Total extras</td><td class="r">${eur(C.extrasApp)}</td><td class="r">${eur(C.extrasNom)}</td><td class="r">${(C.extrasNom-C.extrasApp)>0?'+':''}${eur(C.extrasNom-C.extrasApp)}</td></tr></table>
+    <h2>Pacto: fijo ${C.cfg.pacto==='bruto'?'en bruto':'limpio de retenciones'} — ${C.pactoOk?'✔ se cumple':'! no se cumple'}</h2>
+    <table>${pacto}</table>
+    ${C.avisos.length?'<div style="margin-top:8px;padding:8px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;font-size:11px;color:#9a3412">'+C.avisos.map(a=>'• '+esc(a)).join('<br>')+'</div>':''}`;
+}
 
 // ══════════════════════════════════════════════════════════
 // NÓMINA › HISTÓRICO COMPLETO: todos los fichajes desde el primer día
@@ -5913,7 +6313,7 @@ function renderNominaHistorico(){
         h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'.5rem',cursor:'pointer'},
             on:{click:()=>{S.nomHistOpen[c.from]=!abierto;rerender();}}},
           h('div',{},
-            h('div',{style:{fontWeight:800,fontSize:'.9rem'}},(abierto?'▾ ':'▸ ')+nominaCycleName(c)),
+            h('div',{style:{fontWeight:800,fontSize:'.9rem'}},(abierto?'▾ ':'▸ ')+nominaCycleName(c),nominaEstadoBadge(c)),
             h('div',{style:{fontSize:'.7rem',color:'var(--ink2)'}},nominaRangoTxt(c.from,c.to)),
             h('div',{style:{fontSize:'.68rem',marginTop:'.15rem',fontWeight:700,color:cerrado?'#16a34a':curso?'#b45309':'#4f46e5'}},
               (cerrado?'✔ Cerrado':curso?'⏳ En curso':'Futuro')+' · '+N.dias.length+' jorn. · '+fmtHN(N.tot.horas))
@@ -6112,6 +6512,7 @@ function nominaReportHTML(N,sel,paraDoc){
     <div class="kp"><div><b>${eur(N.cfg.base)}</b>Sueldo base</div><div><b>${eur(N.cfg.guardia)}</b>Guardia</div><div><b>${eur(N.extras)}</b>Extras</div></div>
     <h2>Desglose</h2>
     <table>${desglose}<tr><td colspan="2" style="color:#475569">Subtotal extras</td><td class="r">${eur(N.extras)}</td></tr><tr class="tot"><td colspan="2">TOTAL NÓMINA</td><td class="r">${eur(N.total)}</td></tr></table>
+    ${nominaComparativaHTML(sel.cyc,esc)}
     <h2>Día a día</h2>
     ${N.dias.length?`<table><tr><th>Fecha</th><th>Conceptos</th><th class="r">Extras día</th><th class="r">Acumulado</th></tr><tr><td colspan="3" style="color:#475569">Inicio (base + guardia)</td><td class="r">${eur(N.fijo)}</td></tr>${dias}</table>`:'<div style="font-size:12px;color:#64748b">Sin jornadas en el periodo.</div>'}
     <div class="foot">TimerPro · Nómina ${esc(nominaRangoTxt(sel.from,sel.to))}</div>
@@ -6205,6 +6606,25 @@ function nominaExportExcel(){
       +(x.dieta+x.dietasExtra).toFixed(2),+x.coche.toFixed(2),+x.camion.toFixed(2),+x.transpOtro.toFixed(2),x.km,+x.viajes.toFixed(2),+x.otros.toFixed(2),+x.total.toFixed(2),+d.acum.toFixed(2)]); });
     const ws2=XLSX.utils.aoa_to_sheet(r2); ws2['!cols']=r2[0].map((_,i)=>({wch:i===1?20:11}));
     XLSX.utils.book_append_sheet(wb,ws2,'Día a día');
+    const C=nominaComparar(sel.cyc);
+    if(C){
+      const r3=[['COMPARATIVA CON LA NÓMINA DE LA EMPRESA — '+nominaCycleName(sel.cyc).toUpperCase()],
+        ['Estado',C.estado==='ok'?'Todo cuadra':'Hay cosas que revisar'],
+        ['Extras comparados con el ciclo',C.cycEx.from+' a '+C.cycEx.to],[],
+        ['Concepto','Apuntado (TimerPro)','Nómina','Diferencia','En la nómina aparece como'],
+        ...C.filas.map(f=>[f.label+(f.exento?' (exento)':''),f.app,f.nom,+(f.dif).toFixed(2),f.conceptos.join(' · ')]),
+        ['TOTAL EXTRAS',+C.extrasApp.toFixed(2),+C.extrasNom.toFixed(2),+(C.extrasNom-C.extrasApp).toFixed(2)],[],
+        ['Total devengado','', +C.devengado.toFixed(2)],['Total deducciones','',+C.deducciones.toFixed(2)],['IRPF','',C.irpf],['Seguridad Social','',C.ss],['Líquido a percibir','',+C.liquido.toFixed(2)],[],
+        ['PACTO: fijo '+(C.cfg.pacto==='bruto'?'en bruto':'limpio de retenciones'),+C.fijoPactado.toFixed(2)],
+        ...(C.cfg.pacto==='bruto'?[['Base + guardia en nómina (bruto)',+C.fijoNom.toFixed(2)]]:[
+          ['Dietas y km exentos',+C.exentos.toFixed(2)],['Extras netos (estimado, '+(Math.round(C.retPct*1000)/10)+'% ret.)',+C.extrasNetos.toFixed(2)],
+          ['Limpio de base + guardia',+C.limpioFijo.toFixed(2)]]),
+        ['¿Se cumple el pacto?',C.pactoOk?'Sí':'No'],[],
+        ...C.avisos.map(a=>['Aviso',a]),
+        ...(C.real.lineas||[]).length?[[],['LÍNEAS DE LA NÓMINA'],['Concepto','Casilla','Importe'],...C.real.lineas.map(l=>[l.concepto,nomCat(l.cat)[1],l.importe])]:[]];
+      const ws3=XLSX.utils.aoa_to_sheet(r3); ws3['!cols']=[{wch:38},{wch:20},{wch:14},{wch:12},{wch:40}];
+      XLSX.utils.book_append_sheet(wb,ws3,'Comparativa');
+    }
     const arr=XLSX.write(wb,{bookType:'xlsx',type:'array'});
     dlDialog={blob:new Blob([arr],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),filename:'TimerPro_'+nominaFileTag(sel)+'.xlsx',type:'xlsx',title:'Excel de la nómina listo'};
     S.modal='dl'; rerender();
@@ -6224,6 +6644,15 @@ function nominaShareText(){
   L.push('─────────────────────────');
   L.push('Extras: '+eur(N.extras)+' · '+N.dias.length+' jornadas');
   L.push('💶 TOTAL: '+eur(N.total));
+  const C=nominaComparar(sel.cyc);
+  if(C){
+    L.push('─────────────────────────');
+    L.push('🧾 NÓMINA EMPRESA: '+(C.estado==='ok'?'✅ todo cuadra':'⚠️ revisar'));
+    L.push('• Devengado '+eur(C.devengado)+' · Deducciones '+eur(C.deducciones)+' · Líquido '+eur(C.liquido));
+    L.push('• Extras apuntados '+eur(C.extrasApp)+' / en nómina '+eur(C.extrasNom));
+    if(C.cfg.pacto!=='bruto') L.push('• Limpio de base + guardia: '+eur(C.limpioFijo)+' (pactado '+eur(C.fijoPactado)+')');
+    C.avisos.forEach(a=>L.push('⚠️ '+a));
+  }
   L.push('─ TimerPro ─');
   window.open('https://wa.me/?text='+encodeURIComponent(L.join('\n')),'_blank');
 }
@@ -12250,6 +12679,7 @@ function buildSyncData(){
     // seguían como estaban. Se incluyen aquí para que también se sincronicen.
     transportTypes: S.transportTypes||[],
     taskTypes: (typeof taskTypes!=='undefined'?taskTypes:getTaskTypes())||[],
+    ...(typeof nominaSyncPayload==='function'?nominaSyncPayload():{}),
     dietaDefault: S.dietaDefault||0,
     precioHoraNormalDefault: S.precioHoraNormalDefault||0,
     precioHoraExtraDefault: S.precioHoraExtraDefault||0,
@@ -12341,6 +12771,7 @@ async function importDriveData(d, verifyMode){
       taskTypes=Object.values(byId2);
       saveTaskTypes(taskTypes);
     }
+    if(typeof applyNominaSync==='function') applyNominaSync(d);
     if(!S.dietaDefault && d.dietaDefault){ S.dietaDefault=d.dietaDefault; localStorage.setItem('dietaDefault',S.dietaDefault); }
     if(!S.precioHoraNormalDefault && d.precioHoraNormalDefault){ S.precioHoraNormalDefault=d.precioHoraNormalDefault; localStorage.setItem('precioHoraNormalDefault',S.precioHoraNormalDefault); }
     if(!S.precioHoraExtraDefault && d.precioHoraExtraDefault){ S.precioHoraExtraDefault=d.precioHoraExtraDefault; localStorage.setItem('precioHoraExtraDefault',S.precioHoraExtraDefault); }
@@ -13216,6 +13647,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
                   taskTypes=Object.values(_byId2);
                   saveTaskTypes(taskTypes);
                 }
+                if(typeof applyNominaSync==='function') applyNominaSync(d);
                 if(!S.dietaDefault && d.dietaDefault){ S.dietaDefault=d.dietaDefault; localStorage.setItem('dietaDefault',S.dietaDefault); }
                 if(!S.precioHoraNormalDefault && d.precioHoraNormalDefault){ S.precioHoraNormalDefault=d.precioHoraNormalDefault; localStorage.setItem('precioHoraNormalDefault',S.precioHoraNormalDefault); }
                 if(!S.precioHoraExtraDefault && d.precioHoraExtraDefault){ S.precioHoraExtraDefault=d.precioHoraExtraDefault; localStorage.setItem('precioHoraExtraDefault',S.precioHoraExtraDefault); }
