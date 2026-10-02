@@ -399,7 +399,7 @@ function mesesDisponibles(){
 function computeMonthTotals(mesKey){
   const t={horasNormales:0,horasExtra:0,horasNocturnas:0,horasFestivas:0,
     importeNormales:0,importeExtra:0,importeNocturnas:0,importeFestivas:0,
-    dieta:0,transporte:0,otrosConceptos:0,dias:0};
+    dieta:0,transporte:0,otrosConceptos:0,dias:0,sueldoBase:0,guardia:0};
   S.entries.filter(e=>mesKeyDe(e.fecha)===mesKey).forEach(e=>{
     t.horasNormales+=(+e.horasNormales||0); t.horasExtra+=(+e.horasExtra||0);
     t.horasNocturnas+=(+e.horasNocturnas||0); t.horasFestivas+=(+e.horasFestivas||0);
@@ -409,6 +409,14 @@ function computeMonthTotals(mesKey){
     t.otrosConceptos+=(e.otrosConceptos||[]).reduce((s,o)=>s+(+o.importe||0),0);
     t.dias++;
   });
+  // Sueldo Base y Guardia son importes FIJOS mensuales (se configuran en la
+  // pestaña Tarifas). Antes se podían rellenar ahí pero no se sumaban en
+  // ningún sitio de la app — se añaden aquí para que el total de un mes
+  // completo coincida con lo que realmente cobra el usuario cada mes.
+  if(t.dias>0){
+    t.sueldoBase=getTarifa('sueldoBase',0);
+    t.guardia=getTarifa('guardia',0);
+  }
   Object.keys(t).forEach(k=>{ if(k!=='dias') t[k]=Math.round(t[k]*100)/100; });
   return t;
 }
@@ -7401,6 +7409,11 @@ async function sendIAMsg(){
 // calculado por la app, y chat independiente guardado por mes.
 // ══════════════════════════════════════════════════════════
 let nominaMesActual=null;
+// Vista previa (en memoria, de esta sesión del navegador) de la última
+// imagen/PDF de nómina subida para cada mes, para poder verla y compartirla
+// directamente desde la app — no se guarda en IndexedDB ni se sincroniza
+// (solo lo que la IA extrae de ella, como ya se hacía).
+let nominaPreview={}; // {mesKey: dataUrl}
 
 // Convierte la primera página de un PDF en imagen (reutiliza pdf.js, que ya
 // se usa en otra parte de la app) para poder tratarla igual que una foto —
@@ -7450,8 +7463,12 @@ function compararNominaConApp(mesKey, extracted){
   campoH('Horas festivas','horasFestivas','horasFestivas');
   campoE('Dietas','dieta','dietas');
   campoE('Transporte','transporte','transporte');
+  if(app.sueldoBase>0) lineas.push('ℹ️ Sueldo Base (fijo, de Tarifas): '+app.sueldoBase.toFixed(2)+'€');
+  if(app.guardia>0) lineas.push('ℹ️ Guardia (fija, de Tarifas): '+app.guardia.toFixed(2)+'€');
+  const totalApp=app.importeNormales+app.importeExtra+app.importeNocturnas+app.importeFestivas+app.dieta+app.transporte+app.otrosConceptos+app.sueldoBase+app.guardia;
   let resumen='📋 Comparación de la nómina de '+mesLabel(mesKey)+' con lo registrado en la app ('+app.dias+' jornada(s)):\n\n'
-    +(lineas.length?lineas.join('\n'):'No hay horas ni dietas/transporte que comparar en ninguno de los dos lados.');
+    +(lineas.length?lineas.join('\n'):'No hay horas ni dietas/transporte que comparar en ninguno de los dos lados.')
+    +'\n\n💰 Total calculado por la app (horas + dietas + transporte + Sueldo Base + Guardia): '+totalApp.toFixed(2)+'€';
   if(extracted.salarioNeto) resumen+='\n\n💶 Salario neto en la nómina: '+(+extracted.salarioNeto).toFixed(2)+'€';
   if(extracted.salarioBruto) resumen+='\n💶 Salario bruto en la nómina: '+(+extracted.salarioBruto).toFixed(2)+'€';
   if((extracted.otrosConceptos||[]).length){
@@ -7476,6 +7493,7 @@ async function subirNomina(file, mesSeleccionado){
     } else {
       showAlert('Solo se admiten imágenes o PDF','err'); return;
     }
+    nominaPreview[mesSeleccionado]=dataUrl; // vista previa en memoria (no se sincroniza)
     const base64=dataUrl.split(',')[1];
     const mediaType='image/jpeg';
     const prompt='Analiza esta imagen de una nómina (hoja de salario) laboral española y extrae TODOS los datos visibles.\n'
@@ -7514,6 +7532,7 @@ async function subirNomina(file, mesSeleccionado){
       const usar=confirm('La IA cree que esta nómina es de '+mesLabel(mesDetectado)+', pero la estás subiendo en '+mesLabel(mesSeleccionado)+'.\n\n¿La asocio a '+mesLabel(mesDetectado)+' (Aceptar) o la dejo en '+mesLabel(mesSeleccionado)+' (Cancelar)?');
       if(usar) mesFinal=mesDetectado;
     }
+    if(mesFinal!==mesSeleccionado){ nominaPreview[mesFinal]=nominaPreview[mesSeleccionado]; delete nominaPreview[mesSeleccionado]; }
 
     const comparisonSummary=compararNominaConApp(mesFinal, extracted);
 
@@ -7549,6 +7568,66 @@ async function borrarNomina(id){
     showAlert('Nómina eliminada');
     rerender();
   });
+}
+
+// Texto plano con los totales de un mes (horas, dietas, transporte, Sueldo
+// Base, Guardia e importe total) — para compartirlo o pasarlo a PDF.
+function resumenTotalesTexto(mesKey, app){
+  const total=app.importeNormales+app.importeExtra+app.importeNocturnas+app.importeFestivas+app.dieta+app.transporte+app.otrosConceptos+app.sueldoBase+app.guardia;
+  let t='🧾 TimerPro — Totales de '+mesLabel(mesKey)+'\n\n'
+    +'Horas normales: '+fmtH(app.horasNormales)+' ('+eur(app.importeNormales)+')\n'
+    +'Horas extra: '+fmtH(app.horasExtra)+' ('+eur(app.importeExtra)+')\n'
+    +'Horas nocturnas: '+fmtH(app.horasNocturnas)+' ('+eur(app.importeNocturnas)+')\n'
+    +'Horas festivas: '+fmtH(app.horasFestivas)+' ('+eur(app.importeFestivas)+')\n'
+    +'Dietas: '+eur(app.dieta)+'\n'
+    +'Transporte: '+eur(app.transporte)+'\n';
+  if(app.sueldoBase) t+='Sueldo Base: '+eur(app.sueldoBase)+'\n';
+  if(app.guardia) t+='Guardia: '+eur(app.guardia)+'\n';
+  t+='\nIMPORTE TOTAL: '+eur(total)+'\n\n'+app.dias+' jornada(s) registradas este mes';
+  return t;
+}
+// Genera un PDF sencillo con esos totales (reutiliza jsPDF, ya cargado para
+// el resto de exportaciones de la app) y lo comparte o lo descarga, igual
+// que las demás exportaciones de TimerPro.
+async function exportarResumenNominaPDF(mesKey, app){
+  if(!window.jspdf){ showAlert('Cargando librería PDF...','err'); setTimeout(()=>exportarResumenNominaPDF(mesKey,app),1500); return; }
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const texto=resumenTotalesTexto(mesKey,app);
+  doc.setFontSize(14); doc.text('TimerPro — Totales de '+mesLabel(mesKey),15,18);
+  doc.setFontSize(10);
+  doc.text(doc.splitTextToSize(texto.split('\n').slice(2).join('\n'),180),15,30);
+  const fname='totales_'+mesKey+'.pdf';
+  try{
+    const blob=doc.output('blob');
+    if(navigator.share && navigator.canShare && navigator.canShare({files:[new File([blob],fname,{type:'application/pdf'})]})){
+      await navigator.share({files:[new File([blob],fname,{type:'application/pdf'})],title:'Totales '+mesLabel(mesKey)});
+      return;
+    }
+  }catch(e){ if(e&&e.name==='AbortError') return; }
+  doc.save(fname);
+}
+
+// Compartir el resumen de comparación de un mes (como texto) y, si hay una
+// imagen/PDF de nómina de esta misma sesión, también como imagen — igual
+// que el "Compartir" que ya existe en el resto de la app (exportar día,
+// informes, etc.), para poder mandarlo por WhatsApp/email tal cual.
+async function compartirResumenNomina(mesKey, texto){
+  const dataUrl=nominaPreview[mesKey];
+  try{
+    if(navigator.share && dataUrl && navigator.canShare){
+      const blob=await (await fetch(dataUrl)).blob();
+      const file=new File([blob], 'nomina_'+mesKey+'.jpg', {type:blob.type||'image/jpeg'});
+      if(navigator.canShare({files:[file]})){
+        await navigator.share({files:[file], title:'Nómina '+mesLabel(mesKey), text:texto});
+        return;
+      }
+    }
+    if(navigator.share){ await navigator.share({title:'Nómina '+mesLabel(mesKey), text:texto}); return; }
+  }catch(e){ if(e&&e.name==='AbortError') return; }
+  // Sin navigator.share disponible (p.ej. en ordenador): copiar al portapapeles
+  try{ await navigator.clipboard.writeText(texto); showAlert('📋 Resumen copiado — pégalo donde quieras'); }
+  catch(e){ showAlert('No se pudo compartir ni copiar: '+e.message,'err'); }
 }
 
 async function enviarMensajeNomina(mesKey){
@@ -7624,12 +7703,19 @@ function renderNominas(){
         h('div',{},'Horas nocturnas: '+fmtH(app.horasNocturnas)),
         h('div',{},'Horas festivas: '+fmtH(app.horasFestivas)),
         h('div',{},'Dietas: '+eur(app.dieta)),
-        h('div',{},'Transporte: '+eur(app.transporte))
+        h('div',{},'Transporte: '+eur(app.transporte)),
+        h('div',{},'Sueldo Base: '+eur(app.sueldoBase)),
+        h('div',{},'Guardia: '+eur(app.guardia))
       ),
       h('div',{style:{marginTop:'.4rem',fontWeight:700,color:'var(--acc)'}},
-        'Importe total calculado: '+eur(app.importeNormales+app.importeExtra+app.importeNocturnas+app.importeFestivas+app.dieta+app.transporte+app.otrosConceptos)
+        'Importe total calculado: '+eur(app.importeNormales+app.importeExtra+app.importeNocturnas+app.importeFestivas+app.dieta+app.transporte+app.otrosConceptos+app.sueldoBase+app.guardia)
       ),
-      h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginTop:'.2rem'}},app.dias+' jornada(s) registradas este mes')
+      h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginTop:'.2rem'}},app.dias+' jornada(s) registradas este mes'),
+      (!app.sueldoBase&&!app.guardia)?h('div',{style:{fontSize:'.72rem',color:'var(--ink3)',marginTop:'.2rem'}},'No tienes Sueldo Base ni Guardia configurados en Tarifas — si cobras un importe fijo al mes, ponlo ahí para que se sume aquí.'):null,
+      h('div',{style:{display:'flex',gap:'.4rem',marginTop:'.6rem'}},
+        h('button',{class:'btn btn-gh btn-sm',style:{flex:1},on:{click:()=>compartirResumenNomina(mesKey, resumenTotalesTexto(mesKey,app))}},'📤 Compartir'),
+        h('button',{class:'btn btn-gh btn-sm',style:{flex:1},on:{click:()=>exportarResumenNominaPDF(mesKey,app)}},'📄 PDF')
+      )
     ),
 
     h('div',{class:'card'},
@@ -7639,13 +7725,19 @@ function renderNominas(){
       h('input',{type:'file',accept:'image/*,application/pdf',
         on:{change:ev=>{ const f=ev.target.files[0]; if(f) subirNomina(f, mesKey); ev.target.value=''; }}
       }),
+      nominaPreview[mesKey]?h('div',{style:{marginTop:'.6rem'}},
+        h('img',{src:nominaPreview[mesKey],style:{maxWidth:'100%',borderRadius:'var(--r2)',border:'1px solid var(--brd)',display:'block'}})
+      ):null,
       payslipsDelMes.length===0
         ? h('div',{style:{fontSize:'.78rem',color:'var(--ink3)',marginTop:'.6rem'}},'Todavía no hay ninguna nómina subida para este mes.')
         : h('div',{style:{marginTop:'.6rem',display:'flex',flexDirection:'column',gap:'.4rem'}},
             ...payslipsDelMes.map(p=>h('div',{style:{background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.5rem .7rem'}},
               h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
                 h('div',{style:{fontWeight:700,fontSize:'.82rem'}},'📄 '+(p.fileName||'Nómina')),
-                h('button',{class:'btn btn-r btn-sm',on:{click:()=>borrarNomina(p.id)}},'✕')
+                h('div',{style:{display:'flex',gap:'.3rem'}},
+                  h('button',{class:'btn btn-gh btn-sm',title:'Compartir',on:{click:()=>compartirResumenNomina(mesKey,p.comparisonSummary||'')}},'📤'),
+                  h('button',{class:'btn btn-r btn-sm',on:{click:()=>borrarNomina(p.id)}},'✕')
+                )
               ),
               h('div',{style:{fontSize:'.7rem',color:'var(--ink3)',marginTop:'.1rem'}},
                 p.uploadedAt?new Date(p.uploadedAt).toLocaleString('es-ES'):'')
