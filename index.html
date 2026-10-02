@@ -582,6 +582,7 @@ let histSearch = '';
 let templates = [];
 let syncMode = 'export';
 let dlDialog = null;
+let _resStateSnapshot = null; // usado por Nóminas al abrir "Exportación personalizada" para un periodo concreto
 let workers = []; // list of saved workers
 let companies = []; // list of saved companies
 let activeWorkerId = null;
@@ -4374,6 +4375,21 @@ function defaultCustomFields(){
   const o={}; CUSTOM_EXPORT_FIELDS.forEach(f=>o[f.key]=true); return o;
 }
 
+// Abre "Exportación personalizada" ya preparada para el rango de un periodo de Nóminas,
+// sin tocar permanentemente los filtros propios de la pestaña Resumen (se restauran al cerrar).
+function openCustomExportParaPeriodo(mesKey){
+  const {inicio,fin}=periodoRangoDe(mesKey);
+  _resStateSnapshot={resMode:S.resMode, resFrom:S.resFrom, resTo:S.resTo};
+  S.resMode='range'; S.resFrom=inicio; S.resTo=fin;
+  if(!S.customFields) S.customFields=defaultCustomFields();
+  openModal('customExport');
+}
+function _restoreResStateIfNeeded(){
+  if(_resStateSnapshot){
+    S.resMode=_resStateSnapshot.resMode; S.resFrom=_resStateSnapshot.resFrom; S.resTo=_resStateSnapshot.resTo;
+    _resStateSnapshot=null; rerender();
+  }
+}
 function openExportModal(mode){
   const entries = getResumenEntries();
   const from = S.resMode==='days'?((entries[0]||{}).fecha||today()):(S.resFrom||firstDayOfMonth());
@@ -4729,15 +4745,15 @@ function exportXLSX(conPrecios){
 }
 
 
-async function exportPlantilla(){
-  const from = S.resMode==='days'?'':(S.resFrom||firstDayOfMonth());
-  const to = S.resMode==='days'?'':(S.resTo||today());
+async function exportPlantilla(fromOverride, toOverride, labelOverride, fileTagOverride){
+  const from = fromOverride!=null?fromOverride:(S.resMode==='days'?'':(S.resFrom||firstDayOfMonth()));
+  const to = toOverride!=null?toOverride:(S.resMode==='days'?'':(S.resTo||today()));
   const worker = workers.find(w=>w.id===activeWorkerId)||{};
   const company = companies.find(c=>c.id===activeCompanyId)||{};
 
   // Generate days: either every day in the range, or just the loose selected days
   const days = [];
-  if(S.resMode==='days'){
+  if(fromOverride==null && S.resMode==='days'){
     [...(S.resDays||[])].sort().forEach(fecha=>{
       const[yyyy,mm,dd]=fecha.split('-');
       days.push({fecha, fDisp:dd+'/'+mm+'/'+yyyy, dia:cap(wday(fecha))});
@@ -4753,7 +4769,7 @@ async function exportPlantilla(){
       cur.setDate(cur.getDate()+1);
     }
   }
-  if(S.resMode==='days'&&!days.length){showAlert('No hay días seleccionados','err');return;}
+  if(fromOverride==null && S.resMode==='days'&&!days.length){showAlert('No hay días seleccionados','err');return;}
 
   const css=`
     *{box-sizing:border-box;margin:0;padding:0}
@@ -4796,7 +4812,7 @@ async function exportPlantilla(){
 <div class="hdr">
   <div>
     <div class="hdr-title">${company.nombre||'TimerPro'} — Plantilla de jornadas</div>
-    <div class="hdr-sub">${worker.nombre||''} · ${S.resMode==='days'?resumenPeriodoLabel():'Del '+dlbl(from)+' al '+dlbl(to)} · ${days.length} días</div>
+    <div class="hdr-sub">${worker.nombre||''} · ${labelOverride||(S.resMode==='days'?resumenPeriodoLabel():'Del '+dlbl(from)+' al '+dlbl(to))} · ${days.length} días</div>
   </div>
   <div style="font-size:10px;color:#94a3b8">Generado: ${new Date().toLocaleDateString('es-ES')}</div>
 </div>
@@ -4820,7 +4836,7 @@ async function exportPlantilla(){
 </table>
 </body></html>`;
 
-  const fname='TimerPro_Plantilla_'+resumenFileTag()+'.xls';
+  const fname='TimerPro_Plantilla_'+(fileTagOverride||resumenFileTag())+'.xls';
   const blob=new Blob([htmlContent],{type:'application/vnd.ms-excel;charset=utf-8'});
   const file=new File([blob],fname,{type:blob.type});
   if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
@@ -5285,7 +5301,11 @@ function computeLiquidacion(entries,allDates){
 
 // ── Tabla visual "día a día" (estilo Parte Diario) para el propio Resumen ──
 function renderResumenDiasTable(entries){
-  const allDates=getResumenAllDates();
+  return renderDiasTableGeneric(entries, getResumenAllDates());
+}
+// Versión genérica (reutilizada por Nóminas para el día a día de cada periodo,
+// sin depender de los filtros globales de Resumen S.resMode/resFrom/resTo)
+function renderDiasTableGeneric(entries, allDates){
   if(!allDates.length && !entries.length) return null;
   const liq=computeLiquidacion(entries,allDates);
   if(!liq.dayRows.length) return null;
@@ -7821,6 +7841,12 @@ function renderNominas(){
   const payslipsDelMes=(S.payslips||[]).filter(p=>p.mes===mesKey).sort((a,b)=>(b.uploadedAt||'').localeCompare(a.uploadedAt||''));
   const chatRec=(S.monthChats||[]).find(c=>c.mes===mesKey);
   const msgs=chatRec?chatRec.messages:[];
+  const {inicio:periodoInicio,fin:periodoFin}=periodoRangoDe(mesKey);
+  const entriesPeriodo=S.entries.filter(e=>e.fecha>=periodoInicio && e.fecha<=periodoFin);
+  const fechasPeriodo=dateRangeArray(periodoInicio,periodoFin);
+  const diaADiaPeriodo=renderDiasTableGeneric(entriesPeriodo, fechasPeriodo);
+  const etiquetaPeriodo=periodoLabel(mesKey)+(periodoEstaCerrado(mesKey)?' (cerrado)':' (en curso)');
+  const tagPeriodo=mesKey;
 
   return h('div',{},
     h('div',{class:'card'},
@@ -7869,6 +7895,27 @@ function renderNominas(){
         h('button',{id:'btn-nomina-img',class:'btn btn-gh btn-sm',on:{click:()=>compartirNominaComoImagen(mesKey,app)}},'📷 Imagen'),
         h('button',{class:'btn btn-gh btn-sm',on:{click:()=>exportarResumenNominaPDF(mesKey,app)}},'📄 PDF'),
         h('button',{class:'btn btn-gh btn-sm',on:{click:()=>compartirResumenNomina(mesKey, resumenTotalesTexto(mesKey,app))}},'📤 Texto')
+      )
+    ),
+
+    // Día a día del periodo (mismo formato que "Día a día" de Resumen) + mismas exportaciones que Resumen,
+    // con previsualización en todos los formatos antes de guardar/compartir (vía el diálogo Abrir/Guardar/Compartir).
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'📅 Día a día de '+periodoLabel(mesKey)),
+      diaADiaPeriodo || h('div',{style:{fontSize:'.78rem',color:'var(--ink3)'}},'Sin jornadas registradas en este periodo todavía.')
+    ),
+
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'Exportar '+periodoLabel(mesKey)),
+      h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.5rem'}},
+        'Mismos formatos que en Resumen. Al pulsar "Abrir" en el siguiente paso puedes previsualizar el resultado antes de guardarlo o compartirlo.'),
+      h('div',{class:'grid-2',style:{gap:'.5rem'}},
+        h('button',{class:'btn btn-g btn-full',on:{click:()=>exportPDFReal(false, entriesPeriodo, etiquetaPeriodo, [], tagPeriodo)}},'📄 PDF con importes'),
+        h('button',{class:'btn btn-gh btn-full',on:{click:()=>exportPDFReal(true, entriesPeriodo, etiquetaPeriodo, [], tagPeriodo)}},'📄 PDF sin importes'),
+        h('button',{class:'btn btn-b btn-full',on:{click:()=>exportExcel(false, entriesPeriodo, etiquetaPeriodo, tagPeriodo)}},'📊 Excel con importes'),
+        h('button',{class:'btn btn-gh btn-full',on:{click:()=>exportExcel(true, entriesPeriodo, etiquetaPeriodo, tagPeriodo)}},'📊 Excel sin importes'),
+        h('button',{class:'btn btn-pur btn-full',on:{click:()=>exportPlantilla(periodoInicio, periodoFin, etiquetaPeriodo, tagPeriodo)}},'📥 Descargar plantilla en blanco'),
+        h('button',{class:'btn btn-full',style:{background:'var(--surf2)',border:'1px solid var(--acc)',color:'var(--acc)'},on:{click:()=>openCustomExportParaPeriodo(mesKey)}},'🎛️ Exportación personalizada')
       )
     ),
 
@@ -7999,7 +8046,7 @@ function renderModalCustomExport(){
   if(!S.customFields) S.customFields=defaultCustomFields();
   const groups=['Horas','Económico','Detalle'];
   const groupLabel={Horas:'⏱ Horas',Económico:'💶 Económico',Detalle:'📋 Detalle'};
-  return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.classList.contains('modal-bg')){S.modal=null;rerender();}}}},
+  return h('div',{class:'modal-bg',on:{click:ev=>{if(ev.target.classList.contains('modal-bg')){S.modal=null;_restoreResStateIfNeeded();rerender();}}}},
     h('div',{class:'modal-box',style:{maxHeight:'85vh',overflowY:'auto'}},
       h('div',{class:'modal-title'},'🎛️ Exportación personalizada'),
       h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',marginBottom:'.5rem',lineHeight:1.4}},
@@ -8020,10 +8067,10 @@ function renderModalCustomExport(){
         )
       )),
       h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.5rem',marginTop:'.8rem'}},
-        h('button',{class:'btn btn-g btn-full',on:{click:()=>{const f={...S.customFields};S.modal=null;rerender();setTimeout(()=>exportCustomPDF(f),200);}}},'📄 Generar PDF'),
-        h('button',{class:'btn btn-b btn-full',on:{click:()=>{const f={...S.customFields};S.modal=null;rerender();setTimeout(()=>exportCustomExcel(f),200);}}},'📊 Generar Excel')
+        h('button',{class:'btn btn-g btn-full',on:{click:()=>{const f={...S.customFields};S.modal=null;rerender();setTimeout(()=>{exportCustomPDF(f);_restoreResStateIfNeeded();},200);}}},'📄 Generar PDF'),
+        h('button',{class:'btn btn-b btn-full',on:{click:()=>{const f={...S.customFields};S.modal=null;rerender();setTimeout(()=>{exportCustomExcel(f);_restoreResStateIfNeeded();},200);}}},'📊 Generar Excel')
       ),
-      h('button',{class:'btn btn-gh btn-full',style:{marginTop:'.5rem'},on:{click:()=>{S.modal=null;rerender();}}},'Cancelar')
+      h('button',{class:'btn btn-gh btn-full',style:{marginTop:'.5rem'},on:{click:()=>{S.modal=null;_restoreResStateIfNeeded();rerender();}}},'Cancelar')
     )
   );
 }
