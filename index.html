@@ -7735,36 +7735,60 @@ function renderNominas(){
       )
     ),
 
-    // Misma tarjeta sencilla de "Totales" que ya tenías y te gustaba —
-    // solo se le han AÑADIDO dos campos editables (Sueldo Base y Guardia)
-    // y una línea de Viajes/km, sin cambiar su forma.
+    // ── "Nómina" del periodo: Sueldo Base + Guardia (editables aquí mismo)
+    // y, debajo, todo lo que se le va sumando gradualmente (horas extra de
+    // cualquier tipo, dietas, transporte, viajes/km), con el total final.
     h('div',{class:'card'},
-      h('div',{class:'sec-title'},'Totales de '+periodoLabel(mesKey)+' según la app'+(periodoEstaCerrado(mesKey)?' (cerrado)':' (en curso)')),
-      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.4rem',fontSize:'.85rem',alignItems:'end'}},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'.3rem'}},
+        h('div',{class:'sec-title',style:{margin:0}},'🧾 Nómina — '+periodoLabel(mesKey)),
+        h('span',{style:{fontSize:'.68rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'1rem',
+          background:periodoEstaCerrado(mesKey)?'var(--surf2)':'#22c55e22',
+          color:periodoEstaCerrado(mesKey)?'var(--ink2)':'#22c55e'}},
+          periodoEstaCerrado(mesKey)?'🔒 Cerrado':'🟢 En curso')
+      ),
+      h('div',{style:{fontSize:'.7rem',color:'var(--ink3)',marginBottom:'.6rem'}},'Periodo de nómina: del día 26 al 25 del mes siguiente.'),
+
+      // Sueldo Base y Guardia — editables directamente aquí
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.6rem',marginBottom:'.6rem'}},
         h('div',{},
-          h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'Sueldo Base'),
+          h('label',{style:{fontSize:'.7rem',fontWeight:700,color:'var(--ink2)'}},'SUELDO BASE (€)'),
           h('input',{type:'number',min:'0',step:'0.01',value:app.sueldoBase||'',placeholder:'1600.00',
-            style:{width:'100%',fontWeight:700},
+            style:{width:'100%'},
             on:{change:ev=>{ const t=getTarifas(); t.sueldoBase=parseFloat(ev.target.value)||0; saveTarifas(t); rerender(); }}
           })
         ),
         h('div',{},
-          h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'Guardia'),
+          h('label',{style:{fontSize:'.7rem',fontWeight:700,color:'var(--ink2)'}},'GUARDIA (€)'),
           h('input',{type:'number',min:'0',step:'0.01',value:app.guardia||'',placeholder:'500.00',
-            style:{width:'100%',fontWeight:700},
+            style:{width:'100%'},
             on:{change:ev=>{ const t=getTarifas(); t.guardia=parseFloat(ev.target.value)||0; saveTarifas(t); rerender(); }}
           })
-        ),
-        h('div',{},'Horas normales: '+fmtH(app.horasNormales)),
-        h('div',{},'Horas extra: '+fmtH(app.horasExtra)),
-        h('div',{},'Horas nocturnas: '+fmtH(app.horasNocturnas)),
-        h('div',{},'Horas festivas: '+fmtH(app.horasFestivas)),
-        h('div',{},'Dietas: '+eur(app.dieta)),
-        h('div',{},'Transporte: '+eur(app.transporte)),
-        h('div',{},'Viajes ('+app.km.toFixed(0)+' km): '+eur(app.viajes))
+        )
       ),
-      h('div',{style:{marginTop:'.4rem',fontWeight:700,color:'var(--acc)'}},
-        'Importe total calculado: '+eur(totalPeriodo(app))
+
+      // Desglose de todo lo que se va sumando al periodo
+      h('div',{style:{display:'flex',flexDirection:'column',gap:'.3rem',fontSize:'.84rem'}},
+        [['Sueldo Base',app.sueldoBase],['Guardia',app.guardia]]
+          .filter(([,v])=>v>0).map(([l,v])=>
+            h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.2rem 0',borderBottom:'1px solid var(--brd)'}},
+              h('span',{},l),h('span',{style:{fontWeight:700}},eur(v)))
+          ),
+        ...[
+          ['Horas normales ('+fmtH(app.horasNormales)+')',app.importeNormales],
+          ['Horas extra ('+fmtH(app.horasExtra)+')',app.importeExtra],
+          ['Horas nocturnas ('+fmtH(app.horasNocturnas)+')',app.importeNocturnas],
+          ['Horas festivas ('+fmtH(app.horasFestivas)+')',app.importeFestivas],
+          ['Dietas',app.dieta],
+          ['Transporte',app.transporte],
+          ['Viajes/km ('+app.km.toFixed(0)+' km)',app.viajes],
+          ['Otros conceptos',app.otrosConceptos]
+        ].filter(([,v])=>v>0).map(([l,v])=>
+          h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.2rem 0',borderBottom:'1px solid var(--brd)'}},
+            h('span',{},l),h('span',{style:{fontWeight:700}},eur(v)))
+        )
+      ),
+      h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'.5rem',fontWeight:800,fontSize:'1.05rem',color:'var(--acc)'}},
+        h('span',{},'TOTAL'),h('span',{},eur(totalPeriodo(app)))
       ),
       h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginTop:'.2rem'}},app.dias+' jornada(s) registradas en este periodo'),
       h('div',{style:{display:'flex',gap:'.4rem',marginTop:'.6rem'}},
