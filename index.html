@@ -7638,14 +7638,12 @@ async function exportarResumenNominaPDF(mesKey, app){
   doc.setFontSize(10);
   doc.text(doc.splitTextToSize(texto.split('\n').slice(2).join('\n'),180),15,30);
   const fname='totales_'+mesKey+'.pdf';
-  try{
-    const blob=doc.output('blob');
-    if(navigator.share && navigator.canShare && navigator.canShare({files:[new File([blob],fname,{type:'application/pdf'})]})){
-      await navigator.share({files:[new File([blob],fname,{type:'application/pdf'})],title:'Totales '+periodoLabel(mesKey)});
-      return;
-    }
-  }catch(e){ if(e&&e.name==='AbortError') return; }
-  doc.save(fname);
+  // Mismo diálogo de Abrir (previsualizar) / Guardar / Compartir que usa el
+  // resto de exportaciones de la app (informes, etc.), en vez de compartir
+  // directo — así se puede ver el PDF antes de decidir qué hacer con él.
+  dlDialog={blob:doc.output('blob'), filename:fname, title:'Nómina '+periodoLabel(mesKey)};
+  S.modal='dl';
+  rerender();
 }
 
 // Compartir el resumen de comparación de un mes (como texto) y, si hay una
@@ -7668,6 +7666,106 @@ async function compartirResumenNomina(mesKey, texto){
   // Sin navigator.share disponible (p.ej. en ordenador): copiar al portapapeles
   try{ await navigator.clipboard.writeText(texto); showAlert('📋 Resumen copiado — pégalo donde quieras'); }
   catch(e){ showAlert('No se pudo compartir ni copiar: '+e.message,'err'); }
+}
+
+// Genera una imagen tipo "recibo de nómina" con los totales del periodo —
+// mismo diseño, misma vista previa y los mismos botones de compartir
+// (WhatsApp/Email/Copiar/Descargar, o compartir nativo en móvil) que ya usa
+// Resumen con "Compartir como imagen", para que sea igual en toda la app.
+async function compartirNominaComoImagen(mesKey, app){
+  const btn=document.getElementById('btn-nomina-img');
+  if(btn){ btn.textContent='⏳...'; btn.disabled=true; }
+  try{
+    const cerrado=periodoEstaCerrado(mesKey);
+    const total=totalPeriodo(app);
+    const kpis='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">'
+      +'<div style="background:rgba(255,255,255,.14);border-radius:8px;padding:10px;text-align:center">'
+      +'<div style="font-size:20px;font-weight:900">'+fmtH(app.horasNormales+app.horasExtra+app.horasNocturnas+app.horasFestivas)+'</div>'
+      +'<div style="font-size:9px;opacity:.65;letter-spacing:.08em;margin-top:2px">HORAS TRABAJADAS</div></div>'
+      +'<div style="background:rgba(255,255,255,.14);border-radius:8px;padding:10px;text-align:center">'
+      +'<div style="font-size:20px;font-weight:900">'+eur(total)+'</div>'
+      +'<div style="font-size:9px;opacity:.65;letter-spacing:.08em;margin-top:2px">TOTAL</div></div></div>';
+    let html='<div style="width:460px;font-family:system-ui,Arial,sans-serif;color:#0f172a;border-radius:12px;overflow:hidden">';
+    html+='<div style="background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:18px 22px">'
+      +'<div style="font-size:10px;opacity:.6;text-transform:uppercase;letter-spacing:.08em">NÓMINA · '+(cerrado?'PERIODO CERRADO':'PERIODO EN CURSO')+'</div>'
+      +'<div style="font-size:22px;font-weight:900;margin:4px 0 2px">'+periodoLabel(mesKey)+'</div>'
+      +kpis+'</div>';
+    html+='<div style="background:#fff;padding:14px 18px">';
+    const row=(l,v)=>'<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:13px"><span style="color:#475569">'+l+'</span><span style="font-weight:700">'+v+'</span></div>';
+    if(app.sueldoBase) html+=row('Sueldo Base',eur(app.sueldoBase));
+    if(app.guardia) html+=row('Guardia',eur(app.guardia));
+    if(app.horasNormales) html+=row('Horas normales ('+fmtH(app.horasNormales)+')',eur(app.importeNormales));
+    if(app.horasExtra) html+=row('Horas extra ('+fmtH(app.horasExtra)+')',eur(app.importeExtra));
+    if(app.horasNocturnas) html+=row('Horas nocturnas ('+fmtH(app.horasNocturnas)+')',eur(app.importeNocturnas));
+    if(app.horasFestivas) html+=row('Horas festivas ('+fmtH(app.horasFestivas)+')',eur(app.importeFestivas));
+    if(app.dieta) html+=row('Dietas',eur(app.dieta));
+    if(app.transporte) html+=row('Transporte',eur(app.transporte));
+    if(app.viajes) html+=row('Viajes ('+app.km.toFixed(0)+' km)',eur(app.viajes));
+    if(app.otrosConceptos) html+=row('Otros conceptos',eur(app.otrosConceptos));
+    html+='<div style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:10px;padding:12px 16px;margin-top:14px;display:flex;justify-content:space-between;align-items:center">'
+      +'<div><div style="color:rgba(255,255,255,.6);font-size:10px;letter-spacing:.1em">TOTAL NÓMINA</div>'
+      +'<div style="color:#94a3b8;font-size:10px;margin-top:2px">'+app.dias+' jornada(s)</div></div>'
+      +'<div style="font-size:26px;font-weight:900;color:#4ade80">'+eur(total)+'</div></div>';
+    html+='<div style="text-align:center;font-size:9px;color:#94a3b8;margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0">TimerPro · '+periodoLabel(mesKey)+'</div></div></div>';
+
+    const wrap=document.createElement('div');
+    wrap.style.cssText='position:fixed;top:0;left:0;z-index:99999;opacity:0.01;pointer-events:none;';
+    wrap.innerHTML=html;
+    document.body.appendChild(wrap);
+    await new Promise(r=>setTimeout(r,200));
+    const canvas=await html2canvas(wrap.firstChild,{scale:2,useCORS:true,allowTaint:true,backgroundColor:'#ffffff',logging:false});
+    document.body.removeChild(wrap);
+
+    canvas.toBlob(async(blob)=>{
+      const imgUrl=URL.createObjectURL(blob);
+      const imgFile=new File([blob],'nomina-'+mesKey+'.png',{type:'image/png'});
+      if(navigator.share && navigator.canShare && navigator.canShare({files:[imgFile]})){
+        try{ await navigator.share({files:[imgFile], title:'Nómina '+periodoLabel(mesKey)}); URL.revokeObjectURL(imgUrl); return; }
+        catch(ex){ if(ex.name==='AbortError'){ URL.revokeObjectURL(imgUrl); return; } }
+      }
+      // Escritorio: panel con vista previa + WhatsApp/Email/Copiar/Descargar (igual que Resumen)
+      const panel=document.createElement('div');
+      panel.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
+      panel.innerHTML='<div style="background:#fff;border-radius:16px;padding:1.2rem;max-width:420px;width:100%;font-family:system-ui">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">'
+        +'<b style="font-size:1rem">Compartir nómina</b>'
+        +'<button id="np-close" style="background:none;border:none;font-size:1.2rem;cursor:pointer">✕</button></div>'
+        +'<img src="'+imgUrl+'" style="width:100%;border-radius:10px;margin-bottom:1rem;box-shadow:0 2px 12px rgba(0,0,0,.15)">'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">'
+        +'<button id="np-wa" style="background:#25D366;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">📱 WhatsApp</button>'
+        +'<button id="np-em" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">📧 Email</button>'
+        +'<button id="np-cp" style="background:#7c3aed;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">📋 Copiar</button>'
+        +'<button id="np-dl" style="background:#475569;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">⬇️ Descargar</button>'
+        +'</div></div>';
+      document.body.appendChild(panel);
+      const close=()=>{ document.body.removeChild(panel); URL.revokeObjectURL(imgUrl); };
+      document.getElementById('np-close').onclick=close;
+      panel.addEventListener('click',ev=>{ if(ev.target===panel) close(); });
+      document.getElementById('np-wa').onclick=async()=>{
+        try{ await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); window.open('https://web.whatsapp.com','_blank'); showAlert('Imagen copiada — pégala en WhatsApp con Ctrl+V'); }
+        catch(ex){ const a=document.createElement('a'); a.href=imgUrl; a.download='nomina-'+mesKey+'.png'; document.body.appendChild(a); a.click(); document.body.removeChild(a); showAlert('Descargada — adjúntala en WhatsApp con el clip 📎'); }
+        close();
+      };
+      document.getElementById('np-em').onclick=()=>{
+        const a=document.createElement('a'); a.href=imgUrl; a.download='nomina-'+mesKey+'.png'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(()=>{ window.location.href='mailto:?subject=Nómina '+periodoLabel(mesKey); },500);
+        close();
+      };
+      document.getElementById('np-cp').onclick=async()=>{
+        try{ await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); showAlert('✅ Imagen copiada — pega con Ctrl+V donde quieras'); }
+        catch(ex){ showAlert('No se pudo copiar','err'); }
+        close();
+      };
+      document.getElementById('np-dl').onclick=()=>{
+        const a=document.createElement('a'); a.href=imgUrl; a.download='nomina-'+mesKey+'.png'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        showAlert('✅ Imagen descargada'); close();
+      };
+    },'image/png',0.95);
+  }catch(err){
+    showAlert('Error: '+err.message,'err'); console.error(err);
+  }finally{
+    if(btn){ btn.textContent='📷 Imagen'; btn.disabled=false; }
+  }
 }
 
 async function enviarMensajeNomina(mesKey){
@@ -7735,65 +7833,42 @@ function renderNominas(){
       )
     ),
 
-    // ── "Nómina" del periodo: Sueldo Base + Guardia (editables aquí mismo)
-    // y, debajo, todo lo que se le va sumando gradualmente (horas extra de
-    // cualquier tipo, dietas, transporte, viajes/km), con el total final.
+    // Misma tarjeta sencilla de "Totales" que ya tenías y te gustaba —
+    // solo se le han AÑADIDO dos campos editables (Sueldo Base y Guardia)
+    // y una línea de Viajes/km, sin cambiar su forma.
     h('div',{class:'card'},
-      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'.3rem'}},
-        h('div',{class:'sec-title',style:{margin:0}},'🧾 Nómina — '+periodoLabel(mesKey)),
-        h('span',{style:{fontSize:'.68rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'1rem',
-          background:periodoEstaCerrado(mesKey)?'var(--surf2)':'#22c55e22',
-          color:periodoEstaCerrado(mesKey)?'var(--ink2)':'#22c55e'}},
-          periodoEstaCerrado(mesKey)?'🔒 Cerrado':'🟢 En curso')
-      ),
-      h('div',{style:{fontSize:'.7rem',color:'var(--ink3)',marginBottom:'.6rem'}},'Periodo de nómina: del día 26 al 25 del mes siguiente.'),
-
-      // Sueldo Base y Guardia — editables directamente aquí
-      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.6rem',marginBottom:'.6rem'}},
+      h('div',{class:'sec-title'},'Totales de '+periodoLabel(mesKey)+' según la app'+(periodoEstaCerrado(mesKey)?' (cerrado)':' (en curso)')),
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.4rem',fontSize:'.85rem',alignItems:'end'}},
         h('div',{},
-          h('label',{style:{fontSize:'.7rem',fontWeight:700,color:'var(--ink2)'}},'SUELDO BASE (€)'),
-          h('input',{type:'number',min:'0',step:'0.01',value:app.sueldoBase||'',placeholder:'1600.00',
-            style:{width:'100%'},
+          h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'Sueldo Base'+(app.sueldoBase?'':' ⚠️ sin rellenar')),
+          h('input',{type:'number',min:'0',step:'0.01',value:app.sueldoBase||'',placeholder:'0.00',
+            style:{width:'100%',fontWeight:700,border:app.sueldoBase?undefined:'1px solid var(--red)'},
             on:{change:ev=>{ const t=getTarifas(); t.sueldoBase=parseFloat(ev.target.value)||0; saveTarifas(t); rerender(); }}
           })
         ),
         h('div',{},
-          h('label',{style:{fontSize:'.7rem',fontWeight:700,color:'var(--ink2)'}},'GUARDIA (€)'),
-          h('input',{type:'number',min:'0',step:'0.01',value:app.guardia||'',placeholder:'500.00',
-            style:{width:'100%'},
+          h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'Guardia'+(app.guardia?'':' ⚠️ sin rellenar')),
+          h('input',{type:'number',min:'0',step:'0.01',value:app.guardia||'',placeholder:'0.00',
+            style:{width:'100%',fontWeight:700,border:app.guardia?undefined:'1px solid var(--red)'},
             on:{change:ev=>{ const t=getTarifas(); t.guardia=parseFloat(ev.target.value)||0; saveTarifas(t); rerender(); }}
           })
-        )
+        ),
+        h('div',{},'Horas normales: '+fmtH(app.horasNormales)),
+        h('div',{},'Horas extra: '+fmtH(app.horasExtra)),
+        h('div',{},'Horas nocturnas: '+fmtH(app.horasNocturnas)),
+        h('div',{},'Horas festivas: '+fmtH(app.horasFestivas)),
+        h('div',{},'Dietas: '+eur(app.dieta)),
+        h('div',{},'Transporte: '+eur(app.transporte)),
+        h('div',{},'Viajes ('+app.km.toFixed(0)+' km): '+eur(app.viajes))
       ),
-
-      // Desglose de todo lo que se va sumando al periodo
-      h('div',{style:{display:'flex',flexDirection:'column',gap:'.3rem',fontSize:'.84rem'}},
-        [['Sueldo Base',app.sueldoBase],['Guardia',app.guardia]]
-          .filter(([,v])=>v>0).map(([l,v])=>
-            h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.2rem 0',borderBottom:'1px solid var(--brd)'}},
-              h('span',{},l),h('span',{style:{fontWeight:700}},eur(v)))
-          ),
-        ...[
-          ['Horas normales ('+fmtH(app.horasNormales)+')',app.importeNormales],
-          ['Horas extra ('+fmtH(app.horasExtra)+')',app.importeExtra],
-          ['Horas nocturnas ('+fmtH(app.horasNocturnas)+')',app.importeNocturnas],
-          ['Horas festivas ('+fmtH(app.horasFestivas)+')',app.importeFestivas],
-          ['Dietas',app.dieta],
-          ['Transporte',app.transporte],
-          ['Viajes/km ('+app.km.toFixed(0)+' km)',app.viajes],
-          ['Otros conceptos',app.otrosConceptos]
-        ].filter(([,v])=>v>0).map(([l,v])=>
-          h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.2rem 0',borderBottom:'1px solid var(--brd)'}},
-            h('span',{},l),h('span',{style:{fontWeight:700}},eur(v)))
-        )
-      ),
-      h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'.5rem',fontWeight:800,fontSize:'1.05rem',color:'var(--acc)'}},
-        h('span',{},'TOTAL'),h('span',{},eur(totalPeriodo(app)))
+      h('div',{style:{marginTop:'.4rem',fontWeight:700,color:'var(--acc)'}},
+        'Importe total calculado: '+eur(totalPeriodo(app))
       ),
       h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginTop:'.2rem'}},app.dias+' jornada(s) registradas en este periodo'),
-      h('div',{style:{display:'flex',gap:'.4rem',marginTop:'.6rem'}},
-        h('button',{class:'btn btn-gh btn-sm',style:{flex:1},on:{click:()=>compartirResumenNomina(mesKey, resumenTotalesTexto(mesKey,app))}},'📤 Compartir'),
-        h('button',{class:'btn btn-gh btn-sm',style:{flex:1},on:{click:()=>exportarResumenNominaPDF(mesKey,app)}},'📄 PDF')
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'.4rem',marginTop:'.6rem'}},
+        h('button',{id:'btn-nomina-img',class:'btn btn-gh btn-sm',on:{click:()=>compartirNominaComoImagen(mesKey,app)}},'📷 Imagen'),
+        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>exportarResumenNominaPDF(mesKey,app)}},'📄 PDF'),
+        h('button',{class:'btn btn-gh btn-sm',on:{click:()=>compartirResumenNomina(mesKey, resumenTotalesTexto(mesKey,app))}},'📤 Texto')
       )
     ),
 
