@@ -11499,6 +11499,22 @@ async function gdriveSaveData(data){
     activeWorkerId: data.activeWorkerId,
     activeCompanyId: data.activeCompanyId,
     dayTags: data.dayTags||dayTags||{},
+    // ESTOS CAMPOS FALTABAN AQUÍ: buildSyncData() ya los preparaba (nóminas,
+    // chat de cada mes, tipos propios, precios por defecto, Sueldo Base y
+    // Guardia), pero esta función construía su propio payload para subir a
+    // Drive y se quedaba solo con lo de arriba, así que nunca llegaban a
+    // subirse de verdad — por eso al cargar en otro aparato no aparecían
+    // ni las nóminas ni el Sueldo Base/Guardia aunque "no diera error".
+    payslips: data.payslips||[],
+    monthChats: data.monthChats||[],
+    transportTypes: data.transportTypes||[],
+    taskTypes: data.taskTypes||[],
+    dietaDefault: data.dietaDefault||0,
+    precioHoraNormalDefault: data.precioHoraNormalDefault||0,
+    precioHoraExtraDefault: data.precioHoraExtraDefault||0,
+    precioHoraNocturnaDefault: data.precioHoraNocturnaDefault||0,
+    precioHoraFestivaDefault: data.precioHoraFestivaDefault||0,
+    tarifas: data.tarifas||{},
     exportedAt: new Date().toISOString()
   });
   const blob = new Blob([payload], {type:'application/json'});
@@ -11852,6 +11868,9 @@ function buildSyncData(){
     // solo se sincronizan los datos que la IA extrajo y el resumen.
     payslips: (S.payslips||[]).map(p=>({id:p.id,mes:p.mes||'',fileName:p.fileName||'',uploadedAt:p.uploadedAt||'',extracted:p.extracted||{},comparisonSummary:p.comparisonSummary||''})),
     monthChats: (S.monthChats||[]).map(c=>({id:c.id,mes:c.mes||'',messages:c.messages||[]})),
+    // Sueldo Base y Guardia (pestaña Tarifas): antes vivían SOLO en
+    // localStorage de este aparato y nunca viajaban con la sincronización.
+    tarifas: getTarifas()||{},
 
     activeWorkerId, activeCompanyId,
     worker:(()=>{const w=workers.find(x=>x.id===activeWorkerId)||workers[0]||{};
@@ -11951,6 +11970,15 @@ async function importDriveData(d, verifyMode){
     if(!S.precioHoraExtraDefault && d.precioHoraExtraDefault){ S.precioHoraExtraDefault=d.precioHoraExtraDefault; localStorage.setItem('precioHoraExtraDefault',S.precioHoraExtraDefault); }
     if(!S.precioHoraNocturnaDefault && d.precioHoraNocturnaDefault){ S.precioHoraNocturnaDefault=d.precioHoraNocturnaDefault; localStorage.setItem('precioHoraNocturnaDefault',S.precioHoraNocturnaDefault); }
     if(!S.precioHoraFestivaDefault && d.precioHoraFestivaDefault){ S.precioHoraFestivaDefault=d.precioHoraFestivaDefault; localStorage.setItem('precioHoraFestivaDefault',S.precioHoraFestivaDefault); }
+    // Sueldo Base / Guardia: se adoptan de Drive solo si aquí todavía no se
+    // había puesto nada (igual que el resto de "valores por defecto"), para
+    // no pisar un valor ya editado en este mismo aparato.
+    if(d.tarifas && (d.tarifas.sueldoBase||d.tarifas.guardia)){
+      const tLocal=getTarifas();
+      if(!tLocal.sueldoBase && d.tarifas.sueldoBase) tLocal.sueldoBase=d.tarifas.sueldoBase;
+      if(!tLocal.guardia && d.tarifas.guardia) tLocal.guardia=d.tarifas.guardia;
+      saveTarifas(tLocal);
+    }
     await loadData();
     syncStatus='ok';
     lastSync=new Date().toLocaleTimeString('es-ES');
