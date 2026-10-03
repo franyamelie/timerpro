@@ -7634,8 +7634,22 @@ async function subirNomina(file, mesSeleccionado){
     if(!res.ok){ const err=await res.text(); throw new Error('Error Gemini '+res.status+': '+err.slice(0,200)); }
     const data=await res.json();
     const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'';
-    const clean=text.replace(/```json|```/g,'').trim();
-    const extracted=JSON.parse(clean);
+    let clean=text.replace(/```json|```/g,'').trim();
+    let extracted;
+    try{
+      extracted=JSON.parse(clean);
+    }catch(parseErr){
+      // La IA a veces añade texto explicativo antes/después del JSON (o se corta).
+      // Como último intento, se busca el primer '{' y el último '}' de la respuesta
+      // y se intenta parsear solo ese fragmento antes de rendirse.
+      const m=clean.match(/\{[\s\S]*\}/);
+      if(m){
+        try{ extracted=JSON.parse(m[0]); }catch(parseErr2){ extracted=null; }
+      }
+      if(!extracted){
+        throw new Error('La IA no devolvió datos en el formato esperado. Respuesta recibida: "'+clean.slice(0,180)+(clean.length>180?'...':'')+'". Prueba a subir la nómina de nuevo.');
+      }
+    }
 
     let mesFinal=mesSeleccionado;
     const mesDetectado=/^\d{4}-\d{2}$/.test(extracted.mes||'')?extracted.mes:'';
