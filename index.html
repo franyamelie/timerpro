@@ -7631,7 +7631,10 @@ async function subirNomina(file, mesSeleccionado){
         // responseMimeType:'application/json' obliga a Gemini a devolver SOLO JSON válido
         // (en vez de confiar en que siga la instrucción del texto, que a veces ignoraba
         // y se ponía a "explicar" en vez de responder con datos).
-        generationConfig:{maxOutputTokens:2000,temperature:0.1,responseMimeType:'application/json'}
+        // thinkingBudget:0 desactiva el "razonamiento" interno del modelo para esta
+        // tarea — si no, en algunos modelos ese razonamiento invisible puede consumir
+        // todo el límite de tokens y dejar la respuesta final completamente vacía.
+        generationConfig:{maxOutputTokens:3000,temperature:0.1,responseMimeType:'application/json',thinkingConfig:{thinkingBudget:0}}
       })
     });
     if(!res.ok){ const err=await res.text(); throw new Error('Error Gemini '+res.status+': '+err.slice(0,200)); }
@@ -7650,6 +7653,19 @@ async function subirNomina(file, mesSeleccionado){
         try{ extracted=JSON.parse(m[0]); }catch(parseErr2){ extracted=null; }
       }
       if(!extracted){
+        if(!clean){
+          // Respuesta totalmente vacía: casi siempre es que Gemini ha bloqueado
+          // la imagen (filtro de seguridad) o se ha quedado sin tokens antes de
+          // escribir nada. Sacamos el motivo exacto que da la propia API.
+          const finishReason=data.candidates?.[0]?.finishReason||'';
+          const blockReason=data.promptFeedback?.blockReason||'';
+          const safety=(data.candidates?.[0]?.safetyRatings||[]).filter(s=>s.probability&&s.probability!=='NEGLIGIBLE').map(s=>s.category+':'+s.probability).join(', ');
+          let motivo=[];
+          if(blockReason) motivo.push('bloqueo: '+blockReason);
+          if(finishReason) motivo.push('motivo de parada: '+finishReason);
+          if(safety) motivo.push('seguridad: '+safety);
+          throw new Error('La IA no ha devuelto ningún dato.'+(motivo.length?' ('+motivo.join(' · ')+')':' (sin detalles adicionales de la API)')+'. Prueba a subir la nómina de nuevo, o con otra foto/escaneado más claro.');
+        }
         throw new Error('La IA no devolvió datos en el formato esperado. Respuesta recibida: "'+clean.slice(0,180)+(clean.length>180?'...':'')+'". Prueba a subir la nómina de nuevo.');
       }
     }
@@ -9445,7 +9461,7 @@ Extrae los horarios de cada tarea (ej: 10:00 → 14:00). Si ves "OT 7941581076" 
           {inline_data:{mime_type:mediaType,data:base64}},
           {text:prompt}
         ]}],
-        generationConfig:{maxOutputTokens:1500,temperature:0.2,responseMimeType:'application/json'}
+        generationConfig:{maxOutputTokens:2500,temperature:0.2,responseMimeType:'application/json',thinkingConfig:{thinkingBudget:0}}
       })
     });
 
@@ -9463,6 +9479,14 @@ Extrae los horarios de cada tarea (ej: 10:00 → 14:00). Si ves "OT 7941581076" 
       const m=clean.match(/\{[\s\S]*\}/);
       if(m){ try{ parsed=JSON.parse(m[0]); }catch(parseErr2){ parsed=null; } }
       if(!parsed){
+        if(!clean){
+          const finishReason=data.candidates?.[0]?.finishReason||'';
+          const blockReason=data.promptFeedback?.blockReason||'';
+          let motivo=[];
+          if(blockReason) motivo.push('bloqueo: '+blockReason);
+          if(finishReason) motivo.push('motivo de parada: '+finishReason);
+          throw new Error('La IA no ha devuelto ningún dato.'+(motivo.length?' ('+motivo.join(' · ')+')':'')+'. Prueba de nuevo, o con otra foto más clara.');
+        }
         throw new Error('La IA no devolvió datos en el formato esperado. Respuesta recibida: "'+clean.slice(0,180)+(clean.length>180?'...':'')+'". Prueba de nuevo.');
       }
     }
