@@ -7628,7 +7628,10 @@ async function subirNomina(file, mesSeleccionado){
       method:'POST', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         contents:[{role:'user',parts:[{inline_data:{mime_type:mediaType,data:base64}},{text:prompt}]}],
-        generationConfig:{maxOutputTokens:1200,temperature:0.1}
+        // responseMimeType:'application/json' obliga a Gemini a devolver SOLO JSON válido
+        // (en vez de confiar en que siga la instrucción del texto, que a veces ignoraba
+        // y se ponía a "explicar" en vez de responder con datos).
+        generationConfig:{maxOutputTokens:2000,temperature:0.1,responseMimeType:'application/json'}
       })
     });
     if(!res.ok){ const err=await res.text(); throw new Error('Error Gemini '+res.status+': '+err.slice(0,200)); }
@@ -9442,7 +9445,7 @@ Extrae los horarios de cada tarea (ej: 10:00 → 14:00). Si ves "OT 7941581076" 
           {inline_data:{mime_type:mediaType,data:base64}},
           {text:prompt}
         ]}],
-        generationConfig:{maxOutputTokens:1500,temperature:0.2}
+        generationConfig:{maxOutputTokens:1500,temperature:0.2,responseMimeType:'application/json'}
       })
     });
 
@@ -9453,7 +9456,16 @@ Extrae los horarios de cada tarea (ej: 10:00 → 14:00). Si ves "OT 7941581076" 
     const data=await res.json();
     const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'';
     const clean=text.replace(/```json|```/g,'').trim();
-    const parsed=JSON.parse(clean);
+    let parsed;
+    try{
+      parsed=JSON.parse(clean);
+    }catch(parseErr){
+      const m=clean.match(/\{[\s\S]*\}/);
+      if(m){ try{ parsed=JSON.parse(m[0]); }catch(parseErr2){ parsed=null; } }
+      if(!parsed){
+        throw new Error('La IA no devolvió datos en el formato esperado. Respuesta recibida: "'+clean.slice(0,180)+(clean.length>180?'...':'')+'". Prueba de nuevo.');
+      }
+    }
 
     // Mostrar resumen al usuario
     let resumen='La IA ha detectado:\n\n';
