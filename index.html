@@ -458,7 +458,7 @@ function totalPeriodo(app){
   return app.importeNormales+app.importeExtra+app.importeNocturnas+app.importeFestivas
     +app.dieta+app.transporte+app.viajes+app.otrosConceptos+app.sueldoBase+app.guardia;
 }
-const defPayslip = (mes) => ({mes:mes||'', fileName:'', uploadedAt:'', extracted:{}, comparisonSummary:''});
+const defPayslip = (mes) => ({mes:mes||'', fileName:'', uploadedAt:'', extracted:{}, comparisonSummary:'', dataUrl:'', fileType:''});
 
 // Formularios
 let fEntry = defEntry();
@@ -7571,10 +7571,16 @@ async function subirNomina(file, mesSeleccionado){
   showAlert('🤖 Leyendo nómina con IA...');
   try{
     let dataUrl;
+    // Archivo original tal cual lo subió el usuario (PDF o imagen), para poder
+    // descargarlo/guardarlo/compartirlo/abrirlo más adelante — se guarda íntegro
+    // en la base de datos local, aparte de la imagen que se usa para que la IA lo lea.
+    const archivoOriginalDataUrl=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=e=>res(e.target.result); r.onerror=rej; r.readAsDataURL(file); });
+    const archivoOriginalTipo=file.type||'';
+    const archivoOriginalNombre=file.name||'nómina';
     if(file.type==='application/pdf'){
       dataUrl=await _pdfPaginaAImagen(file);
     } else if(file.type.startsWith('image/')){
-      dataUrl=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=e=>res(e.target.result); r.onerror=rej; r.readAsDataURL(file); });
+      dataUrl=archivoOriginalDataUrl;
     } else {
       showAlert('Solo se admiten imágenes o PDF','err'); return;
     }
@@ -7625,7 +7631,7 @@ async function subirNomina(file, mesSeleccionado){
 
     const comparisonSummary=compararNominaConApp(mesFinal, extracted);
 
-    const payslip={...defPayslip(mesFinal), fileName:file.name||'nómina', uploadedAt:new Date().toISOString(), extracted, comparisonSummary};
+    const payslip={...defPayslip(mesFinal), fileName:archivoOriginalNombre, uploadedAt:new Date().toISOString(), extracted, comparisonSummary, dataUrl:archivoOriginalDataUrl, fileType:archivoOriginalTipo};
     const id=await dbPut(ST.payslips, payslip);
     S.payslips.push({...payslip,id});
 
@@ -7657,6 +7663,26 @@ async function borrarNomina(id){
     showAlert('Nómina eliminada');
     rerender();
   });
+}
+
+// Abre el diálogo estándar de la app (Abrir/Guardar/Compartir) con el
+// archivo ORIGINAL de la nómina (la foto o el PDF tal cual se subió),
+// que queda guardado íntegro en la base de datos local de cada nómina.
+function abrirNominaOriginal(p){
+  if(!p || !p.dataUrl){ showAlert('Esta nómina no tiene el archivo original guardado','err'); return; }
+  const blob=dataURLtoBlob(p.dataUrl);
+  const ext=(p.fileType||'').includes('pdf')?'.pdf':((p.fileName||'').match(/\.\w+$/)||['.jpg'])[0];
+  const filename=(p.fileName||'nomina').replace(/\.\w+$/,'')+ext;
+  dlDialog={blob, filename, type:(p.fileType||'').includes('pdf')?'pdf':'image', title:'Nómina: '+filename};
+  S.modal='dl'; rerender();
+}
+function dataURLtoBlob(dataUrl){
+  const [meta,b64]=dataUrl.split(',');
+  const mime=(meta.match(/data:(.*?);base64/)||[])[1]||'application/octet-stream';
+  const bin=atob(b64);
+  const arr=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+  return new Blob([arr],{type:mime});
 }
 
 // Texto plano con los totales de un mes (horas, dietas, transporte, Sueldo
@@ -7966,7 +7992,8 @@ function renderNominas(){
               h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
                 h('div',{style:{fontWeight:700,fontSize:'.82rem'}},'📄 '+(p.fileName||'Nómina')),
                 h('div',{style:{display:'flex',gap:'.3rem'}},
-                  h('button',{class:'btn btn-gh btn-sm',title:'Compartir',on:{click:()=>compartirResumenNomina(mesKey,p.comparisonSummary||'')}},'📤'),
+                  h('button',{class:'btn btn-gh btn-sm',title:'Abrir / Guardar / Compartir el archivo original',on:{click:()=>abrirNominaOriginal(p)}},'💾'),
+                  h('button',{class:'btn btn-gh btn-sm',title:'Compartir el resumen',on:{click:()=>compartirResumenNomina(mesKey,p.comparisonSummary||'')}},'📤'),
                   h('button',{class:'btn btn-r btn-sm',on:{click:()=>borrarNomina(p.id)}},'✕')
                 )
               ),
@@ -11714,9 +11741,11 @@ function buildSyncData(){
     precioHoraExtraDefault: S.precioHoraExtraDefault||0,
     precioHoraNocturnaDefault: S.precioHoraNocturnaDefault||0,
     precioHoraFestivaDefault: S.precioHoraFestivaDefault||0,
-    // Nóminas leídas por IA y el chat guardado de cada mes — no se guarda el
-    // archivo original (la foto/PDF), solo lo que la IA extrajo de él y el
-    // resumen de comparación, para no disparar el tamaño de la sincronización.
+    // Nóminas leídas por IA y el chat guardado de cada mes. El archivo
+    // original (foto/PDF) SÍ se guarda íntegro en la base de datos local de
+    // este dispositivo (así se puede abrir/descargar/compartir/borrar cuando
+    // se necesite), pero no viaja en la sincronización con Drive por tamaño:
+    // solo se sincronizan los datos que la IA extrajo y el resumen.
     payslips: (S.payslips||[]).map(p=>({id:p.id,mes:p.mes||'',fileName:p.fileName||'',uploadedAt:p.uploadedAt||'',extracted:p.extracted||{},comparisonSummary:p.comparisonSummary||''})),
     monthChats: (S.monthChats||[]).map(c=>({id:c.id,mes:c.mes||'',messages:c.messages||[]})),
 
@@ -11758,6 +11787,9 @@ async function importDriveData(d, verifyMode){
     // Save local entry fotosGastos (keyed by fecha)
     const localEntryMap = {};
     S.entries.forEach(e=>{ if(e.fecha) localEntryMap[e.fecha]={fotosGastos:e.fotosGastos||[]}; });
+    // Save local payslip original files (Drive no los sincroniza, por tamaño)
+    const localPayslipMap = {};
+    (S.payslips||[]).forEach(p=>{ if(p.id!=null) localPayslipMap[p.id]={dataUrl:p.dataUrl||'',fileType:p.fileType||''}; });
 
     await Promise.all(Object.values(ST).filter(s=>s!=='snapshots'&&s!=='settings').map(s=>dbClear(s)));
     for(const e of(d.entries||[])){
@@ -11773,7 +11805,10 @@ async function importDriveData(d, verifyMode){
     for(const s of(d.sites||[]))    await dbPut(ST.sites,s);
     for(const w of(d.workorders||[]))await dbPut(ST.workorders,w);
     for(const v of(d.vehicles||[])) await dbPut(ST.vehicles,v);
-    for(const p of(d.payslips||[])) await dbPut(ST.payslips,p);
+    for(const p of(d.payslips||[])){
+      const localP = localPayslipMap[p.id]||{};
+      await dbPut(ST.payslips,{...p, dataUrl:p.dataUrl||localP.dataUrl||'', fileType:p.fileType||localP.fileType||''});
+    }
     for(const c of(d.monthChats||[])) await dbPut(ST.monthChats,c);
     for(const w of(d.workers||[])){
       const local = localWorkerMap[w.id]||{};
