@@ -7580,6 +7580,42 @@ function compararNominaConApp(mesKey, extracted){
   return resumen;
 }
 
+// Llama a Gemini pidiendo SOLO JSON (responseMimeType) e intentando desactivar su
+// "pensamiento" interno (thinkingConfig) para que no se gaste el límite de tokens
+// pensando en vez de responder. No todos los modelos (p.ej. los Gemma) admiten esa
+// opción de "pensamiento", así que si la rechaza con un error 400 concreto, se
+// reintenta automáticamente la misma petición sin esa opción.
+async function geminiGenerateJSON(geminiKey, modelo, contents, generationConfigBase){
+  async function llamar(conThinking){
+    const generationConfig={...generationConfigBase, responseMimeType:'application/json'};
+    if(conThinking) generationConfig.thinkingConfig={thinkingBudget:0};
+    return fetch('https://generativelanguage.googleapis.com/v1beta/models/'+modelo+':generateContent?key='+geminiKey,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({contents, generationConfig})
+    });
+  }
+  let res=await llamar(true);
+  if(!res.ok){
+    let err=await res.text();
+    if(res.status===400 && /thinking/i.test(err)){
+      // El modelo elegido no admite desactivar el pensamiento: reintentamos sin esa opción.
+      res=await llamar(false);
+      if(!res.ok) err=await res.text();
+    }
+    if(!res.ok && res.status>=500){
+      // Fallo temporal del servidor de Google: se reintenta una vez tras una breve espera.
+      await new Promise(r=>setTimeout(r,1500));
+      res=await llamar(true);
+      if(!res.ok){
+        err=await res.text();
+        if(res.status===400 && /thinking/i.test(err)){ res=await llamar(false); if(!res.ok) err=await res.text(); }
+      }
+    }
+    if(!res.ok){ throw new Error('Error Gemini '+res.status+': '+err.slice(0,200)); }
+  }
+  return res.json();
+}
+
 async function subirNomina(file, mesSeleccionado){
   if(!file) return;
   const geminiKey=localStorage.getItem('gemini_api_key')||'';
@@ -7624,21 +7660,11 @@ async function subirNomina(file, mesSeleccionado){
       +'}\n'
       +'Si algún dato no aparece en la nómina, pon 0 o "" según corresponda. No inventes datos.';
     const _mImg=localStorage.getItem('gemini_model')||'gemini-flash-latest';
-    const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+_mImg+':generateContent?key='+geminiKey,{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        contents:[{role:'user',parts:[{inline_data:{mime_type:mediaType,data:base64}},{text:prompt}]}],
-        // responseMimeType:'application/json' obliga a Gemini a devolver SOLO JSON válido
-        // (en vez de confiar en que siga la instrucción del texto, que a veces ignoraba
-        // y se ponía a "explicar" en vez de responder con datos).
-        // thinkingBudget:0 desactiva el "razonamiento" interno del modelo para esta
-        // tarea — si no, en algunos modelos ese razonamiento invisible puede consumir
-        // todo el límite de tokens y dejar la respuesta final completamente vacía.
-        generationConfig:{maxOutputTokens:3000,temperature:0.1,responseMimeType:'application/json',thinkingConfig:{thinkingBudget:0}}
-      })
-    });
-    if(!res.ok){ const err=await res.text(); throw new Error('Error Gemini '+res.status+': '+err.slice(0,200)); }
-    const data=await res.json();
+    const data=await geminiGenerateJSON(
+      geminiKey, _mImg,
+      [{role:'user',parts:[{inline_data:{mime_type:mediaType,data:base64}},{text:prompt}]}],
+      {maxOutputTokens:3000,temperature:0.1}
+    );
     const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'';
     let clean=text.replace(/```json|```/g,'').trim();
     let extracted;
@@ -9453,23 +9479,11 @@ Responde ÚNICAMENTE con un JSON válido sin texto adicional ni markdown:
 Extrae los horarios de cada tarea (ej: 10:00 → 14:00). Si ves "OT 7941581076" extrae "7941581076".`;
 
     const _mImg=localStorage.getItem('gemini_model')||'gemini-flash-latest';
-    const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+_mImg+':generateContent?key='+geminiKey,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        contents:[{role:'user',parts:[
-          {inline_data:{mime_type:mediaType,data:base64}},
-          {text:prompt}
-        ]}],
-        generationConfig:{maxOutputTokens:2500,temperature:0.2,responseMimeType:'application/json',thinkingConfig:{thinkingBudget:0}}
-      })
-    });
-
-    if(!res.ok){
-      const err=await res.text();
-      throw new Error('Error Gemini '+res.status+': '+err.slice(0,200));
-    }
-    const data=await res.json();
+    const data=await geminiGenerateJSON(
+      geminiKey, _mImg,
+      [{role:'user',parts:[{inline_data:{mime_type:mediaType,data:base64}},{text:prompt}]}],
+      {maxOutputTokens:2500,temperature:0.2}
+    );
     const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'';
     const clean=text.replace(/```json|```/g,'').trim();
     let parsed;
