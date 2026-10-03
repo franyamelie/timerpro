@@ -79,6 +79,7 @@ div[contenteditable="true"][spellcheck="true"]:not(:focus){
 :lang(es)::spelling-error { text-decoration: underline red; }
 html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px}
 #app{display:flex;flex-direction:column;height:100dvh;max-width:900px;margin:0 auto}
+@media (min-width:900px){ #app{max-width:none} }
 nav{display:flex;align-items:center;justify-content:space-between;padding:.6rem 1rem;background:var(--surf);border-bottom:1px solid var(--brd);flex-shrink:0;gap:.5rem}
 .nav-brand{font-size:1.1rem;font-weight:800;letter-spacing:-.02em;color:var(--ink)}
 .nav-brand em{font-style:normal;background:linear-gradient(90deg,var(--pur),var(--pink));-webkit-background-clip:text;background-clip:text;color:transparent}
