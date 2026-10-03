@@ -7608,24 +7608,34 @@ async function geminiGenerateJSON(geminiKey, modelo, contents, generationConfigB
       body:JSON.stringify({contents, generationConfig})
     });
   }
-  let res=await llamar(true);
+  let conThinking=true;
+  let res=await llamar(conThinking);
+  let err='';
+  // Espera creciente entre reintentos (1.5s, luego 4s) para los fallos temporales
+  // de Google (sobrecarga del modelo, error 503/500/429), que suelen resolverse solos
+  // en pocos segundos. En total se intenta hasta 3 veces antes de rendirse.
+  const esperas=[1500,4000];
+  for(let intento=0; intento<=esperas.length; intento++){
+    if(res.ok) break;
+    err=await res.text();
+    if(res.status===400 && /thinking/i.test(err) && conThinking){
+      // El modelo elegido no admite desactivar el pensamiento: reintentamos sin esa opción
+      // (sin esperar, no es un fallo temporal).
+      conThinking=false;
+      res=await llamar(conThinking);
+      continue;
+    }
+    if((res.status>=500 || res.status===429) && intento<esperas.length){
+      await new Promise(r=>setTimeout(r,esperas[intento]));
+      res=await llamar(conThinking);
+      continue;
+    }
+    break;
+  }
   if(!res.ok){
-    let err=await res.text();
-    if(res.status===400 && /thinking/i.test(err)){
-      // El modelo elegido no admite desactivar el pensamiento: reintentamos sin esa opción.
-      res=await llamar(false);
-      if(!res.ok) err=await res.text();
-    }
-    if(!res.ok && res.status>=500){
-      // Fallo temporal del servidor de Google: se reintenta una vez tras una breve espera.
-      await new Promise(r=>setTimeout(r,1500));
-      res=await llamar(true);
-      if(!res.ok){
-        err=await res.text();
-        if(res.status===400 && /thinking/i.test(err)){ res=await llamar(false); if(!res.ok) err=await res.text(); }
-      }
-    }
-    if(!res.ok){ throw new Error('Error Gemini '+res.status+': '+err.slice(0,200)); }
+    if(!err) err=await res.text();
+    const saturado=res.status>=500||res.status===429;
+    throw new Error((saturado?'Los servidores de Google están saturados ahora mismo. ':'')+'Error Gemini '+res.status+': '+err.slice(0,200)+(saturado?' — espera un minuto y vuelve a intentarlo.':''));
   }
   return res.json();
 }
