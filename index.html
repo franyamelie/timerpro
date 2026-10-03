@@ -7392,7 +7392,10 @@ sendIAMsg._core = async function(userMsg){
           candidatos=(ml.models||[])
             .filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent'))
             .map(m=>m.name.replace('models/',''))
-            .filter(n=>!n.includes('image')&&!n.includes('tts')&&!n.includes('embed')&&!n.includes('audio')&&!n.includes('exp'))
+            // Excluimos también los modelos "gemma" (no son Gemini): aunque responden a
+            // peticiones de texto simples, no son fiables leyendo imágenes y pidiendo
+            // JSON estructurado, que es justo lo que usa Nóminas y la lectura de jornadas.
+            .filter(n=>!n.includes('image')&&!n.includes('tts')&&!n.includes('embed')&&!n.includes('audio')&&!n.includes('exp')&&!n.includes('gemma'))
             .sort((a,b)=>{
               const va=parseFloat((a.match(/(\d+\.?\d*)/)||[0,0])[1])||0;
               const vb=parseFloat((b.match(/(\d+\.?\d*)/)||[0,0])[1])||0;
@@ -7580,6 +7583,17 @@ function compararNominaConApp(mesKey, extracted){
   return resumen;
 }
 
+// Devuelve el modelo guardado para leer imágenes (nóminas, jornadas), pero si lo
+// guardado es un modelo "Gemma" (no fiable para esto, ver más abajo) lo descarta
+// y usa uno Gemini real, borrando además el valor guardado para que no se quede
+// pegado y la próxima vez que la app detecte modelo automáticamente no lo vuelva a coger.
+function modeloGeminiParaImagenes(){
+  const m=localStorage.getItem('gemini_model')||'';
+  if(m && !m.includes('gemma')) return m;
+  if(m && m.includes('gemma')) localStorage.removeItem('gemini_model');
+  return 'gemini-flash-latest';
+}
+
 // Llama a Gemini pidiendo SOLO JSON (responseMimeType) e intentando desactivar su
 // "pensamiento" interno (thinkingConfig) para que no se gaste el límite de tokens
 // pensando en vez de responder. No todos los modelos (p.ej. los Gemma) admiten esa
@@ -7659,7 +7673,7 @@ async function subirNomina(file, mesSeleccionado){
       +'  "observaciones": "cualquier cosa relevante que detectes (descuentos raros, retenciones, pluses, etc.) o vacío"\n'
       +'}\n'
       +'Si algún dato no aparece en la nómina, pon 0 o "" según corresponda. No inventes datos.';
-    const _mImg=localStorage.getItem('gemini_model')||'gemini-flash-latest';
+    const _mImg=modeloGeminiParaImagenes();
     const data=await geminiGenerateJSON(
       geminiKey, _mImg,
       [{role:'user',parts:[{inline_data:{mime_type:mediaType,data:base64}},{text:prompt}]}],
@@ -9478,7 +9492,7 @@ Responde ÚNICAMENTE con un JSON válido sin texto adicional ni markdown:
 }
 Extrae los horarios de cada tarea (ej: 10:00 → 14:00). Si ves "OT 7941581076" extrae "7941581076".`;
 
-    const _mImg=localStorage.getItem('gemini_model')||'gemini-flash-latest';
+    const _mImg=modeloGeminiParaImagenes();
     const data=await geminiGenerateJSON(
       geminiKey, _mImg,
       [{role:'user',parts:[{inline_data:{mime_type:mediaType,data:base64}},{text:prompt}]}],
