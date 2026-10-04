@@ -11630,29 +11630,39 @@ async function gdriveSaveData(data){
     exportedAt: new Date().toISOString()
   });
   const blob = new Blob([payload], {type:'application/json'});
-  
+
   let fileId = gdriveFileId || await gdriveFindFile();
-  
-  if(fileId){
-    // Update existing file
-    const r = await fetch('https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media', {
-      method: 'PATCH',
-      headers: {'Authorization':'Bearer '+gdriveToken, 'Content-Type':'application/json'},
-      body: blob
-    });
-    if(!r.ok){if(r.status===401){gdriveToken='';localStorage.removeItem('gdrive_token');localStorage.removeItem('gdrive_token_expiry');gdriveLogin();await new Promise(()=>{});}throw new Error('Drive update error: '+r.status);}
-  } else {
-    // Create new file
-    const meta = JSON.stringify({name: GDRIVE_FILE_NAME, mimeType:'application/json'});
-    const form = new FormData();
-    form.append('metadata', new Blob([meta], {type:'application/json'}));
-    form.append('file', blob);
-    const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-      method: 'POST',
-      headers: {'Authorization':'Bearer '+gdriveToken},
-      body: form
-    });
-    if(!r.ok){if(r.status===401){gdriveToken='';localStorage.removeItem('gdrive_token');localStorage.removeItem('gdrive_token_expiry');gdriveLogin();await new Promise(()=>{});}throw new Error('Drive create error: '+r.status);}
+
+  // SUBIDA RESUMABLE: la subida "simple" (uploadType=media/multipart) que se
+  // usaba antes tiene un límite práctico de Google de ~5MB. Desde que las
+  // nóminas sincronizan también el archivo original (foto/PDF en base64), el
+  // JSON a subir puede superar ese límite fácilmente (varias nóminas de
+  // ~1MB cada una), y la subida fallaba sin más — por eso no llegaba nada al
+  // teléfono en NINGÚN mes. La subida "resumable" no tiene ese límite: se
+  // abre una sesión (paso 1) y luego se sube el contenido a la URL de esa
+  // sesión (paso 2).
+  const initUrl = fileId
+    ? 'https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=resumable'
+    : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable';
+  const initMethod = fileId ? 'PATCH' : 'POST';
+  const initHeaders = {'Authorization':'Bearer '+gdriveToken, 'Content-Type':'application/json; charset=UTF-8'};
+  const initBody = fileId ? undefined : JSON.stringify({name: GDRIVE_FILE_NAME, mimeType:'application/json'});
+
+  const initRes = await fetch(initUrl, {method: initMethod, headers: initHeaders, body: initBody});
+  if(!initRes.ok){
+    if(initRes.status===401){gdriveToken='';localStorage.removeItem('gdrive_token');localStorage.removeItem('gdrive_token_expiry');gdriveLogin();await new Promise(()=>{});}
+    throw new Error('Drive '+(fileId?'update':'create')+' error (init): '+initRes.status);
+  }
+  const sessionUrl = initRes.headers.get('Location') || initRes.headers.get('location');
+  if(!sessionUrl) throw new Error('Drive '+(fileId?'update':'create')+' error: no se recibió la URL de sesión resumable');
+
+  const r = await fetch(sessionUrl, {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: blob
+  });
+  if(!r.ok){if(r.status===401){gdriveToken='';localStorage.removeItem('gdrive_token');localStorage.removeItem('gdrive_token_expiry');gdriveLogin();await new Promise(()=>{});}throw new Error('Drive '+(fileId?'update':'create')+' error: '+r.status);}
+  if(!fileId){
     const result = await r.json();
     gdriveFileId = result.id;
     localStorage.setItem('gdrive_file_id', gdriveFileId);
@@ -11974,11 +11984,13 @@ function buildSyncData(){
     precioHoraNocturnaDefault: S.precioHoraNocturnaDefault||0,
     precioHoraFestivaDefault: S.precioHoraFestivaDefault||0,
     // Nóminas leídas por IA y el chat guardado de cada mes. El archivo
-    // original (foto/PDF) SÍ se guarda íntegro en la base de datos local de
-    // este dispositivo (así se puede abrir/descargar/compartir/borrar cuando
-    // se necesite), pero no viaja en la sincronización con Drive por tamaño:
-    // solo se sincronizan los datos que la IA extrajo y el resumen.
-    payslips: (S.payslips||[]).map(p=>({id:p.id,mes:p.mes||'',fileName:p.fileName||'',uploadedAt:p.uploadedAt||'',extracted:p.extracted||{},comparisonSummary:p.comparisonSummary||''})),
+    // original (foto/PDF, como dataURL) SÍ viaja ahora en la sincronización
+    // con Drive, para poder abrirlo/descargarlo/compartirlo desde cualquier
+    // aparato (antes se quedaba solo en el dispositivo donde se subió). Esto
+    // hace cada sincronización más pesada cuantas más nóminas con archivo
+    // original haya — a cambio de no perder el acceso al original en el
+    // resto de aparatos.
+    payslips: (S.payslips||[]).map(p=>({id:p.id,mes:p.mes||'',fileName:p.fileName||'',uploadedAt:p.uploadedAt||'',extracted:p.extracted||{},comparisonSummary:p.comparisonSummary||'',dataUrl:p.dataUrl||'',fileType:p.fileType||''})),
     monthChats: (S.monthChats||[]).map(c=>({id:c.id,mes:c.mes||'',messages:c.messages||[]})),
     // Sueldo Base y Guardia (pestaña Tarifas): antes vivían SOLO en
     // localStorage de este aparato y nunca viajaban con la sincronización.
