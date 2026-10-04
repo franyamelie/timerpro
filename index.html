@@ -7341,6 +7341,23 @@ async function sendIAMsgPage(){
 }
 
 
+// Reintenta una llamada a Gemini si el servidor responde 5xx/429 (saturación
+// temporal de Google), con una espera creciente entre intentos. Se usa en los
+// chats de texto con la IA (el de la pestaña IA y el de cada mes en Nóminas),
+// igual que ya se hacía en la lectura de imágenes de nóminas/jornadas.
+async function conReintentoGemini(fetchFn){
+  let res=await fetchFn();
+  const esperas=[1500,4000];
+  for(let intento=0; intento<esperas.length; intento++){
+    if(res.ok) break;
+    if(res.status>=500||res.status===429){
+      await new Promise(r=>setTimeout(r,esperas[intento]));
+      res=await fetchFn();
+    } else break;
+  }
+  return res;
+}
+
 sendIAMsg._core = async function(userMsg){
   if(!S.iaMsgs) S.iaMsgs=[];
   const entries=S.entries.slice(-30);
@@ -7380,8 +7397,15 @@ sendIAMsg._core = async function(userMsg){
       method:'POST',headers:{'Content-Type':'application/json'},body:_geminiBody
     });
     if(modelo){
-      res=await probar(modelo);
-      if(!res.ok){localStorage.removeItem('gemini_model');modelo='';res=null;}
+      res=await conReintentoGemini(()=>probar(modelo));
+      if(!res.ok){
+        if(res.status>=500||res.status===429){
+          // Saturación temporal de Google, no del modelo guardado: no lo
+          // borramos (sigue siendo bueno), solo avisamos de que está saturado.
+          throw new Error('Los servidores de Google están saturados ahora mismo. Espera un minuto y vuelve a intentarlo.');
+        }
+        localStorage.removeItem('gemini_model');modelo='';res=null;
+      }
     }
     if(!modelo){
       let candidatos=[];
@@ -7975,8 +7999,12 @@ async function enviarMensajeNomina(mesKey){
     const geminiContents=cleanMsgs.map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:m.content}]}));
     const body=JSON.stringify({systemInstruction:{parts:[{text:context}]},contents:geminiContents,generationConfig:{maxOutputTokens:800,temperature:0.5}});
     const modelo=localStorage.getItem('gemini_model')||'gemini-flash-latest';
-    const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+modelo+':generateContent?key='+geminiKey,{method:'POST',headers:{'Content-Type':'application/json'},body});
-    if(!res.ok) throw new Error('Error '+res.status+': '+(await res.text()).slice(0,200));
+    const res=await conReintentoGemini(()=>fetch('https://generativelanguage.googleapis.com/v1beta/models/'+modelo+':generateContent?key='+geminiKey,{method:'POST',headers:{'Content-Type':'application/json'},body}));
+    if(!res.ok){
+      const errTxt=(await res.text()).slice(0,200);
+      const saturado=res.status>=500||res.status===429;
+      throw new Error((saturado?'Los servidores de Google están saturados ahora mismo. ':'')+'Error '+res.status+': '+errTxt+(saturado?' — espera un minuto y vuelve a intentarlo.':''));
+    }
     const data=await res.json();
     const reply=data.candidates?.[0]?.content?.parts?.[0]?.text||'Sin respuesta';
     chatRec.messages.push({role:'assistant',content:reply});
