@@ -11584,8 +11584,22 @@ async function gdriveEnsureToken(){
 }
 
 async function gdriveFindFile(){
+  // IMPORTANTE: se pide ordenado por fecha de modificación (el más reciente
+  // primero). Si alguna vez llegaron a crearse DOS archivos "TimerPro_Datos.json"
+  // en Drive (p.ej. porque un aparato no encontró el archivo existente en un
+  // momento puntual y creó uno nuevo en su lugar), cada dispositivo podía
+  // quedarse con el id de un archivo DISTINTO guardado en su propia caché
+  // local (localStorage) — y ese id, una vez guardado, no se volvía a
+  // comprobar nunca más, ni siquiera borrando caché del navegador (borrar
+  // caché no toca localStorage). Así un aparato podía estar subiendo
+  // siempre al archivo bueno y el otro cargando siempre de uno viejo/vacío,
+  // de forma exactamente igual en todos los meses, sin que ningún cambio en
+  // cómo se sube o se baja el archivo lo arreglara. Pidiendo siempre el más
+  // reciente por nombre (en vez de confiar en el id guardado) el propio
+  // teléfono y ordenador se "autocorrigen" solos la próxima vez que suban o
+  // carguen, sin necesidad de borrar nada a mano.
   const r = await fetch(
-    'https://www.googleapis.com/drive/v3/files?q=name%3D%22'+GDRIVE_FILE_NAME+'%22+and+trashed%3Dfalse&fields=files(id,name)',
+    'https://www.googleapis.com/drive/v3/files?q=name%3D%22'+GDRIVE_FILE_NAME+'%22+and+trashed%3Dfalse&orderBy=modifiedTime+desc&fields=files(id,name,modifiedTime)',
     {headers: {'Authorization': 'Bearer '+gdriveToken}, cache: 'no-store'}
   );
   const d = await r.json();
@@ -11631,7 +11645,10 @@ async function gdriveSaveData(data){
   });
   const blob = new Blob([payload], {type:'application/json'});
 
-  let fileId = gdriveFileId || await gdriveFindFile();
+  // Igual que en gdriveLoadData: siempre se busca el archivo más reciente
+  // por nombre en vez de fiarse del id guardado en este aparato, para que
+  // nunca se quede subiendo "en silencio" a un archivo duplicado/antiguo.
+  let fileId = await gdriveFindFile();
 
   // SUBIDA RESUMABLE: la subida "simple" (uploadType=media/multipart) que se
   // usaba antes tiene un límite práctico de Google de ~5MB. Desde que las
@@ -11672,7 +11689,11 @@ async function gdriveSaveData(data){
 async function gdriveLoadData(){
   localStorage.setItem('gdrive_pending_sync','load');
   await gdriveEnsureToken();
-  let fileId = gdriveFileId || await gdriveFindFile();
+  // Siempre se busca el archivo más reciente por nombre en vez de fiarse del
+  // id guardado en este aparato (ver comentario en gdriveFindFile): así, si
+  // este dispositivo tenía guardado el id de un archivo duplicado/viejo, se
+  // autocorrige solo la próxima vez que carga, sin pasos manuales.
+  let fileId = await gdriveFindFile();
   if(!fileId) return null;
   const r = await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media&_cb='+Date.now(), {
     headers: {'Authorization':'Bearer '+gdriveToken},
