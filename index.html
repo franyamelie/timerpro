@@ -286,6 +286,8 @@ function normalizeTimeStr(s){
 }
 const fmtH = h => { if(!h)return '0h'; const hh=Math.floor(h),mm=Math.round((h-hh)*60); return hh>0&&mm>0?`${hh}h ${mm}m`:hh>0?`${hh}h`:`${mm}m`; };
 const eur = v => Number(v||0).toFixed(2).replace('.',',')+' €';
+// Convierte 'YYYY-MM-DD' en 'DD/MM/AAAA' para mostrar fechas en la nómina simulada.
+const fmtFechaLarga = iso => { if(!iso) return ''; const [y,m,d]=String(iso).split('-'); return (d&&m&&y)?(d+'/'+m+'/'+y):iso; };
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const WDAYS = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 const WSHORT = ['L','M','X','J','V','S','D'];
@@ -475,6 +477,46 @@ function totalPeriodo(app){
     +app.dieta+app.transporte+app.viajes+app.otrosConceptos+app.sueldoBase+app.guardia;
 }
 const defPayslip = (mes) => ({mes:mes||'', fileName:'', uploadedAt:'', extracted:{}, comparisonSummary:'', dataUrl:'', fileType:''});
+
+// Calcula el % medio de retención de IRPF y Seg. Social que han tenido las
+// nóminas REALES ya subidas y analizadas por la IA (comparando lo retenido
+// con el salario bruto de cada una), para poder usarlo como punto de partida
+// razonable en la simulación de la nómina del periodo en curso. Si no hay
+// ninguna nómina con esos datos todavía, devuelve null en cada campo (el
+// usuario tendrá que escribir el % a mano la primera vez).
+function promedioRetencionesHistoricas(){
+  const irpfPcts=[], ssPcts=[];
+  (S.payslips||[]).forEach(p=>{
+    const ex=p.extracted||{};
+    const bruto=+ex.salarioBruto||0;
+    if(bruto<=0) return;
+    const irpf=+ex.retencionIRPF||0;
+    const ss=+ex.retencionSS||0;
+    if(irpf>0) irpfPcts.push(irpf/bruto*100);
+    if(ss>0) ssPcts.push(ss/bruto*100);
+  });
+  const media=arr=>arr.length?arr.reduce((s,v)=>s+v,0)/arr.length:null;
+  return {irpf:media(irpfPcts), ss:media(ssPcts), nIrpf:irpfPcts.length, nSs:ssPcts.length};
+}
+// Simulación aproximada de cómo iría quedando la nómina del periodo (basada
+// en los datos diarios ya registrados en la app + Sueldo Base/Guardia fijos),
+// aplicando un % de retención de IRPF y Seg. Social sobre la parte del
+// importe que normalmente SÍ tributa (sueldo, guardia, horas, gratificación,
+// otros conceptos) — las dietas, transporte y viajes se dejan fuera de la
+// base de retención por ser, habitualmente, compensación de gastos exenta.
+// Es una aproximación: la nómina real puede variar por tramos de IRPF,
+// topes de Seg. Social, pagas extra prorrateadas u otros conceptos que esta
+// simulación no conoce.
+function simularNomina(app, irpfPct, ssPct){
+  const brutoSujeto=app.sueldoBase+app.guardia+app.importeNormales+app.importeExtra
+    +app.importeNocturnas+app.importeFestivas+app.otrosConceptos;
+  const exento=app.dieta+app.transporte+app.viajes;
+  const brutoTotal=brutoSujeto+exento;
+  const dedIRPF=brutoSujeto*(irpfPct||0)/100;
+  const dedSS=brutoSujeto*(ssPct||0)/100;
+  const liquido=brutoTotal-dedIRPF-dedSS;
+  return {brutoSujeto,exento,brutoTotal,dedIRPF,dedSS,liquido};
+}
 
 // Formularios
 let fEntry = defEntry();
@@ -932,7 +974,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261004-textocolor2'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261004-nominaoficial'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -8050,6 +8092,133 @@ async function compartirNominaComoImagen(mesKey, app){
   }
 }
 
+// Genera una imagen con el aspecto de un recibo de salarios oficial (datos
+// de empresa/trabajador fijos + devengos/deducciones/líquido de la
+// simulación aproximada), reutilizando el mismo mecanismo de
+// html2canvas + panel para compartir/descargar que ya usa "📷 Imagen".
+async function compartirNominaOficialComoImagen(mesKey, app){
+  const btn=document.getElementById('btn-nomina-oficial');
+  if(btn){ btn.textContent='⏳...'; btn.disabled=true; }
+  try{
+    const t=getTarifas();
+    const hist=promedioRetencionesHistoricas();
+    const irpfPct=(t.irpfPct!=null && t.irpfPct!=='')?+t.irpfPct:(hist.irpf||0);
+    const ssPct=(t.ssPct!=null && t.ssPct!=='')?+t.ssPct:(hist.ss||0);
+    const sim=simularNomina(app, irpfPct, ssPct);
+    const cerrado=periodoEstaCerrado(mesKey);
+    const {inicio,fin}=periodoRangoDe(mesKey);
+    const diasPeriodo=Math.round((new Date(fin)-new Date(inicio))/86400000)+1;
+    const nombreTrab=((fWorker.nombre||'')+' '+(fWorker.apellidos||'')).trim()||'— (rellena en Trabajador)';
+    const nombreEmp=fCompany.nombre||'— (rellena en Empresa)';
+    const row=(concepto,uds,imp)=>'<tr><td style="padding:4px 8px;border-bottom:1px solid #eee">'+concepto+'</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right">'+uds+'</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:700">'+imp+'</td></tr>';
+    const dato=(l,v)=>'<div style="display:flex;justify-content:space-between;padding:1.5px 0"><span style="color:#444">'+l+'</span><span style="font-weight:700">'+(v||'—')+'</span></div>';
+    let devengosRows='';
+    if(app.sueldoBase) devengosRows+=row('Salario Base','1 mes',eur(app.sueldoBase));
+    if(app.guardia) devengosRows+=row('Plus Guardia','1 mes',eur(app.guardia));
+    if(app.horasNormales) devengosRows+=row('Horas normales',fmtH(app.horasNormales),eur(app.importeNormales));
+    if(app.horasExtra) devengosRows+=row('Horas extraordinarias',fmtH(app.horasExtra),eur(app.importeExtra));
+    if(app.horasNocturnas) devengosRows+=row('Horas nocturnas',fmtH(app.horasNocturnas),eur(app.importeNocturnas));
+    if(app.horasFestivas) devengosRows+=row('Horas festivas',fmtH(app.horasFestivas),eur(app.importeFestivas));
+    if(app.otrosConceptos) devengosRows+=row('Otros conceptos','—',eur(app.otrosConceptos));
+    if(app.dieta) devengosRows+=row('Dietas (no cotizable)','—',eur(app.dieta));
+    if(app.transporte) devengosRows+=row('Plus transporte (no cotizable)','—',eur(app.transporte));
+    if(app.viajes) devengosRows+=row('Viajes ('+app.km.toFixed(0)+' km, no cotizable)','—',eur(app.viajes));
+
+    let html='<div style="width:780px;font-family:Arial,Helvetica,sans-serif;color:#111;font-size:11px;padding:28px;background:#fff">';
+    html+='<div style="display:flex;justify-content:space-between;border-bottom:2px solid #111;padding-bottom:10px;margin-bottom:10px">'
+      +'<div><div style="font-size:15px;font-weight:800;letter-spacing:.5px">'+nombreEmp+'</div>'
+      +'<div style="font-size:10px;color:#444;margin-top:2px">'+[fCompany.cif&&('CIF: '+fCompany.cif),fCompany.direccion,[fCompany.cp,fCompany.ciudad].filter(Boolean).join(' '),fCompany.telefono].filter(Boolean).join(' · ')+'</div></div>'
+      +'<div style="text-align:right"><div style="font-size:15px;font-weight:800;letter-spacing:.5px">RECIBO DE SALARIOS</div>'
+      +'<div style="font-size:10px;color:#444;margin-top:2px">Simulación aproximada <span style="background:#fde68a;color:#7c5a00;font-size:8.5px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:6px">NO OFICIAL</span></div></div></div>';
+    html+='<div style="background:#f2f2f2;border:1px solid #999;padding:6px 10px;display:flex;justify-content:space-between;margin-bottom:10px;font-weight:700">'
+      +'<span>PERIODO DE LIQUIDACIÓN: '+fmtFechaLarga(inicio)+' – '+fmtFechaLarga(fin)+'</span><span>Nº DÍAS: '+diasPeriodo+'</span></div>';
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:10px">';
+    html+='<div style="border:1px solid #999;padding:8px 10px"><div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:#555;margin-bottom:5px;border-bottom:1px solid #ccc;padding-bottom:3px">Datos del trabajador</div>'
+      +dato('Nombre y apellidos',nombreTrab)+dato('DNI/NIF',fWorker.dni)+dato('Nº Seguridad Social',fWorker.numSS)
+      +dato('Categoría / Puesto',fWorker.cargo)+dato('Departamento',fWorker.departamento)+dato('Convenio aplicable',fWorker.convenio)
+      +dato('Antigüedad',fWorker.fechaAlta?fmtFechaLarga(fWorker.fechaAlta):'')+'</div>';
+    html+='<div style="border:1px solid #999;padding:8px 10px"><div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:#555;margin-bottom:5px;border-bottom:1px solid #ccc;padding-bottom:3px">Datos de la empresa</div>'
+      +dato('Razón social',fCompany.nombre)+dato('CIF',fCompany.cif)+dato('Domicilio',fCompany.direccion)
+      +dato('Localidad',[fCompany.ciudad,fCompany.cp].filter(Boolean).join(' — '))+dato('Teléfono',fCompany.telefono)+'</div></div>';
+    html+='<div style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#333;margin:10px 0 4px">I · Devengos</div>';
+    html+='<table style="width:100%;border-collapse:collapse;margin-bottom:8px"><tr><th style="background:#2b2b2b;color:#fff;font-size:9.5px;text-align:left;padding:5px 8px">Concepto</th><th style="background:#2b2b2b;color:#fff;font-size:9.5px;text-align:right;padding:5px 8px">Unidades</th><th style="background:#2b2b2b;color:#fff;font-size:9.5px;text-align:right;padding:5px 8px">Importe</th></tr>'
+      +devengosRows
+      +'<tr><td style="border-top:2px solid #111;font-weight:800;padding-top:6px 8px">TOTAL DEVENGADO</td><td style="border-top:2px solid #111"></td><td style="border-top:2px solid #111;font-weight:800;text-align:right;padding-top:6px">'+eur(sim.brutoTotal)+'</td></tr></table>';
+    html+='<div style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#333;margin:10px 0 4px">II · Deducciones (aprox.)</div>';
+    html+='<table style="width:100%;border-collapse:collapse;margin-bottom:8px"><tr><th style="background:#2b2b2b;color:#fff;font-size:9.5px;text-align:left;padding:5px 8px">Concepto</th><th style="background:#2b2b2b;color:#fff;font-size:9.5px;text-align:right;padding:5px 8px">Base</th><th style="background:#2b2b2b;color:#fff;font-size:9.5px;text-align:right;padding:5px 8px">%</th><th style="background:#2b2b2b;color:#fff;font-size:9.5px;text-align:right;padding:5px 8px">Importe</th></tr>'
+      +'<tr><td style="padding:4px 8px;border-bottom:1px solid #eee">Contingencias comunes (Seg. Social)</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right">'+eur(sim.brutoSujeto)+'</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right">'+ssPct.toFixed(2)+' %</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:700">−'+eur(sim.dedSS)+'</td></tr>'
+      +'<tr><td style="padding:4px 8px;border-bottom:1px solid #eee">Retención IRPF</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right">'+eur(sim.brutoSujeto)+'</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right">'+irpfPct.toFixed(2)+' %</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:700">−'+eur(sim.dedIRPF)+'</td></tr>'
+      +'<tr><td style="border-top:2px solid #111;font-weight:800;padding-top:6px">TOTAL A DEDUCIR</td><td style="border-top:2px solid #111"></td><td style="border-top:2px solid #111"></td><td style="border-top:2px solid #111;font-weight:800;text-align:right;padding-top:6px">−'+eur(sim.dedIRPF+sim.dedSS)+'</td></tr></table>';
+    html+='<div style="margin-top:12px;background:#111;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:800;border-radius:3px">'
+      +'<span>LÍQUIDO TOTAL A PERCIBIR (estimado)<small style="display:block;font-size:9px;font-weight:400;color:#bbb;margin-top:2px">'+(cerrado?'Periodo cerrado':'Con lo registrado hasta hoy — '+app.dias+' jornada(s)')+'</small></span>'
+      +'<span>'+eur(sim.liquido)+'</span></div>';
+    html+='<div style="margin-top:14px;font-size:9px;color:#777;border-top:1px dashed #ccc;padding-top:8px;line-height:1.5"><b style="color:#c0392b">Simulación generada por TimerPro, no es un documento oficial.</b> '
+      +'Las fechas, horas e importes se recalculan solos según lo registrado cada día. El % de IRPF y Seg. Social es aproximado '
+      +'(editable en Nóminas, o calculado a partir de tus nóminas reales ya analizadas) y no tiene en cuenta tramos de IRPF, topes de cotización ni pagas extra.</div>';
+    html+='<div style="display:flex;justify-content:space-between;margin-top:22px">'
+      +'<div style="width:45%;border-top:1px solid #999;padding-top:4px;font-size:9px;color:#555;text-align:center">Firma de la empresa</div>'
+      +'<div style="width:45%;border-top:1px solid #999;padding-top:4px;font-size:9px;color:#555;text-align:center">Firma del trabajador</div></div>';
+    html+='</div>';
+
+    const wrap=document.createElement('div');
+    wrap.style.cssText='position:fixed;top:0;left:0;z-index:99999;opacity:0.01;pointer-events:none;';
+    wrap.innerHTML=html;
+    document.body.appendChild(wrap);
+    await new Promise(r=>setTimeout(r,200));
+    const canvas=await html2canvas(wrap.firstChild,{scale:2,useCORS:true,allowTaint:true,backgroundColor:'#ffffff',logging:false});
+    document.body.removeChild(wrap);
+
+    canvas.toBlob(async(blob)=>{
+      const imgUrl=URL.createObjectURL(blob);
+      const imgFile=new File([blob],'nomina-oficial-'+mesKey+'.png',{type:'image/png'});
+      if(navigator.share && navigator.canShare && navigator.canShare({files:[imgFile]})){
+        try{ await navigator.share({files:[imgFile], title:'Nómina (simulación) '+periodoLabel(mesKey)}); URL.revokeObjectURL(imgUrl); return; }
+        catch(ex){ if(ex.name==='AbortError'){ URL.revokeObjectURL(imgUrl); return; } }
+      }
+      const panel=document.createElement('div');
+      panel.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
+      panel.innerHTML='<div style="background:#fff;border-radius:16px;padding:1.2rem;max-width:560px;width:100%;font-family:system-ui;max-height:90vh;overflow:auto">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">'
+        +'<b style="font-size:1rem">Nómina (simulación)</b>'
+        +'<button id="npo-close" style="background:none;border:none;font-size:1.2rem;cursor:pointer">✕</button></div>'
+        +'<img src="'+imgUrl+'" style="width:100%;border-radius:10px;margin-bottom:1rem;box-shadow:0 2px 12px rgba(0,0,0,.15)">'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">'
+        +'<button id="npo-wa" style="background:#25D366;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">📱 WhatsApp</button>'
+        +'<button id="npo-em" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">📧 Email</button>'
+        +'<button id="npo-cp" style="background:#7c3aed;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">📋 Copiar</button>'
+        +'<button id="npo-dl" style="background:#475569;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">⬇️ Descargar</button>'
+        +'</div></div>';
+      document.body.appendChild(panel);
+      const close=()=>{ document.body.removeChild(panel); URL.revokeObjectURL(imgUrl); };
+      document.getElementById('npo-close').onclick=close;
+      panel.addEventListener('click',ev=>{ if(ev.target===panel) close(); });
+      document.getElementById('npo-wa').onclick=async()=>{
+        try{ await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); window.open('https://web.whatsapp.com','_blank'); showAlert('Imagen copiada — pégala en WhatsApp con Ctrl+V'); }
+        catch(ex){ const a=document.createElement('a'); a.href=imgUrl; a.download='nomina-oficial-'+mesKey+'.png'; document.body.appendChild(a); a.click(); document.body.removeChild(a); showAlert('Descargada — adjúntala en WhatsApp con el clip 📎'); }
+        close();
+      };
+      document.getElementById('npo-em').onclick=()=>{
+        const a=document.createElement('a'); a.href=imgUrl; a.download='nomina-oficial-'+mesKey+'.png'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(()=>{ window.location.href='mailto:?subject=Nómina (simulación) '+periodoLabel(mesKey); },500);
+        close();
+      };
+      document.getElementById('npo-cp').onclick=async()=>{
+        try{ await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); showAlert('✅ Imagen copiada — pega con Ctrl+V donde quieras'); }
+        catch(ex){ showAlert('No se pudo copiar','err'); }
+        close();
+      };
+      document.getElementById('npo-dl').onclick=()=>{
+        const a=document.createElement('a'); a.href=imgUrl; a.download='nomina-oficial-'+mesKey+'.png'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        showAlert('✅ Imagen descargada'); close();
+      };
+    },'image/png',0.95);
+  }catch(err){
+    showAlert('Error: '+err.message,'err'); console.error(err);
+  }finally{
+    if(btn){ btn.textContent='🧾 Nómina oficial'; btn.disabled=false; }
+  }
+}
+
 async function enviarMensajeNomina(mesKey){
   const inp=document.getElementById('nomina-chat-input');
   if(!inp||!inp.value.trim()) return;
@@ -8097,6 +8266,63 @@ async function enviarMensajeNomina(mesKey){
   await dbPut(ST.monthChats, chatRec);
   rerender();
   setTimeout(()=>{const el=document.getElementById('nomina-chat-msgs');if(el)el.scrollTop=el.scrollHeight;},100);
+}
+
+// Tarjeta de simulación aproximada de la nómina del periodo: devengos (lo
+// que ya está registrado en la app hasta hoy, más Sueldo Base/Guardia fijos),
+// un % de IRPF y de Seg. Social (editables; si no se han tocado nunca, se
+// rellenan solos con la media de las nóminas reales ya analizadas) y el
+// líquido estimado resultante. Se recalcula sola cada vez que se añade una
+// jornada nueva, así que en un periodo "en curso" va mostrando cómo iría
+// quedando el total a medida que se acerca el día 25/26 de cierre.
+function renderSimulacionNomina(mesKey, app){
+  const t=getTarifas();
+  const hist=promedioRetencionesHistoricas();
+  const irpfPct=(t.irpfPct!=null && t.irpfPct!=='')?+t.irpfPct:(hist.irpf||0);
+  const ssPct=(t.ssPct!=null && t.ssPct!=='')?+t.ssPct:(hist.ss||0);
+  const sim=simularNomina(app, irpfPct, ssPct);
+  const sinHistorial=!hist.nIrpf && !hist.nSs && t.irpfPct==null && t.ssPct==null;
+  return h('div',{class:'card'},
+    h('div',{class:'sec-title'},'🧮 Simulación aproximada de '+periodoLabel(mesKey)),
+    h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.6rem'}},
+      'Estimación con lo registrado hasta hoy'+(periodoEstaCerrado(mesKey)?'':' — se irá actualizando sola según añadas jornadas, hasta el cierre del día 25/26')+
+      '. No es la nómina real: no tiene en cuenta tramos de IRPF, topes de Seg. Social ni pagas extra.'
+    ),
+    sinHistorial?h('div',{style:{fontSize:'.72rem',color:'var(--yel)',marginBottom:'.6rem',fontWeight:600}},
+      '⚠️ Todavía no hay ninguna nómina real analizada de la que sacar un % medio — escribe tú el % de IRPF y Seg. Social que te suelen aplicar.'
+    ):h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.6rem'}},
+      '% calculado como la media de '+(hist.nIrpf||hist.nSs)+' nómina(s) real(es) ya analizada(s) (puedes cambiarlo a mano).'
+    ),
+    h('div',{style:{fontSize:'.78rem',fontWeight:700,color:'var(--ink2)',marginBottom:'.3rem'}},'DEVENGOS'),
+    h('div',{style:{fontSize:'.85rem',marginBottom:'.15rem'}},'Sueldo Base + Guardia + horas: '+eur(app.sueldoBase+app.guardia+app.importeNormales+app.importeExtra+app.importeNocturnas+app.importeFestivas+app.otrosConceptos)),
+    h('div',{style:{fontSize:'.85rem',marginBottom:'.4rem'}},'Dietas + transporte + viajes (exento): '+eur(sim.exento)),
+    h('div',{style:{fontWeight:700,marginBottom:'.6rem'}},'Total bruto: '+eur(sim.brutoTotal)),
+    h('div',{style:{fontSize:'.78rem',fontWeight:700,color:'var(--ink2)',marginBottom:'.3rem'}},'DEDUCCIONES (aprox.)'),
+    h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.4rem',alignItems:'end',marginBottom:'.4rem'}},
+      h('div',{},
+        h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'% IRPF'),
+        h('input',{type:'number',min:'0',step:'0.01',value:t.irpfPct!=null?t.irpfPct:(hist.irpf?hist.irpf.toFixed(2):''),placeholder:hist.irpf?hist.irpf.toFixed(2):'0.00',
+          style:{width:'100%',fontWeight:700},
+          on:{change:ev=>{ const tt=getTarifas(); tt.irpfPct=ev.target.value===''?null:parseFloat(ev.target.value)||0; saveTarifas(tt); rerender(); }}
+        })
+      ),
+      h('div',{},
+        h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'% Seg. Social'),
+        h('input',{type:'number',min:'0',step:'0.01',value:t.ssPct!=null?t.ssPct:(hist.ss?hist.ss.toFixed(2):''),placeholder:hist.ss?hist.ss.toFixed(2):'0.00',
+          style:{width:'100%',fontWeight:700},
+          on:{change:ev=>{ const tt=getTarifas(); tt.ssPct=ev.target.value===''?null:parseFloat(ev.target.value)||0; saveTarifas(tt); rerender(); }}
+        })
+      )
+    ),
+    h('div',{style:{fontSize:'.85rem',marginBottom:'.15rem'}},'IRPF ('+irpfPct.toFixed(2)+'%): −'+eur(sim.dedIRPF)),
+    h('div',{style:{fontSize:'.85rem',marginBottom:'.6rem'}},'Seg. Social ('+ssPct.toFixed(2)+'%): −'+eur(sim.dedSS)),
+    h('div',{style:{marginTop:'.4rem',fontWeight:800,fontSize:'1.05rem'},class:'total-grad'},
+      'Líquido estimado a percibir: '+eur(sim.liquido)
+    ),
+    h('button',{id:'btn-nomina-oficial',class:'btn btn-gh btn-sm',style:{width:'100%',marginTop:'.7rem'},
+      on:{click:()=>compartirNominaOficialComoImagen(mesKey,app)}
+    },'🧾 Ver como nómina oficial (imagen)')
+  );
 }
 
 function renderNominas(){
@@ -8163,6 +8389,13 @@ function renderNominas(){
         h('button',{class:'btn btn-gh btn-sm',on:{click:()=>compartirResumenNomina(mesKey, resumenTotalesTexto(mesKey,app))}},'📤 Texto')
       )
     ),
+
+    // Simulación aproximada de cómo iría quedando la nómina del periodo,
+    // con la misma estructura (devengos → deducciones → líquido) que una
+    // nómina real, usando lo registrado hasta hoy + Sueldo Base/Guardia fijos
+    // y un % de IRPF/Seg. Social aproximado (calculado solo a partir de las
+    // nóminas reales que ya se han subido y analizado, o editable a mano).
+    renderSimulacionNomina(mesKey, app),
 
     // Día a día del periodo (mismo formato que "Día a día" de Resumen) + mismas exportaciones que Resumen,
     // con previsualización en todos los formatos antes de guardar/compartir (vía el diálogo Abrir/Guardar/Compartir).
