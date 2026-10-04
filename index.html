@@ -11731,7 +11731,8 @@ async function driveSync(skipSafetyCheck){
     localStorage.setItem('lastSync', lastSync);
     localStorage.setItem('lastSave', new Date().toISOString());
     localStorage.setItem('lastDriveLoad', Date.now().toString());
-    showAlert('✅ Guardado en Google Drive: '+S.entries.length+' jornadas');
+    const _nConArchivo=(data.payslips||[]).filter(p=>p.dataUrl).length;
+    showAlert('✅ Guardado en Google Drive: '+S.entries.length+' jornadas, '+(data.payslips||[]).length+' nóminas ('+_nConArchivo+' con archivo original)');
     rerender();
   }catch(e){
     _syncInProgress = false;
@@ -12142,11 +12143,12 @@ async function importDriveData(d, verifyMode){
         editingEntry=false;
       }
     }
+    const _nConArchivo=(S.payslips||[]).filter(p=>p.dataUrl).length;
     if(verifyMode){
       showAlert('✅ Drive OK: '+S.entries.length+' jornadas guardadas correctamente');
     } else {
       saveLocalBackup();
-    showAlert('✅ Cargado: '+S.entries.length+' jornadas, '+S.tasks.length+' tareas');
+    showAlert('✅ Cargado: '+S.entries.length+' jornadas, '+S.tasks.length+' tareas, '+(S.payslips||[]).length+' nóminas ('+_nConArchivo+' con archivo original)');
     }
     rerender();
   }catch(e){
@@ -12285,7 +12287,8 @@ async function mergeDriveData(d){
     // Save merged data
     const mergedData = {...d, entries: merged, tasks: tasksFinal, payslips: payslipsFinal, monthChats: monthChatsFinal, dayTags: mergedTags};
     await importDriveData(mergedData, false);
-    showAlert('✅ Fusionado: '+merged.length+' jornadas, '+tasksFinal.length+' tareas/OT');
+    const _nConArchivoFus=payslipsFinal.filter(p=>p.dataUrl).length;
+    showAlert('✅ Fusionado: '+merged.length+' jornadas, '+tasksFinal.length+' tareas/OT, '+payslipsFinal.length+' nóminas ('+_nConArchivoFus+' con archivo original)');
 
     // Upload merged data back to Drive
     // auto-sync disabled
