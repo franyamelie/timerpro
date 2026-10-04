@@ -42,7 +42,7 @@ if('caches' in window){caches.keys().then(function(k){k.forEach(function(c){cach
   --time-invert:0;
   --bg:#e1f1f0;--bg2:#c9e6e1;--bg3:#b2d8d4;
   --surf:#ffffff;--surf2:#ffffff;--surf3:#f2f2f2;
-  --ink:#17171a;--ink2:#6b6b72;--ink3:#a3a3a8;
+  --ink:#000000;--ink2:#6b6b72;--ink3:#a3a3a8;
   --brd:rgba(0,0,0,.08);
   --sh:0 2px 12px rgba(0,0,0,.08);
   --acc:#15803d;--acc2:#166534;--acc-lt:rgba(21,128,61,.15);
@@ -932,7 +932,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261004-drivefix3'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261004-textocolor'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
