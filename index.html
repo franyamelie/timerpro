@@ -7594,6 +7594,27 @@ function compararNominaConApp(mesKey, extracted){
     }
   }
 
+  // ── Gratificación (la línea que más cambia cada mes) vs. lo que valen las
+  // horas extra/nocturnas/festivas + Guardia según lo que llevas registrado en
+  // la app. Esto es lo único que permite comprobar, mes a mes, si esa partida
+  // (que no viene desglosada en la nómina) sube y baja al compás de lo que
+  // realmente trabajaste de más, o no tiene relación con ello.
+  const gratNom=+extracted.gratificacionNomina||0;
+  if(gratNom>0){
+    const valorExtraApp=(app.importeExtra||0)+(app.importeNocturnas||0)+(app.importeFestivas||0)+(app.guardia||0);
+    lineas.push('');
+    lineas.push('🔎 Gratificación de la nómina vs. horas extra/nocturnas/festivas + Guardia de la app ('+gratNom.toFixed(2)+'€ en nómina):');
+    if(valorExtraApp<=0){
+      lineas.push('ℹ️ No hay horas extra/nocturnas/festivas ni Guardia registradas en la app para este periodo con las que comparar esa Gratificación.');
+    } else if(Math.abs(valorExtraApp-gratNom)<=TOL_E){
+      lineas.push('✅ Coincide con lo que valen tus horas extra/nocturnas/festivas + Guardia según la app ('+valorExtraApp.toFixed(2)+'€).');
+    } else if(gratNom<valorExtraApp){
+      lineas.push('⚠️ La Gratificación ('+gratNom.toFixed(2)+'€) es MENOR que lo que valen tus horas extra/nocturnas/festivas + Guardia según la app ('+valorExtraApp.toFixed(2)+'€) — diferencia de '+(gratNom-valorExtraApp).toFixed(2)+'€.');
+    } else {
+      lineas.push('ℹ️ La Gratificación ('+gratNom.toFixed(2)+'€) es MAYOR que lo que valen tus horas extra/nocturnas/festivas + Guardia según la app ('+valorExtraApp.toFixed(2)+'€) — diferencia de +'+(gratNom-valorExtraApp).toFixed(2)+'€. Puede incluir algo más aparte de horas/guardia, o los precios por hora en Tarifas no reflejan los reales.');
+    }
+  }
+
   let resumen='📋 Comparación de la nómina del periodo '+periodoLabel(mesKey)+' con lo registrado en la app ('+app.dias+' jornada(s)):\n\n'
     +(lineas.length?lineas.join('\n'):'No hay horas ni dietas/transporte que comparar en ninguno de los dos lados.')
     +'\n\n💰 Total calculado por la app (Sueldo Base + Guardia + horas + dietas + transporte + viajes): '+totalApp.toFixed(2)+'€';
@@ -7664,6 +7685,76 @@ async function geminiGenerateJSON(geminiKey, modelo, contents, generationConfigB
   return res.json();
 }
 
+// Texto del prompt de extracción de nómina, compartido entre subirNomina()
+// (archivo nuevo) y recalcularNomina() (re-analiza un archivo ya guardado,
+// por ejemplo para aplicar una comprobación nueva como la de Gratificación
+// a nóminas subidas antes de que esa comprobación existiera).
+function promptNomina(){
+  return 'Analiza esta imagen de una nómina (hoja de salario) laboral española y extrae TODOS los datos visibles.\n'
+    +'Responde ÚNICAMENTE con un JSON válido sin texto adicional ni markdown:\n'
+    +'{\n'
+    +'  "mes": "YYYY-MM (el mes/periodo que corresponde esta nómina, tu mejor estimación)",\n'
+    +'  "horasNormales": 0,\n'
+    +'  "horasExtra": 0,\n'
+    +'  "horasNocturnas": 0,\n'
+    +'  "horasFestivas": 0,\n'
+    +'  "dietas": 0,\n'
+    +'  "transporte": 0,\n'
+    +'  "salarioBruto": 0,\n'
+    +'  "salarioNeto": 0,\n'
+    +'  "sueldoBaseNomina": "importe de la línea \'Sueldo Base\' tal cual aparece en la nómina, si existe esa línea, 0 si no",\n'
+    +'  "guardiaNomina": "importe de la línea \'Guardia\' tal cual aparece en la nómina, si existe esa línea, 0 si no",\n'
+    +'  "gratificacionNomina": "importe de la línea \'Gratificación\'/\'Gratificacion\' tal cual aparece en la nómina, si existe esa línea, 0 si no",\n'
+    +'  "retencionIRPF": "importe retenido por IRPF, 0 si no aparece",\n'
+    +'  "retencionSS": "importe retenido por Seguridad Social (cuota obrera), 0 si no aparece",\n'
+    +'  "otrosConceptos": [{"concepto":"nombre","importe":0}],\n'
+    +'  "observaciones": "cualquier cosa relevante que detectes (descuentos raros, retenciones, pluses, etc.) o vacío"\n'
+    +'}\n'
+    +'Si algún dato no aparece en la nómina, pon 0 o "" según corresponda. No inventes datos.';
+}
+
+// Llama a Gemini con la imagen de una nómina y devuelve el JSON ya parseado
+// (o lanza un error claro si la IA no responde con datos utilizables).
+async function leerDatosNominaConIA(geminiKey, base64, mediaType){
+  const _mImg=modeloGeminiParaImagenes();
+  const data=await geminiGenerateJSON(
+    geminiKey, _mImg,
+    [{role:'user',parts:[{inline_data:{mime_type:mediaType,data:base64}},{text:promptNomina()}]}],
+    {maxOutputTokens:3000,temperature:0.1}
+  );
+  const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'';
+  let clean=text.replace(/```json|```/g,'').trim();
+  let extracted;
+  try{
+    extracted=JSON.parse(clean);
+  }catch(parseErr){
+    // La IA a veces añade texto explicativo antes/después del JSON (o se corta).
+    // Como último intento, se busca el primer '{' y el último '}' de la respuesta
+    // y se intenta parsear solo ese fragmento antes de rendirse.
+    const m=clean.match(/\{[\s\S]*\}/);
+    if(m){
+      try{ extracted=JSON.parse(m[0]); }catch(parseErr2){ extracted=null; }
+    }
+    if(!extracted){
+      if(!clean){
+        // Respuesta totalmente vacía: casi siempre es que Gemini ha bloqueado
+        // la imagen (filtro de seguridad) o se ha quedado sin tokens antes de
+        // escribir nada. Sacamos el motivo exacto que da la propia API.
+        const finishReason=data.candidates?.[0]?.finishReason||'';
+        const blockReason=data.promptFeedback?.blockReason||'';
+        const safety=(data.candidates?.[0]?.safetyRatings||[]).filter(s=>s.probability&&s.probability!=='NEGLIGIBLE').map(s=>s.category+':'+s.probability).join(', ');
+        let motivo=[];
+        if(blockReason) motivo.push('bloqueo: '+blockReason);
+        if(finishReason) motivo.push('motivo de parada: '+finishReason);
+        if(safety) motivo.push('seguridad: '+safety);
+        throw new Error('La IA no ha devuelto ningún dato.'+(motivo.length?' ('+motivo.join(' · ')+')':' (sin detalles adicionales de la API)')+'. Prueba de nuevo, o con otra foto/escaneado más claro.');
+      }
+      throw new Error('La IA no devolvió datos en el formato esperado. Respuesta recibida: "'+clean.slice(0,180)+(clean.length>180?'...':'')+'". Prueba de nuevo.');
+    }
+  }
+  return extracted;
+}
+
 async function subirNomina(file, mesSeleccionado){
   if(!file) return;
   const geminiKey=localStorage.getItem('gemini_api_key')||'';
@@ -7687,62 +7778,7 @@ async function subirNomina(file, mesSeleccionado){
     nominaPreview[mesSeleccionado]=dataUrl; // vista previa en memoria (no se sincroniza)
     const base64=dataUrl.split(',')[1];
     const mediaType='image/jpeg';
-    const prompt='Analiza esta imagen de una nómina (hoja de salario) laboral española y extrae TODOS los datos visibles.\n'
-      +'Responde ÚNICAMENTE con un JSON válido sin texto adicional ni markdown:\n'
-      +'{\n'
-      +'  "mes": "YYYY-MM (el mes/periodo que corresponde esta nómina, tu mejor estimación)",\n'
-      +'  "horasNormales": 0,\n'
-      +'  "horasExtra": 0,\n'
-      +'  "horasNocturnas": 0,\n'
-      +'  "horasFestivas": 0,\n'
-      +'  "dietas": 0,\n'
-      +'  "transporte": 0,\n'
-      +'  "salarioBruto": 0,\n'
-      +'  "salarioNeto": 0,\n'
-      +'  "sueldoBaseNomina": "importe de la línea \'Sueldo Base\' tal cual aparece en la nómina, si existe esa línea, 0 si no",\n'
-      +'  "guardiaNomina": "importe de la línea \'Guardia\' tal cual aparece en la nómina, si existe esa línea, 0 si no",\n'
-      +'  "retencionIRPF": "importe retenido por IRPF, 0 si no aparece",\n'
-      +'  "retencionSS": "importe retenido por Seguridad Social (cuota obrera), 0 si no aparece",\n'
-      +'  "otrosConceptos": [{"concepto":"nombre","importe":0}],\n'
-      +'  "observaciones": "cualquier cosa relevante que detectes (descuentos raros, retenciones, pluses, etc.) o vacío"\n'
-      +'}\n'
-      +'Si algún dato no aparece en la nómina, pon 0 o "" según corresponda. No inventes datos.';
-    const _mImg=modeloGeminiParaImagenes();
-    const data=await geminiGenerateJSON(
-      geminiKey, _mImg,
-      [{role:'user',parts:[{inline_data:{mime_type:mediaType,data:base64}},{text:prompt}]}],
-      {maxOutputTokens:3000,temperature:0.1}
-    );
-    const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'';
-    let clean=text.replace(/```json|```/g,'').trim();
-    let extracted;
-    try{
-      extracted=JSON.parse(clean);
-    }catch(parseErr){
-      // La IA a veces añade texto explicativo antes/después del JSON (o se corta).
-      // Como último intento, se busca el primer '{' y el último '}' de la respuesta
-      // y se intenta parsear solo ese fragmento antes de rendirse.
-      const m=clean.match(/\{[\s\S]*\}/);
-      if(m){
-        try{ extracted=JSON.parse(m[0]); }catch(parseErr2){ extracted=null; }
-      }
-      if(!extracted){
-        if(!clean){
-          // Respuesta totalmente vacía: casi siempre es que Gemini ha bloqueado
-          // la imagen (filtro de seguridad) o se ha quedado sin tokens antes de
-          // escribir nada. Sacamos el motivo exacto que da la propia API.
-          const finishReason=data.candidates?.[0]?.finishReason||'';
-          const blockReason=data.promptFeedback?.blockReason||'';
-          const safety=(data.candidates?.[0]?.safetyRatings||[]).filter(s=>s.probability&&s.probability!=='NEGLIGIBLE').map(s=>s.category+':'+s.probability).join(', ');
-          let motivo=[];
-          if(blockReason) motivo.push('bloqueo: '+blockReason);
-          if(finishReason) motivo.push('motivo de parada: '+finishReason);
-          if(safety) motivo.push('seguridad: '+safety);
-          throw new Error('La IA no ha devuelto ningún dato.'+(motivo.length?' ('+motivo.join(' · ')+')':' (sin detalles adicionales de la API)')+'. Prueba a subir la nómina de nuevo, o con otra foto/escaneado más claro.');
-        }
-        throw new Error('La IA no devolvió datos en el formato esperado. Respuesta recibida: "'+clean.slice(0,180)+(clean.length>180?'...':'')+'". Prueba a subir la nómina de nuevo.');
-      }
-    }
+    const extracted=await leerDatosNominaConIA(geminiKey, base64, mediaType);
 
     let mesFinal=mesSeleccionado;
     const mesDetectado=/^\d{4}-\d{2}$/.test(extracted.mes||'')?extracted.mes:'';
@@ -7786,6 +7822,53 @@ async function borrarNomina(id){
     showAlert('Nómina eliminada');
     rerender();
   });
+}
+
+// Vuelve a pasar por la IA una nómina YA GUARDADA (usa el archivo original que
+// se guarda íntegro con cada nómina, no hace falta volver a subirlo desde el
+// móvil/PC) y recalcula la comparación con la app. Sirve para que una nómina
+// subida ANTES de añadir una comprobación nueva (p.ej. la de Gratificación)
+// se vuelva a analizar y la tenga también, sin perder ni duplicar la nómina:
+// se actualiza la misma ficha (mismo id), no se crea una nueva.
+async function recalcularNomina(p){
+  if(!p || !p.dataUrl){ showAlert('Esta nómina no tiene el archivo original guardado, no se puede recalcular. Súbela de nuevo.','err'); return; }
+  const geminiKey=localStorage.getItem('gemini_api_key')||'';
+  if(!geminiKey){ showAlert('Necesitas una API Key de Gemini. Ve a la pestaña IA y configúrala primero (gratis en aistudio.google.com/apikey).','err'); return; }
+  showAlert('🤖 Recalculando nómina con IA...');
+  try{
+    let dataUrl;
+    if((p.fileType||'').includes('pdf')){
+      const blob=dataURLtoBlob(p.dataUrl);
+      const file=new File([blob], p.fileName||'nomina.pdf', {type:'application/pdf'});
+      dataUrl=await _pdfPaginaAImagen(file);
+    } else {
+      dataUrl=p.dataUrl; // ya es una imagen
+    }
+    const base64=dataUrl.split(',')[1];
+    const extracted=await leerDatosNominaConIA(geminiKey, base64, 'image/jpeg');
+    const comparisonSummary=compararNominaConApp(p.mes, extracted);
+    const actualizada={...p, extracted, comparisonSummary};
+    await dbPut(ST.payslips, actualizada);
+    S.payslips=S.payslips.map(x=>x.id===p.id?actualizada:x);
+
+    // Se añade como mensaje nuevo en el chat de ese mes, igual que al subirla
+    // la primera vez, para que se vea el resultado de la comprobación nueva.
+    let chatRec=(S.monthChats||[]).find(c=>c.mes===p.mes);
+    if(!chatRec){
+      chatRec={mes:p.mes, messages:[]};
+      const cid=await dbPut(ST.monthChats, chatRec);
+      chatRec.id=cid;
+      S.monthChats.push(chatRec);
+    }
+    chatRec.messages.push({role:'assistant',content:'🔄 Nómina recalculada:\n\n'+comparisonSummary});
+    await dbPut(ST.monthChats, chatRec);
+
+    showAlert('✅ Nómina recalculada');
+    rerender();
+  }catch(e){
+    showAlert('Error al recalcular: '+e.message,'err');
+    console.error(e);
+  }
 }
 
 // Abre el diálogo estándar de la app (Abrir/Guardar/Compartir) con el
@@ -8119,6 +8202,7 @@ function renderNominas(){
               h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
                 h('div',{style:{fontWeight:700,fontSize:'.82rem'}},'📄 '+(p.fileName||'Nómina')),
                 h('div',{style:{display:'flex',gap:'.3rem'}},
+                  h('button',{class:'btn btn-gh btn-sm',title:'Volver a analizar esta nómina con la IA (por ejemplo, si se ha añadido una comprobación nueva desde que la subiste)',on:{click:()=>recalcularNomina(p)}},'🔄'),
                   h('button',{class:'btn btn-gh btn-sm',title:'Abrir / Guardar / Compartir el archivo original',on:{click:()=>abrirNominaOriginal(p)}},'💾'),
                   h('button',{class:'btn btn-gh btn-sm',title:'Compartir el resumen',on:{click:()=>compartirResumenNomina(mesKey,p.comparisonSummary||'')}},'📤'),
                   h('button',{class:'btn btn-r btn-sm',on:{click:()=>borrarNomina(p.id)}},'✕')
