@@ -11942,7 +11942,16 @@ async function importDriveData(d, verifyMode){
     const localPayslipMap = {};
     (S.payslips||[]).forEach(p=>{ if(p.id!=null) localPayslipMap[p.id]={dataUrl:p.dataUrl||'',fileType:p.fileType||''}; });
 
-    await Promise.all(Object.values(ST).filter(s=>s!=='snapshots'&&s!=='settings').map(s=>dbClear(s)));
+    // IMPORTANTE: 'payslips' (nóminas) y 'monthChats' quedan FUERA de este
+    // vaciado. Antes se borraban aquí igual que el resto y se volvían a
+    // rellenar solo con lo que trajera Drive (d.payslips) — así que si Drive
+    // todavía no tenía nóminas guardadas (como pasó hasta hace poco, por un
+    // bug aparte en el que nunca llegaban a subirse) o llegaba algo vacío,
+    // un simple "Cargar" o "Fusionar" borraba las nóminas que sí había en
+    // este aparato sin avisar y sin posibilidad de recuperarlas. Al no
+    // vaciarlas de entrada, lo que traiga Drive se añade/actualiza (más
+    // abajo, por id) pero nunca se pierde una nómina que solo exista aquí.
+    await Promise.all(Object.values(ST).filter(s=>s!=='snapshots'&&s!=='settings'&&s!=='payslips'&&s!=='monthChats').map(s=>dbClear(s)));
     for(const e of(d.entries||[])){
       // Restore fotosGastos from local if Drive stripped them
       const localE = localEntryMap[e.fecha]||{};
@@ -12545,7 +12554,12 @@ async function createSnapshot(label=''){
 async function restoreSnapshot(snap){
   try{
     const data = JSON.parse(snap.data);
-    await Promise.all(Object.values(ST).filter(s=>s!=='snapshots'&&s!=='settings').map(s=>dbClear(s)));
+    // Los puntos de restauración nunca han guardado nóminas ni el chat de
+    // cada mes dentro del snapshot (solo jornadas/tareas/etc.), así que
+    // vaciarlos aquí sin poder volver a rellenarlos los borraría para
+    // siempre. Se dejan fuera del vaciado para que una restauración nunca
+    // se lleve por delante las nóminas ya subidas.
+    await Promise.all(Object.values(ST).filter(s=>s!=='snapshots'&&s!=='settings'&&s!=='payslips'&&s!=='monthChats').map(s=>dbClear(s)));
     for(const e of(data.entries||[])) await dbPut(ST.entries,e);
     for(const t of(data.tasks||[])) await dbPut(ST.tasks,t);
     for(const s of(data.sites||[])) await dbPut(ST.sites,s);
