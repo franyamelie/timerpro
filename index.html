@@ -982,7 +982,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261004-pacto2100'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261005-tareatitulo'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -3470,16 +3470,26 @@ function renderTareasPorTipo(tipoId){
 }
 
 async function adjuntarTareaADia(t){
-  // Show date picker modal instead of prompt
-  const fecha = await new Promise(resolve => {
+  // Modal con fecha Y título editables: al asignar una tarea ya guardada del
+  // listado a una fecha, se puede cambiar el título solo para esa nueva
+  // fecha (p.ej. la misma O.T. pero otra descripción del trabajo hecho ese
+  // día), sin tocar para nada la tarea original del listado desde la que se
+  // asignó. Si el título se deja igual, se copia tal cual (como antes); si
+  // se edita, la copia nueva se guarda con el título nuevo y la O.T. de la
+  // original — quedando las DOS tareas en el listado, cada una en su fecha,
+  // sin perder ninguna de las dos.
+  const result = await new Promise(resolve => {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
     const box = document.createElement('div');
-    box.style.cssText = 'background:var(--surf);border-radius:14px;padding:1.5rem;max-width:320px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.4)';
+    box.style.cssText = 'background:var(--surf);border-radius:14px;padding:1.5rem;max-width:340px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.4)';
     box.innerHTML = '<div style="font-weight:800;font-size:1rem;color:var(--ink);margin-bottom:1rem">📅 Adjuntar tarea al día</div>'
-      +'<div style="font-size:.85rem;color:var(--ink2);margin-bottom:.3rem">'+t.titulo+'</div>'
       +'<div style="font-size:.8rem;color:var(--ink3);margin-bottom:.8rem">'+(taskTypes.find(function(x){return x.id===(t.tipoTarea||'ot');})||{nombre:'OT'}).nombre+': '+(t.otNumero||'')+' </div>'
-      +'<input type="date" id="adj-date" value="'+(t.fecha||today())+'" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--brd);background:var(--surf2);color:var(--ink);font-size:1rem;margin-bottom:1rem">'
+      +'<label style="display:block;font-size:.72rem;color:var(--ink2);margin-bottom:.2rem">Título para esa fecha (puedes cambiarlo)</label>'
+      +'<input type="text" id="adj-titulo" value="'+String(t.titulo||'').replace(/"/g,'&quot;')+'" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--brd);background:var(--surf2);color:var(--ink);font-size:.95rem;margin-bottom:.8rem;box-sizing:border-box">'
+      +'<label style="display:block;font-size:.72rem;color:var(--ink2);margin-bottom:.2rem">Fecha</label>'
+      +'<input type="date" id="adj-date" value="'+(t.fecha||today())+'" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--brd);background:var(--surf2);color:var(--ink);font-size:1rem;margin-bottom:.4rem;box-sizing:border-box">'
+      +'<div style="font-size:.7rem;color:var(--ink3);margin-bottom:1rem">Si cambias el título, se guardará como una tarea nueva en el listado (misma O.T.) sin tocar la original. Si lo dejas igual, se copia tal cual.</div>'
       +'<div style="display:flex;gap:.6rem;justify-content:flex-end">'
       +'<button id="adj-cancel" style="padding:.5rem 1rem;border-radius:8px;border:1px solid var(--brd);background:var(--surf3);color:var(--ink);cursor:pointer;font-weight:600">Cancelar</button>'
       +'<button id="adj-ok" style="padding:.5rem 1rem;border-radius:8px;border:none;background:var(--acc);color:#000;cursor:pointer;font-weight:700">Adjuntar</button>'
@@ -3487,26 +3497,36 @@ async function adjuntarTareaADia(t){
     overlay.appendChild(box);
     document.body.appendChild(overlay);
     document.getElementById('adj-ok').onclick = () => {
-      const v = document.getElementById('adj-date').value;
+      const fecha = document.getElementById('adj-date').value;
+      const titulo = document.getElementById('adj-titulo').value;
       document.body.removeChild(overlay);
-      resolve(v);
+      resolve({fecha, titulo});
     };
     document.getElementById('adj-cancel').onclick = () => {
       document.body.removeChild(overlay);
       resolve(null);
     };
   });
-  if(!fecha) return;
-  if(fecha === t.fecha){ showAlert('La tarea ya está en ese día','err'); return; }
-  // COPIAR la tarea al nuevo día (no mover) para no perder la del día original
-  const nuevaTarea = {...t, fecha:fecha};
+  if(!result || !result.fecha) return;
+  const fecha = result.fecha;
+  const tituloNuevo = (result.titulo||'').trim() || t.titulo;
+  const tituloCambiado = tituloNuevo !== (t.titulo||'').trim();
+  if(fecha === t.fecha && !tituloCambiado){ showAlert('La tarea ya está en ese día','err'); return; }
+  // COPIAR la tarea al nuevo día (no mover) para no perder la del día original,
+  // con el título editado si lo cambiaste (la O.T. se mantiene igual).
+  const nuevaTarea = {...t, fecha:fecha, titulo:tituloNuevo};
   delete nuevaTarea.id;
+  let newId;
   try{
-    const newId = await dbPut(ST.tasks, nuevaTarea);
+    newId = await dbPut(ST.tasks, nuevaTarea);
     S.tasks.push({...nuevaTarea, id:newId});
-    showAlert('Tarea copiada al '+dlbl(fecha)+' ✓ (la original del '+dlbl(t.fecha)+' se mantiene)');
+    showAlert(tituloCambiado
+      ? 'Tarea creada el '+dlbl(fecha)+' con el nuevo título ✓ (la original del '+dlbl(t.fecha)+' se mantiene igual)'
+      : 'Tarea copiada al '+dlbl(fecha)+' ✓ (la original del '+dlbl(t.fecha)+' se mantiene)');
   }catch(ex){ showAlert('Error al copiar tarea','err'); return; }
-  // Link to entry for that day
+  // Link to entry for that day — se enlaza con la COPIA nueva (newId), no con
+  // la tarea original, para que ese día muestre siempre el título que
+  // corresponde a esa fecha (el editado, si se cambió).
   let entry = S.entries.find(e=>e.fecha===fecha);
   if(!entry){
     // Create empty entry for that day
@@ -3515,8 +3535,8 @@ async function adjuntarTareaADia(t){
   }
   const entryIdx = S.entries.findIndex(e=>e.fecha===fecha);
   const journeys = S.entries[entryIdx].journeys||[];
-  if(!journeys.find(j=>j.id===t.id)){
-    journeys.push({id:t.id, titulo:t.titulo, otNumero:t.otNumero, fecha:fecha});
+  if(!journeys.find(j=>j.id===newId)){
+    journeys.push({id:newId, titulo:tituloNuevo, otNumero:t.otNumero, fecha:fecha});
     S.entries[entryIdx] = {...S.entries[entryIdx], journeys};
     try{ dbPut(ST.entries, S.entries[entryIdx]); }catch(ex){}
   }
@@ -6314,7 +6334,15 @@ function renderModalResumenDia(){
           const hEnt=(e.fichajes&&e.fichajes[0]&&e.fichajes[0].entrada)||e.horaEntrada||e._horaInicioManual||'';
           const hSal=(e.fichajes&&e.fichajes.length>0&&e.fichajes[e.fichajes.length-1].salida)||e.horaSalida||e._horaFinManual||'';
           if(!hEnt&&!hSal) return null;
-          const desc=e.timerDeduct||0;
+          // Igual que en el desglose de abajo: si no hay timerDeduct guardado
+          // (jornadas del cronómetro de antes de este arreglo) pero sí hay un
+          // único fichaje, se infiere el descanso de la diferencia entre la
+          // hora en bruto y las horas netas ya guardadas.
+          let desc=e.timerDeduct||0;
+          if(!desc && hEnt && hSal && (e.fichajes||[]).length<=1){
+            const inferido=Math.round((calcH(hEnt,hSal)-totalH)*60);
+            if(inferido>0) desc=inferido;
+          }
           return h('div',{style:{background:'rgba(255,255,255,.1)',borderRadius:'8px',padding:'.6rem 1rem',marginTop:'.6rem',textAlign:'center'}},
             h('div',{style:{fontSize:'1.1rem',fontWeight:900,letterSpacing:'.05em'}},(hEnt||'--')+' → '+(hSal||'--')),
             h('div',{style:{fontSize:'.68rem',opacity:.75,marginTop:'.1rem'}},'HORARIO'+(desc>0?' (-'+desc+' min descanso)':''))
@@ -6331,11 +6359,29 @@ function renderModalResumenDia(){
           if((e.horaEntrada||e.horaSalida) && !(e.fichajes||[]).some(f=>f.entrada===e.horaEntrada && f.salida===e.horaSalida)) fichajesList.push({entrada:e.horaEntrada||'',salida:e.horaSalida||'',nota:''});
           (e.fichajes||[]).forEach(f=>{ if(f.entrada||f.salida) fichajesList.push(f); });
           if(!fichajesList.length) return null;
+          // Minutos de descanso de un fichaje concreto, SIN depender nunca de
+          // la variable global "timerDeduct" (esa es del día que esté abierto
+          // ahora mismo en el formulario principal, que puede no ser este, y
+          // mezclar los dos daba lugar a que el resumen de un día mostrara el
+          // descanso de otro día distinto, o ninguno). Si el dato no se
+          // guardó en su momento (p.ej. jornadas creadas con el cronómetro
+          // antes de que esto se arreglara), se calcula la diferencia entre
+          // la hora en bruto del fichaje y las horas netas ya guardadas en la
+          // jornada, para que el resumen siga explicándolo igual de bien.
+          const minsDescansoDe=f=>{
+            if(fichajesList.length!==1) return Math.round(f.descanso||0);
+            if(e.timerDeduct) return Math.round(e.timerDeduct);
+            const raw=calcH(f.entrada,f.salida);
+            const neta=totalH; // horasNormales+Extra+Nocturnas+Festivas ya guardadas
+            const inferido=Math.round((raw-neta)*60);
+            return inferido>0?inferido:0;
+          };
           return h('div',{},
             sec('⏱','Horario'),
             ...fichajesList.map((f,i)=>{
               const esF1t=i===0;
               const titF=esF1t?e.titulo:f.titulo;
+              const minsD=f.entrada&&f.salida?minsDescansoDe(f):0;
               return h('div',{style:{
                 padding:'.5rem .7rem',marginBottom:'.4rem',
                 background:'#f8fafc',borderRadius:'8px',
@@ -6349,9 +6395,9 @@ function renderModalResumenDia(){
                   titF?h('span',{style:{fontSize:'.88rem',fontWeight:600,color:'#0f172a'},html:titF}):null,
                   f.entrada&&f.salida?h('span',{style:{
                     background:'#dcfce7',color:'#16a34a',borderRadius:'6px',
-                    padding:'.2rem .5rem',fontSize:'.75rem',fontWeight:700,marginLeft:(function(){var minsD0=fichajesList.length===1?(e.timerDeduct||timerDeduct||0):(f.descanso||0);return minsD0>0?0:'auto';}())
-                  }},(function(){var r=calcH(f.entrada,f.salida);var d=fichajesList.length===1?(e.timerDeduct||timerDeduct||0)/60:(f.descanso||0)/60;return fmtH(Math.max(0,r-d));}())):null,
-                  (function(){var minsD=fichajesList.length===1?(e.timerDeduct||timerDeduct||0):(f.descanso||0);return minsD>0?h('span',{style:{fontSize:'.7rem',color:'#334155',fontWeight:600,marginLeft:f.entrada&&f.salida?0:'auto'}},'☕ -'+minsD+'min descanso'):null;})()
+                    padding:'.2rem .5rem',fontSize:'.75rem',fontWeight:700,marginLeft:minsD>0?0:'auto'
+                  }},fmtH(Math.max(0,calcH(f.entrada,f.salida)-minsD/60))):null,
+                  minsD>0?h('span',{style:{fontSize:'.7rem',color:'#334155',fontWeight:600,marginLeft:f.entrada&&f.salida?0:'auto'}},'☕ -'+minsD+'min descanso'):null
                 )
               );
             })
@@ -12839,8 +12885,9 @@ function finishTimer(){
   fEntry.fichajes.push({
     _fid:Date.now(),entrada:startTime,salida:endTime,
     nota:'⏱ '+formatTimerFull(totalSecs)+(timerDeduct>0?' (-'+timerDeduct+'min descanso)':''),
-    editing:false,taskId:''
+    editing:false,taskId:'',descanso:timerDeduct
   });
+  fEntry.timerDeduct=timerDeduct;
   // Auto-fill horas normales
   if(!fEntry.horasNormales||fEntry.horasNormales===0){
     fEntry.horasNormales=netHours;
@@ -13618,9 +13665,18 @@ function finishTimer(){
   if(openIdx>=0){
     fEntry.fichajes[openIdx].salida=endTime;
     fEntry.fichajes[openIdx].nota=(fEntry.fichajes[openIdx].nota?(fEntry.fichajes[openIdx].nota+' | '):'')+'⏱ '+formatTimerFull(totalSecs)+(timerDeduct>0?' (-'+timerDeduct+'min)':'');
+    fEntry.fichajes[openIdx].descanso=timerDeduct;
   } else {
-    fEntry.fichajes.push({_fid:Date.now(),entrada:startTime,salida:endTime,nota:'⏱ '+formatTimerFull(totalSecs)+(timerDeduct>0?' (-'+timerDeduct+'min descanso)':''),editing:false,taskId:''});
+    fEntry.fichajes.push({_fid:Date.now(),entrada:startTime,salida:endTime,nota:'⏱ '+formatTimerFull(totalSecs)+(timerDeduct>0?' (-'+timerDeduct+'min descanso)':''),editing:false,taskId:'',descanso:timerDeduct});
   }
+  // El cronómetro ya descuenta el descanso al calcular netHours, pero antes
+  // NO lo guardaba en fEntry.timerDeduct/fichaje.descanso — así, al ver el
+  // "Resumen de jornada" más tarde (en este u otro aparato tras sincronizar),
+  // el desglose por fichaje no sabía que hubo un descanso y mostraba la hora
+  // en bruto sin restarlo ni explicarlo, aunque el total de arriba sí fuera
+  // correcto (porque ese sale de horasNormales, ya neto). Lo guardamos aquí
+  // para que el resumen lo explique igual de bien en cualquier aparato.
+  fEntry.timerDeduct=timerDeduct;
   if(!fEntry.horasNormales||fEntry.horasNormales===0){
     fEntry.horasNormales=netHours;
     if(fEntry.precioHoraNormal>0) fEntry.importeNormales=Math.round(netHours*fEntry.precioHoraNormal*100)/100;
