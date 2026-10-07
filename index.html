@@ -982,7 +982,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261007-transptipo'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261007-diaadia2'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -5373,7 +5373,20 @@ function computeLiquidacion(entries,allDates){
     const hN=(e&&e.horasNormales)||0, hE=(e&&e.horasExtra)||0, hNoc=(e&&e.horasNocturnas)||0, hFes=(e&&e.horasFestivas)||0;
     const iN=(e&&e.importeNormales)||0, iE=(e&&e.importeExtra)||0, iNoc=(e&&e.importeNocturnas)||0, iFes=(e&&e.importeFestivas)||0;
     const dieta=(e&&e.dieta)||0, transp=(e&&e.transporte)||0;
-    const tt=(e&&e._transportType)||'';
+    let tt=(e&&e._transportType)||'';
+    // Si el día no tiene tipo guardado (datos antiguos, de antes de este
+    // arreglo) pero sí tiene fichajes con tipo propio, inferimos el tipo
+    // predominante igual que hace recomputeDayAggregates — así no hace falta
+    // reabrir y regrabar cada jornada antigua para que clasifique bien.
+    if(!tt && e && e.fichajes && e.fichajes.length){
+      const byType={};
+      e.fichajes.forEach(fj=>{
+        const ft=+fj.transporte||0;
+        if(ft>0){ const k=fj._transportType||''; byType[k]=(byType[k]||0)+ft; }
+      });
+      const keys=Object.keys(byType);
+      if(keys.length){ keys.sort((a,b)=>byType[b]-byType[a]); tt=keys[0]; }
+    }
     let vCoche=0, vCamion=0, vOtro=0;
     if(transp>0){
       if(tt==='coche'){totTranspCoche+=transp;nCoche++;vCoche=transp;const pk=transp.toFixed(2);cochePrecio[pk]=(cochePrecio[pk]||0)+1;}
@@ -5395,12 +5408,24 @@ function computeLiquidacion(entries,allDates){
     // ya lo acumulan aparte para la fila TOTAL, así que aquí solo es para que
     // la celda del día lo muestre; no afecta a totO/total (sin doble conteo).
     const otrosCell=otrosConc+viajes+(vOtro>0?vOtro:0);
-    const nOtrosCell=nOtrosConc+nViajesConc+(vOtro>0?1:0);
+    const nVOtro=vOtro>0?1:0;
+    const nOtrosCell=nOtrosConc+nViajesConc+nVOtro;
     totNOtros+=nOtrosCell;
+    // Etiqueta de la celda "Otros": si todo lo que hay ahí es transporte sin
+    // tipo clasificar, lo llamamos "transporte" (que es lo que es de verdad)
+    // en vez del genérico "concepto"; si es un viaje manual (O.T.) sin otros
+    // conceptos, "viaje"; solo usamos "concepto" cuando de verdad hay
+    // conceptos sueltos (o una mezcla de varias cosas distintas ese día).
+    let otrosLabel='concepto';
+    const tiposPresentes=(nOtrosConc>0?1:0)+(nViajesConc>0?1:0)+(nVOtro>0?1:0);
+    if(tiposPresentes===1){
+      if(nVOtro>0) otrosLabel='transporte';
+      else if(nViajesConc>0) otrosLabel='viaje';
+    }
     const hasData=hN+hE+hNoc+hFes+dieta+dietasE+transp+otrosConc+viajes>0;
     return {fecha,dieta:dieta+dietasE,hN,hE,hNoc,hFes,iNoc,iFes,
       vCoche,vCamion,vOtro,nVCoche:(vCoche>0?1:0),nVCamion:(vCamion>0?1:0),
-      otros:otrosCell,nOtros:nOtrosCell,total,hasData,
+      otros:otrosCell,nOtros:nOtrosCell,otrosLabel,total,hasData,
       dayType:dayTypeOf(fecha,hasData)};
   };
   if(allDates && allDates.length){
@@ -5432,12 +5457,14 @@ function renderDiasTableGeneric(entries, allDates){
     vacation:'#eab308', pending:'var(--ink3)', worked:'var(--ink3)', normal:'var(--ink3)'
   };
   const numTd = v => `<td style="padding:.55rem .7rem;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink)">${v||''}</td>`;
-  // combo: cantidad primero, importe al final (p.ej. "2h 18,40€" o "1 viaje 45,00€")
-  const combo = (qtyStr, imp) => {
-    const parts=[];
-    if(qtyStr) parts.push(qtyStr);
-    if(imp>0) parts.push(eur(imp));
-    return parts.join(' <span style="opacity:.55">·</span> ');
+  // comboStack: cantidad arriba (más pequeña) e importe debajo (en negrita),
+  // apiladas en vertical dentro de la propia celda — así nunca se sale de su
+  // columna ni invade la de al lado, por ancho que tenga el texto.
+  const comboStack = (qtyStr, imp) => {
+    if(!qtyStr && !(imp>0)) return '';
+    const top = qtyStr ? `<div style="font-size:.7rem;color:var(--ink2);white-space:nowrap">${qtyStr}</div>` : '';
+    const bottom = imp>0 ? `<div style="font-weight:700;white-space:nowrap">${eur(imp)}</div>` : '';
+    return `<div style="line-height:1.3">${top}${bottom}</div>`;
   };
   const cols=['Fecha','Dieta','H.norm','H.extra','H.noct','H.fest','V.cam','V.coch','Otros','Total'];
   const rowsHtml = liq.dayRows.map(d=>{
@@ -5447,11 +5474,11 @@ function renderDiasTableGeneric(entries, allDates){
       ${numTd(eur(d.dieta))}
       ${numTd(fh(d.hN))}
       ${numTd(fh(d.hE))}
-      ${numTd(combo(fh(d.hNoc),d.iNoc))}
-      ${numTd(combo(fh(d.hFes),d.iFes))}
-      ${numTd(combo(d.nVCamion>0?(d.nVCamion+' viaje'+(d.nVCamion>1?'s':'')):'',d.vCamion))}
-      ${numTd(combo(d.nVCoche>0?(d.nVCoche+' viaje'+(d.nVCoche>1?'s':'')):'',d.vCoche))}
-      ${numTd(combo(d.nOtros>0?(d.nOtros+' concepto'+(d.nOtros>1?'s':'')):'',d.otros))}
+      ${numTd(comboStack(fh(d.hNoc),d.iNoc))}
+      ${numTd(comboStack(fh(d.hFes),d.iFes))}
+      ${numTd(comboStack(d.nVCamion>0?'Camión':'',d.vCamion))}
+      ${numTd(comboStack(d.nVCoche>0?'Coche':'',d.vCoche))}
+      ${numTd(comboStack(d.nOtros>0?(d.otrosLabel+(d.nOtros>1?' ('+d.nOtros+')':'')):'',d.otros))}
       <td style="padding:.55rem .7rem;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink)">${d.hasData?eur(d.total):''}</td>
     </tr>`;
   }).join('');
@@ -5460,11 +5487,11 @@ function renderDiasTableGeneric(entries, allDates){
     ${numTd(eur(liq.totD))}
     ${numTd(fh(liq.totHN))}
     ${numTd(fh(liq.totHE))}
-    ${numTd(combo(fh(liq.totHNoc),liq.totINoc))}
-    ${numTd(combo(fh(liq.totHFes),liq.totIFes))}
-    ${numTd(combo(liq.nCamion>0?(liq.nCamion+' viaje'+(liq.nCamion>1?'s':'')):'',liq.totTranspCamion))}
-    ${numTd(combo(liq.nCoche>0?(liq.nCoche+' viaje'+(liq.nCoche>1?'s':'')):'',liq.totTranspCoche))}
-    ${numTd(combo(liq.totNOtros>0?(liq.totNOtros+' concepto'+(liq.totNOtros>1?'s':'')):'',liq.totO+liq.totViaj+liq.totTranspOtro))}
+    ${numTd(comboStack(fh(liq.totHNoc),liq.totINoc))}
+    ${numTd(comboStack(fh(liq.totHFes),liq.totIFes))}
+    ${numTd(comboStack(liq.nCamion>0?(liq.nCamion+' viaje'+(liq.nCamion>1?'s':'')):'',liq.totTranspCamion))}
+    ${numTd(comboStack(liq.nCoche>0?(liq.nCoche+' viaje'+(liq.nCoche>1?'s':'')):'',liq.totTranspCoche))}
+    ${numTd(comboStack(liq.totNOtros>0?(liq.totNOtros+' concepto'+(liq.totNOtros>1?'s':'')):'',liq.totO+liq.totViaj+liq.totTranspOtro))}
     <td style="padding:.6rem .7rem;text-align:right;color:var(--acc)">${eur(liq.totTotal)}</td>
   </tr>`;
   const tableHtml = `<div style="overflow-x:auto;border-radius:var(--r2);border:1px solid var(--brd)"><table style="width:100%;border-collapse:collapse;font-size:.78rem">
