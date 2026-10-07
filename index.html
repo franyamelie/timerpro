@@ -982,7 +982,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261007-diaadia'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261007-transptipo'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -3923,13 +3923,29 @@ function recomputeDayAggregates(){
   if(!fEntry.fichajes || fEntry.fichajes.length===0) return; // sin fichajes: los datos siguen en fEntry directamente
   let hn=0,he=0,hnoc=0,hf=0,di=0,tr=0;
   let otrosAgg=[], journeysAgg=[];
+  const trByType={}; // suma de transporte por tipo (coche/camion/otro), para saber cuál predomina
   fEntry.fichajes.forEach(fj=>{
     hn+=(+fj.horasNormales||0); he+=(+fj.horasExtra||0);
     hnoc+=(+fj.horasNocturnas||0); hf+=(+fj.horasFestivas||0);
     di+=(+fj.dieta||0); tr+=(+fj.transporte||0);
+    const fjTransp=+fj.transporte||0;
+    if(fjTransp>0){
+      const k=fj._transportType||'';
+      trByType[k]=(trByType[k]||0)+fjTransp;
+    }
     (fj.otrosConceptos||[]).forEach(o=>otrosAgg.push(o));
     (fj.journeys||[]).forEach(j=>journeysAgg.push(j));
   });
+  // Propaga el tipo de transporte predominante del día (coche/camión/otro) a
+  // fEntry._transportType — antes solo se sumaba el importe (fEntry.transporte)
+  // sin arrastrar el tipo, así que la tabla "día a día" de Nóminas nunca podía
+  // clasificar el viaje en la columna V.cam/V.coche y el importe desaparecía
+  // (solo sumaba al Total, sin desglose visible).
+  const trKeys=Object.keys(trByType);
+  if(trKeys.length){
+    trKeys.sort((a,b)=>trByType[b]-trByType[a]);
+    fEntry._transportType=trKeys[0];
+  }
   // Tope de 8h normales POR JORNADA (no por fichaje): si el conjunto de
   // fichajes del día suma más de 8h normales entre todos, el exceso se
   // muestra como hora extra DEL DÍA aquí — sin tocar el desglose de horas
@@ -5368,17 +5384,23 @@ function computeLiquidacion(entries,allDates){
     const dietasE=e?(e.dietasExtra||[]).reduce((a,d)=>a+(d.importe||0),0):0;
     const nOtrosConc=e?(e.otrosConceptos||[]).length:0;
     const nViajesConc=e?(e.journeys||[]).filter(j=>j.precioManual>0).length:0;
-    const otros=e?(e.otrosConceptos||[]).reduce((a,o)=>a+(o.importe||0),0):0;
+    const otrosConc=e?(e.otrosConceptos||[]).reduce((a,o)=>a+(o.importe||0),0):0;
     const viajes=e?(e.journeys||[]).reduce((a,j)=>a+(j.precioManual||0),0):0;
-    const nOtrosTotal=nOtrosConc+nViajesConc;
-    const total=iN+iE+iNoc+iFes+dieta+transp+dietasE+otros+viajes;
+    const total=iN+iE+iNoc+iFes+dieta+transp+dietasE+otrosConc+viajes;
     totHN+=hN;totHE+=hE;totHNoc+=hNoc;totHFes+=hFes;
-    totIN+=iN;totIE+=iE;totINoc+=iNoc;totIFes+=iFes;totD+=dieta+dietasE;totT+=transp;totO+=otros;totViaj+=viajes;
-    totNOtros+=nOtrosTotal;
-    const hasData=hN+hE+hNoc+hFes+dieta+dietasE+transp+otros+viajes>0;
+    totIN+=iN;totIE+=iE;totINoc+=iNoc;totIFes+=iFes;totD+=dieta+dietasE;totT+=transp;totO+=otrosConc;totViaj+=viajes;
+    // Celda de display "Otros": conceptos + viajes + transporte sin tipo
+    // clasificado (ni coche ni camión) — antes este último desaparecía, solo
+    // sumaba al Total sin aparecer en ninguna columna. totTranspOtro/nOtroTransp
+    // ya lo acumulan aparte para la fila TOTAL, así que aquí solo es para que
+    // la celda del día lo muestre; no afecta a totO/total (sin doble conteo).
+    const otrosCell=otrosConc+viajes+(vOtro>0?vOtro:0);
+    const nOtrosCell=nOtrosConc+nViajesConc+(vOtro>0?1:0);
+    totNOtros+=nOtrosCell;
+    const hasData=hN+hE+hNoc+hFes+dieta+dietasE+transp+otrosConc+viajes>0;
     return {fecha,dieta:dieta+dietasE,hN,hE,hNoc,hFes,iNoc,iFes,
       vCoche,vCamion,vOtro,nVCoche:(vCoche>0?1:0),nVCamion:(vCamion>0?1:0),
-      otros:otros+viajes,nOtros:nOtrosTotal,total,hasData,
+      otros:otrosCell,nOtros:nOtrosCell,total,hasData,
       dayType:dayTypeOf(fecha,hasData)};
   };
   if(allDates && allDates.length){
