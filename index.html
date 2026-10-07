@@ -982,7 +982,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261005-tareatitulo'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261007-diaadia'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -5348,6 +5348,7 @@ function dayTypeOf(ds,isWorked){
 function computeLiquidacion(entries,allDates){
   let totHN=0,totHE=0,totHNoc=0,totHFes=0,totIN=0,totIE=0,totINoc=0,totIFes=0,totD=0,totT=0,totO=0,totViaj=0;
   let totTranspCoche=0,totTranspCamion=0,totTranspOtro=0,nCoche=0,nCamion=0,nOtroTransp=0,nDietas=0;
+  let totNOtros=0;
   const dietaPrecios={}, cochePrecio={}, camionPrecio={};
   const dayRows=[];
   const byFecha={};
@@ -5365,13 +5366,19 @@ function computeLiquidacion(entries,allDates){
     }
     if(dieta>0){nDietas++;const pk=dieta.toFixed(2);dietaPrecios[pk]=(dietaPrecios[pk]||0)+1;}
     const dietasE=e?(e.dietasExtra||[]).reduce((a,d)=>a+(d.importe||0),0):0;
+    const nOtrosConc=e?(e.otrosConceptos||[]).length:0;
+    const nViajesConc=e?(e.journeys||[]).filter(j=>j.precioManual>0).length:0;
     const otros=e?(e.otrosConceptos||[]).reduce((a,o)=>a+(o.importe||0),0):0;
     const viajes=e?(e.journeys||[]).reduce((a,j)=>a+(j.precioManual||0),0):0;
+    const nOtrosTotal=nOtrosConc+nViajesConc;
     const total=iN+iE+iNoc+iFes+dieta+transp+dietasE+otros+viajes;
     totHN+=hN;totHE+=hE;totHNoc+=hNoc;totHFes+=hFes;
     totIN+=iN;totIE+=iE;totINoc+=iNoc;totIFes+=iFes;totD+=dieta+dietasE;totT+=transp;totO+=otros;totViaj+=viajes;
+    totNOtros+=nOtrosTotal;
     const hasData=hN+hE+hNoc+hFes+dieta+dietasE+transp+otros+viajes>0;
-    return {fecha,dieta:dieta+dietasE,hN,hE,hNoc,hFes,vCoche,vCamion,vOtro,otros:otros+viajes,total,hasData,
+    return {fecha,dieta:dieta+dietasE,hN,hE,hNoc,hFes,iNoc,iFes,
+      vCoche,vCamion,vOtro,nVCoche:(vCoche>0?1:0),nVCamion:(vCamion>0?1:0),
+      otros:otros+viajes,nOtros:nOtrosTotal,total,hasData,
       dayType:dayTypeOf(fecha,hasData)};
   };
   if(allDates && allDates.length){
@@ -5381,7 +5388,7 @@ function computeLiquidacion(entries,allDates){
   }
   const totTotal=totIN+totIE+totINoc+totIFes+totD+totT+totO+totViaj;
   return {dayRows,totHN,totHE,totHNoc,totHFes,totIN,totIE,totINoc,totIFes,totD,totT,totO,totViaj,
-    totTranspCoche,totTranspCamion,totTranspOtro,nCoche,nCamion,nOtroTransp,nDietas,
+    totTranspCoche,totTranspCamion,totTranspOtro,nCoche,nCamion,nOtroTransp,nDietas,totNOtros,
     dietaPrecios,cochePrecio,camionPrecio,totTotal};
 }
 
@@ -5403,6 +5410,13 @@ function renderDiasTableGeneric(entries, allDates){
     vacation:'#eab308', pending:'var(--ink3)', worked:'var(--ink3)', normal:'var(--ink3)'
   };
   const numTd = v => `<td style="padding:.55rem .7rem;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink)">${v||''}</td>`;
+  // combo: cantidad primero, importe al final (p.ej. "2h 18,40€" o "1 viaje 45,00€")
+  const combo = (qtyStr, imp) => {
+    const parts=[];
+    if(qtyStr) parts.push(qtyStr);
+    if(imp>0) parts.push(eur(imp));
+    return parts.join(' <span style="opacity:.55">·</span> ');
+  };
   const cols=['Fecha','Dieta','H.norm','H.extra','H.noct','H.fest','V.cam','V.coch','Otros','Total'];
   const rowsHtml = liq.dayRows.map(d=>{
     const fechaCorta = d.fecha.split('-').reverse().join('.');
@@ -5411,11 +5425,11 @@ function renderDiasTableGeneric(entries, allDates){
       ${numTd(eur(d.dieta))}
       ${numTd(fh(d.hN))}
       ${numTd(fh(d.hE))}
-      ${numTd(fh(d.hNoc))}
-      ${numTd(fh(d.hFes))}
-      ${numTd(eur(d.vCamion))}
-      ${numTd(eur(d.vCoche))}
-      ${numTd(eur(d.otros))}
+      ${numTd(combo(fh(d.hNoc),d.iNoc))}
+      ${numTd(combo(fh(d.hFes),d.iFes))}
+      ${numTd(combo(d.nVCamion>0?(d.nVCamion+' viaje'+(d.nVCamion>1?'s':'')):'',d.vCamion))}
+      ${numTd(combo(d.nVCoche>0?(d.nVCoche+' viaje'+(d.nVCoche>1?'s':'')):'',d.vCoche))}
+      ${numTd(combo(d.nOtros>0?(d.nOtros+' concepto'+(d.nOtros>1?'s':'')):'',d.otros))}
       <td style="padding:.55rem .7rem;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink)">${d.hasData?eur(d.total):''}</td>
     </tr>`;
   }).join('');
@@ -5424,11 +5438,11 @@ function renderDiasTableGeneric(entries, allDates){
     ${numTd(eur(liq.totD))}
     ${numTd(fh(liq.totHN))}
     ${numTd(fh(liq.totHE))}
-    ${numTd(fh(liq.totHNoc))}
-    ${numTd(fh(liq.totHFes))}
-    ${numTd(eur(liq.totTranspCamion))}
-    ${numTd(eur(liq.totTranspCoche))}
-    ${numTd(eur(liq.totO+liq.totViaj+liq.totTranspOtro))}
+    ${numTd(combo(fh(liq.totHNoc),liq.totINoc))}
+    ${numTd(combo(fh(liq.totHFes),liq.totIFes))}
+    ${numTd(combo(liq.nCamion>0?(liq.nCamion+' viaje'+(liq.nCamion>1?'s':'')):'',liq.totTranspCamion))}
+    ${numTd(combo(liq.nCoche>0?(liq.nCoche+' viaje'+(liq.nCoche>1?'s':'')):'',liq.totTranspCoche))}
+    ${numTd(combo(liq.totNOtros>0?(liq.totNOtros+' concepto'+(liq.totNOtros>1?'s':'')):'',liq.totO+liq.totViaj+liq.totTranspOtro))}
     <td style="padding:.6rem .7rem;text-align:right;color:var(--acc)">${eur(liq.totTotal)}</td>
   </tr>`;
   const tableHtml = `<div style="overflow-x:auto;border-radius:var(--r2);border:1px solid var(--brd)"><table style="width:100%;border-collapse:collapse;font-size:.78rem">
