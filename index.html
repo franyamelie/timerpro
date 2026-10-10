@@ -1060,7 +1060,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261010-desglosefix'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261010-tonos'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1559,9 +1559,10 @@ function renderFichar(){
     ):null,
 
     renderDayCard(),
-    // ── TEMPORIZADOR JORNADA ──
-    h('div',{class:'card'},
-      h('div',{class:'sec-title',style:{marginBottom:'.5rem'}},'Horario de la jornada'),
+    // ── TEMPORIZADOR JORNADA (= fichaje 1, siempre con el tono azul más
+    // clarito, el primer escalón de fichajeTone) ──
+    h('div',{class:'card',style:{background:fichajeTone(0).bg,border:'1px solid '+fichajeTone(0).brd}},
+      h('div',{class:'sec-title',style:{marginBottom:'.5rem',color:fichajeTone(0).text}},'Horario de la jornada'),
       h('div',{style:{display:'flex',alignItems:'center',gap:'1rem',flexWrap:'wrap',marginBottom:'.6rem'}},
         // Deduct
         h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',fontSize:'.8rem',color:'var(--ink2)'}},
@@ -1688,7 +1689,7 @@ function renderFichar(){
         h('button',{
           class:'btn btn-b btn-sm',
           style:{fontSize:'.72rem',padding:'.25rem .6rem'},
-          on:{click:()=>{ autoCalcHorasFromFichajes(); S.modal='resumendia'; S._shareConPrecios=false; S._showPrecioDieta=false; S._showPrecioViaje=false; rerender(); }}
+          on:{click:()=>{ autoCalcHorasFromFichajes(); S.modal='resumendia'; S._shareConPrecios=false; rerender(); }}
         },'📊 Resumen')
       ),
       e.fichajes.map((fj,i)=>i===0?null:renderFichajeSummaryRow(fj,i)),
@@ -2364,25 +2365,44 @@ function renderFichar(){
   );
 }
 
+// Tono azul de cada fichaje: el fichaje 1 es azul clarito y cada fichaje
+// siguiente va un escalón más oscuro, para diferenciarlos a simple vista
+// cuantos más fichajes hay en el día. A partir del último escalón se repite
+// el más oscuro (por si hay muchísimos fichajes en un mismo día).
+function fichajeTone(idx){
+  const pasos=[
+    {bg:'#eff6ff',brd:'#bfdbfe',text:'#1e3a8a',text2:'#3b5a8a'},
+    {bg:'#dbeafe',brd:'#93c5fd',text:'#1e3a8a',text2:'#3b5a8a'},
+    {bg:'#bfdbfe',brd:'#60a5fa',text:'#1e3a8a',text2:'#2d4a7a'},
+    {bg:'#93c5fd',brd:'#3b82f6',text:'#0f172a',text2:'#1e3a5f'},
+    {bg:'#60a5fa',brd:'#2563eb',text:'#ffffff',text2:'rgba(255,255,255,.85)'},
+    {bg:'#3b82f6',brd:'#1d4ed8',text:'#ffffff',text2:'rgba(255,255,255,.85)'},
+    {bg:'#2563eb',brd:'#1e40af',text:'#ffffff',text2:'rgba(255,255,255,.85)'},
+    {bg:'#1d4ed8',brd:'#1e3a8a',text:'#ffffff',text2:'rgba(255,255,255,.85)'}
+  ];
+  return pasos[Math.min(idx,pasos.length-1)];
+}
+
 // Fila compacta y clicable para cada fichaje cuando el día tiene 2 o más.
 // Al pulsarla se abre la pantalla completa de detalle de ese fichaje.
 function renderFichajeSummaryRow(fj,idx){
   const totalH=(fj.horasNormales||0)+(fj.horasExtra||0)+(fj.horasNocturnas||0)+(fj.horasFestivas||0);
   const duracionBruta=(fj.entrada&&fj.salida)?calcH(fj.entrada,fj.salida):0;
+  const tono=fichajeTone(idx);
   return h('div',{
     style:{display:'flex',alignItems:'center',gap:'.6rem',padding:'.7rem',marginBottom:'.4rem',
-      background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',cursor:'pointer'},
+      background:tono.bg,border:'1px solid '+tono.brd,borderRadius:'var(--r2)',cursor:'pointer'},
     on:{click:()=>{fichajeDetailIndex=idx;fichajeSeleccionado=idx;rerender();}}
   },
-    h('span',{style:{fontWeight:800,color:'var(--ink3)',fontSize:'.85rem',flexShrink:0}},(idx+1)+'.'),
+    h('span',{style:{fontWeight:800,color:tono.text,fontSize:'.85rem',flexShrink:0}},(idx+1)+'.'),
     h('div',{style:{flex:1,minWidth:0}},
-      h('div',{style:{fontWeight:700,display:'flex',gap:'.4rem',alignItems:'center',flexWrap:'wrap'}},
+      h('div',{style:{fontWeight:700,display:'flex',gap:'.4rem',alignItems:'center',flexWrap:'wrap',color:tono.text}},
         h('span',{},(fj.entrada||'--')+' → '+(fj.salida||'--')),
-        fj.titulo?h('span',{style:{fontSize:'.8rem',color:'var(--ink2)',fontWeight:400},html:fj.titulo}):null
+        fj.titulo?h('span',{style:{fontSize:'.8rem',color:tono.text2,fontWeight:400},html:fj.titulo}):null
       ),
-      h('div',{style:{display:'flex',gap:'.5rem',flexWrap:'wrap',marginTop:'.2rem',fontSize:'.7rem',color:'var(--ink2)'}},
+      h('div',{style:{display:'flex',gap:'.5rem',flexWrap:'wrap',marginTop:'.2rem',fontSize:'.7rem',color:tono.text2}},
         duracionBruta>0?h('span',{},'⏱ '+fmtH(duracionBruta)+' en el fichaje'):null,
-        totalH>0?h('span',{style:{fontWeight:700,color:'var(--acc)'}},'🕐 '+fmtH(totalH)+' netas'+((fj.descanso||0)>0?' (-'+fj.descanso+'min)':'')):null,
+        totalH>0?h('span',{style:{fontWeight:700,color:tono.text}},'🕐 '+fmtH(totalH)+' netas'+((fj.descanso||0)>0?' (-'+fj.descanso+'min)':'')):null,
         (fj.dieta||0)>0?h('span',{},'☀ '+eur(fj.dieta)):null,
         (fj.transporte||0)>0?h('span',{},'🚗 '+eur(fj.transporte)):null
       )
@@ -2486,16 +2506,17 @@ function renderFichajeDetailScreen(idx){
   const taskOptsDetail=[{id:'',titulo:'Sin tarea'},..._tareasHoyDetail,..._tareasOtrosDiasDetail];
 
   return h('div',{},
-    // Cabecera con volver
-    h('div',{class:'card',style:{background:'var(--acc-lt)',border:'2px solid var(--acc)'}},
+    // Cabecera con volver — con el mismo tono azul que le corresponde a
+    // este fichaje según su posición (más oscuro cuantos más fichajes hay delante)
+    h('div',{class:'card',style:{background:fichajeTone(idx).bg,border:'2px solid '+fichajeTone(idx).brd}},
       h('button',{class:'btn btn-g',style:{width:'100%',fontWeight:800},on:{click:volver}},'← Volver al listado de fichajes'),
-      h('div',{style:{textAlign:'center',fontSize:'.75rem',color:'var(--ink2)',marginTop:'.4rem'}},
+      h('div',{style:{textAlign:'center',fontSize:'.75rem',color:fichajeTone(idx).text2,marginTop:'.4rem'}},
         'Fichaje '+(idx+1)+' de '+fEntry.fichajes.length+' · '+dlbl(fEntry.fecha))
     ),
 
     // Horario propio de este fichaje — mismo selector que el fichaje principal
-    h('div',{class:'card'},
-      h('div',{class:'sec-title'},'Horario de este fichaje'),
+    h('div',{class:'card',style:{background:fichajeTone(idx).bg,border:'1px solid '+fichajeTone(idx).brd}},
+      h('div',{class:'sec-title',style:{color:fichajeTone(idx).text}},'Horario de este fichaje'),
       h('div',{class:'grid-2',style:{marginBottom:'.6rem'}},
         h('div',{class:'field',style:{margin:0}},
           h('label',{style:{color:'var(--acc)',fontWeight:800}},'🕐 ENTRADA'),
@@ -6834,68 +6855,13 @@ function renderModalResumenDia(){
           },html:e.notas})
         ):null,
 
-        // Toggles de visibilidad por jornada (independientes, se guardan en esta jornada)
+        // Las opciones de "qué se ve de este fichaje" (horario, dietas,
+        // viajes, importes, qué horas computar) viven SOLO en la tarjeta de
+        // cada fichaje en la pantalla principal/de detalle — no aquí, para
+        // no duplicar los mismos controles en dos sitios distintos. Aquí
+        // solo queda el ajuste general de "incluir precios al compartir" y
+        // los botones para generar/enviar el Resumen.
         h('div',{style:{marginTop:'1rem'}},
-          h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',
-            background:'#f8fafc',borderRadius:'8px',padding:'.5rem .8rem',border:'1px solid #e2e8f0'}},
-            h('span',{style:{fontSize:'.82rem',color:'#475569',flex:1}},'Mostrar hora entrada/salida'),
-            h('button',{
-              style:{
-                background:showHorario?'#22c55e':'#94a3b8',
-                color:'#fff',border:'none',borderRadius:'20px',
-                padding:'.25rem .7rem',cursor:'pointer',fontWeight:700,fontSize:'.78rem'
-              },
-              on:{click:()=>{fEntry._showHorario=!showHorario;scheduleDraftSave();rerender();}}
-            },showHorario?'✓ Sí':'✗ No')
-          ),
-          h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',
-            background:'#f8fafc',borderRadius:'8px',padding:'.5rem .8rem',border:'1px solid #e2e8f0'}},
-            h('span',{style:{fontSize:'.82rem',color:'#475569',flex:1}},'Mostrar dietas'),
-            h('button',{
-              style:{
-                background:showDietas?'#22c55e':'#94a3b8',
-                color:'#fff',border:'none',borderRadius:'20px',
-                padding:'.25rem .7rem',cursor:'pointer',fontWeight:700,fontSize:'.78rem'
-              },
-              on:{click:()=>{fEntry._showDietas=!showDietas;scheduleDraftSave();rerender();}}
-            },showDietas?'✓ Sí':'✗ No')
-          ),
-          h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',
-            background:'#f8fafc',borderRadius:'8px',padding:'.5rem .8rem',border:'1px solid #e2e8f0'}},
-            h('span',{style:{fontSize:'.82rem',color:'#475569',flex:1}},'Mostrar viajes/transporte'),
-            h('button',{
-              style:{
-                background:showViajes?'#22c55e':'#94a3b8',
-                color:'#fff',border:'none',borderRadius:'20px',
-                padding:'.25rem .7rem',cursor:'pointer',fontWeight:700,fontSize:'.78rem'
-              },
-              on:{click:()=>{fEntry._showViajes=!showViajes;scheduleDraftSave();rerender();}}
-            },showViajes?'✓ Sí':'✗ No')
-          ),
-          h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',
-            background:'#f8fafc',borderRadius:'8px',padding:'.5rem .8rem',border:'1px solid #e2e8f0'}},
-            h('span',{style:{fontSize:'.82rem',color:'#475569',flex:1}},'Importe de dietas'),
-            h('button',{
-              style:{
-                background:S._showPrecioDieta!==false?'#22c55e':'#94a3b8',
-                color:'#fff',border:'none',borderRadius:'20px',
-                padding:'.25rem .7rem',cursor:'pointer',fontWeight:700,fontSize:'.78rem'
-              },
-              on:{click:()=>{S._showPrecioDieta=S._showPrecioDieta===false?true:false;rerender();}}
-            },S._showPrecioDieta!==false?'✓ Sí':'✗ No')
-          ),
-          h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',
-            background:'#f8fafc',borderRadius:'8px',padding:'.5rem .8rem',border:'1px solid #e2e8f0'}},
-            h('span',{style:{fontSize:'.82rem',color:'#475569',flex:1}},'Importe de viajes/transporte'),
-            h('button',{
-              style:{
-                background:S._showPrecioViaje!==false?'#22c55e':'#94a3b8',
-                color:'#fff',border:'none',borderRadius:'20px',
-                padding:'.25rem .7rem',cursor:'pointer',fontWeight:700,fontSize:'.78rem'
-              },
-              on:{click:()=>{S._showPrecioViaje=S._showPrecioViaje===false?true:false;rerender();}}
-            },S._showPrecioViaje!==false?'✓ Sí':'✗ No')
-          ),
           h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',
             background:'#f8fafc',borderRadius:'8px',padding:'.5rem .8rem',border:'1px solid #e2e8f0'}},
             h('span',{style:{fontSize:'.82rem',color:'#475569',flex:1}},'Incluir precios al compartir'),
