@@ -1065,7 +1065,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261010-prediccion'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261010-prediccion2'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -8296,7 +8296,13 @@ function clasificarConceptosNomina(ex){
     });
   }
   return base.map(c=>{
-    const key=(c.concepto||'').toLowerCase().trim();
+    // Normaliza el nombre a una clave estable: quita asteriscos y otros
+    // símbolos que algunas nóminas intercalan (p.ej. "*Plus Convenio" en un
+    // mes y "Plus Convenio" en otro deben contarse como EL MISMO concepto al
+    // comparar meses, o el patrón histórico y el reparto previsto saldrían
+    // duplicados y mal repartidos).
+    const key=(c.concepto||'').toLowerCase().trim()
+      .replace(/[^\p{L}\p{N} ]+/gu,'').replace(/\s+/g,' ').trim();
     const tipo=overrides[key]||c.tipo;
     return {...c, key, tipo};
   });
@@ -9440,11 +9446,20 @@ function renderPrediccionModusOperandiCard(mesKey, app, payslipsDelMes){
         'En cuanto subas al menos una nómina real (en cualquier mes), aquí empezará a aprender el patrón de reparto de la empresa y a predecir, con tus horas ya fichadas, cómo debería salir la nómina de cada mes antes de que llegue.')
     );
   }
-  const pred=predecirNominaMes(mesKey, app, historicoCompleto);
-  const narrativaPatron=explicarPatronEmpresa(historicoCompleto);
   const payslipDelMes=payslipsDelMes[0];
   const exReal=payslipDelMes?(payslipDelMes.extracted||{}):null;
   const netoReal=exReal?(+exReal.salarioNeto||0):null;
+  const yaHayNominaReal=exReal!=null;
+
+  // Si este mes YA tiene nómina real, la predicción de ARRIBA se calcula
+  // "a ciegas" (sin usar este mes como pista) para poder medir su acierto
+  // de verdad — pero eso NO significa que subir la nómina no sirva de nada:
+  // este mismo mes ya ha entrado en historicoNominas() y por tanto en el
+  // patrón que se usará para predecir TODOS los meses siguientes. Se deja
+  // esto bien explícito para que no parezca que la predicción "ignora" lo
+  // subido.
+  const pred=predecirNominaMes(mesKey, app, historicoCompleto);
+  const narrativaPatron=explicarPatronEmpresa(historicoCompleto);
   const confianzaTxt={alta:'alta (≥3 meses de histórico)',media:'media (todavía con pocos meses)',baja:'baja (sin histórico previo distinto a este mes)'}[pred.confianza];
   const confianzaColor={alta:'var(--acc2)',media:'var(--yel)',baja:'var(--ink2)'}[pred.confianza];
 
@@ -9452,16 +9467,17 @@ function renderPrediccionModusOperandiCard(mesKey, app, payslipsDelMes){
     h('span',{style:{color:'var(--ink2)'}},d.concepto), h('span',{style:{fontWeight:700}},eur(d.importe))
   );
 
-  return h('div',{class:'card'},
-    h('div',{class:'sec-title'},'🔮 Predicción y patrón de la empresa'),
+  const bloquePrediccion=h('div',{},
     h('div',{style:{fontSize:'.78rem',color:'var(--ink2)',marginBottom:'.3rem'}},
-      'Predicción para '+periodoLabel(mesKey)+' usando lo ya fichado en la app + el patrón aprendido de '+pred.nMesesHistorico+' mes(es) anteriores con nómina real.'),
+      (yaHayNominaReal
+        ? 'Esto es lo que TimerPro habría predicho para '+periodoLabel(mesKey)+' ANTES de ver la nómina real (sin usar este mes como pista), solo con el patrón de '+pred.nMesesHistorico+' mes(es) distinto(s) de este.'
+        : 'Predicción para '+periodoLabel(mesKey)+' usando lo ya fichado en la app + el patrón aprendido de '+pred.nMesesHistorico+' mes(es) anteriores con nómina real.')),
     h('div',{style:{fontSize:'.74rem',fontWeight:700,color:confianzaColor,marginBottom:'.5rem'}},
       'Confianza de la predicción: '+confianzaTxt),
 
     pred.desgloseFijoPredicho.length
       ? h('div',{},
-          h('div',{style:{fontSize:'.76rem',fontWeight:700,color:'var(--ink2)',marginBottom:'.2rem'}},'Reparto previsto de la parte fija ('+eur(pred.pactoFijo)+'), según cómo lo ha repartido la empresa hasta ahora:'),
+          h('div',{style:{fontSize:'.76rem',fontWeight:700,color:'var(--ink2)',marginBottom:'.2rem'}},'Reparto previsto de la parte fija ('+eur(pred.pactoFijo)+'):'),
           ...pred.desgloseFijoPredicho.map(filaDesglose)
         )
       : h('div',{style:{fontSize:'.76rem',color:'var(--ink3)'}},'Parte fija prevista: '+eur(pred.pactoFijo)+' (aún sin histórico suficiente para predecir en qué conceptos la repartirá la empresa).'),
@@ -9469,13 +9485,35 @@ function renderPrediccionModusOperandiCard(mesKey, app, payslipsDelMes){
     h('div',{style:{marginTop:'.5rem',fontSize:'.78rem'}},
       h('div',{},'Parte variable prevista (tus horas extra/festivas/nocturnas ya fichadas): '+eur(pred.variableBruto)),
       h('div',{},'Retención prevista sobre la parte variable: '+eur(pred.retencionPredicha)+' ('+pred.pctRetUsado+'%, según '+pred.origenPct+')'),
-      h('div',{style:{fontWeight:800,marginTop:'.3rem'}},'Neto previsto este mes: '+eur(pred.netoPredicho))
-    ),
+      h('div',{style:{fontWeight:800,marginTop:'.3rem'}},'Neto previsto: '+eur(pred.netoPredicho))
+    )
+  );
 
-    (netoReal!=null)
-      ? h('div',{style:{marginTop:'.5rem',padding:'.5rem .7rem',borderRadius:'var(--r2)',background:'var(--surf2)',fontSize:'.78rem'}},
-          'Nómina real de este mes ya subida — neto real: '+eur(netoReal)+'. Desviación de la predicción: '+eur(pred.netoPredicho-netoReal)+(Math.abs(pred.netoPredicho-netoReal)<=5?' ✅ muy cerca':' — revisa el reparto previsto arriba.'))
-      : null,
+  let bloqueReal=null;
+  if(yaHayNominaReal){
+    const clasifReal=clasificarConceptosNomina(exReal);
+    const fijoReal=clasifReal.filter(c=>c.tipo==='fijo');
+    const diff=pred.netoPredicho-netoReal;
+    bloqueReal=h('div',{style:{marginTop:'.8rem',paddingTop:'.7rem',borderTop:'2px solid var(--brd)'}},
+      h('div',{style:{fontSize:'.84rem',fontWeight:800,color:'var(--ink)',marginBottom:'.3rem'}},'✅ Lo que trajo la nómina real este mes'),
+      fijoReal.length
+        ? h('div',{},
+            h('div',{style:{fontSize:'.76rem',fontWeight:700,color:'var(--ink2)',marginBottom:'.2rem'}},'Reparto real de la parte fija:'),
+            ...fijoReal.map(filaDesglose)
+          )
+        : null,
+      h('div',{style:{fontWeight:800,marginTop:'.4rem',fontSize:'.85rem'}},'Neto real: '+eur(netoReal)),
+      h('div',{style:{marginTop:'.4rem',padding:'.5rem .7rem',borderRadius:'var(--r2)',background:'var(--surf2)',fontSize:'.78rem',fontWeight:600}},
+        'Diferencia predicción vs. real: '+eur(diff)+(Math.abs(diff)<=5?' ✅ la predicción acertó bastante':' — la empresa se desvió de lo que marcaba el patrón de otros meses, revisa el reparto arriba.')),
+      h('div',{style:{marginTop:'.4rem',fontSize:'.72rem',color:'var(--ink3)',fontStyle:'italic'}},
+        'Esta nómina ya se ha sumado al patrón aprendido — la predicción de los próximos meses SÍ la tendrá en cuenta, aunque la de arriba (de este mismo mes) se calculó a propósito sin mirarla, para poder medir si acertaba.')
+    );
+  }
+
+  return h('div',{class:'card'},
+    h('div',{class:'sec-title'},'🔮 Predicción y patrón de la empresa'),
+    bloquePrediccion,
+    bloqueReal,
 
     narrativaPatron && narrativaPatron.length
       ? h('div',{style:{marginTop:'.7rem',padding:'.6rem .7rem',borderRadius:'var(--r2)',border:'1px dashed var(--brd)',fontSize:'.78rem',color:'var(--ink2)',lineHeight:1.5}},
