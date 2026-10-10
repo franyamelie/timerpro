@@ -1049,7 +1049,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261010-horasresumen'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261010-daycardfix'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1323,14 +1323,30 @@ function confirmColor(msg, color, onOk){
 
 // ── TARJETA RESUMEN DÍA ─────────────────────────────
 function renderDayCard(){
-  const e = S.entries.find(x=>x.fecha===fEntry.fecha) || fEntry;
+  // Esta tarjeta es SIEMPRE la del día que se está editando ahora mismo
+  // (fEntry), así que tiene que leer de fEntry directamente — no de la
+  // última copia guardada en S.entries, que puede estar desactualizada
+  // (p.ej. si se acaba de cambiar un precio en Tarifas o se ha editado algo
+  // y el autoguardado de 1,5s todavía no ha terminado). Leer de S.entries
+  // aquí hacía que esta tarjeta mostrara un importe antiguo mientras el
+  // Resumen, que sí lee fEntry, ya mostraba el correcto.
+  const e = fEntry;
   if(!e||!e.fecha) return null;
   const fecha = new Date(e.fecha+'T12:00:00');
   const dias=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
   const meses=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   const mesesL=['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
   const horasT = Math.round(((e.horasNormales||0)+(e.horasExtra||0))*100)/100;
-  const importeT = Math.round(((e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0)+(e.dieta||0)+(e.transporte||0)+(e.otrosConceptos||[]).reduce((a,b)=>a+(b.importe||0),0))*100)/100;
+  // Mismo cálculo de TOTAL que usa el Resumen (renderModalResumenDia), para
+  // que esta tarjeta y el Resumen nunca se contradigan: incluye también las
+  // dietas extra y los viajes por km, que antes faltaban aquí.
+  const importeT = Math.round((
+    (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0)
+    +(e.dieta||0)+(e.dietasExtra||[]).reduce((a,b)=>a+(b.importe||0),0)
+    +(e.transporte||0)
+    +(e.journeys||[]).reduce((a,j)=>a+(j.km||0)*(j.vehicleId?(S.vehicles.find(v=>v.id==j.vehicleId)?.precioPorKm||0):j.precioManual||0),0)
+    +(e.otrosConceptos||[]).reduce((a,b)=>a+(b.importe||0),0)
+  )*100)/100;
   const fichajes = (e.fichajes||[]).filter(f=>f.entrada&&f.salida).length;
   const tareas = (S.tasks||[]).filter(t=>t.fecha&&t.fecha===e.fecha).length;
   const jornada = e.tipoJornada||e.jornada||'';
