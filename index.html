@@ -1065,7 +1065,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261010-modusoperandi'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261010-prediccion'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -8305,6 +8305,170 @@ function sumaConceptosPorTipo(lista, tipo){
   return Math.round(lista.filter(c=>c.tipo===tipo).reduce((s,c)=>s+(c.importe||0),0)*100)/100;
 }
 
+// ===== Patrón histórico y predicción ("modus operandi" de la empresa) =====
+// Objetivo: no detectar irregularidades ni acusar a la empresa, sino APRENDER
+// de las nóminas reales ya subidas cómo reparte cada mes el dinero entre
+// conceptos, para poder: 1) predecir, con los datos fichados en la app, cómo
+// quedará repartida la próxima nómina ANTES de que llegue, y 2) explicar en
+// texto llano el patrón observado (qué conceptos se mantienen estables mes a
+// mes y cuáles varían, y con qué varían) aunque la explicación no sea la que
+// a uno le gustaría oír.
+
+// Devuelve, para cada mes con al menos una nómina real subida, su
+// clasificación de conceptos (fijo/variable) + los totales de la app de ese
+// mismo mes, ordenado del más antiguo al más reciente. Es la materia prima
+// para calcular el patrón y la predicción.
+function historicoNominas(){
+  const porMes={};
+  (S.payslips||[]).forEach(p=>{
+    if(!p.mes) return;
+    // si hay varias nóminas subidas para el mismo mes, usa la más reciente
+    if(!porMes[p.mes] || (p.uploadedAt||'')>(porMes[p.mes].uploadedAt||'')) porMes[p.mes]=p;
+  });
+  return Object.keys(porMes).sort().map(mes=>{
+    const p=porMes[mes], ex=p.extracted||{};
+    const clasif=clasificarConceptosNomina(ex);
+    const appMes=computeMonthTotals(mes);
+    const sumaFija=sumaConceptosPorTipo(clasif,'fijo');
+    const sumaVariable=sumaConceptosPorTipo(clasif,'variable');
+    const retTotal=(+ex.retencionIRPF||0)+(+ex.retencionSS||0);
+    return {mes, clasif, sumaFija, sumaVariable, retTotal,
+      brutoEmp:+ex.salarioBruto||0, netoEmp:+ex.salarioNeto||0,
+      pctRetVariable: sumaVariable>0 ? (retTotal/sumaVariable*100) : null,
+      extraApp: appMes.importeExtra+appMes.importeNocturnas+appMes.importeFestivas+appMes.otrosConceptos,
+      appMes
+    };
+  });
+}
+
+// Analiza, concepto a concepto (por nombre), cómo se ha comportado a lo
+// largo de los meses con nómina real: si aparece en todos los meses con un
+// importe prácticamente igual (candidato a "pieza fija de verdad", puesta
+// ahí por convenio/acuerdo), o si varía de un mes a otro (candidato a ser la
+// partida que la empresa usa para "encajar" el resto — guardia + extras —
+// bajo un único nombre).
+function patronPorConcepto(historico){
+  const porConcepto={}; // key -> {concepto, apariciones:[{mes,importe,tipo}]}
+  historico.forEach(m=>{
+    m.clasif.forEach(c=>{
+      if(!c.key) return;
+      if(!porConcepto[c.key]) porConcepto[c.key]={concepto:c.concepto, apariciones:[]};
+      porConcepto[c.key].apariciones.push({mes:m.mes, importe:c.importe, tipo:c.tipo});
+    });
+  });
+  const nMeses=historico.length;
+  return Object.values(porConcepto).map(e=>{
+    const importes=e.apariciones.map(a=>a.importe);
+    const media=importes.reduce((s,v)=>s+v,0)/importes.length;
+    const desv=importes.length>1
+      ? Math.sqrt(importes.reduce((s,v)=>s+(v-media)*(v-media),0)/importes.length)
+      : 0;
+    const tipoMasFrecuente=e.apariciones.filter(a=>a.tipo==='fijo').length>=e.apariciones.length/2?'fijo':'variable';
+    return {
+      concepto:e.concepto, tipo:tipoMasFrecuente,
+      nApariciones:e.apariciones.length, nMesesTotal:nMeses,
+      media:Math.round(media*100)/100, desviacion:Math.round(desv*100)/100,
+      // estable = casi el mismo importe cada vez que aparece (variación < 2€
+      // o <2% de la media, lo que sea mayor) y aparece en todos los meses.
+      estable: e.apariciones.length===nMeses && desv<=Math.max(2, media*0.02)
+    };
+  }).sort((a,b)=> (b.nApariciones-a.nApariciones) || (a.desviacion-b.desviacion));
+}
+
+// Construye el texto explicativo del patrón observado (no de un solo mes,
+// sino de todo el histórico disponible). Es una HIPÓTESIS basada en los
+// datos propios, no una afirmación legal.
+function explicarPatronEmpresa(historico){
+  if(historico.length<1) return null;
+  const patron=patronPorConcepto(historico);
+  const estables=patron.filter(p=>p.estable && p.tipo==='fijo');
+  const inestablesFijo=patron.filter(p=>!p.estable && p.tipo==='fijo' && p.nApariciones>=1);
+  const variables=patron.filter(p=>p.tipo==='variable');
+  const nMeses=historico.length;
+  const parrafos=[];
+  const base='Con '+nMeses+' nómina'+(nMeses===1?'':'s')+' real'+(nMeses===1?'':'es')+' analizada'+(nMeses===1?'':'s')+' hasta ahora'+(nMeses<3?' (todavía poca muestra, el patrón se irá afinando con cada nómina nueva)':'')+':';
+  parrafos.push(base);
+  if(estables.length){
+    parrafos.push('Se repiten con el MISMO importe cada mes: '+estables.map(p=>p.concepto+' ('+eur(p.media)+')').join(', ')+'. Todo apunta a que son partidas fijas de verdad (convenio, antigüedad, etc.), no ligadas a tus horas de ese mes.');
+  }
+  if(inestablesFijo.length){
+    parrafos.push('En cambio, '+inestablesFijo.map(p=>'"'+p.concepto+'"').join(', ')+' aparece marcado como fijo pero su importe CAMBIA de un mes a otro (media '+eur(inestablesFijo[0].media)+', variación típica ±'+eur(inestablesFijo[0].desviacion)+'). Esa es la pieza que probablemente usan para ajustar el total y que el pacto siga saliendo en el importe acordado cada mes, aunque el resto de partidas fijas no cambien.');
+  }
+  if(variables.length){
+    const masGrande=variables.slice().sort((a,b)=>b.media-a.media)[0];
+    parrafos.push('Como variable, el concepto que más peso tiene es "'+masGrande.concepto+'" (media '+eur(masGrande.media)+', variación típica ±'+eur(masGrande.desviacion)+'). Si no existe ninguna línea separada llamada "Guardia" en tu nómina, es muy probable que este concepto esté mezclando la guardia pactada (fija, 500€) con tus horas extra reales (variables) en una sola cifra — por eso cambia cada mes sin que puedas separar a simple vista cuánto es guardia y cuánto es hora extra de verdad.');
+  }
+  // Compara la variación del concepto variable más grande con la variación
+  // de las horas extra reales de la app, mes a mes, para ver si se mueven
+  // juntos (coincidencia) o no.
+  if(historico.length>=2 && variables.length){
+    const nombreVar=variables.slice().sort((a,b)=>b.media-a.media)[0].concepto.toLowerCase();
+    const serieVar=historico.map(m=>{
+      const c=m.clasif.find(x=>x.concepto.toLowerCase()===nombreVar);
+      return c?c.importe:null;
+    }).filter(v=>v!=null);
+    const serieExtra=historico.map(m=>m.extraApp);
+    if(serieVar.length===historico.length){
+      const difVar=serieVar[serieVar.length-1]-serieVar[0];
+      const difExtra=serieExtra[serieExtra.length-1]-serieExtra[0];
+      const mismaDireccion=(difVar>=0)===(difExtra>=0) || (Math.abs(difVar)<1 && Math.abs(difExtra)<1);
+      parrafos.push(mismaDireccion
+        ? 'Comparando con tus horas extra reales fichadas en la app: cuando tus horas extra suben o bajan de un mes a otro, esa partida variable se mueve en la MISMA dirección — es coherente con que ahí estén metidas tus horas extra reales (más la guardia fija encima).'
+        : 'Comparando con tus horas extra reales fichadas en la app: esa partida variable NO se mueve siempre en la misma dirección que tus horas extra reales — puede que, además de horas extra, incluya otro componente (la guardia fija u otro ajuste) que compense o difumine la relación directa.');
+    }
+  }
+  return parrafos;
+}
+
+// Predicción: usando el patrón histórico (reparto medio del fijo entre
+// conceptos, y % de retención medio realmente aplicado por la empresa sobre
+// la parte variable) + los datos YA fichados en la app para "mesKey",
+// estima cómo quedará la nómina de ese mes — útil tanto para un mes todavía
+// sin nómina real (predicción a priori) como, una vez llega la nómina real,
+// para comparar cuánto se acercó la predicción (a posteriori).
+function predecirNominaMes(mesKey, app, historicoCompleto){
+  const t=getTarifas();
+  const pactoFijo=(t.sueldoBase||0)+(t.guardia||0);
+  // Usa como patrón los meses distintos del que se está prediciendo (si ese
+  // mes ya tiene nómina real, así la predicción no "hace trampa" mirándose a
+  // sí misma) — si no quedara ninguno, usa todo el histórico disponible.
+  const historico=historicoCompleto.filter(m=>m.mes!==mesKey);
+  const baseHistorico=historico.length?historico:historicoCompleto;
+  const patron=patronPorConcepto(baseHistorico).filter(p=>p.tipo==='fijo');
+
+  // Reparto previsto del fijo: proporción media de cada concepto fijo sobre
+  // el total fijo histórico, aplicada al pacto fijo actual (tarifas).
+  let desgloseFijoPredicho=[];
+  const totalFijoHistoricoMedio=patron.reduce((s,p)=>s+p.media,0);
+  if(patron.length && totalFijoHistoricoMedio>0){
+    desgloseFijoPredicho=patron.map(p=>({
+      concepto:p.concepto,
+      importe:Math.round((p.media/totalFijoHistoricoMedio)*pactoFijo*100)/100
+    }));
+  }
+
+  const sim=simularNomina(app, t.irpfPct||0, t.ssPct||0);
+  const variableBruto=sim.brutoSujetoRetencion;
+
+  // % de retención real que la empresa ha aplicado históricamente sobre la
+  // parte variable (más fiable, si hay datos, que el % configurado a mano en
+  // Tarifas, porque es el que la empresa usa DE VERDAD).
+  const pctsHist=baseHistorico.map(m=>m.pctRetVariable).filter(v=>v!=null);
+  const pctRetHistorico=pctsHist.length?(pctsHist.reduce((s,v)=>s+v,0)/pctsHist.length):null;
+  const pctRetUsado=pctRetHistorico!=null?pctRetHistorico:((t.irpfPct||0)+(t.ssPct||0));
+  const retencionPredicha=Math.round(variableBruto*pctRetUsado/100*100)/100;
+  const netoPredicho=Math.round((pactoFijo+sim.exento+variableBruto-retencionPredicha)*100)/100;
+
+  return {
+    pactoFijo, desgloseFijoPredicho, variableBruto,
+    pctRetUsado:Math.round(pctRetUsado*100)/100,
+    origenPct: pctRetHistorico!=null?'histórico real':'tarifas configuradas',
+    retencionPredicha, netoPredicho,
+    nMesesHistorico: baseHistorico.length,
+    confianza: baseHistorico.length>=3?'alta':(baseHistorico.length>=1?'media':'baja')
+  };
+}
+
 function compararNominaConApp(mesKey, extracted){
   const app=computeMonthTotals(mesKey);
   const TOL_H=0.1, TOL_E=1; // tolerancia para no marcar redondeos como "distinto"
@@ -9259,6 +9423,69 @@ function renderComparativaNominasCard(mesKey, app, payslipsDelMes){
   );
 }
 
+// Tarjeta "Predicción y patrón de la empresa": combina 1) una predicción
+// a priori de cómo quedará repartida la nómina de este mes usando solo lo
+// que la propia app ya tiene fichado + el patrón aprendido de meses
+// anteriores, y 2) una explicación del patrón observado entre TODOS los
+// meses con nómina real (no solo el actual), con su nivel de confianza
+// según cuántos meses de histórico hay todavía. No es una herramienta para
+// buscar irregularidades — es para entender y poder anticipar el "cómo y
+// por qué" del reparto, sea cual sea la respuesta.
+function renderPrediccionModusOperandiCard(mesKey, app, payslipsDelMes){
+  const historicoCompleto=historicoNominas();
+  if(!historicoCompleto.length){
+    return h('div',{class:'card'},
+      h('div',{class:'sec-title'},'🔮 Predicción y patrón de la empresa'),
+      h('div',{style:{fontSize:'.78rem',color:'var(--ink2)'}},
+        'En cuanto subas al menos una nómina real (en cualquier mes), aquí empezará a aprender el patrón de reparto de la empresa y a predecir, con tus horas ya fichadas, cómo debería salir la nómina de cada mes antes de que llegue.')
+    );
+  }
+  const pred=predecirNominaMes(mesKey, app, historicoCompleto);
+  const narrativaPatron=explicarPatronEmpresa(historicoCompleto);
+  const payslipDelMes=payslipsDelMes[0];
+  const exReal=payslipDelMes?(payslipDelMes.extracted||{}):null;
+  const netoReal=exReal?(+exReal.salarioNeto||0):null;
+  const confianzaTxt={alta:'alta (≥3 meses de histórico)',media:'media (todavía con pocos meses)',baja:'baja (sin histórico previo distinto a este mes)'}[pred.confianza];
+  const confianzaColor={alta:'var(--acc2)',media:'var(--yel)',baja:'var(--ink2)'}[pred.confianza];
+
+  const filaDesglose=d=>h('div',{style:{display:'flex',justifyContent:'space-between',fontSize:'.78rem',padding:'.2rem 0',borderBottom:'1px solid var(--brd)'}},
+    h('span',{style:{color:'var(--ink2)'}},d.concepto), h('span',{style:{fontWeight:700}},eur(d.importe))
+  );
+
+  return h('div',{class:'card'},
+    h('div',{class:'sec-title'},'🔮 Predicción y patrón de la empresa'),
+    h('div',{style:{fontSize:'.78rem',color:'var(--ink2)',marginBottom:'.3rem'}},
+      'Predicción para '+periodoLabel(mesKey)+' usando lo ya fichado en la app + el patrón aprendido de '+pred.nMesesHistorico+' mes(es) anteriores con nómina real.'),
+    h('div',{style:{fontSize:'.74rem',fontWeight:700,color:confianzaColor,marginBottom:'.5rem'}},
+      'Confianza de la predicción: '+confianzaTxt),
+
+    pred.desgloseFijoPredicho.length
+      ? h('div',{},
+          h('div',{style:{fontSize:'.76rem',fontWeight:700,color:'var(--ink2)',marginBottom:'.2rem'}},'Reparto previsto de la parte fija ('+eur(pred.pactoFijo)+'), según cómo lo ha repartido la empresa hasta ahora:'),
+          ...pred.desgloseFijoPredicho.map(filaDesglose)
+        )
+      : h('div',{style:{fontSize:'.76rem',color:'var(--ink3)'}},'Parte fija prevista: '+eur(pred.pactoFijo)+' (aún sin histórico suficiente para predecir en qué conceptos la repartirá la empresa).'),
+
+    h('div',{style:{marginTop:'.5rem',fontSize:'.78rem'}},
+      h('div',{},'Parte variable prevista (tus horas extra/festivas/nocturnas ya fichadas): '+eur(pred.variableBruto)),
+      h('div',{},'Retención prevista sobre la parte variable: '+eur(pred.retencionPredicha)+' ('+pred.pctRetUsado+'%, según '+pred.origenPct+')'),
+      h('div',{style:{fontWeight:800,marginTop:'.3rem'}},'Neto previsto este mes: '+eur(pred.netoPredicho))
+    ),
+
+    (netoReal!=null)
+      ? h('div',{style:{marginTop:'.5rem',padding:'.5rem .7rem',borderRadius:'var(--r2)',background:'var(--surf2)',fontSize:'.78rem'}},
+          'Nómina real de este mes ya subida — neto real: '+eur(netoReal)+'. Desviación de la predicción: '+eur(pred.netoPredicho-netoReal)+(Math.abs(pred.netoPredicho-netoReal)<=5?' ✅ muy cerca':' — revisa el reparto previsto arriba.'))
+      : null,
+
+    narrativaPatron && narrativaPatron.length
+      ? h('div',{style:{marginTop:'.7rem',padding:'.6rem .7rem',borderRadius:'var(--r2)',border:'1px dashed var(--brd)',fontSize:'.78rem',color:'var(--ink2)',lineHeight:1.5}},
+          h('div',{style:{fontWeight:700,color:'var(--ink)',marginBottom:'.2rem'}},'📖 Patrón observado (todos los meses con nómina real)'),
+          ...narrativaPatron.map(p=>h('div',{style:{marginTop:'.3rem'}},p))
+        )
+      : null
+  );
+}
+
 function renderModalCompPreguntas(){
   const preguntas=compEmpresa.preguntas||[];
   return h('div',{
@@ -9640,6 +9867,7 @@ function renderNominas(){
     renderComparativaEmpresaCard(mesKey),
 
     renderComparativaNominasCard(mesKey, app, payslipsDelMes),
+    renderPrediccionModusOperandiCard(mesKey, app, payslipsDelMes),
 
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'Exportar '+periodoLabel(mesKey)),
