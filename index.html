@@ -329,6 +329,29 @@ function updateFichajeDetailLiveCalc(fj){
     nEl.textContent='Total descontando descanso: '+fmtH(neta)+(desc>0?' (-'+desc+'min)':'');
   }catch(e){}
 }
+// Cuántas horas de UN fichaje concreto se suman al KPI "HORAS TRABAJADAS"
+// que se ve en el Resumen/PDF/Imagen/texto compartido. Esto es PURAMENTE
+// VISUAL/de ese total mostrado — nunca toca horasNormales/horasExtra reales
+// ni los cálculos de nómina, que siguen siendo siempre la suma literal de lo
+// que hay en cada fichaje (tocado a mano o no).
+// f._horasEnResumen: 'todas' (por defecto) | 'extra' | 'normales' | 'ninguna'
+function horasResumenDeFichaje(f){
+  const modo=(f&&f._horasEnResumen)||'todas';
+  const hn=(+(f&&f.horasNormales)||0), he=(+(f&&f.horasExtra)||0),
+        hnoc=(+(f&&f.horasNocturnas)||0), hf=(+(f&&f.horasFestivas)||0);
+  if(modo==='ninguna') return 0;
+  if(modo==='extra') return he;
+  if(modo==='normales') return hn;
+  return hn+he+hnoc+hf; // 'todas'
+}
+// Total del día para ese mismo KPI, respetando la opción de cada fichaje.
+// Si el día no tiene fichajes (jornadas antiguas/sin desglose), se usa el
+// total real de siempre.
+function horasResumenTotal(e){
+  const fichajes=(e&&e.fichajes)||[];
+  if(!fichajes.length) return (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
+  return Math.round(fichajes.reduce((s,f)=>s+horasResumenDeFichaje(f),0)*100)/100;
+}
 const eur = v => Number(v||0).toFixed(2).replace('.',',')+' €';
 // Convierte 'YYYY-MM-DD' en 'DD/MM/AAAA' para mostrar fechas en la nómina simulada.
 const fmtFechaLarga = iso => { if(!iso) return ''; const [y,m,d]=String(iso).split('-'); return (d&&m&&y)?(d+'/'+m+'/'+y):iso; };
@@ -1026,7 +1049,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261010-fichajes2'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261010-horasresumen'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1650,6 +1673,12 @@ function renderFichar(){
           )
         : null
     ),
+
+    // Visibilidad del fichaje 1 en el Resumen — las mismas opciones que
+    // tiene cualquier otro fichaje (ver renderFichajeDetailScreen), para que
+    // el fichaje principal se pueda configurar exactamente igual que los
+    // demás: cada fichaje es un mundo, también el primero.
+    e.fichajes&&e.fichajes[0] ? renderVisibilidadFichajeCard(e.fichajes[0]) : null,
 
     // Auto-aplicar tarifas guardadas la primera vez (solo si el precio nunca
     // se ha tocado a mano — si el usuario lo pone a 0 a propósito, se respeta
@@ -2352,6 +2381,67 @@ function renderFichajeSummaryRow(fj,idx){
   );
 }
 
+// Tarjeta de "qué se ve de este fichaje en el Resumen" — se usa TANTO para
+// el fichaje 1 (en la pantalla principal) como para el resto de fichajes
+// (en su pantalla de detalle), para que las opciones sean exactamente las
+// mismas en todos sin excepción: cada fichaje es un mundo. Nada de esto
+// afecta jamás a lo que se computa/suma en el total del día o de la
+// nómina — solo a lo que se ve en el Resumen/PDF/Imagen/texto.
+function renderVisibilidadFichajeCard(fj){
+  return h('div',{class:'card'},
+    h('div',{class:'sec-title'},'Visibilidad de este fichaje en el Resumen'),
+    ...[
+      ['_ocultarHorario','Mostrar horario (hora entrada/salida)'],
+      ['_ocultarDieta','Mostrar dieta de este fichaje'],
+      ['_ocultarTransporte','Mostrar viajes/transporte de este fichaje'],
+      ['_ocultarPrecioDieta','Importe de la dieta de este fichaje'],
+      ['_ocultarPrecioTransporte','Importe de viajes/transporte de este fichaje']
+    ].map(([campo,label])=>{
+      const oculto=!!fj[campo];
+      return h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.5rem',
+        background:'var(--surf2)',borderRadius:'8px',padding:'.6rem .8rem',border:'1px solid var(--brd)'}},
+        h('span',{style:{fontSize:'.82rem',color:'var(--ink2)',flex:1}},label),
+        h('button',{
+          style:{
+            background:oculto?'#94a3b8':'#22c55e',
+            color:'#fff',border:'none',borderRadius:'20px',
+            padding:'.25rem .7rem',cursor:'pointer',fontWeight:700,fontSize:'.78rem'
+          },
+          on:{click:()=>{ fj[campo]=!fj[campo]; scheduleDraftSave(); rerender(); }}
+        },oculto?'✗ No':'✓ Sí')
+      );
+    }),
+    // Opción 6: "Qué horas computar en el Resumen" — SOLO decide qué entra
+    // en el número grande "HORAS TRABAJADAS" del Resumen/PDF/Imagen/texto.
+    // Nunca toca horasNormales/horasExtra reales ni la nómina.
+    h('div',{style:{marginBottom:'.5rem',background:'var(--surf2)',borderRadius:'8px',
+      padding:'.6rem .8rem',border:'1px solid var(--brd)'}},
+      h('div',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.4rem'}},'Qué horas computar en el Resumen'),
+      h('div',{style:{display:'flex',gap:'.3rem',flexWrap:'wrap'}},
+        ...[
+          ['todas','Normales + Extra'],
+          ['extra','Solo extra'],
+          ['normales','Solo normales'],
+          ['ninguna','Ninguna']
+        ].map(([val,lbl])=>{
+          const activo=(fj._horasEnResumen||'todas')===val;
+          return h('button',{
+            style:{
+              background:activo?'#2563eb':'var(--surf3)',
+              color:activo?'#fff':'var(--ink2)',
+              border:'none',borderRadius:'8px',padding:'.3rem .6rem',
+              cursor:'pointer',fontWeight:700,fontSize:'.72rem'
+            },
+            on:{click:()=>{ fj._horasEnResumen=val; scheduleDraftSave(); rerender(); }}
+          },lbl);
+        })
+      )
+    ),
+    h('div',{style:{fontSize:'.72rem',color:'var(--ink3)',marginTop:'.2rem',fontStyle:'italic'}},
+      'Todo lo de este fichaje (horas, dietas, transporte) siempre se sigue contando en el total del día y de la nómina, se muestre o no aquí y sea lo que sea lo que se vea en el Resumen.')
+  );
+}
+
 // Pantalla completa de detalle de UN fichaje concreto: contiene exactamente
 // las mismas secciones que la jornada principal (horario, horas, dieta,
 // transporte, ubicación, tarea, notas), pero aplicadas solo a este fichaje.
@@ -2484,36 +2574,12 @@ function renderFichajeDetailScreen(idx){
     // Visibilidad de ESTE fichaje en el Resumen/al compartir — las mismas
     // opciones que hay para toda la jornada (Mostrar hora entrada/salida,
     // Mostrar dietas, Mostrar viajes/transporte, Importe de dietas, Importe
-    // de viajes/transporte), pero independientes para cada fichaje: cada uno
-    // es un mundo y se puede reflejar de forma distinta al resto. Nada de
-    // esto afecta jamás a lo que se computa/suma en el total del día o de la
-    // nómina — solo a lo que se ve en el Resumen/PDF/Imagen/texto.
-    h('div',{class:'card'},
-      h('div',{class:'sec-title'},'Visibilidad de este fichaje en el Resumen'),
-      ...[
-        ['_ocultarHorario','Mostrar horario (hora entrada/salida)',true], // true = el flag significa "ocultar", invertido
-        ['_ocultarDieta','Mostrar dieta de este fichaje',true],
-        ['_ocultarTransporte','Mostrar viajes/transporte de este fichaje',true],
-        ['_ocultarPrecioDieta','Importe de la dieta de este fichaje',true],
-        ['_ocultarPrecioTransporte','Importe de viajes/transporte de este fichaje',true]
-      ].map(([campo,label])=>{
-        const oculto=!!fj[campo];
-        return h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.5rem',
-          background:'var(--surf2)',borderRadius:'8px',padding:'.6rem .8rem',border:'1px solid var(--brd)'}},
-          h('span',{style:{fontSize:'.82rem',color:'var(--ink2)',flex:1}},label),
-          h('button',{
-            style:{
-              background:oculto?'#94a3b8':'#22c55e',
-              color:'#fff',border:'none',borderRadius:'20px',
-              padding:'.25rem .7rem',cursor:'pointer',fontWeight:700,fontSize:'.78rem'
-            },
-            on:{click:()=>{ fj[campo]=!fj[campo]; scheduleDraftSave(); rerender(); }}
-          },oculto?'✗ No':'✓ Sí')
-        );
-      }),
-      h('div',{style:{fontSize:'.72rem',color:'var(--ink3)',marginTop:'.2rem',fontStyle:'italic'}},
-        'Todo lo de este fichaje (horas, dietas, transporte) siempre se sigue contando en el total del día y de la nómina, se muestre o no aquí.')
-    ),
+    // de viajes/transporte, qué horas computar en el total), pero
+    // independientes para cada fichaje: cada uno es un mundo y se puede
+    // reflejar de forma distinta al resto. Nada de esto afecta jamás a lo
+    // que se computa/suma en el total del día o de la nómina — solo a lo
+    // que se ve en el Resumen/PDF/Imagen/texto.
+    renderVisibilidadFichajeCard(fj),
 
     // Título (con formato) + nota
     h('div',{class:'card'},
@@ -3943,13 +4009,24 @@ function getFichaje1Target(){
     // anterior: si el fichaje 1 no tiene sus propios datos pero la jornada
     // sí los tenía sueltos (dieta/transporte/horas puestos antes de este
     // cambio), se heredan aquí para que dejen de verse "perdidos".
-    if(!f0._f1Migrado){
+    // OJO: esto SOLO tiene sentido cuando hay un único fichaje — si ya hay
+    // 2+, fEntry.horasNormales/horasExtra/etc ya son el AGREGADO de todos
+    // ellos (recomputeDayAggregates), así que "migrar" ese agregado al
+    // fichaje 1 cuando sus propias horas son 0 duplicaría las horas de los
+    // demás fichajes dentro del primero. Con 1 solo fichaje, en cambio,
+    // fEntry[k] sigue siendo literalmente el valor suelto de antes de que
+    // existiera el array de fichajes, así que migrarlo es seguro.
+    if(!f0._f1Migrado && fEntry.fichajes.length===1){
       ['horasNormales','horasExtra','horasNocturnas','horasFestivas',
        'dieta','dietaCantidad','dietaPrecioUnit',
        'transporte','transporteCantidad','transportePrecioUnit','_transportType'
       ].forEach(k=>{ if((f0[k]==null||f0[k]===0||f0[k]==='') && fEntry[k]!=null && fEntry[k]!==0 && fEntry[k]!=='') f0[k]=fEntry[k]; });
       if(!f0.titulo && fEntry.titulo) f0.titulo=fEntry.titulo;
       if(!f0.nota && fEntry.notas) f0.nota=fEntry.notas;
+      f0._f1Migrado=true;
+    } else if(!f0._f1Migrado && fEntry.fichajes.length>1){
+      // Con 2+ fichajes no hay nada seguro que migrar: se marca igualmente
+      // como ya "visto" para no reintentarlo en cada llamada.
       f0._f1Migrado=true;
     }
     return f0;
@@ -6404,6 +6481,12 @@ function renderModalBackupReminder(){
 function renderModalResumenDia(){
   const e = fEntry;
   const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
+  // KPI "HORAS TRABAJADAS": respeta lo que cada fichaje decide que cuenta
+  // ahí (todas sus horas, solo extra, solo normales, o ninguna) — totalH
+  // de arriba sigue siendo el real para toda la lógica interna (inferir
+  // descansos, saber si hay horas que desglosar, etc.), esto es solo lo
+  // que se MUESTRA en ese número grande.
+  const totalHDisplay = horasResumenTotal(e);
   const impHoras = (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0);
   const impDietas = (e.dieta||0)+(e.dietasExtra||[]).reduce((s,d)=>s+(d.importe||0),0);
   const impTransp = e.transporte||0;
@@ -6473,7 +6556,7 @@ function renderModalResumenDia(){
         // KPIs rápidos
         h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.6rem',marginTop:'1rem'}},
           h('div',{style:{background:'rgba(255,255,255,.12)',borderRadius:'8px',padding:'.6rem .8rem',textAlign:'center'}},
-            h('div',{style:{fontSize:'1.4rem',fontWeight:900}},fmtH(totalH)),
+            h('div',{style:{fontSize:'1.4rem',fontWeight:900}},fmtH(totalHDisplay)),
             h('div',{style:{fontSize:'.68rem',opacity:.75,marginTop:'.1rem'}},'HORAS TRABAJADAS')
           ),
           S._shareConPrecios===true?h('div',{style:{background:'rgba(255,255,255,.12)',borderRadius:'8px',padding:'.6rem .8rem',textAlign:'center'}},
@@ -6613,7 +6696,7 @@ function renderModalResumenDia(){
                 background:'#f8fafc',borderRadius:'8px',border:'1px solid #e2e8f0'
               }},
                 h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',flexWrap:'wrap',marginBottom:'.3rem'}},
-                  h('span',{style:{fontSize:'.7rem',color:'#475569',fontWeight:700}},(f.entrada||'—')+' → '+(f.salida||'—')),
+                  f._ocultarHorario?null:h('span',{style:{fontSize:'.7rem',color:'#475569',fontWeight:700}},(f.entrada||'—')+' → '+(f.salida||'—')),
                   titulo?h('span',{style:{fontSize:'.92rem',fontWeight:600,color:'#0f172a'},html:titulo}):h('span',{style:{fontSize:'.8rem',color:'#475569',fontStyle:'italic'}},'(sin título)')
                 ),
                 ...linkedTasks.map(lt=>h('div',{style:{fontSize:'.78rem',color:'#0f172a',fontWeight:700,marginTop:'.2rem'}},
@@ -6827,7 +6910,7 @@ function renderModalResumenDia(){
           h('div',{},
             h('div',{style:{color:'rgba(255,255,255,.7)',fontSize:'.72rem',letterSpacing:'.1em'}},'TOTAL DÍA'),
             h('div',{style:{color:'rgba(255,255,255,.6)',fontSize:'.7rem',marginTop:'.1rem'}},
-              [totalH>0?fmtH(totalH):'',tareasDia.length>0?tareasDia.length+' tarea(s)':''].filter(Boolean).join(' · '))
+              [totalHDisplay>0?fmtH(totalHDisplay):'',tareasDia.length>0?tareasDia.length+' tarea(s)':''].filter(Boolean).join(' · '))
           ),
           h('div',{style:{fontSize:'2rem',fontWeight:900,color:'#4ade80'}},eur(totalI))
         )
@@ -6839,7 +6922,7 @@ function renderModalResumenDia(){
 function shareResumen(method, conPrecios){
   const e = fEntry;
   const cp = conPrecios === true; // ONLY show prices if explicitly true
-  const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
+  const totalH = horasResumenTotal(e); // respeta "qué horas computar en el Resumen" de cada fichaje
   const impHoras = (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0);
   const impDietas = (e.dieta||0)+(e.dietasExtra||[]).reduce((s,d)=>s+(d.importe||0),0);
   const impTransp = e.transporte||0;
@@ -6896,7 +6979,7 @@ function shareResumen(method, conPrecios){
       const tit = ((esF1?e.titulo:f.titulo)||'').replace(/<[^>]*>/g,'').trim();
       const nota = ((esF1?e.notas:f.nota)||'').replace(/<[^>]*>/g,'').trim();
       const linkedTasks = f.taskId?[(S.tasks||[]).find(t=>String(t.id)===String(f.taskId))].filter(Boolean):(esF1?tareasFichaje1txt:[]);
-      lines.push('▸ '+(f.entrada||'—')+' → '+(f.salida||'—')+'  '+(tit||'(sin título)'));
+      lines.push('▸ '+(f._ocultarHorario?'':((f.entrada||'—')+' → '+(f.salida||'—')+'  '))+(tit||'(sin título)'));
       linkedTasks.forEach(linkedTask=>{
         const titulo=(linkedTask.titulo||'').replace(/<[^>]*>/g,'').trim();
         const _tp=taskTypes.find(x=>x.id===(linkedTask.tipoTarea||'ot'))||{icono:'🔧',nombre:'OT'};
@@ -7024,6 +7107,7 @@ function closeTransportConfig(){
 function generarPDFResumen(conPrecios){
   const e = fEntry;
   const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
+  const totalHDisplay = horasResumenTotal(e); // KPI "HORAS TRABAJADAS" — respeta la opción de cada fichaje
   const impHoras = (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0);
   const impDietas = (e.dieta||0)+(e.dietasExtra||[]).reduce((s,d)=>s+(d.importe||0),0);
   const impTransp = e.transporte||0;
@@ -7111,7 +7195,7 @@ function generarPDFResumen(conPrecios){
     const tareasHtml = linkedTasks.map(lt=>`<div style="font-size:12px;color:#0f172a;font-weight:700;margin-top:3px">🔧 ${lt.otNumero?'O.T. '+lt.otNumero+' — ':''}${(lt.titulo||'').replace(/<[^>]*>/g,'')}</div>`).join('');
     return `
     <div style="padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:6px">
-      <div style="font-size:10px;color:#475569;font-weight:700">${f.entrada||'—'} → ${f.salida||'—'}</div>
+      ${f._ocultarHorario?'':`<div style="font-size:10px;color:#475569;font-weight:700">${f.entrada||'—'} → ${f.salida||'—'}</div>`}
       ${titulo?`<div style="font-size:13px;font-weight:600;color:#0f172a">${titulo}</div>`:'<div style="font-size:11px;color:#475569;font-style:italic">(sin título)</div>'}
       ${tareasHtml}
       ${nota?`<div style="font-size:12px;color:#475569;line-height:1.5;word-break:break-word;margin-top:3px">${nota}</div>`:''}
@@ -7247,7 +7331,7 @@ function generarPDFResumen(conPrecios){
     ${!cp?'<div class="sin-precios-badge">Sin precios</div>':''}
   </div>
   <div class="kpis">
-    <div class="kpi"><div class="kpi-val">${fmtH(totalH)}</div><div class="kpi-label">HORAS TRABAJADAS</div></div>
+    <div class="kpi"><div class="kpi-val">${fmtH(totalHDisplay)}</div><div class="kpi-label">HORAS TRABAJADAS</div></div>
     ${((e._showHorario!==false)&&(_hEntPdf||_hSalPdf))?`<div class="kpi"><div class="kpi-val" style="font-size:1rem">${_hEntPdf||'--'} → ${_hSalPdf||'--'}</div><div class="kpi-label">HORARIO</div></div>`:''}
     ${cp?`<div class="kpi"><div class="kpi-val">${eur(totalI)}</div><div class="kpi-label">TOTAL A COBRAR</div></div>`:''}
   </div>
@@ -7262,7 +7346,7 @@ function generarPDFResumen(conPrecios){
   ${htmlTareas}
   ${htmlNotas}
   ${cp?`<div class="total-box">
-    <div><div class="total-label">Total día</div><div class="total-horas">${fmtH(totalH)}</div></div>
+    <div><div class="total-label">Total día</div><div class="total-horas">${fmtH(totalHDisplay)}</div></div>
     <div class="total-val">${eur(totalI)}</div>
   </div>`:''}
   <div class="footer">Generado con TimerPro · ${e.fecha}</div>
@@ -7288,6 +7372,7 @@ async function compartirComoImagen(conPrecios){
     const e = fEntry;
     const cp = conPrecios === true;
     const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
+    const totalHDisplay = horasResumenTotal(e); // KPI "HORAS TRABAJADAS" — respeta la opción de cada fichaje
     const impH = (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0);
     const totalI = impH+(e.transporte||0)+(e.dieta||0)
       +(e.dietasExtra||[]).reduce(function(s,d){return s+(d.importe||0);},0)
@@ -7298,7 +7383,7 @@ async function compartirComoImagen(conPrecios){
     // Build HTML string
     var kpis = '<div style="display:grid;grid-template-columns:'+(cp?'1fr 1fr':'1fr')+';gap:8px;margin-top:12px">'
       +'<div style="background:rgba(255,255,255,.14);border-radius:8px;padding:10px;text-align:center">'
-      +'<div style="font-size:20px;font-weight:900">'+fmtH(totalH)+'</div>'
+      +'<div style="font-size:20px;font-weight:900">'+fmtH(totalHDisplay)+'</div>'
       +'<div style="font-size:9px;opacity:.65;letter-spacing:.08em;margin-top:2px">HORAS TRABAJADAS</div>'
       +'</div>'
       +(cp?'<div style="background:rgba(255,255,255,.14);border-radius:8px;padding:10px;text-align:center">'
@@ -7391,7 +7476,7 @@ async function compartirComoImagen(conPrecios){
             }
             var tareasHtml = linkedTasks.map(function(lt){return '<div style="font-size:12px;color:#0f172a;font-weight:700;margin-top:3px">🔧 '+(lt.otNumero?'O.T. '+lt.otNumero+' — ':'')+(lt.titulo||'').replace(/<[^>]*>/g,'')+'</div>';}).join('');
             html += '<div style="padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:4px">'
-              +'<div style="font-size:10px;color:#475569;font-weight:700">'+(f.entrada||'—')+' → '+(f.salida||'—')+'</div>'
+              +(f._ocultarHorario?'':('<div style="font-size:10px;color:#475569;font-weight:700">'+(f.entrada||'—')+' → '+(f.salida||'—')+'</div>'))
               +(titulo?'<span style="font-size:14px;font-weight:600;color:#0f172a">'+titulo+'</span>':'<span style="font-size:12px;color:#475569;font-style:italic">(sin título)</span>')
               +tareasHtml
               +(nota?'<div style="font-size:12px;color:#475569;line-height:1.5;word-break:break-word;margin-top:3px">'+nota+'</div>':'')
@@ -7460,7 +7545,7 @@ async function compartirComoImagen(conPrecios){
     if(cp){
       html += '<div style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:10px;padding:12px 16px;margin-top:14px;display:flex;justify-content:space-between;align-items:center">'
         +'<div><div style="color:rgba(255,255,255,.6);font-size:10px;letter-spacing:.1em">TOTAL DÍA</div>'
-        +'<div style="color:var(--ink3);font-size:10px;margin-top:2px">'+fmtH(totalH)+'</div></div>'
+        +'<div style="color:var(--ink3);font-size:10px;margin-top:2px">'+fmtH(totalHDisplay)+'</div></div>'
         +'<div style="font-size:26px;font-weight:900;color:#4ade80">'+eur(totalI)+'</div></div>';
     }
 
