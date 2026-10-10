@@ -1065,7 +1065,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261010-horariofichajes'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261010-modusoperandi'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -8252,6 +8252,59 @@ function verEmpresaDocGuardado(doc){
 // Compara lo que dice la nómina (extraído por la IA) con lo que la app ya
 // tiene calculado para ese mes, y arma un resumen en español de lo que
 // coincide y lo que no.
+// Adivina si un concepto de nómina es "fijo" (complemento estable, pactado,
+// que se paga siempre igual cada mes — Sueldo Base, Guardia, y los distintos
+// "Plus" de convenio/asistencia/escolaridad/carencia de incentivos/
+// absentismo/antigüedad, etc.) o "variable" (ligado a lo trabajado ESE mes
+// en concreto — horas extra/festivas/nocturnas, gratificación por turnos,
+// etc.). Solo se usa como RESPALDO para nóminas analizadas antes de que la
+// IA devolviera "conceptosNomina" ya clasificado, o para una línea que la IA
+// no haya sabido clasificar. Ante la duda, clasifica como "variable" —así,
+// si se equivoca, el aviso es un falso positivo (revisa algo que en
+// realidad sí es fijo) y no un falso negativo (da por buena una merma real
+// del pacto fijo sin que el usuario lo vea).
+function heuristicaTipoConcepto(nombre){
+  const n=(nombre||'').toLowerCase();
+  const fijoKeys=['plus','complemento','antigüedad','antiguedad','sueldo base','salario base','guardia','convenio','asistencia','escolaridad','carencia','absentismo'];
+  const variableKeys=['hora extra','horas extra','festiv','nocturn','gratificaci','turno','variable','productividad','comisi','incentivo variable'];
+  if(variableKeys.some(k=>n.includes(k))) return 'variable';
+  if(fijoKeys.some(k=>n.includes(k))) return 'fijo';
+  return 'variable';
+}
+
+// Construye la lista completa de conceptos de la nómina real, cada uno
+// clasificado en "fijo" (parte del pacto, debe mantenerse estable e intacta
+// cada mes) o "variable" (ligado a horas/extras de ese mes concreto),
+// aplicando en este orden de prioridad: 1) lo que diga la propia nómina ya
+// clasificado por la IA (ex.conceptosNomina, si existe), 2) a falta de eso,
+// los campos sueltos ya extraídos antes (sueldoBaseNomina/guardiaNomina
+// como fijo, gratificacionNomina + otrosConceptos con heurística), y
+// 3) por encima de ambos, cualquier corrección manual guardada en
+// ex.tipoOverrides (clave = nombre del concepto en minúsculas).
+function clasificarConceptosNomina(ex){
+  ex=ex||{};
+  const overrides=ex.tipoOverrides||{};
+  let base=[];
+  if(Array.isArray(ex.conceptosNomina) && ex.conceptosNomina.length){
+    base=ex.conceptosNomina.map(c=>({concepto:c.concepto||'', importe:+c.importe||0, tipo:(c.tipo==='fijo'?'fijo':'variable')}));
+  } else {
+    if(+ex.sueldoBaseNomina>0) base.push({concepto:'Sueldo Base', importe:+ex.sueldoBaseNomina, tipo:'fijo'});
+    if(+ex.guardiaNomina>0) base.push({concepto:'Guardia', importe:+ex.guardiaNomina, tipo:'fijo'});
+    if(+ex.gratificacionNomina>0) base.push({concepto:'Gratificación', importe:+ex.gratificacionNomina, tipo:'variable'});
+    (ex.otrosConceptos||[]).forEach(o=>{
+      if(+o.importe) base.push({concepto:o.concepto||'', importe:+o.importe, tipo:heuristicaTipoConcepto(o.concepto)});
+    });
+  }
+  return base.map(c=>{
+    const key=(c.concepto||'').toLowerCase().trim();
+    const tipo=overrides[key]||c.tipo;
+    return {...c, key, tipo};
+  });
+}
+function sumaConceptosPorTipo(lista, tipo){
+  return Math.round(lista.filter(c=>c.tipo===tipo).reduce((s,c)=>s+(c.importe||0),0)*100)/100;
+}
+
 function compararNominaConApp(mesKey, extracted){
   const app=computeMonthTotals(mesKey);
   const TOL_H=0.1, TOL_E=1; // tolerancia para no marcar redondeos como "distinto"
@@ -8279,28 +8332,37 @@ function compararNominaConApp(mesKey, extracted){
   if(app.guardia>0) lineas.push('ℹ️ Guardia (fija, editable en esta pestaña): '+app.guardia.toFixed(2)+'€');
   const totalApp=totalPeriodo(app);
 
-  // ── Pacto: Sueldo Base + Guardia (los "2100€") van exentos de retenciones,
-  // o en su defecto el bruto se aumenta para que el neto de esa parte siga siendo esos 2100€ ──
+  // ── Pacto: la suma de TODOS los conceptos "fijos" de la nómina (Sueldo
+  // Base, Guardia, y los distintos "Plus" de convenio/asistencia/
+  // escolaridad/carencia de incentivos/absentismo, etc. — la empresa los
+  // reparte en conceptos distintos cada mes, no siempre con el mismo nombre)
+  // debe mantenerse siempre igual a lo pactado, SIN retención. Solo la parte
+  // "variable" (horas extra/festivas/nocturnas, gratificación por turnos...)
+  // debe llevar retención. Ver clasificarConceptosNomina() más arriba.
   const pactado=(app.sueldoBase||0)+(app.guardia||0);
   if(pactado>0){
-    const sbNom=+extracted.sueldoBaseNomina||0, gNom=+extracted.guardiaNomina||0;
+    const clasif=clasificarConceptosNomina(extracted);
+    const sumaFija=sumaConceptosPorTipo(clasif,'fijo');
+    const sumaVariable=sumaConceptosPorTipo(clasif,'variable');
     const irpf=+extracted.retencionIRPF||0, ss=+extracted.retencionSS||0;
     lineas.push('');
-    lineas.push('🤝 Pacto Sueldo Base + Guardia sin retenciones ('+pactado.toFixed(2)+'€ pactados):');
-    if(sbNom>0 || gNom>0){
-      const sumaNomina=sbNom+gNom;
-      if(Math.abs(sumaNomina-pactado)<=TOL_E){
-        lineas.push('✅ En la nómina, Sueldo Base ('+sbNom.toFixed(2)+'€) + Guardia ('+gNom.toFixed(2)+'€) suman '+sumaNomina.toFixed(2)+'€, que coincide con lo pactado.');
-      } else if(sumaNomina<pactado){
-        lineas.push('⚠️ En la nómina, Sueldo Base + Guardia suman '+sumaNomina.toFixed(2)+'€, por debajo de los '+pactado.toFixed(2)+'€ pactados (diferencia de '+(sumaNomina-pactado).toFixed(2)+'€). Si se les ha aplicado retención, el bruto debería haberse aumentado para que, tras retenciones, siguiera quedando '+pactado.toFixed(2)+'€ netos.');
-      } else {
-        lineas.push('ℹ️ En la nómina, Sueldo Base + Guardia suman '+sumaNomina.toFixed(2)+'€, por encima de los '+pactado.toFixed(2)+'€ pactados (diferencia de +'+(sumaNomina-pactado).toFixed(2)+'€).');
-      }
+    lineas.push('🤝 Pacto de '+pactado.toFixed(2)+'€ fijos (Sueldo Base + Guardia, repartidos por la empresa en varios conceptos cada mes):');
+    if(clasif.some(c=>c.tipo==='fijo')){
+      lineas.push((Math.abs(sumaFija-pactado)<=TOL_E?'✅ ':(sumaFija<pactado?'⚠️ ':'ℹ️ '))+'Conceptos fijos de esta nómina:');
+      clasif.filter(c=>c.tipo==='fijo').forEach(c=>lineas.push('  • '+(c.concepto||'(sin nombre)')+': '+c.importe.toFixed(2)+'€'));
+      lineas.push('  = Total fijo: '+sumaFija.toFixed(2)+'€'+(Math.abs(sumaFija-pactado)<=TOL_E?' (coincide con lo pactado)':' (pactado: '+pactado.toFixed(2)+'€, diferencia de '+(sumaFija-pactado>=0?'+':'')+(sumaFija-pactado).toFixed(2)+'€)'));
     } else {
-      lineas.push('ℹ️ La nómina no desglosa líneas separadas de "Sueldo Base"/"Guardia" para verificar el importe exacto; revisa que, tras retenciones, esta parte siga llegando íntegra a '+pactado.toFixed(2)+'€.');
+      lineas.push('ℹ️ La nómina no desglosa ningún concepto identificable como fijo/pactado; revisa que, tras retenciones, esta parte siga llegando íntegra a '+pactado.toFixed(2)+'€.');
+    }
+    if(clasif.some(c=>c.tipo==='variable')){
+      lineas.push('Conceptos variables (ligados a lo trabajado este mes):');
+      clasif.filter(c=>c.tipo==='variable').forEach(c=>lineas.push('  • '+(c.concepto||'(sin nombre)')+': '+c.importe.toFixed(2)+'€'));
+      lineas.push('  = Total variable: '+sumaVariable.toFixed(2)+'€');
     }
     if(irpf>0 || ss>0){
-      lineas.push('⚠️ Se han detectado retenciones en la nómina (IRPF: '+irpf.toFixed(2)+'€, Seg. Social: '+ss.toFixed(2)+'€). Según lo pactado, esta parte no debería llevar retención, o el bruto debería haberse incrementado para compensarla y que el neto de esos '+pactado.toFixed(2)+'€ no se vea reducido.');
+      const pctVariable=sumaVariable>0?((irpf+ss)/sumaVariable*100):null;
+      lineas.push('💸 Retenciones de esta nómina — IRPF: '+irpf.toFixed(2)+'€, Seg. Social: '+ss.toFixed(2)+'€ (total '+(irpf+ss).toFixed(2)+'€)'
+        +(pctVariable!=null?', equivale al '+pctVariable.toFixed(2)+'% de la parte variable ('+sumaVariable.toFixed(2)+'€) si se aplica solo ahí, como marca el pacto.':'.'));
     }
   }
 
@@ -8418,8 +8480,13 @@ function promptNomina(){
     +'  "retencionIRPF": "importe retenido por IRPF, 0 si no aparece",\n'
     +'  "retencionSS": "importe retenido por Seguridad Social (cuota obrera), 0 si no aparece",\n'
     +'  "otrosConceptos": [{"concepto":"nombre","importe":0}],\n'
+    +'  "conceptosNomina": [{"concepto":"nombre EXACTO tal cual aparece en la nómina","importe":0,"tipo":"fijo|variable"}],\n'
     +'  "observaciones": "cualquier cosa relevante que detectes (descuentos raros, retenciones, pluses, etc.) o vacío"\n'
     +'}\n'
+    +'IMPORTANTE sobre "conceptosNomina": lista TODAS y cada una de las líneas de DEVENGO de la nómina (Salario Base, Guardia, y TODOS los "Plus X" — Convenio, Asistencia, Escolaridad, Carencia Incentivos, Absentismo, Antigüedad, etc. — además de Horas Extra, Horas Festivas, Horas Nocturnas, Gratificación y cualquier otro concepto que veas), cada una por separado con su importe. Para cada una, clasifícala como:\n'
+    +'  - "fijo": un complemento que se paga todos los meses de forma estable, NO ligado a horas trabajadas de más ese mes concreto (Salario Base, Guardia, y los distintos "Plus" de convenio/asistencia/escolaridad/carencia de incentivos/absentismo/antigüedad, etc.)\n'
+    +'  - "variable": un concepto ligado a lo trabajado ESE mes en concreto (Horas Extra, Horas Festivas, Horas Nocturnas, Gratificación cuando dependa de horas/turnos, pluses de turno variables, etc.)\n'
+    +'Esta clasificación es clave: el trabajador tiene pactado que la suma de los conceptos "fijo" sea siempre la misma cada mes (netos, tras retenciones si las hubiera) — ayuda a verificar mes a mes si la empresa lo está respetando. Si tienes duda razonable sobre algún concepto, clasifícalo igualmente con tu mejor estimación (el trabajador podrá corregirlo a mano en la app).\n'
     +'Si algún dato no aparece en la nómina, pon 0 o "" según corresponda. No inventes datos.';
 }
 
@@ -9023,6 +9090,22 @@ async function editarCampoNominaReal(payslipId, campo, valor){
   rerender();
 }
 
+// Corrige a mano si un concepto concreto de la nómina real es "fijo" (parte
+// del pacto) o "variable" (ligado a horas de ese mes) — por si la IA (o la
+// heurística de respaldo para nóminas analizadas antes de tener esta
+// clasificación) se equivocó. Se guarda por nombre de concepto (en
+// minúsculas) en extracted.tipoOverrides, así que vale para esa nómina
+// aunque se reclasifiquen sus conceptos al recalcularla.
+async function toggleTipoConceptoNomina(payslipId, key, tipoActual){
+  const p=(S.payslips||[]).find(x=>x.id===payslipId);
+  if(!p) return;
+  p.extracted=p.extracted||{};
+  p.extracted.tipoOverrides=p.extracted.tipoOverrides||{};
+  p.extracted.tipoOverrides[key]=tipoActual==='fijo'?'variable':'fijo';
+  try{ await dbPut(ST.payslips, p); }catch(e){ console.error('No se pudo guardar la corrección:',e); }
+  rerender();
+}
+
 // ══════════════════════════════════════════════════════════
 // COMPARATIVA ENTRE NÓMINAS: la nómina simulada por la propia app
 // (renderSimulacionNomina/simularNomina) vs la nómina REAL que la empresa
@@ -9060,39 +9143,76 @@ function renderComparativaNominasCard(mesKey, app, payslipsDelMes){
   const sim=simularNomina(app, irpfPct, ssPct);
 
   const pactoApp=sim.pactado;
-  const pactoEmp=(+ex.sueldoBaseNomina||0)+(+ex.guardiaNomina||0);
+  const clasif=clasificarConceptosNomina(ex);
+  const sumaFija=sumaConceptosPorTipo(clasif,'fijo');
+  const sumaVariable=sumaConceptosPorTipo(clasif,'variable');
   const brutoEmp=+ex.salarioBruto||0;
   const netoEmp=+ex.salarioNeto||0;
   const irpfEmp=+ex.retencionIRPF||0;
   const ssEmp=+ex.retencionSS||0;
+  const retTotalEmp=irpfEmp+ssEmp;
+  const pctRetVariable=sumaVariable>0?(retTotalEmp/sumaVariable*100):null;
 
-  // Veredicto sobre si el pacto se respeta: el Sueldo Base+Guardia de la
-  // nómina real debería llegar ÍNTEGRO (sin retención) y coincidir con lo
-  // pactado en Tarifas; si hay retenciones y el neto total no alcanza lo
-  // esperado, el pacto no se estaría cumpliendo del todo.
-  const pactoCoincide=Math.abs(pactoEmp-pactoApp)<=1;
-  const hayRetencion=(irpfEmp+ssEmp)>1;
+  // Veredicto sobre si el pacto se respeta: la suma de TODOS los conceptos
+  // "fijos" de la nómina real (repartidos por la empresa en los conceptos
+  // que sean cada mes) debería llegar ÍNTEGRA, sin retención, y coincidir
+  // con lo pactado en Tarifas; la retención solo debería caer sobre la
+  // parte "variable" (horas extra/festivas/nocturnas y similares).
+  const pactoCoincide=Math.abs(sumaFija-pactoApp)<=1;
+  const hayConceptosFijos=clasif.some(c=>c.tipo==='fijo');
   const netoCubrePacto=netoEmp>=(pactoApp-1);
   let veredicto, veredictoColor;
-  if(pactoEmp<=0){
-    veredicto='ℹ️ La nómina real no desglosa líneas separadas de "Sueldo Base"/"Guardia" — corrige esos dos campos abajo a mano si los ves en el PDF, para poder comprobar el pacto.';
+  if(!hayConceptosFijos){
+    veredicto='ℹ️ Todavía no hay ningún concepto marcado como "fijo" en esta nómina — revisa la lista de abajo y marca los que correspondan (Sueldo Base, Guardia, Plus de convenio/asistencia/escolaridad/etc.) para poder comprobar el pacto.';
     veredictoColor='var(--ink2)';
-  } else if(pactoCoincide && !hayRetencion){
-    veredicto='✅ El pacto se está respetando: Sueldo Base + Guardia suman '+eur(pactoEmp)+' (lo pactado) y la nómina no muestra retención.';
+  } else if(pactoCoincide && retTotalEmp<=1){
+    veredicto='✅ El pacto se está respetando: los conceptos fijos suman '+eur(sumaFija)+' (lo pactado) y no llevan retención.';
     veredictoColor='var(--acc2)';
-  } else if(pactoCoincide && hayRetencion && netoCubrePacto){
-    veredicto='⚠️ Sueldo Base + Guardia suman lo pactado ('+eur(pactoEmp)+'), pero la nómina sí muestra retenciones (IRPF '+eur(irpfEmp)+' + S.S. '+eur(ssEmp)+'). El neto total ('+eur(netoEmp)+') sigue cubriendo los '+eur(pactoApp)+' pactados, así que probablemente la retención se aplica solo a la parte variable (horas/otros) — pero conviene confirmarlo con la empresa, ya que el pacto es que esa parte fija no lleve retención.';
+  } else if(pactoCoincide && retTotalEmp>1 && netoCubrePacto){
+    veredicto='⚠️ Los conceptos fijos suman lo pactado ('+eur(sumaFija)+'), pero esta nómina sí tiene retenciones (IRPF '+eur(irpfEmp)+' + S.S. '+eur(ssEmp)+'). El neto total ('+eur(netoEmp)+') sigue cubriendo los '+eur(pactoApp)+' pactados, así que probablemente la retención recae solo en la parte variable ('+eur(sumaVariable)+')'+(pctRetVariable!=null?' — equivaldría a un '+pctRetVariable.toFixed(2)+'% sobre ella':'')+'. Conviene confirmarlo con la empresa, ya que el pacto es que la parte fija no lleve retención.';
     veredictoColor='var(--yel)';
-  } else if(pactoCoincide && hayRetencion && !netoCubrePacto){
-    veredicto='❌ Sueldo Base + Guardia suman lo pactado ('+eur(pactoEmp)+'), pero hay retenciones (IRPF '+eur(irpfEmp)+' + S.S. '+eur(ssEmp)+') y el neto total ('+eur(netoEmp)+') NO llega a cubrir los '+eur(pactoApp)+' pactados. El pacto no se estaría respetando.';
+  } else if(pactoCoincide && retTotalEmp>1 && !netoCubrePacto){
+    veredicto='❌ Los conceptos fijos suman lo pactado ('+eur(sumaFija)+'), pero hay retenciones (IRPF '+eur(irpfEmp)+' + S.S. '+eur(ssEmp)+') y el neto total ('+eur(netoEmp)+') NO llega a cubrir los '+eur(pactoApp)+' pactados. El pacto no se estaría respetando.';
     veredictoColor='var(--red)';
-  } else if(pactoEmp<pactoApp-1){
-    veredicto='⚠️ Sueldo Base + Guardia en la nómina real ('+eur(pactoEmp)+') quedan por debajo de lo pactado ('+eur(pactoApp)+'). Si se les aplicó retención, el bruto debería haberse subido para compensarla y que esos '+eur(pactoApp)+' lleguen íntegros.';
+  } else if(sumaFija<pactoApp-1){
+    veredicto='⚠️ Los conceptos fijos de esta nómina suman '+eur(sumaFija)+', por debajo de los '+eur(pactoApp)+' pactados (diferencia de '+eur(sumaFija-pactoApp)+'). Revisa si falta marcar algún concepto como "fijo" en la lista de abajo, o si de verdad la empresa está pagando de menos.';
     veredictoColor='var(--red)';
   } else {
-    veredicto='ℹ️ Sueldo Base + Guardia en la nómina real ('+eur(pactoEmp)+') no coinciden exactamente con lo pactado en Tarifas ('+eur(pactoApp)+'). Revisa si incluye algo más.';
+    veredicto='ℹ️ Los conceptos fijos de esta nómina suman '+eur(sumaFija)+', por encima de los '+eur(pactoApp)+' pactados (diferencia de +'+eur(sumaFija-pactoApp)+'). Revisa si alguno debería estar marcado como variable.';
     veredictoColor='var(--yel)';
   }
+
+  // Modus operandi en texto, mes a mes: qué conceptos usa la empresa para
+  // completar el fijo, cuáles son variables, y cómo reparte la retención.
+  const narrativa=[];
+  if(clasif.length){
+    narrativa.push('Este mes, la empresa compone tu parte fija con: '
+      +clasif.filter(c=>c.tipo==='fijo').map(c=>(c.concepto||'(sin nombre)')+' '+eur(c.importe)).join(' + ')
+      +(hayConceptosFijos?' = '+eur(sumaFija):' (nada marcado como fijo todavía)')+'.');
+    if(clasif.some(c=>c.tipo==='variable')){
+      narrativa.push('Y te paga aparte, como variable: '
+        +clasif.filter(c=>c.tipo==='variable').map(c=>(c.concepto||'(sin nombre)')+' '+eur(c.importe)).join(' + ')
+        +' = '+eur(sumaVariable)+'.');
+    }
+    if(retTotalEmp>0){
+      narrativa.push('Sobre el total, retiene '+eur(retTotalEmp)+' (IRPF '+eur(irpfEmp)+' + S.S. '+eur(ssEmp)+')'
+        +(pctRetVariable!=null?', que si se aplicara solo a la parte variable equivaldría a un '+pctRetVariable.toFixed(2)+'% sobre ella.':'.'));
+    }
+  }
+
+  const itemClasificado=c=>h('div',{style:{
+    display:'flex',justifyContent:'space-between',alignItems:'center',gap:'.5rem',
+    padding:'.3rem .5rem',borderBottom:'1px solid var(--brd)',fontSize:'.78rem'
+  }},
+    h('span',{style:{color:'var(--ink)'}},c.concepto||'(sin nombre)'),
+    h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',flexShrink:0}},
+      h('span',{style:{fontWeight:700}},eur(c.importe)),
+      h('button',{class:'btn btn-gh btn-sm',style:{fontSize:'.68rem',padding:'.2rem .4rem'},
+        title:'Marcar como '+(c.tipo==='fijo'?'variable':'fijo'),
+        on:{click:()=>toggleTipoConceptoNomina(payslip.id, c.key, c.tipo)}
+      }, c.tipo==='fijo'?'🔒 Fijo':'🔁 Variable')
+    )
+  );
 
   const campoEditable=(label, campo, placeholder)=>h('div',{},
     h('div',{style:{fontSize:'.7rem',color:'var(--ink2)'}},label),
@@ -9105,12 +9225,13 @@ function renderComparativaNominasCard(mesKey, app, payslipsDelMes){
   return h('div',{class:'card'},
     h('div',{class:'sec-title'},'⚖️ Comparativa entre nóminas'),
     h('div',{style:{fontSize:'.78rem',color:'var(--ink2)',marginBottom:'.6rem'}},
-      'La simulación de TimerPro para '+periodoLabel(mesKey)+' frente a la nómina real ("'+(payslip.fileName||'nómina')+'"). Si la IA no detectó bien algún importe de la nómina real al leerla, corrígelo aquí abajo.'),
+      'La simulación de TimerPro para '+periodoLabel(mesKey)+' frente a la nómina real ("'+(payslip.fileName||'nómina')+'"). Pulsa 🔒/🔁 en cada concepto de abajo si la clasificación no es correcta.'),
 
     h('div',{style:{display:'grid',gridTemplateColumns:'1.3fr 1fr 1fr 1fr',gap:'.4rem',fontSize:'.72rem',fontWeight:700,color:'var(--ink2)',marginBottom:'.2rem',paddingBottom:'.3rem',borderBottom:'1px solid var(--brd)'}},
       h('div',{},'Concepto'), h('div',{style:{textAlign:'right'}},'TimerPro'), h('div',{style:{textAlign:'right'}},'Empresa'), h('div',{style:{textAlign:'right'}},'Diferencia')
     ),
-    filaComparativaNomina('Sueldo Base + Guardia (pacto)', pactoApp, pactoEmp),
+    filaComparativaNomina('Fijo (pacto)', pactoApp, sumaFija),
+    filaComparativaNomina('Variable (extras)', sim.brutoSujetoRetencion, sumaVariable),
     filaComparativaNomina('Total bruto', sim.brutoTotal, brutoEmp),
     filaComparativaNomina('Retención IRPF', sim.dedIRPF, irpfEmp),
     filaComparativaNomina('Retención Seg. Social', sim.dedSS, ssEmp),
@@ -9118,22 +9239,23 @@ function renderComparativaNominasCard(mesKey, app, payslipsDelMes){
 
     h('div',{style:{marginTop:'.6rem',padding:'.6rem .7rem',borderRadius:'var(--r2)',background:'var(--surf2)',fontSize:'.8rem',fontWeight:600,color:veredictoColor}}, veredicto),
 
-    h('div',{style:{fontSize:'.78rem',fontWeight:700,color:'var(--ink2)',marginTop:'.8rem',marginBottom:'.4rem'}},'Corregir datos de la nómina real (si la IA se equivocó al leerla)'),
+    narrativa.length?h('div',{style:{marginTop:'.5rem',padding:'.6rem .7rem',borderRadius:'var(--r2)',border:'1px dashed var(--brd)',fontSize:'.78rem',color:'var(--ink2)',lineHeight:1.5}},
+      h('div',{style:{fontWeight:700,color:'var(--ink)',marginBottom:'.2rem'}},'📖 Cómo lo está haciendo la empresa este mes'),
+      ...narrativa.map(n=>h('div',{style:{marginTop:'.2rem'}},n))
+    ):null,
+
+    h('div',{style:{fontSize:'.78rem',fontWeight:700,color:'var(--ink2)',marginTop:'.8rem',marginBottom:'.3rem'}},'Conceptos de la nómina real (pulsa 🔒/🔁 para corregir)'),
+    clasif.length
+      ? h('div',{}, ...clasif.map(itemClasificado))
+      : h('div',{style:{fontSize:'.76rem',color:'var(--ink3)'}},'No se detectó ningún concepto desglosado en esta nómina — usa "🔄 Recalcular" más abajo para que la IA la vuelva a leer, o corrige los importes a mano aquí debajo.'),
+
+    h('div',{style:{fontSize:'.78rem',fontWeight:700,color:'var(--ink2)',marginTop:'.8rem',marginBottom:'.4rem'}},'Corregir totales de la nómina real (si la IA se equivocó al leerla)'),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.4rem'}},
-      campoEditable('Sueldo Base (nómina)','sueldoBaseNomina'),
-      campoEditable('Guardia (nómina)','guardiaNomina'),
-      campoEditable('Gratificación (nómina)','gratificacionNomina'),
       campoEditable('Salario Bruto','salarioBruto'),
       campoEditable('Salario Neto','salarioNeto'),
       campoEditable('Retención IRPF','retencionIRPF'),
       campoEditable('Retención Seg. Social','retencionSS')
-    ),
-    ex.otrosConceptos && ex.otrosConceptos.length
-      ? h('div',{style:{marginTop:'.5rem',fontSize:'.76rem',color:'var(--ink2)'}},
-          h('div',{style:{fontWeight:700,marginBottom:'.2rem'}},'📌 Otros conceptos detectados en la nómina real:'),
-          ...ex.otrosConceptos.map(o=>h('div',{},'• '+(o.concepto||'')+': '+eur(+o.importe||0)))
-        )
-      : null
+    )
   );
 }
 
