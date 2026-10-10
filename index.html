@@ -1065,7 +1065,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261010-compnominas'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261010-horariofichajes'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -6681,16 +6681,31 @@ function renderModalResumenDia(){
             const inferido=Math.round((raw-neta)*60);
             return inferido>0?inferido:0;
           };
-          if(fichajesList.every(f=>f._ocultarHorario)) return null;
+          // Antes, un fichaje con "ocultar horario" desaparecía ENTERO de
+          // esta sección (solo se veía su título más abajo en Notas). Ahora
+          // sigue apareciendo aquí mismo, debajo del anterior, pero reducido
+          // a solo su título (sin entrada/salida/horas) — así siempre se ve
+          // la lista completa de fichajes del día en un único sitio.
+          const titDe=(f,i)=>i===0?e.titulo:f.titulo;
+          const anyContent=fichajesList.some((f,i)=>!f._ocultarHorario || titDe(f,i));
+          if(!anyContent) return null;
           return h('div',{},
             sec('⏱','Horario'),
             ...fichajesList.map((f,i)=>{
-              // Visibilidad independiente por fichaje: este fichaje sigue
-              // contando en los totales (recomputeDayAggregates ya lo suma),
-              // simplemente no se dibuja su fila de horario aquí.
-              if(f._ocultarHorario) return null;
-              const esF1t=i===0;
-              const titF=esF1t?e.titulo:f.titulo;
+              const titF=titDe(f,i);
+              if(f._ocultarHorario){
+                if(!titF) return null; // nada que mostrar de este fichaje aquí
+                return h('div',{style:{
+                  padding:'.5rem .7rem',marginBottom:'.4rem',
+                  background:'#f8fafc',borderRadius:'8px',
+                  border:'1px solid #e2e8f0'
+                }},
+                  h('div',{style:{display:'flex',alignItems:'center',gap:'.6rem',flexWrap:'wrap'}},
+                    h('span',{style:{fontWeight:700,color:'#334155',minWidth:'20px',fontSize:'.8rem'}},i+1+'.'),
+                    h('span',{style:{fontSize:'.88rem',fontWeight:600,color:'#0f172a'},html:titF})
+                  )
+                );
+              }
               const minsD=f.entrada&&f.salida?minsDescansoDe(f):0;
               return h('div',{style:{
                 padding:'.5rem .7rem',marginBottom:'.4rem',
