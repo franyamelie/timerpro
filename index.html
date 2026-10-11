@@ -1065,7 +1065,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261010-prediccion2'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261011-viajescantidad'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -4144,6 +4144,7 @@ function recomputeDayAggregates(){
   let hnAuto=0,heAuto=0,hnManual=0,heManual=0;
   let otrosAgg=[], journeysAgg=[];
   const trByType={}; // suma de transporte por tipo (coche/camion/otro), para saber cuál predomina
+  const trCantByType={}; // Nº de viajes (transporteCantidad) por tipo, para no perder el conteo al agregar varios fichajes
   fEntry.fichajes.forEach(fj=>{
     hn+=(+fj.horasNormales||0); he+=(+fj.horasExtra||0);
     if(fj._horasManual){ hnManual+=(+fj.horasNormales||0); heManual+=(+fj.horasExtra||0); }
@@ -4154,6 +4155,7 @@ function recomputeDayAggregates(){
     if(fjTransp>0){
       const k=fj._transportType||'';
       trByType[k]=(trByType[k]||0)+fjTransp;
+      trCantByType[k]=(trCantByType[k]||0)+(+fj.transporteCantidad||1);
     }
     (fj.otrosConceptos||[]).forEach(o=>otrosAgg.push(o));
     (fj.journeys||[]).forEach(j=>journeysAgg.push(j));
@@ -4167,6 +4169,16 @@ function recomputeDayAggregates(){
   if(trKeys.length){
     trKeys.sort((a,b)=>trByType[b]-trByType[a]);
     fEntry._transportType=trKeys[0];
+    // Antes solo se arrastraba el IMPORTE total del día (fEntry.transporte,
+    // ya sumado abajo), pero nunca el Nº de viajes que lo componían —
+    // fEntry.transporteCantidad se quedaba en su valor suelto de antes de
+    // tener varios fichajes (normalmente 1), así que 2 fichajes con 1 viaje
+    // en coche cada uno (p.ej. 4,60€ + 4,60€ = 9,20€) acababan contándose
+    // como "1 viaje de 9,20€" en vez de "2 viajes de 4,60€" en los informes.
+    fEntry.transporteCantidad=trCantByType[trKeys[0]]||1;
+    fEntry.transportePrecioUnit=fEntry.transporteCantidad>0
+      ? Math.round((trByType[trKeys[0]]/fEntry.transporteCantidad)*100)/100
+      : trByType[trKeys[0]];
   }
   // Tope de 8h normales POR JORNADA — se mantiene, pero ahora SOLO sobre el
   // bloque de fichajes automáticos (calculados a partir del horario, sin
@@ -4738,14 +4750,19 @@ function openExportModal(mode){
     const iN=e.importeNormales||0, iE=e.importeExtra||0, iNoc=e.importeNocturnas||0, iFes=e.importeFestivas||0;
     const dieta=e.dieta||0, transp=e.transporte||0;
     const tt=e._transportType||'';
+    // e.transporte es el importe TOTAL del día (puede ser varios viajes
+    // sumados); e.transporteCantidad dice cuántos son de verdad — sin esto,
+    // "2 viajes de 4,60€" se contaban como "1 viaje de 9,20€".
+    const cantT=Math.max(1,+e.transporteCantidad||1);
+    const precioUnitT=Math.round((transp/cantT)*100)/100;
     if(transp>0){
       if(tt==='coche'){
-        totTranspCoche+=transp;nCoche++;
-        const pk=transp.toFixed(2);cochePrecio[pk]=(cochePrecio[pk]||0)+1;
+        totTranspCoche+=transp;nCoche+=cantT;
+        const pk=precioUnitT.toFixed(2);cochePrecio[pk]=(cochePrecio[pk]||0)+cantT;
       } else if(tt==='camion'){
-        totTranspCamion+=transp;nCamion++;
-        const pk=transp.toFixed(2);camionPrecio[pk]=(camionPrecio[pk]||0)+1;
-      } else if(transp>0){totTranspOtro+=transp;nOtroTransp++;}
+        totTranspCamion+=transp;nCamion+=cantT;
+        const pk=precioUnitT.toFixed(2);camionPrecio[pk]=(camionPrecio[pk]||0)+cantT;
+      } else if(transp>0){totTranspOtro+=transp;nOtroTransp+=cantT;}
     }
     // Track dieta price breakdown
     if(dieta>0){
@@ -4769,7 +4786,7 @@ function openExportModal(mode){
     if(hFes>0) filas+=`<tr><td>Horas festivas</td><td>${fh(hFes)}</td>${cp?`<td>${eur2(e.precioHoraFestiva||0)}/h</td><td>${eur2(iFes)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
     if(dieta>0) filas+=`<tr><td>Dieta</td><td>1 × ${eur2(dieta)}</td>${cp?`<td>${eur2(dieta)}</td>`:'<td colspan="2">✓</td>'}</tr>`;
     (e.dietasExtra||[]).forEach(d=>{if(d.importe>0) filas+=`<tr><td>${d.concepto||'Dieta extra'}</td><td>1 × ${eur2(d.importe)}</td>${cp?`<td>${eur2(d.importe)}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
-    if(transp>0){const _ttn=(S.transportTypes||[]).find(t=>t.id===e._transportType);const _tnm=_ttn?' ('+_ttn.nombre+')':'';filas+=`<tr><td>Transporte${_tnm}</td><td>1 × ${eur2(transp)}</td>${cp?'<td>'+eur2(transp)+'</td>':'<td colspan="2">✓</td>'}</tr>`;}
+    if(transp>0){const _ttn=(S.transportTypes||[]).find(t=>t.id===e._transportType);const _tnm=_ttn?' ('+_ttn.nombre+')':'';filas+=`<tr><td>Transporte${_tnm}</td><td>${cantT} × ${eur2(precioUnitT)}</td>${cp?'<td>'+eur2(transp)+'</td>':'<td colspan="2">✓</td>'}</tr>`;}
     (e.otrosConceptos||[]).forEach(o=>{if(o.importe>0) filas+=`<tr><td>${o.concepto||'Otro'}</td><td>—</td>${cp?`<td>—</td><td>${eur2(o.importe)}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
     (e.journeys||[]).forEach(j=>{if(j.precioManual>0) filas+=`<tr><td>Viaje</td><td>—</td>${cp?`<td>—</td><td>${eur2(j.precioManual)}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
 
@@ -5611,9 +5628,15 @@ function computeLiquidacion(entries,allDates){
     }
     let vCoche=0, vCamion=0, vOtro=0;
     if(transp>0){
-      if(tt==='coche'){totTranspCoche+=transp;nCoche++;vCoche=transp;const pk=transp.toFixed(2);cochePrecio[pk]=(cochePrecio[pk]||0)+1;}
-      else if(tt==='camion'){totTranspCamion+=transp;nCamion++;vCamion=transp;const pk=transp.toFixed(2);camionPrecio[pk]=(camionPrecio[pk]||0)+1;}
-      else{totTranspOtro+=transp;nOtroTransp++;vOtro=transp;}
+      // e.transporte es el importe TOTAL del día para ese tipo (puede ser
+      // varios viajes sumados, p.ej. 2 viajes de coche a 4,60€ = 9,20€).
+      // e.transporteCantidad guarda cuántos viajes son de verdad — hay que
+      // usarlo para no contar "2 viajes de 4,60€" como "1 viaje de 9,20€".
+      const cantT=Math.max(1,+(e&&e.transporteCantidad)||1);
+      const precioUnitT=Math.round((transp/cantT)*100)/100;
+      if(tt==='coche'){totTranspCoche+=transp;nCoche+=cantT;vCoche=transp;const pk=precioUnitT.toFixed(2);cochePrecio[pk]=(cochePrecio[pk]||0)+cantT;}
+      else if(tt==='camion'){totTranspCamion+=transp;nCamion+=cantT;vCamion=transp;const pk=precioUnitT.toFixed(2);camionPrecio[pk]=(camionPrecio[pk]||0)+cantT;}
+      else{totTranspOtro+=transp;nOtroTransp+=cantT;vOtro=transp;}
     }
     if(dieta>0){nDietas++;const pk=dieta.toFixed(2);dietaPrecios[pk]=(dietaPrecios[pk]||0)+1;}
     const dietasE=e?(e.dietasExtra||[]).reduce((a,d)=>a+(d.importe||0),0):0;
