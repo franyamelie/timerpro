@@ -1065,7 +1065,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261011-viajescantidad'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261011-viajescantidad2'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -4752,8 +4752,23 @@ function openExportModal(mode){
     const tt=e._transportType||'';
     // e.transporte es el importe TOTAL del día (puede ser varios viajes
     // sumados); e.transporteCantidad dice cuántos son de verdad — sin esto,
-    // "2 viajes de 4,60€" se contaban como "1 viaje de 9,20€".
-    const cantT=Math.max(1,+e.transporteCantidad||1);
+    // "2 viajes de 4,60€" se contaban como "1 viaje de 9,20€". En jornadas
+    // guardadas antes de este arreglo ese campo puede seguir desactualizado,
+    // así que si hay fichajes, reconstruimos la cantidad real sumando la de
+    // cada fichaje del tipo predominante (solo si así se reconstruye el
+    // importe total del día; si no cuadra, nos quedamos con el campo guardado).
+    let cantT=Math.max(1,+e.transporteCantidad||1);
+    if(e.fichajes && e.fichajes.length){
+      let cantFichajes=0, sumFichajes=0;
+      e.fichajes.forEach(fj=>{
+        const ft=+fj.transporte||0;
+        if(ft>0 && (fj._transportType||'')===tt){
+          cantFichajes+=Math.max(1,+fj.transporteCantidad||1);
+          sumFichajes+=ft;
+        }
+      });
+      if(cantFichajes>0 && Math.abs(sumFichajes-transp)<=0.02) cantT=cantFichajes;
+    }
     const precioUnitT=Math.round((transp/cantT)*100)/100;
     if(transp>0){
       if(tt==='coche'){
@@ -5630,9 +5645,30 @@ function computeLiquidacion(entries,allDates){
     if(transp>0){
       // e.transporte es el importe TOTAL del día para ese tipo (puede ser
       // varios viajes sumados, p.ej. 2 viajes de coche a 4,60€ = 9,20€).
-      // e.transporteCantidad guarda cuántos viajes son de verdad — hay que
-      // usarlo para no contar "2 viajes de 4,60€" como "1 viaje de 9,20€".
-      const cantT=Math.max(1,+(e&&e.transporteCantidad)||1);
+      // e.transporteCantidad DEBERÍA decir cuántos viajes son de verdad,
+      // pero en jornadas guardadas ANTES de este arreglo (con varios
+      // fichajes) se quedó en su valor suelto antiguo (normalmente 1) y
+      // nunca se recalculó solo por abrir el informe. Para no depender de
+      // ese campo si está desactualizado, si el día tiene fichajes
+      // recalculamos aquí mismo la cantidad real sumando el
+      // transporteCantidad de cada fichaje con transporte del tipo
+      // predominante — así los informes salen bien incluso sin reabrir y
+      // regrabar cada jornada antigua a mano.
+      let cantT=Math.max(1,+(e&&e.transporteCantidad)||1);
+      if(e && e.fichajes && e.fichajes.length){
+        let cantFichajes=0, sumFichajes=0;
+        e.fichajes.forEach(fj=>{
+          const ft=+fj.transporte||0;
+          if(ft>0 && (fj._transportType||'')===tt){
+            cantFichajes+=Math.max(1,+fj.transporteCantidad||1);
+            sumFichajes+=ft;
+          }
+        });
+        // Solo lo usamos si de verdad reconstruye el importe total del día
+        // para este tipo (si no cuadra, p.ej. porque el usuario corrigió el
+        // importe a mano después, nos quedamos con el campo guardado).
+        if(cantFichajes>0 && Math.abs(sumFichajes-transp)<=0.02) cantT=cantFichajes;
+      }
       const precioUnitT=Math.round((transp/cantT)*100)/100;
       if(tt==='coche'){totTranspCoche+=transp;nCoche+=cantT;vCoche=transp;const pk=precioUnitT.toFixed(2);cochePrecio[pk]=(cochePrecio[pk]||0)+cantT;}
       else if(tt==='camion'){totTranspCamion+=transp;nCamion+=cantT;vCamion=transp;const pk=precioUnitT.toFixed(2);camionPrecio[pk]=(camionPrecio[pk]||0)+cantT;}
