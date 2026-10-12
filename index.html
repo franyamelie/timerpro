@@ -1098,7 +1098,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261012-carpetasciclo'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261012-carpetasanio'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -2423,27 +2423,57 @@ function renderFichar(){
               // dentro de cada carpeta son los mismos de siempre.
               const {sueltas,carpetas}=agruparJornadasPorCiclo(filtradas);
               const nodos=sueltas.map(en=>renderHistorialRow(en));
-              carpetas.forEach(({periodoKey,entries})=>{
+              // Carpeta de un mes (ciclo cerrado). "sangria" desplaza la
+              // carpeta y sus jornadas cuando va dentro de una carpeta de año.
+              const pintarCarpetaMes=({periodoKey,entries},sangria)=>{
                 const abierta=historialCarpetasAbiertas.has(periodoKey);
-                nodos.push(
+                const fila=h('div',{
+                  class:'sum-row',
+                  style:{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',background:'var(--surf2)',fontWeight:700},
+                  on:{click:()=>{
+                    if(abierta) historialCarpetasAbiertas.delete(periodoKey);
+                    else historialCarpetasAbiertas.add(periodoKey);
+                    rerender();
+                  }}
+                },
+                  h('div',{},(abierta?'📂 ':'📁 ')+periodoFolderLabel(periodoKey)),
+                  h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',fontWeight:400}},entries.length+' jornada'+(entries.length!==1?'s':''))
+                );
+                const hijos=abierta?entries.map(en=>h('div',{style:{paddingLeft:'1rem'}},renderHistorialRow(en))):[];
+                return h('div',{style:sangria?{paddingLeft:'1rem'}:{}},fila,...hijos);
+              };
+              // Meses de un año YA COMPLETO (su último ciclo, el que cierra el
+              // 25 de diciembre, ya terminó) van dentro de una carpeta "Año".
+              // Los meses de un año todavía en curso quedan sueltos como carpetas.
+              const porAnio=new Map(); const mesesSueltos=[];
+              carpetas.forEach(c=>{
+                const anio=c.periodoKey.slice(0,4);
+                if(periodoEstaCerrado(anio+'-12')){
+                  if(!porAnio.has(anio)) porAnio.set(anio,[]);
+                  porAnio.get(anio).push(c);
+                } else mesesSueltos.push(c);
+              });
+              mesesSueltos.forEach(c=>nodos.push(pintarCarpetaMes(c,false)));
+              Array.from(porAnio.keys()).sort().reverse().forEach(anio=>{
+                const clave='anio-'+anio;
+                const abierta=historialCarpetasAbiertas.has(clave);
+                const meses=porAnio.get(anio);
+                const total=meses.reduce((n,c)=>n+c.entries.length,0);
+                nodos.push(h('div',{},
                   h('div',{
                     class:'sum-row',
-                    style:{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',background:'var(--surf2)',fontWeight:700},
+                    style:{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',background:'var(--surf3)',fontWeight:800},
                     on:{click:()=>{
-                      if(abierta) historialCarpetasAbiertas.delete(periodoKey);
-                      else historialCarpetasAbiertas.add(periodoKey);
+                      if(abierta) historialCarpetasAbiertas.delete(clave);
+                      else historialCarpetasAbiertas.add(clave);
                       rerender();
                     }}
                   },
-                    h('div',{},(abierta?'📂 ':'📁 ')+periodoFolderLabel(periodoKey)),
-                    h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',fontWeight:400}},entries.length+' jornada'+(entries.length!==1?'s':''))
-                  )
-                );
-                if(abierta){
-                  entries.forEach(en=>nodos.push(
-                    h('div',{style:{paddingLeft:'1rem'}},renderHistorialRow(en))
-                  ));
-                }
+                    h('div',{},(abierta?'📂 ':'📁 ')+'Año '+anio),
+                    h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',fontWeight:400}},meses.length+' mes'+(meses.length!==1?'es':'')+' · '+total+' jornada'+(total!==1?'s':''))
+                  ),
+                  ...(abierta?meses.map(c=>pintarCarpetaMes(c,true)):[])
+                ));
               });
               return nodos;
             })()
