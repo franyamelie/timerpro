@@ -513,6 +513,35 @@ function periodoEstaCerrado(periodoKey){
   const {fin}=periodoRangoDe(periodoKey);
   return fin < today();
 }
+// Etiqueta de carpeta para un ciclo YA CERRADO, ej: periodoKey '2026-06'
+// (ciclo 26 mayo – 25 junio 2026) -> "mes de junio 2026". El mes de la
+// etiqueta es el mes en el que el ciclo CIERRA (día 25), que es justo el
+// mes que indica el propio periodoKey.
+function periodoFolderLabel(periodoKey){
+  const [y,m]=periodoKey.split('-').map(Number);
+  return 'mes de '+(MESES_NOMBRE[m-1]||'').toLowerCase()+' '+y;
+}
+// Agrupa una lista de jornadas (ya filtrada/ordenada) en:
+//  - sueltas: las del ciclo en curso (todavía no cerrado) -> se muestran
+//    fuera de cualquier carpeta, exactamente igual que hasta ahora.
+//  - carpetas: una por cada ciclo YA CERRADO que tenga jornadas, más
+//    reciente primero, cada una con sus jornadas (mismo orden que venían).
+// Puramente visual/organizativo: no crea ni modifica ningún dato, solo
+// reagrupa lo que ya hay en S.entries para pintarlo. No se usa en
+// Resúmenes, búsqueda de días ni ningún otro motor de la app.
+function agruparJornadasPorCiclo(lista){
+  const sueltas=[]; const porCarpeta=new Map();
+  lista.forEach(en=>{
+    const pk=periodoKeyDe(en.fecha);
+    if(!periodoEstaCerrado(pk)){ sueltas.push(en); return; }
+    if(!porCarpeta.has(pk)) porCarpeta.set(pk,[]);
+    porCarpeta.get(pk).push(en);
+  });
+  const carpetas=Array.from(porCarpeta.entries())
+    .sort((a,b)=>b[0].localeCompare(a[0]))
+    .map(([periodoKey,entries])=>({periodoKey,entries}));
+  return {sueltas,carpetas};
+}
 // Lista de periodos disponibles: unión de periodos con jornadas y periodos
 // que ya tengan alguna nómina subida (por si se sube una nómina de un
 // periodo sin jornadas registradas todavía), más reciente primero. Siempre
@@ -728,6 +757,10 @@ function renderTagChip(tag,icon,bg,border,color){
 }
 let dSearch = '', dFY = '', dFM = '';
 let histSearch = '';
+// Qué carpetas de ciclo (mes cerrado) están desplegadas en el Historial de
+// Jornadas. Puramente de interfaz: no afecta a qué datos existen ni a
+// cómo se buscan/calculan.
+let historialCarpetasAbiertas = new Set();
 let templates = [];
 let syncMode = 'export';
 let dlDialog = null;
@@ -1065,7 +1098,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261011-viajescantidad2'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261012-carpetasciclo'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1408,8 +1441,65 @@ function renderDayCard(){
   ]);
 }
 
+// Fila de una jornada en el Historial de Jornadas (tarjeta Fichar). Se usa
+// tanto para las jornadas sueltas del ciclo en curso como para las que
+// están dentro de una carpeta de ciclo cerrado — es exactamente la misma
+// fila de siempre, solo que ahora está en una función reutilizable.
+function renderHistorialRow(en){
+  return h('div',{class:'sum-row',style:{cursor:'pointer',borderLeft:en.fecha===fEntry.fecha?'3px solid var(--acc)':'',background:en.fecha===fEntry.fecha?'var(--acc-lt)':''},on:{click:()=>loadHistorial(en),dblclick:()=>loadHistorial(en)}},
+    h('div',{},
+      h('div',{style:{fontWeight:700,fontSize:'.85rem'}},`${cap(wday(en.fecha))}, ${dlbl(en.fecha)}`),
+      h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},
+        `${fmtH((en.horasNormales||0)+(en.horasExtra||0)+(en.horasNocturnas||0)+(en.horasFestivas||0))} · ${(en.fichajes||[]).length} fichajes`
+      )
+    ),
+    h('div',{style:{display:'flex',gap:'.3rem'}},
+      h('button',{class:'btn btn-b btn-sm',title:'Editar jornada',on:{click:ev=>{ev.stopPropagation();loadHistorial(en);}}},'✏️'),
+      h('button',{class:'btn btn-g btn-sm',title:'Guardar jornada actual en este día',on:{click:ev=>{
+        ev.stopPropagation();
+        if(fEntry.fecha !== en.fecha){
+          showAlert('Carga primero esta jornada con ✏️ antes de guardar','err');
+          return;
+        }
+        if(!confirm('¿Guardar la jornada del '+en.fecha+'?')) return;
+        // Read DOM first THEN snapshot (fichajes + notas need DOM read first)
+        captureFormState();
+        const notasEl=document.getElementById('notas-editor');
+        if(notasEl&&notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
+        // Read inputs directly before snapshot
+        fEntry.fichajes.forEach((fj,i)=>{
+          if(!fEntry.fichajes[i]) return;
+          const _eEl=document.getElementById('fich-ent-'+fj._fid);
+          const _sEl=document.getElementById('fich-sal-'+fj._fid);
+          if(_eEl&&_eEl.value) fEntry.fichajes[i].entrada=_eEl.value;
+          if(_sEl&&_sEl.value) fEntry.fichajes[i].salida=_sEl.value;
+        });
+        const saved={...fEntry,fecha:en.fecha,id:en.id};
+        dbPut(ST.entries,{...saved,_draft:false}).then(()=>{
+          S.entries=S.entries.map(e=>e.id===en.id?{...saved}:e);
+          localStorage.setItem('lastSave',new Date().toISOString());
+          saveLocalBackup();
+          showAlert('Jornada guardada ✓');
+          S.modal='backupReminder';
+          rerender();
+        });
+      }}},'💾'),
+      h('button',{class:'btn btn-r btn-sm',title:'Eliminar jornada',on:{click:ev=>{
+        ev.stopPropagation();
+        if(!confirm('¿Eliminar la jornada del '+en.fecha+'? Esta acción no se puede deshacer.')) return;
+        deleteEntry(en.id);
+      }}},'🗑')
+    )
+  );
+}
+
 function _renderHistorial(){
   const q = (histSearch||'').toLowerCase().trim();
+  // Sin texto de búsqueda, el Historial se agrupa en carpetas por ciclo
+  // (lo que hace el render completo); esta función solo pinta a mano la
+  // lista plana mientras se escribe en el buscador, así que delegamos en
+  // un rerender completo en vez de duplicar aquí la lógica de carpetas.
+  if(!q){ rerender(); return; }
   const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   const filtered = S.entries.filter(en=>{
     if(!q) return true;
@@ -2302,69 +2392,61 @@ function renderFichar(){
       S.entries.length===0
         ? h('div',{class:'empty'},'Sin jornadas guardadas')
         : h('div',{id:'historial-list'},
-            ...S.entries.filter(en=>{
-              if(!histSearch)return true;
-              const q=histSearch.toLowerCase();
-              const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-              const f=en.fecha||'';
-              const parts=f.split('-');
-              const mesNombre=parts[1]?meses[parseInt(parts[1])-1]||'':'';
-              return f.includes(q)||
-                (parts[2]&&parts[2].includes(q))||
-                (parts[1]&&parts[1].includes(q))||
-                (parts[0]&&parts[0].includes(q))||
-                mesNombre.includes(q)||
-                en.notas?.toLowerCase().includes(q)||
-                wday(en.fecha)?.toLowerCase().includes(q)||
-                (en.tipoJornada||'').toLowerCase().includes(q)||
-                (en.tipoJornada||'').toLowerCase().includes(q);
-            }).sort((a,b)=>b.fecha.localeCompare(a.fecha)).map(en=>
-              h('div',{class:'sum-row',style:{cursor:'pointer',borderLeft:en.fecha===fEntry.fecha?'3px solid var(--acc)':'',background:en.fecha===fEntry.fecha?'var(--acc-lt)':''},on:{click:()=>loadHistorial(en),dblclick:()=>loadHistorial(en)}},  
-                h('div',{},
-                  h('div',{style:{fontWeight:700,fontSize:'.85rem'}},`${cap(wday(en.fecha))}, ${dlbl(en.fecha)}`),
-                  h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},
-                    `${fmtH((en.horasNormales||0)+(en.horasExtra||0)+(en.horasNocturnas||0)+(en.horasFestivas||0))} · ${(en.fichajes||[]).length} fichajes`
-                  )
-                ),
-                h('div',{style:{display:'flex',gap:'.3rem'}},
-                  h('button',{class:'btn btn-b btn-sm',title:'Editar jornada',on:{click:ev=>{ev.stopPropagation();loadHistorial(en);}}},'✏️'),
-                  h('button',{class:'btn btn-g btn-sm',title:'Guardar jornada actual en este día',on:{click:ev=>{
-                    ev.stopPropagation();
-                    if(fEntry.fecha !== en.fecha){
-                      showAlert('Carga primero esta jornada con ✏️ antes de guardar','err');
-                      return;
-                    }
-                    if(!confirm('¿Guardar la jornada del '+en.fecha+'?')) return;
-                    // Read DOM first THEN snapshot (fichajes + notas need DOM read first)
-                    captureFormState();
-                    const notasEl=document.getElementById('notas-editor');
-                    if(notasEl&&notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
-                    // Read inputs directly before snapshot
-                    fEntry.fichajes.forEach((fj,i)=>{
-                      if(!fEntry.fichajes[i]) return;
-                      const _eEl=document.getElementById('fich-ent-'+fj._fid);
-                      const _sEl=document.getElementById('fich-sal-'+fj._fid);
-                      if(_eEl&&_eEl.value) fEntry.fichajes[i].entrada=_eEl.value;
-                      if(_sEl&&_sEl.value) fEntry.fichajes[i].salida=_sEl.value;
-                    });
-                    const saved={...fEntry,fecha:en.fecha,id:en.id};
-                    dbPut(ST.entries,{...saved,_draft:false}).then(()=>{
-                      S.entries=S.entries.map(e=>e.id===en.id?{...saved}:e);
-                      localStorage.setItem('lastSave',new Date().toISOString());
-                      saveLocalBackup();
-                      showAlert('Jornada guardada ✓');
-                      S.modal='backupReminder';
+            ...(()=>{
+              const filtradas=S.entries.filter(en=>{
+                if(!histSearch)return true;
+                const q=histSearch.toLowerCase();
+                const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+                const f=en.fecha||'';
+                const parts=f.split('-');
+                const mesNombre=parts[1]?meses[parseInt(parts[1])-1]||'':'';
+                return f.includes(q)||
+                  (parts[2]&&parts[2].includes(q))||
+                  (parts[1]&&parts[1].includes(q))||
+                  (parts[0]&&parts[0].includes(q))||
+                  mesNombre.includes(q)||
+                  en.notas?.toLowerCase().includes(q)||
+                  wday(en.fecha)?.toLowerCase().includes(q)||
+                  (en.tipoJornada||'').toLowerCase().includes(q)||
+                  (en.tipoJornada||'').toLowerCase().includes(q);
+              }).sort((a,b)=>b.fecha.localeCompare(a.fecha));
+
+              // Si hay una búsqueda activa se muestra la lista plana de
+              // siempre: el buscador no debe verse afectado nunca por el
+              // agrupado en carpetas por ciclo.
+              if(histSearch) return filtradas.map(en=>renderHistorialRow(en));
+
+              // Sin búsqueda: el ciclo en curso (no cerrado) se muestra
+              // suelto como siempre, y cada ciclo YA CERRADO se agrupa en
+              // una carpeta "mes de ..." para que la lista se vea más
+              // ordenada. Es puramente visual: los datos y el orden de
+              // dentro de cada carpeta son los mismos de siempre.
+              const {sueltas,carpetas}=agruparJornadasPorCiclo(filtradas);
+              const nodos=sueltas.map(en=>renderHistorialRow(en));
+              carpetas.forEach(({periodoKey,entries})=>{
+                const abierta=historialCarpetasAbiertas.has(periodoKey);
+                nodos.push(
+                  h('div',{
+                    class:'sum-row',
+                    style:{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',background:'var(--surf2)',fontWeight:700},
+                    on:{click:()=>{
+                      if(abierta) historialCarpetasAbiertas.delete(periodoKey);
+                      else historialCarpetasAbiertas.add(periodoKey);
                       rerender();
-                    });
-                  }}},'💾'),
-                  h('button',{class:'btn btn-r btn-sm',title:'Eliminar jornada',on:{click:ev=>{
-                    ev.stopPropagation();
-                    if(!confirm('¿Eliminar la jornada del '+en.fecha+'? Esta acción no se puede deshacer.')) return;
-                    deleteEntry(en.id);
-                  }}},'🗑')
-                )
-              )
-            )
+                    }}
+                  },
+                    h('div',{},(abierta?'📂 ':'📁 ')+periodoFolderLabel(periodoKey)),
+                    h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',fontWeight:400}},entries.length+' jornada'+(entries.length!==1?'s':''))
+                  )
+                );
+                if(abierta){
+                  entries.forEach(en=>nodos.push(
+                    h('div',{style:{paddingLeft:'1rem'}},renderHistorialRow(en))
+                  ));
+                }
+              });
+              return nodos;
+            })()
           )
     )
   );
@@ -15292,6 +15374,11 @@ window.renderFichar = function(){
 // MEJORA 7: Búsqueda historial mejorada (sitio, importe, notas fichaje)
 function _renderHistorial(){
   const q=(histSearch||'').toLowerCase().trim();
+  // Sin texto de búsqueda, el Historial se agrupa en carpetas por ciclo
+  // (lo que hace el render completo); esta función solo pinta a mano la
+  // lista plana mientras se escribe en el buscador, así que delegamos en
+  // un rerender completo en vez de duplicar aquí la lógica de carpetas.
+  if(!q){ rerender(); return; }
   const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   const filtered=S.entries.filter(en=>{
     if(!q) return true;
