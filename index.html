@@ -257,7 +257,7 @@ html.dd .nav-brand{font-size:1.35rem;font-weight:800}
 html.dd .nav-brand em{background:none;color:#22c55e;-webkit-text-fill-color:#22c55e}
 html.dd .nav-btn{background:var(--surf);box-shadow:var(--sh);border-radius:50%;width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;padding:0;font-size:.95rem}
 html.dd .user-pill{background:var(--surf);box-shadow:var(--sh);font-weight:700}
-html.dd main{padding:.6rem 1rem 7rem}
+html.dd main{padding:.6rem 1rem 1rem}
 html.dd .card{border:0;border-radius:24px;box-shadow:var(--sh);padding:1.1rem}
 html.dd .card-hl::before{height:5px;opacity:.9}
 html.dd .sec-title{color:var(--ink2);letter-spacing:.06em}
@@ -268,47 +268,10 @@ html.dd .fich-row,html.dd .task-card{border-radius:18px;border:0}
 html.dd .field input,html.dd .field select,html.dd .field textarea{border-radius:14px;border:1.5px solid var(--brd);background:var(--surf2)}
 html.dd .badge{border-radius:20px}
 html.dd .modal{border-radius:26px}
-@media (max-width:899.98px){
-  html.dd nav{flex-wrap:wrap;row-gap:.3rem;padding:.7rem .8rem .2rem}
-  html.dd .nav-brand{font-size:1.2rem}
-  html.dd .nav-clock{display:none}
-  html.dd .nav-btns{gap:.25rem;margin-left:auto;flex-wrap:nowrap}
-  html.dd .nav-btn{width:30px;height:30px;font-size:.85rem;flex-shrink:0}
-  html.dd .user-pill{padding:.15rem .5rem}
-}
-html.dd .tab{border-bottom-color:transparent!important}
-/* Barra inferior (móvil) */
-.dd-dock,.dd-mas{display:none}
-@media (max-width:899.98px){
-  html.dd .tabs{display:none}
-  html.dd .dd-dock{display:flex;position:fixed;left:12px;right:12px;bottom:max(12px,env(safe-area-inset-bottom));height:64px;background:#1c1917;border-radius:32px;box-shadow:0 8px 28px rgba(0,0,0,.35);z-index:900;align-items:center;justify-content:space-around;padding:0 8px}
-  html.dd:not(.light) .dd-dock{background:#0c0a09;border:1px solid rgba(255,255,255,.1)}
-  .dd-dock button{flex:1;height:48px;border:0;background:none;color:#a8a29e;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:.62rem;font-weight:700;font-family:inherit;cursor:pointer;border-radius:24px}
-  .dd-dock button span{font-size:1.2rem;line-height:1}
-  .dd-dock button.on{background:#fff;color:#1c1917;flex:1.4}
-  html.dd .dd-mas.abierto{display:block;position:fixed;inset:0;z-index:899;background:rgba(0,0,0,.4)}
-  .dd-mas .hoja{position:absolute;left:12px;right:12px;bottom:88px;max-height:70dvh;overflow:auto;background:var(--bg);border-radius:28px;padding:16px;box-shadow:0 12px 40px rgba(0,0,0,.4)}
-  .dd-mas .rej{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .dd-mas .tl{border:0;border-radius:20px;padding:14px;text-align:left;cursor:pointer;font-family:inherit;font-weight:800;font-size:.85rem;color:#1c1917;display:flex;gap:10px;align-items:center}
-  .dd-mas .tl span{font-size:1.3rem}
-  .dd-mas .tl.on{outline:3px solid #1c1917}
-  .dd-mas h4{font-size:.7rem;letter-spacing:.08em;color:var(--ink2);margin:6px 4px 10px}
-}
-/* Escritorio: barra lateral */
-@media (min-width:900px){
-  html.dd #app{display:grid;grid-template-columns:240px 1fr;grid-template-rows:auto 1fr;max-width:none;height:100dvh}
-  html.dd .tabs{grid-column:1;grid-row:1 / span 3;flex-direction:column;overflow-y:auto;overflow-x:hidden;background:#1c1917;margin:14px;border-radius:26px;padding:22px 12px;gap:3px;border:0}
-  html.dd:not(.light) .tabs{background:#0c0a09}
-  html.dd .tabs::before{content:"TimerPro";color:#fff;font-weight:800;font-size:1.3rem;padding:0 10px 14px}
-  html.dd .tab{flex-direction:row;align-items:center;gap:.8rem;padding:.65rem .8rem;border:0;border-radius:14px;font-size:.85rem;font-weight:600;color:#a8a29e;width:100%;text-align:left}
-  html.dd .tab .tab-icon{width:24px;text-align:center;font-size:1.1rem}
-  html.dd .tab.active{background:#fff;color:#1c1917;font-weight:800;border:0}
-  html.dd .tab:hover:not(.active){background:rgba(255,255,255,.09);color:#fff}
-  html.dd nav{grid-column:2;grid-row:1;padding:1.1rem 1.5rem .3rem}
-  html.dd .nav-brand{display:none}
-  html.dd main{grid-column:2;grid-row:2;padding:.6rem 1.5rem 1.5rem;max-width:1200px}
-  html.dd #app>div:not(.tabs):not(nav):not(.dd-dock):not(.dd-mas){grid-column:2}
-}
+html.dd .tabs{background:var(--surf);border-bottom:1px solid var(--brd)}
+html.dd .nav-btn{width:auto;height:auto;background:none;box-shadow:none;border-radius:8px;padding:.2rem .3rem;font-size:1.1rem}
+html.dd nav{padding:.6rem 1rem}
+html.dd .nav-brand{font-size:1.1rem}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -1067,7 +1030,6 @@ function renderApp(){
     try { app.appendChild(renderNav()); } catch(e) { app.appendChild(errEl('nav',e)); }
     try { app.appendChild(renderTabs()); } catch(e) { app.appendChild(errEl('tabs',e)); }
     try { app.appendChild(h('main',{},renderMain())); renderCharts(); } catch(e) { app.appendChild(errEl('main:'+S.tab,e)); }
-    try { app.appendChild(renderDock()); } catch(e) {}
     document.documentElement.classList.toggle('dd',disenoNuevoActivo());
     document.querySelectorAll('.modal-bg,.alert-box').forEach(el=>el.remove());
     if(S.modal){ try{ const m=renderModal(); if(m) document.body.appendChild(m); }catch(e){} }
@@ -1172,7 +1134,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261014-disenod'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261014-coloresd'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1181,7 +1143,6 @@ function renderNav(){
         'Drive'
       ),
       h('button',{class:'nav-btn',title:'Modo oscuro/claro',on:{click:toggleDark},'data-theme-icon':''},S.dark?'☀️':'🌙'),
-      h('button',{class:'nav-btn',title:'Cambiar entre diseño nuevo y clásico',on:{click:cambiarDiseno}},'🎨'),
       deferredInstall?h('button',{class:'nav-btn',title:'Instalar app',on:{click:async()=>{if(deferredInstall){deferredInstall.prompt();const r=await deferredInstall.userChoice;if(r.outcome==='accepted')deferredInstall=null;rerender();}}}},'+📲'):null,
       h('button',{class:'nav-btn',title:'Exportar',on:{click:()=>openModal('export')}},'📤'),
       h('button',{class:'nav-btn',title:pinCode?'PIN activo':'Activar PIN',on:{click:setupPIN}},pinCode?'🔐':'🔓'),
