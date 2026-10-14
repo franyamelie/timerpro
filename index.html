@@ -238,6 +238,77 @@ main{flex:1;overflow-y:auto;padding:1rem}
   background-color:transparent!important;
   background-image:none!important;
 }
+/* ═══ DISEÑO NUEVO "D" (se activa con la clase dd en <html>) ═══ */
+html.dd.light{
+  --bg:#fff7ed;--bg2:#ffedd5;--bg3:#fed7aa;--surf:#ffffff;--surf2:#faf5ef;--surf3:#f3ece3;
+  --ink:#1c1917;--ink2:#57534e;--ink3:#78716c;--brd:rgba(28,25,23,.07);--sh:0 2px 10px rgba(28,25,23,.07);
+  --acc:#16a34a;--acc2:#15803d;--acc-lt:#bbf7d0;--yel-lt:#fde68a;--blu-lt:#bfdbfe;--pur-lt:#e9d5ff;--org-lt:#fed7aa;--red-lt:#fecaca;--teal-lt:#99f6e4;--pink-lt:#fbcfe8;
+  --hdr-bg:transparent;--hdr-brd:transparent;--tab-active-bg:#fff;--tab-hover-bg:rgba(255,255,255,.5);
+}
+html.dd:not(.light){
+  --bg:#1c1917;--bg2:#24201e;--bg3:#2e2926;--surf:#292524;--surf2:#332e2b;--surf3:#44403c;
+  --ink:#fafaf9;--ink2:#a8a29e;--ink3:#78716c;--brd:rgba(255,255,255,.07);--sh:0 2px 12px rgba(0,0,0,.35);
+  --acc:#4ade80;--acc2:#22c55e;--acc-lt:rgba(74,222,128,.16);
+  --hdr-bg:transparent;--hdr-brd:transparent;
+}
+html.dd body{background:var(--bg)}
+html.dd nav{background:transparent;border:0;padding:.9rem 1rem .3rem}
+html.dd .nav-brand{font-size:1.35rem;font-weight:800}
+html.dd .nav-brand em{background:none;color:#22c55e;-webkit-text-fill-color:#22c55e}
+html.dd .nav-btn{background:var(--surf);box-shadow:var(--sh);border-radius:50%;width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;padding:0;font-size:.95rem}
+html.dd .user-pill{background:var(--surf);box-shadow:var(--sh);font-weight:700}
+html.dd main{padding:.6rem 1rem 7rem}
+html.dd .card{border:0;border-radius:24px;box-shadow:var(--sh);padding:1.1rem}
+html.dd .card-hl::before{height:5px;opacity:.9}
+html.dd .sec-title{color:var(--ink2);letter-spacing:.06em}
+html.dd .btn{border-radius:16px;font-weight:700}
+html.dd .btn-g{background:#22c55e;color:#052e16}html.dd .btn-g:hover{background:#16a34a}
+html.dd .btn-gh{background:var(--surf3)}
+html.dd .fich-row,html.dd .task-card{border-radius:18px;border:0}
+html.dd .field input,html.dd .field select,html.dd .field textarea{border-radius:14px;border:1.5px solid var(--brd);background:var(--surf2)}
+html.dd .badge{border-radius:20px}
+html.dd .modal{border-radius:26px}
+@media (max-width:899.98px){
+  html.dd nav{flex-wrap:wrap;row-gap:.3rem;padding:.7rem .8rem .2rem}
+  html.dd .nav-brand{font-size:1.2rem}
+  html.dd .nav-clock{display:none}
+  html.dd .nav-btns{gap:.25rem;margin-left:auto;flex-wrap:nowrap}
+  html.dd .nav-btn{width:30px;height:30px;font-size:.85rem;flex-shrink:0}
+  html.dd .user-pill{padding:.15rem .5rem}
+}
+html.dd .tab{border-bottom-color:transparent!important}
+/* Barra inferior (móvil) */
+.dd-dock,.dd-mas{display:none}
+@media (max-width:899.98px){
+  html.dd .tabs{display:none}
+  html.dd .dd-dock{display:flex;position:fixed;left:12px;right:12px;bottom:max(12px,env(safe-area-inset-bottom));height:64px;background:#1c1917;border-radius:32px;box-shadow:0 8px 28px rgba(0,0,0,.35);z-index:900;align-items:center;justify-content:space-around;padding:0 8px}
+  html.dd:not(.light) .dd-dock{background:#0c0a09;border:1px solid rgba(255,255,255,.1)}
+  .dd-dock button{flex:1;height:48px;border:0;background:none;color:#a8a29e;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:.62rem;font-weight:700;font-family:inherit;cursor:pointer;border-radius:24px}
+  .dd-dock button span{font-size:1.2rem;line-height:1}
+  .dd-dock button.on{background:#fff;color:#1c1917;flex:1.4}
+  html.dd .dd-mas.abierto{display:block;position:fixed;inset:0;z-index:899;background:rgba(0,0,0,.4)}
+  .dd-mas .hoja{position:absolute;left:12px;right:12px;bottom:88px;max-height:70dvh;overflow:auto;background:var(--bg);border-radius:28px;padding:16px;box-shadow:0 12px 40px rgba(0,0,0,.4)}
+  .dd-mas .rej{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .dd-mas .tl{border:0;border-radius:20px;padding:14px;text-align:left;cursor:pointer;font-family:inherit;font-weight:800;font-size:.85rem;color:#1c1917;display:flex;gap:10px;align-items:center}
+  .dd-mas .tl span{font-size:1.3rem}
+  .dd-mas .tl.on{outline:3px solid #1c1917}
+  .dd-mas h4{font-size:.7rem;letter-spacing:.08em;color:var(--ink2);margin:6px 4px 10px}
+}
+/* Escritorio: barra lateral */
+@media (min-width:900px){
+  html.dd #app{display:grid;grid-template-columns:240px 1fr;grid-template-rows:auto 1fr;max-width:none;height:100dvh}
+  html.dd .tabs{grid-column:1;grid-row:1 / span 3;flex-direction:column;overflow-y:auto;overflow-x:hidden;background:#1c1917;margin:14px;border-radius:26px;padding:22px 12px;gap:3px;border:0}
+  html.dd:not(.light) .tabs{background:#0c0a09}
+  html.dd .tabs::before{content:"TimerPro";color:#fff;font-weight:800;font-size:1.3rem;padding:0 10px 14px}
+  html.dd .tab{flex-direction:row;align-items:center;gap:.8rem;padding:.65rem .8rem;border:0;border-radius:14px;font-size:.85rem;font-weight:600;color:#a8a29e;width:100%;text-align:left}
+  html.dd .tab .tab-icon{width:24px;text-align:center;font-size:1.1rem}
+  html.dd .tab.active{background:#fff;color:#1c1917;font-weight:800;border:0}
+  html.dd .tab:hover:not(.active){background:rgba(255,255,255,.09);color:#fff}
+  html.dd nav{grid-column:2;grid-row:1;padding:1.1rem 1.5rem .3rem}
+  html.dd .nav-brand{display:none}
+  html.dd main{grid-column:2;grid-row:2;padding:.6rem 1.5rem 1.5rem;max-width:1200px}
+  html.dd #app>div:not(.tabs):not(nav):not(.dd-dock):not(.dd-mas){grid-column:2}
+}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -996,6 +1067,8 @@ function renderApp(){
     try { app.appendChild(renderNav()); } catch(e) { app.appendChild(errEl('nav',e)); }
     try { app.appendChild(renderTabs()); } catch(e) { app.appendChild(errEl('tabs',e)); }
     try { app.appendChild(h('main',{},renderMain())); renderCharts(); } catch(e) { app.appendChild(errEl('main:'+S.tab,e)); }
+    try { app.appendChild(renderDock()); } catch(e) {}
+    document.documentElement.classList.toggle('dd',disenoNuevoActivo());
     document.querySelectorAll('.modal-bg,.alert-box').forEach(el=>el.remove());
     if(S.modal){ try{ const m=renderModal(); if(m) document.body.appendChild(m); }catch(e){} }
     // Load snapshots list async when on sincronizar tab
@@ -1006,6 +1079,7 @@ function renderApp(){
     const m = app.querySelector('main');
     if(m) m.scrollTop=scrollTop;
     document.documentElement.classList.toggle('light',!S.dark);
+    document.documentElement.classList.toggle('dd',disenoNuevoActivo());
   updateTitle();
   // ── POST-RENDER HOOKS ── restituye valores de formulario tras cada render
   if(S.tab==='fichar'){ rerenderSetNotas(); attachFichajeListeners(); }
@@ -1098,7 +1172,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261012-carpetasanio'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261014-disenod'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1107,12 +1181,51 @@ function renderNav(){
         'Drive'
       ),
       h('button',{class:'nav-btn',title:'Modo oscuro/claro',on:{click:toggleDark},'data-theme-icon':''},S.dark?'☀️':'🌙'),
+      h('button',{class:'nav-btn',title:'Cambiar entre diseño nuevo y clásico',on:{click:cambiarDiseno}},'🎨'),
       deferredInstall?h('button',{class:'nav-btn',title:'Instalar app',on:{click:async()=>{if(deferredInstall){deferredInstall.prompt();const r=await deferredInstall.userChoice;if(r.outcome==='accepted')deferredInstall=null;rerender();}}}},'+📲'):null,
       h('button',{class:'nav-btn',title:'Exportar',on:{click:()=>openModal('export')}},'📤'),
       h('button',{class:'nav-btn',title:pinCode?'PIN activo':'Activar PIN',on:{click:setupPIN}},pinCode?'🔐':'🔓'),
       h('button',{class:'nav-btn',title:'Buscar actualizacion',on:{click:manualCheckUpdate}},'🔄')
     )
   );
+}
+
+
+// ── DISEÑO NUEVO "D": interruptor, barra inferior y menú «Más» ──
+function disenoNuevoActivo(){
+  try{ return localStorage.getItem('disenoNuevo')!=='0'; }catch(e){ return true; }
+}
+function cambiarDiseno(){
+  captureFormState();
+  try{ localStorage.setItem('disenoNuevo', disenoNuevoActivo()?'0':'1'); }catch(e){}
+  ddMasAbierto=false;
+  rerender();
+}
+let ddMasAbierto=false;
+const DD_DOCK_IDS=['fichar','calendario','resumen','nominas'];
+const DD_PASTELES=['#bbf7d0','#fde68a','#bfdbfe','#e9d5ff','#fed7aa','#fecaca','#99f6e4','#fbcfe8'];
+function irATab(id){ captureFormState(); saveDraft(); S.tab=id; ddMasAbierto=false; rerender(); }
+function renderDock(){
+  const TABS=getTabs();
+  const principales=DD_DOCK_IDS.map(id=>TABS.find(t=>t.id===id)).filter(Boolean);
+  const resto=TABS.filter(t=>!DD_DOCK_IDS.includes(t.id));
+  const enResto=resto.some(t=>t.id===S.tab);
+  const cont=h('div',{style:{display:'contents'}});
+  const dock=h('div',{class:'dd-dock'},
+    ...principales.map(t=>h('button',{class:S.tab===t.id?'on':'','data-dock':t.id,on:{click:()=>irATab(t.id)}},h('span',{},t.icon),t.label)),
+    h('button',{class:(enResto||ddMasAbierto)?'on':'','data-dock':'mas',on:{click:()=>{ddMasAbierto=!ddMasAbierto;rerender();}}},h('span',{},'☰'),'Más')
+  );
+  const hoja=h('div',{class:'dd-mas'+(ddMasAbierto?' abierto':''),on:{click:ev=>{if(ev.target.classList.contains('dd-mas')){ddMasAbierto=false;rerender();}}}},
+    h('div',{class:'hoja'},
+      h('h4',{},'MÁS SECCIONES'),
+      h('div',{class:'rej'},
+        ...resto.map((t,i)=>h('button',{class:'tl'+(S.tab===t.id?' on':''),style:{background:DD_PASTELES[i%DD_PASTELES.length]},on:{click:()=>irATab(t.id)}},
+          t.id==='ia'?h('span',{html:GEMINI_ICON_SVG}):h('span',{},t.icon),t.label))
+      )
+    )
+  );
+  cont.appendChild(hoja); cont.appendChild(dock);
+  return cont;
 }
 
 // ── TABS ─────────────────────────────────────────────────
@@ -2497,6 +2610,20 @@ function fichajeTone(idx){
     {bg:'#2563eb',brd:'#1e40af',text:'#ffffff',text2:'rgba(255,255,255,.85)'},
     {bg:'#1d4ed8',brd:'#1e3a8a',text:'#ffffff',text2:'rgba(255,255,255,.85)'}
   ];
+  // Modo oscuro con el diseño nuevo: mismos escalones de azul, pero oscuros.
+  if(disenoNuevoActivo() && S.dark){
+    const osc=[
+      {bg:'#1a2336',brd:'#27406e',text:'#bfdbfe',text2:'#8fb0e0'},
+      {bg:'#1b2a4a',brd:'#2f56a0',text:'#bfdbfe',text2:'#8fb0e0'},
+      {bg:'#1d3260',brd:'#3b6bc4',text:'#dbeafe',text2:'#a5c1ee'},
+      {bg:'#1e3a78',brd:'#4a7fe0',text:'#dbeafe',text2:'#a5c1ee'},
+      {bg:'#1d4399',brd:'#5b92f0',text:'#ffffff',text2:'rgba(255,255,255,.85)'},
+      {bg:'#1d4ed8',brd:'#6ea0f5',text:'#ffffff',text2:'rgba(255,255,255,.85)'},
+      {bg:'#2563eb',brd:'#7fb0fa',text:'#ffffff',text2:'rgba(255,255,255,.85)'},
+      {bg:'#3b82f6',brd:'#93c5fd',text:'#ffffff',text2:'rgba(255,255,255,.85)'}
+    ];
+    return osc[Math.min(idx,osc.length-1)];
+  }
   return pasos[Math.min(idx,pasos.length-1)];
 }
 
