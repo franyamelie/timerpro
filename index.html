@@ -268,7 +268,24 @@ html.dd .fich-row,html.dd .task-card{border-radius:18px;border:0}
 html.dd .field input,html.dd .field select,html.dd .field textarea{border-radius:14px;border:1.5px solid var(--brd);background:var(--surf2)}
 html.dd .badge{border-radius:20px}
 html.dd .modal{border-radius:26px}
-html.dd .tabs{background:var(--surf);border-bottom:1px solid var(--brd)}
+html.dd .tabs{background:#1c1917;border-bottom:0}
+html.dd:not(.light) .tabs{background:#0c0a09}
+html.dd .tab{color:#a8a29e;border-bottom-color:transparent!important}
+html.dd .tab:hover:not(.active){background:rgba(255,255,255,.1);color:#fff}
+html.dd .tab.active{background:#fff;color:#1c1917;font-weight:800;border-radius:14px;margin:.25rem 0}
+/* Tarjetas de colores pastel (mismo orden y sitio; solo cambia el color de fondo) */
+html.dd.light main>div>.card:nth-of-type(5n+1){background:#bbf7d0}
+html.dd.light main>div>.card:nth-of-type(5n+2){background:#fde68a}
+html.dd.light main>div>.card:nth-of-type(5n+3){background:#bfdbfe}
+html.dd.light main>div>.card:nth-of-type(5n+4){background:#e9d5ff}
+html.dd.light main>div>.card:nth-of-type(5n+5){background:#fed7aa}
+html.dd:not(.light) main>div>.card:nth-of-type(5n+1){background:#1d2e24}
+html.dd:not(.light) main>div>.card:nth-of-type(5n+2){background:#332d1a}
+html.dd:not(.light) main>div>.card:nth-of-type(5n+3){background:#1b2740}
+html.dd:not(.light) main>div>.card:nth-of-type(5n+4){background:#2a2038}
+html.dd:not(.light) main>div>.card:nth-of-type(5n+5){background:#35261a}
+html.dd main .card .card{background:var(--surf)}
+
 html.dd .nav-btn{width:auto;height:auto;background:none;box-shadow:none;border-radius:8px;padding:.2rem .3rem;font-size:1.1rem}
 html.dd nav{padding:.6rem 1rem}
 html.dd .nav-brand{font-size:1.1rem}
@@ -1134,7 +1151,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261014-coloresd'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261015-colorido'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
