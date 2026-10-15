@@ -268,11 +268,13 @@ html.dd .fich-row,html.dd .task-card{border-radius:18px;border:0}
 html.dd .field input,html.dd .field select,html.dd .field textarea{border-radius:14px;border:1.5px solid var(--brd);background:var(--surf2)}
 html.dd .badge{border-radius:20px}
 html.dd .modal{border-radius:26px}
-html.dd .tabs{background:#1c1917;border-bottom:0}
-html.dd:not(.light) .tabs{background:#0c0a09}
-html.dd .tab{color:#a8a29e;border-bottom-color:transparent!important}
-html.dd .tab:hover:not(.active){background:rgba(255,255,255,.1);color:#fff}
-html.dd .tab.active{background:#fff;color:#1c1917;font-weight:800;border-radius:14px;margin:.25rem 0}
+html.dd .tabs{background:#ffedd5;border-bottom:0;padding:.4rem .5rem .7rem;gap:.4rem}
+html.dd:not(.light) .tabs{background:#292524}
+html.dd .tab{background:#fff;color:#44403c;border-radius:14px;border-bottom-color:transparent!important;box-shadow:0 5px 0 rgba(0,0,0,.18),0 9px 12px rgba(0,0,0,.14),inset 0 2px 2px rgba(255,255,255,.7)}
+html.dd:not(.light) .tab{background:#44403c;color:#d6d3d1;box-shadow:0 5px 0 rgba(0,0,0,.45),0 9px 12px rgba(0,0,0,.3),inset 0 2px 2px rgba(255,255,255,.12)}
+html.dd .tab:hover:not(.active){background:#fff7ed;color:#1c1917}
+html.dd:not(.light) .tab:hover:not(.active){background:#57534e;color:#fff}
+html.dd .tab.active{background:#4ade80;color:#052e16;font-weight:800;box-shadow:0 5px 0 #16a34a,0 9px 12px rgba(22,163,74,.35),inset 0 2px 2px rgba(255,255,255,.6)}
 /* Tarjetas de colores pastel (mismo orden y sitio; solo cambia el color de fondo) */
 html.dd.light main>div>.card:nth-of-type(5n+1){background:#bbf7d0}
 html.dd.light main>div>.card:nth-of-type(5n+2){background:#fde68a}
@@ -289,6 +291,12 @@ html.dd main .card .card{background:var(--surf)}
 html.dd .nav-btn{width:auto;height:auto;background:none;box-shadow:none;border-radius:8px;padding:.2rem .3rem;font-size:1.1rem}
 html.dd nav{padding:.6rem 1rem}
 html.dd .nav-brand{font-size:1.1rem}
+
+/* 3D · B: arcilla (tarjetas y botones con relieve) */
+html.dd .card{box-shadow:0 8px 0 rgba(0,0,0,.10),0 14px 20px rgba(0,0,0,.12),inset 0 3px 5px rgba(255,255,255,.55),inset 0 -4px 8px rgba(0,0,0,.06);margin-bottom:1.1rem}
+html.dd .card .card{box-shadow:0 4px 0 rgba(0,0,0,.08),0 8px 12px rgba(0,0,0,.08),inset 0 2px 3px rgba(255,255,255,.5)}
+html.dd .btn,html.dd .badge,html.dd .chip,html.dd .nav-btn{box-shadow:0 5px 0 rgba(0,0,0,.2),0 9px 14px rgba(0,0,0,.16),inset 0 2px 2px rgba(255,255,255,.5)}
+html.dd .btn:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.2)}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -1151,7 +1159,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261015-colorido'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261015-3d'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
