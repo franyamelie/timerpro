@@ -1168,7 +1168,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261018-anio'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261018-anioigual'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -4118,6 +4118,171 @@ function anioCoincide(id,base,info){
     default: return !!info[id];
   }
 }
+
+// ── EXPORTAR EL CALENDARIO DE 12 MESES (Imagen · PDF · Texto) ──────
+function anioDatos(){
+  const y=anioVista;
+  const porFecha={}; S.entries.forEach(e=>{ if(e.fecha) porFecha[e.fecha]=e; });
+  const dias={}; const cuentas={}; const listas={};
+  ANIO_FILTROS.forEach(f=>{cuentas[f.id]=0;listas[f.id]=[];});
+  for(let m=0;m<12;m++){
+    const n=new Date(y,m+1,0).getDate();
+    for(let d=1;d<=n;d++){
+      const ds=y+'-'+pad(m+1)+'-'+pad(d);
+      const base=dayTypeOf(ds,!!porFecha[ds]);
+      const info=anioInfoDia(porFecha[ds]);
+      dias[ds]={base,info};
+      ANIO_FILTROS.forEach(f=>{ if(anioCoincide(f.id,base,info)){ cuentas[f.id]++; listas[f.id].push({m,d}); } });
+    }
+  }
+  const activos=ANIO_FILTROS.filter(f=>anioFiltros.has(f.id));
+  return {y,dias,cuentas,listas,activos,mostrarTodo:activos.length===0};
+}
+function anioTextoLista(arr){
+  // [{m,d}] -> "agosto: 5, 6 y 7 · septiembre: 1"
+  const porMes={};
+  arr.forEach(x=>{(porMes[x.m]=porMes[x.m]||[]).push(x.d);});
+  return Object.keys(porMes).map(m=>{
+    const ds=porMes[m]; const t=ds.length>1?ds.slice(0,-1).join(', ')+' y '+ds[ds.length-1]:String(ds[0]);
+    return MONTHS[m].toLowerCase()+': '+t;
+  }).join(' · ');
+}
+function anioGenerarTexto(){
+  const D=anioDatos();
+  let t='📆 Calendario '+D.y+' · TimerPro\n';
+  const lista=D.mostrarTodo?ANIO_FILTROS.filter(f=>['festivo','festivotrab','vacaciones'].includes(f.id)):D.activos;
+  t+=D.mostrarTodo?'Todos los días\n\n':'Filtros: '+D.activos.map(a=>a.label).join(', ')+'\n\n';
+  if(D.mostrarTodo){
+    t+='Resumen del año:\n';
+    ['trabajado','festivo','festivotrab','vacaciones','pendiente','finde'].forEach(id=>{
+      const f=ANIO_FILTROS.find(x=>x.id===id); t+='• '+f.label+': '+D.cuentas[id]+'\n';
+    });
+    t+='\n';
+  }
+  lista.forEach(f=>{
+    t+=f.label+' ('+D.cuentas[f.id]+')';
+    t+=D.cuentas[f.id]?': '+anioTextoLista(D.listas[f.id])+'\n\n':': ninguno\n\n';
+  });
+  return t.trim();
+}
+function anioHtmlExport(){
+  const D=anioDatos();
+  // Mismos colores que se ven en pantalla en la tarjeta "Año completo y filtros"
+  const BASE={
+    worked:'background:rgba(34,197,94,.28);color:#16a34a;font-weight:700;border:1px solid rgba(34,197,94,.5)',
+    'festivo-trabajado':'background:#f97316;color:#fff;font-weight:800;border:1px solid #c2410c',
+    holiday:'background:#ef4444;color:#fff;font-weight:800;border:1px solid #b91c1c',
+    vacation:'background:rgba(234,179,8,.28);color:#b45309;font-weight:700;border:1px solid rgba(234,179,8,.6)',
+    pending:'background:rgba(148,163,184,.14);color:#475569;border:1px dashed rgba(148,163,184,.55)',
+    weekend:'background:#c4b5fd;color:#3b0764;font-weight:700;border:1px solid #8b5cf6'
+  };
+  const meses=Array.from({length:12},(_,m)=>{
+    const first=new Date(D.y,m,1).getDay(), off=(first+6)%7, n=new Date(D.y,m+1,0).getDate();
+    let c='';
+    WSHORT.forEach(x=>{c+='<div style="text-align:center;font-size:9px;color:#57534e;font-weight:700">'+x+'</div>';});
+    for(let i=0;i<off;i++) c+='<div></div>';
+    for(let d=1;d<=n;d++){
+      const ds=D.y+'-'+pad(m+1)+'-'+pad(d); const {base,info}=D.dias[ds];
+      let st;
+      if(D.mostrarTodo){ st=BASE[base]||BASE.pending; }
+      else{ const f=D.activos.find(a=>anioCoincide(a.id,base,info));
+        st=f?('background:'+f.bg+';color:'+f.fg+';font-weight:800;border:1px solid rgba(0,0,0,.15)'):'background:rgba(148,163,184,.14);color:#475569;opacity:.35;border:1px solid transparent'; }
+      c+='<div style="'+st+';font-size:11px;text-align:center;border-radius:5px;padding:5px 0;box-sizing:border-box">'+d+'</div>';
+    }
+    return '<div style="background:#faf5ef;border-radius:14px;padding:10px"><div style="font-weight:800;font-size:12px;margin-bottom:6px;color:#1c1917;text-transform:uppercase;letter-spacing:.04em">'+MONTHS[m]+'</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">'+c+'</div></div>';
+  }).join('');
+  const chip=(txt,bg,col,sq)=>'<span style="display:inline-block;margin:3px 6px 3px 0;padding:6px 12px;border-radius:12px;font-size:12px;font-weight:700;background:'+bg+';color:'+col+';box-shadow:0 3px 0 rgba(0,0,0,.15);white-space:nowrap">'+(sq?'<span style="display:inline-block;width:13px;height:13px;border-radius:3px;background:'+sq+';border:1px solid #78716c;vertical-align:middle;margin-right:7px;margin-top:-2px"></span>':'')+txt+'</span>';
+  const chips=chip('Mostrar todo',D.mostrarTodo?'#22c55e':'#f3ece3',D.mostrarTodo?'#052e16':'#1c1917','')
+    +ANIO_FILTROS.map(f=>chip(f.label+' · '+D.cuentas[f.id],anioFiltros.has(f.id)?'#f59e0b':'#f3ece3','#1c1917',f.bg)).join('');
+  return '<div style="width:1400px;background:#bfdbfe;border-radius:28px;padding:26px;font-family:system-ui,Inter,sans-serif;box-sizing:border-box;color:#1c1917">'
+    +'<div style="font-size:12px;font-weight:800;letter-spacing:.08em;color:#44403c;margin-bottom:4px">AÑO COMPLETO Y FILTROS</div>'
+    +'<div style="text-align:center;font-size:30px;font-weight:900;margin:2px 0 8px">'+D.y+'</div>'
+    +'<div style="margin-bottom:8px">'+chips+'</div>'
+    +'<div style="font-size:12px;color:#44403c;margin-bottom:12px">'+(D.mostrarTodo?'Se ven todos los días con sus colores normales.':'Solo se resaltan: '+D.activos.map(a=>a.label).join(', ')+'. El resto de días queda apagado.')+'</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px">'+meses+'</div>'
+    +'<div style="text-align:right;font-size:10px;color:#44403c;margin-top:10px">TimerPro</div></div>';
+}
+async function anioRenderCanvas(){
+  const wrap=document.createElement('div');
+  wrap.style.cssText='position:fixed;top:0;left:0;z-index:99999;opacity:0.01;pointer-events:none;';
+  wrap.innerHTML=anioHtmlExport();
+  document.body.appendChild(wrap);
+  await new Promise(r=>setTimeout(r,200));
+  try{ return await html2canvas(wrap.firstChild,{scale:2,useCORS:true,allowTaint:true,backgroundColor:'#ffffff',logging:false}); }
+  finally{ document.body.removeChild(wrap); }
+}
+function anioPanelCompartir(blob,nombre,titulo,esPdf){
+  const url=URL.createObjectURL(blob);
+  const panel=document.createElement('div');
+  panel.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
+  panel.innerHTML='<div style="background:#fff;border-radius:16px;padding:1.2rem;max-width:460px;width:100%;font-family:system-ui;max-height:92vh;overflow:auto">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem"><b style="font-size:1rem">'+titulo+'</b><button id="ay-close" style="background:none;border:none;font-size:1.2rem;cursor:pointer">✕</button></div>'
+    +(esPdf?'<div style="padding:1.2rem;background:#f1f5f9;border-radius:10px;margin-bottom:1rem;text-align:center;font-size:.85rem;color:#334155">📄 PDF listo ('+nombre+')</div>':'<img src="'+url+'" style="width:100%;border-radius:10px;margin-bottom:1rem;box-shadow:0 2px 12px rgba(0,0,0,.15)">')
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">'
+    +'<button id="ay-wa" style="background:#25D366;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">📱 WhatsApp</button>'
+    +'<button id="ay-em" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">📧 Email</button>'
+    +(esPdf?'':'<button id="ay-cp" style="background:#7c3aed;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">📋 Copiar</button>')
+    +'<button id="ay-dl" style="background:#475569;color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">⬇️ Descargar</button>'
+    +'</div></div>';
+  document.body.appendChild(panel);
+  const close=()=>{ if(panel.parentNode) document.body.removeChild(panel); URL.revokeObjectURL(url); };
+  const descargar=()=>{ const a=document.createElement('a'); a.href=url; a.download=nombre; document.body.appendChild(a); a.click(); document.body.removeChild(a); };
+  document.getElementById('ay-close').onclick=close;
+  panel.addEventListener('click',ev=>{ if(ev.target===panel) close(); });
+  document.getElementById('ay-wa').onclick=async()=>{
+    if(!esPdf){ try{ await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); window.open('https://web.whatsapp.com','_blank'); showAlert('Imagen copiada — pégala en WhatsApp con Ctrl+V'); close(); return; }catch(ex){} }
+    descargar(); showAlert('Descargado — adjúntalo en WhatsApp'); close();
+  };
+  document.getElementById('ay-em').onclick=()=>{ descargar(); setTimeout(()=>{ window.location.href='mailto:?subject='+encodeURIComponent(titulo); },500); close(); };
+  const cp=document.getElementById('ay-cp');
+  if(cp) cp.onclick=async()=>{ try{ await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); showAlert('✅ Imagen copiada — pega con Ctrl+V donde quieras'); }catch(ex){ showAlert('No se pudo copiar','err'); } close(); };
+  document.getElementById('ay-dl').onclick=()=>{ descargar(); showAlert(esPdf?'✅ PDF descargado':'✅ Imagen descargada'); close(); };
+}
+async function exportarAnioImagen(){
+  try{
+    showAlert('Generando imagen...');
+    const canvas=await anioRenderCanvas();
+    canvas.toBlob(async(blob)=>{
+      const nombre='calendario-'+anioVista+'.png';
+      const file=new File([blob],nombre,{type:'image/png'});
+      if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
+        try{ await navigator.share({files:[file],title:'Calendario '+anioVista}); return; }
+        catch(ex){ if(ex.name==='AbortError') return; }
+      }
+      anioPanelCompartir(blob,nombre,'Compartir calendario '+anioVista,false);
+    },'image/png',0.95);
+  }catch(err){ showAlert('Error: '+err.message,'err'); console.error(err); }
+}
+async function exportarAnioPDF(){
+  try{
+    if(!window.jspdf){ showAlert('Cargando librería PDF...','err'); setTimeout(exportarAnioPDF,1500); return; }
+    showAlert('Generando PDF...');
+    const canvas=await anioRenderCanvas();
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+    const pw=297, ph=210, mg=8;
+    let w=pw-2*mg, hgt=w*canvas.height/canvas.width;
+    if(hgt>ph-2*mg){ hgt=ph-2*mg; w=hgt*canvas.width/canvas.height; }
+    doc.addImage(canvas.toDataURL('image/jpeg',0.92),'JPEG',(pw-w)/2,mg,w,hgt);
+    const blob=doc.output('blob');
+    const nombre='calendario-'+anioVista+'.pdf';
+    const file=new File([blob],nombre,{type:'application/pdf'});
+    if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
+      try{ await navigator.share({files:[file],title:'Calendario '+anioVista}); return; }
+      catch(ex){ if(ex.name==='AbortError') return; }
+    }
+    anioPanelCompartir(blob,nombre,'Compartir calendario '+anioVista,true);
+  }catch(err){ showAlert('Error: '+err.message,'err'); console.error(err); }
+}
+async function exportarAnioTexto(){
+  const texto=anioGenerarTexto();
+  try{
+    if(navigator.share){ await navigator.share({title:'Calendario '+anioVista,text:texto}); return; }
+  }catch(ex){ if(ex.name==='AbortError') return; }
+  try{ await navigator.clipboard.writeText(texto); showAlert('✅ Texto copiado — pégalo donde quieras'); }
+  catch(ex){ showAlert('No se pudo copiar el texto','err'); }
+}
+
 function renderAnioCalendario(){
   const y=anioVista;
   const porFecha={};
@@ -4181,7 +4346,12 @@ function renderAnioCalendario(){
     h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.5rem'}},
       mostrarTodo?'Se ven todos los días con sus colores normales. Pulsa uno o varios filtros para resaltar solo esos días.'
                  :'Solo se resaltan: '+activos.map(a=>a.label).join(', ')+'. El resto de días queda apagado.'),
-    h('div',{class:'ya-grid'},...Array.from({length:12},(_,m)=>mes(m)))
+    h('div',{class:'ya-grid'},...Array.from({length:12},(_,m)=>mes(m))),
+    h('div',{class:'btn-row',style:{marginTop:'.8rem'}},
+      h('button',{class:'btn btn-gh btn-sm',on:{click:exportarAnioImagen}},'📷 Imagen'),
+      h('button',{class:'btn btn-gh btn-sm',on:{click:exportarAnioPDF}},'📄 PDF'),
+      h('button',{class:'btn btn-gh btn-sm',on:{click:exportarAnioTexto}},'📤 Texto')
+    )
   );
 }
 
