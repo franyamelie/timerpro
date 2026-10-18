@@ -1168,7 +1168,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261018-aniooscuro'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261018-montiel'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -6755,6 +6755,19 @@ function renderSincronizar(){
       },
         h('div',{style:{fontSize:'2rem',marginBottom:'.5rem'}},'📂'),
         'Pulsa o arrastra un archivo JSON'
+      )
+    ),
+    h('div',{class:'card'},
+      h('div',{class:'sec-title'},'COMPLETAR DESDE BACKUP DE MONTIEL'),
+      h('p',{style:{fontSize:'.85rem',color:'var(--ink2)',marginBottom:'.8rem'}},
+        'Solo añade los días que TimerPro todavía no tiene. Los días ya existentes no se modifican ni se borran.'
+      ),
+      h('div',{
+        style:{border:'2px dashed var(--brd)',borderRadius:'var(--r)',padding:'1.4rem',textAlign:'center',cursor:'pointer',color:'var(--ink2)'},
+        on:{click:()=>{const inp=document.createElement('input');inp.type='file';inp.accept='.json';inp.onchange=e=>importMontielFaltantes(e.target.files[0]);inp.click();}}
+      },
+        h('div',{style:{fontSize:'2rem',marginBottom:'.5rem'}},'🔧'),
+        'Pulsa y elige el backup de Montiel (.json)'
       )
     )
   );
@@ -12463,6 +12476,69 @@ async function exportJSON(){
   showAlert('JSON descargado ✓');
 }
 
+
+// ── COMPLETAR DESDE BACKUP DE MONTIEL (solo días que no existen) ──
+function montielAEntrada(p,T){
+  const r2=n=>Math.round(n*100)/100;
+  const tot=+p.horas||0, ext=Math.min(+p.extras||0,tot);
+  let hE=0,hNoc=0,hF=0;
+  const tr=(p.tramos&&p.tramos.length)?p.tramos:(ext>0?[{horas:ext,tipo:p.tipo_extra||'normal'}]:[]);
+  tr.forEach(t=>{const h=+t.horas||0,k=t.tipo||'normal';
+    if(k==='nocturna')hNoc+=h; else if(k==='festiva'||k==='normal_fest')hF+=h; else hE+=h;});
+  const hN=Math.max(0,r2(tot-hE-hNoc-hF));
+  const te=p.tarifaEspecial||{};
+  const pDieta=te.dieta!=null?+te.dieta:+T.dieta||0;
+  const pN=te.hnormal!=null?+te.hnormal:+T.hnormal||0;
+  const pE=pN, pNoc=te.hnocturna!=null?+te.hnocturna:+T.hnocturna||0, pF=te.hfestiva!=null?+te.hfestiva:+T.hfestiva||0;
+  const nDieta=+p.dieta||0, nCam=+p.vcamion||0, nCo=+p.vcoche||0;
+  const pCam=te.vcamion!=null?+te.vcamion:+T.vcamion||0, pCo=te.vcoche!=null?+te.vcoche:+T.vcoche||0;
+  const txt=String(p.trabajo||'').replace(/<br\s*\/?>|<\/div>|<\/p>/gi,'\n').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/\n{2,}/g,'\n').trim();
+  const ots=[...new Set((txt.match(/OT[\s:.\-]*([0-9]{7,12})/gi)||[]).map(x=>x.replace(/\D/g,'')))];
+  const dd=p.fecha.slice(8,10)+':'+p.fecha.slice(5,7);
+  const okIni=/^\d{2}:\d{2}$/.test(p.hinicio||'')&&p.hinicio!==dd;
+  const okFin=/^\d{2}:\d{2}$/.test(p.hfin||'');
+  const e={...defEntry(),fecha:p.fecha,
+    horasNormales:hN,precioHoraNormal:pN,importeNormales:r2(hN*pN),
+    horasExtra:hE,precioHoraExtra:pE,importeExtra:r2(hE*pE),
+    horasNocturnas:hNoc,precioHoraNocturna:pNoc,importeNocturnas:r2(hNoc*pNoc),
+    horasFestivas:hF,precioHoraFestiva:pF,importeFestivas:r2(hF*pF),
+    dieta:r2(nDieta*pDieta),transporte:r2(nCam*pCam+nCo*pCo),
+    notas:[(p.lugar||'').trim(),txt].filter(Boolean).join('\n'),
+    _transportType:nCam>0?'camion':(nCo>0?'coche':''),transporteCantidad:nCam+nCo,
+    _desdeMontiel:true,_savedAt:new Date().toISOString()};
+  if(okIni&&okFin){
+    e.horaEntrada=p.hinicio;e.horaSalida=p.hfin;
+    e.fichajes=[{...defFichaje(),_fid:Date.now()+Math.floor(Math.random()*1e6),entrada:p.hinicio,salida:p.hfin,
+      titulo:(p.lugar||'').trim(),nota:txt,descanso:+p.descanso||0,_horasManual:true,
+      horasNormales:hN,horasExtra:hE,horasNocturnas:hNoc,horasFestivas:hF,
+      dieta:e.dieta,dietaCantidad:nDieta||1,dietaPrecioUnit:pDieta,
+      transporte:e.transporte,transporteCantidad:nCam+nCo||1,transportePrecioUnit:nCam?pCam:pCo,_transportType:e._transportType}];
+  }
+  const tareas=ots.map(n=>({...defTask(p.fecha),titulo:(p.lugar||'').trim()||('OT '+n),descripcion:txt,otNumero:n,usaOT:true,tipoTarea:'ot'}));
+  return {e,tareas};
+}
+async function importMontielFaltantes(file){
+  if(!file)return;
+  try{
+    const data=JSON.parse(await file.text());
+    if(!Array.isArray(data.partes)){showAlert('Este archivo no es un backup de Montiel','err');return;}
+    const T=data.tarifasCustom||{};
+    const tengo=new Set(S.entries.map(e=>e.fecha));
+    const vistos=new Set();
+    const nuevos=data.partes.filter(p=>p&&/^\d{4}-\d{2}-\d{2}$/.test(p.fecha||'')&&!tengo.has(p.fecha)&&!vistos.has(p.fecha)&&(vistos.add(p.fecha),true))
+      .sort((a,b)=>a.fecha<b.fecha?-1:1);
+    if(!nuevos.length){showAlert('TimerPro ya tiene todos los días del backup. No se añade nada.');return;}
+    if(!confirm('El backup tiene '+data.partes.length+' partes.\nTimerPro ya tiene '+(data.partes.length-nuevos.length)+' de esos días (no se tocan).\n\nSe añadirán '+nuevos.length+' días nuevos (del '+nuevos[0].fecha+' al '+nuevos[nuevos.length-1].fecha+').\n\n¿Continuar?'))return;
+    let nt=0;
+    for(const p of nuevos){
+      const {e,tareas}=montielAEntrada(p,T);
+      const id=await dbPut(ST.entries,e); S.entries.push({...e,id});
+      for(const t of tareas){const tid=await dbPut(ST.tasks,t); S.tasks.push({...t,id:tid}); nt++;}
+    }
+    showAlert('Añadidos '+nuevos.length+' días y '+nt+' tareas desde Montiel');
+    rerender();
+  }catch(err){showAlert('Error leyendo el backup: '+err.message,'err');}
+}
 async function importJSON(file){
   if(!file)return;
   try{
