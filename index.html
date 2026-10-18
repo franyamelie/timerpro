@@ -1168,7 +1168,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261018-anioigual'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261018-aniooscuro'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -4169,27 +4169,27 @@ function anioHtmlExport(){
   const D=anioDatos();
   // Mismos colores que se ven en pantalla en la tarjeta "Año completo y filtros"
   const BASE={
-    worked:'background:rgba(34,197,94,.28);color:#16a34a;font-weight:700;border:1px solid rgba(34,197,94,.5)',
-    'festivo-trabajado':'background:#f97316;color:#fff;font-weight:800;border:1px solid #c2410c',
-    holiday:'background:#ef4444;color:#fff;font-weight:800;border:1px solid #b91c1c',
-    vacation:'background:rgba(234,179,8,.28);color:#b45309;font-weight:700;border:1px solid rgba(234,179,8,.6)',
-    pending:'background:rgba(148,163,184,.14);color:#475569;border:1px dashed rgba(148,163,184,.55)',
-    weekend:'background:#c4b5fd;color:#3b0764;font-weight:700;border:1px solid #8b5cf6'
+    worked:'background:rgba(34,197,94,.30);color:#052e16;font-weight:800;border:1px solid rgba(21,128,61,.6)',
+    'festivo-trabajado':'background:#f97316;color:#fff;font-weight:900;border:1px solid #c2410c',
+    holiday:'background:#ef4444;color:#fff;font-weight:900;border:1px solid #b91c1c',
+    vacation:'background:rgba(234,179,8,.32);color:#431407;font-weight:800;border:1px solid rgba(161,98,7,.7)',
+    pending:'background:rgba(148,163,184,.16);color:#0c0a09;font-weight:800;border:1px dashed rgba(100,116,139,.6)',
+    weekend:'background:#c4b5fd;color:#2e1065;font-weight:800;border:1px solid #7c3aed'
   };
   const meses=Array.from({length:12},(_,m)=>{
     const first=new Date(D.y,m,1).getDay(), off=(first+6)%7, n=new Date(D.y,m+1,0).getDate();
     let c='';
-    WSHORT.forEach(x=>{c+='<div style="text-align:center;font-size:9px;color:#57534e;font-weight:700">'+x+'</div>';});
+    WSHORT.forEach(x=>{c+='<div style="text-align:center;font-size:10px;color:#0c0a09;font-weight:900">'+x+'</div>';});
     for(let i=0;i<off;i++) c+='<div></div>';
     for(let d=1;d<=n;d++){
       const ds=D.y+'-'+pad(m+1)+'-'+pad(d); const {base,info}=D.dias[ds];
       let st;
       if(D.mostrarTodo){ st=BASE[base]||BASE.pending; }
       else{ const f=D.activos.find(a=>anioCoincide(a.id,base,info));
-        st=f?('background:'+f.bg+';color:'+f.fg+';font-weight:800;border:1px solid rgba(0,0,0,.15)'):'background:rgba(148,163,184,.14);color:#475569;opacity:.35;border:1px solid transparent'; }
-      c+='<div style="'+st+';font-size:11px;text-align:center;border-radius:5px;padding:5px 0;box-sizing:border-box">'+d+'</div>';
+        st=f?('background:'+f.bg+';color:'+f.fg+';font-weight:800;border:1px solid rgba(0,0,0,.15)'):'background:rgba(148,163,184,.16);color:#0c0a09;font-weight:800;border:1px solid rgba(100,116,139,.25)'; }
+      c+='<div style="'+st+';font-size:12px;text-align:center;border-radius:5px;padding:5px 0;box-sizing:border-box">'+d+'</div>';
     }
-    return '<div style="background:#faf5ef;border-radius:14px;padding:10px"><div style="font-weight:800;font-size:12px;margin-bottom:6px;color:#1c1917;text-transform:uppercase;letter-spacing:.04em">'+MONTHS[m]+'</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">'+c+'</div></div>';
+    return '<div style="background:#faf5ef;border-radius:14px;padding:10px"><div style="font-weight:800;font-size:12px;margin-bottom:6px;color:#0c0a09;text-transform:uppercase;letter-spacing:.04em">'+MONTHS[m]+'</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">'+c+'</div></div>';
   }).join('');
   const chip=(txt,bg,col,sq)=>'<span style="display:inline-block;margin:3px 6px 3px 0;padding:6px 12px;border-radius:12px;font-size:12px;font-weight:700;background:'+bg+';color:'+col+';box-shadow:0 3px 0 rgba(0,0,0,.15);white-space:nowrap">'+(sq?'<span style="display:inline-block;width:13px;height:13px;border-radius:3px;background:'+sq+';border:1px solid #78716c;vertical-align:middle;margin-right:7px;margin-top:-2px"></span>':'')+txt+'</span>';
   const chips=chip('Mostrar todo',D.mostrarTodo?'#22c55e':'#f3ece3',D.mostrarTodo?'#052e16':'#1c1917','')
