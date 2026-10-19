@@ -300,6 +300,11 @@ html.dd .nav-btn{width:auto;height:auto;background:none;box-shadow:none;border-r
 html.dd nav{padding:.6rem 1rem}
 html.dd .nav-brand{font-size:1.1rem}
 
+/* Recuadros de escritura bien marcados (título, notas, descripciones) */
+[contenteditable="true"],textarea,input[type="text"],input:not([type]),input[type="search"]{border:2px solid var(--ink2)!important;box-shadow:inset 0 2px 4px rgba(0,0,0,.10)}
+html.light [contenteditable="true"],html.light textarea,html.light input[type="text"],html.light input:not([type]),html.light input[type="search"]{background:#fff!important}
+[contenteditable="true"]:focus,textarea:focus,input[type="text"]:focus{border-color:var(--acc)!important}
+
 /* 3D · B: arcilla (tarjetas y botones con relieve) */
 html.dd .card{box-shadow:0 8px 0 rgba(0,0,0,.10),0 14px 20px rgba(0,0,0,.12),inset 0 3px 5px rgba(255,255,255,.55),inset 0 -4px 8px rgba(0,0,0,.06);margin-bottom:1.1rem}
 html.dd .card .card{box-shadow:0 4px 0 rgba(0,0,0,.08),0 8px 12px rgba(0,0,0,.08),inset 0 2px 3px rgba(255,255,255,.5)}
@@ -1168,7 +1173,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261018-montiel'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261019-recuadros'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
