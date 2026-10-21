@@ -1173,7 +1173,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261021-escaner'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261021-horasalida'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -7241,8 +7241,8 @@ function renderModalResumenDia(){
           // si el primero o último del día está oculto, el rango se ajusta al
           // primero/último que sí se muestra.
           const _fichajesVisKpi=(e.fichajes||[]).filter(f=>!f._ocultarHorario);
-          const hEnt=(_fichajesVisKpi[0]&&_fichajesVisKpi[0].entrada)||e.horaEntrada||e._horaInicioManual||'';
-          const hSal=(_fichajesVisKpi.length>0&&_fichajesVisKpi[_fichajesVisKpi.length-1].salida)||e.horaSalida||e._horaFinManual||'';
+          const hEnt=((_fichajesVisKpi.find(f=>f.entrada)||{}).entrada)||e.horaEntrada||e._horaInicioManual||'';
+          const hSal=((_fichajesVisKpi.slice().reverse().find(f=>f.salida)||{}).salida)||e.horaSalida||e._horaFinManual||'';
           if(!hEnt&&!hSal) return null;
           // Igual que en el desglose de abajo: si no hay timerDeduct guardado
           // (jornadas del cronómetro de antes de este arreglo) pero sí hay un
@@ -7763,8 +7763,8 @@ function generarPDFResumen(conPrecios){
   // ocultos — si el primero o el último está marcado como oculto, el rango
   // mostrado se ajusta al primero/último que sí se ve.
   const _fichajesVisPdf=(e.fichajes||[]).filter(f=>!f._ocultarHorario);
-  const _hEntPdf=(_fichajesVisPdf[0]&&_fichajesVisPdf[0].entrada)||e.horaEntrada||e._horaInicioManual||'';
-  const _hSalPdf=(_fichajesVisPdf.length>0&&_fichajesVisPdf[_fichajesVisPdf.length-1].salida)||e.horaSalida||e._horaFinManual||'';
+  const _hEntPdf=((_fichajesVisPdf.find(f=>f.entrada)||{}).entrada)||e.horaEntrada||e._horaInicioManual||'';
+  const _hSalPdf=((_fichajesVisPdf.slice().reverse().find(f=>f.salida)||{}).salida)||e.horaSalida||e._horaFinManual||'';
 
   const cp = conPrecios === true; // ONLY prices when explicitly true
   const conPrecios2 = cp; // alias
@@ -7782,7 +7782,7 @@ function generarPDFResumen(conPrecios){
 
   // Fichajes (los marcados _ocultarHorario no se listan aquí — sus horas
   // siguen sumando al total/nómina igual, solo no aparecen en el PDF)
-  const htmlFichajes = (e._showHorario!==false) ? seccion('⏱ FICHAJES', filas(_fichajesVisPdf, (f,i) => {
+  const htmlFichajes = (e._showHorario!==false) ? seccion('⏱ FICHAJES', filas(_fichajesVisPdf.filter(f=>f.entrada||f.salida), (f,i) => {
     const iReal=(e.fichajes||[]).indexOf(f);
     const esF1p=iReal===0;
     const titP=esF1p?e.titulo:f.titulo;
