@@ -1173,7 +1173,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261019-recuadros'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261021-sinhoras'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -7340,7 +7340,7 @@ function renderModalResumenDia(){
         showHorario?(()=>{
           const fichajesList=[];
           if((e.horaEntrada||e.horaSalida) && !(e.fichajes||[]).some(f=>f.entrada===e.horaEntrada && f.salida===e.horaSalida)) fichajesList.push({entrada:e.horaEntrada||'',salida:e.horaSalida||'',nota:''});
-          (e.fichajes||[]).forEach(f=>{ if(f.entrada||f.salida) fichajesList.push(f); });
+          (e.fichajes||[]).forEach(f=>{ if(fichajeResumenVisible(f)) fichajesList.push(f); });
           const idsClaimed=new Set(fichajesList.slice(1).map(f=>String(f.taskId)).filter(Boolean));
           // OJO: el "catch-all" de tareas sin reclamar SOLO se le asigna a
           // fichaje 1 cuando es el ÚNICO fichaje del día (sin ambigüedad
@@ -7378,7 +7378,7 @@ function renderModalResumenDia(){
                 background:'#f8fafc',borderRadius:'8px',border:'1px solid #e2e8f0'
               }},
                 h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',flexWrap:'wrap',marginBottom:'.3rem'}},
-                  f._ocultarHorario?null:h('span',{style:{fontSize:'.7rem',color:'#475569',fontWeight:700}},(f.entrada||'—')+' → '+(f.salida||'—')),
+                  (f._ocultarHorario||!(f.entrada||f.salida))?null:h('span',{style:{fontSize:'.7rem',color:'#475569',fontWeight:700}},(f.entrada||'—')+' → '+(f.salida||'—')),
                   titulo?h('span',{style:{fontSize:'.92rem',fontWeight:600,color:'#0f172a'},html:titulo}):h('span',{style:{fontSize:'.8rem',color:'#475569',fontStyle:'italic'}},'(sin título)')
                 ),
                 ...linkedTasks.map(lt=>h('div',{style:{fontSize:'.78rem',color:'#0f172a',fontWeight:700,marginTop:'.2rem'}},
@@ -7574,7 +7574,7 @@ function shareResumen(method, conPrecios){
   // cada fichaje, que puede ocultarse del Resumen/compartir sin dejar de
   // sumar sus horas al total)
   if((e.fichajes||[]).length>0 && e._showHorario!==false){
-    const visibles=(e.fichajes||[]).filter(f=>!f._ocultarHorario);
+    const visibles=(e.fichajes||[]).filter(f=>!f._ocultarHorario && (f.entrada||f.salida));
     if(visibles.length>0){
       lines.push('⏱ HORARIO:');
       visibles.forEach((f,i)=>{
@@ -7612,7 +7612,7 @@ function shareResumen(method, conPrecios){
       const tit = ((esF1?e.titulo:f.titulo)||'').replace(/<[^>]*>/g,'').trim();
       const nota = ((esF1?e.notas:f.nota)||'').replace(/<[^>]*>/g,'').trim();
       const linkedTasks = f.taskId?[(S.tasks||[]).find(t=>String(t.id)===String(f.taskId))].filter(Boolean):(esF1?tareasFichaje1txt:[]);
-      lines.push('▸ '+(f._ocultarHorario?'':((f.entrada||'—')+' → '+(f.salida||'—')+'  '))+(tit||'(sin título)'));
+      lines.push('▸ '+((f._ocultarHorario||!(f.entrada||f.salida))?'':((f.entrada||'—')+' → '+(f.salida||'—')+'  '))+(tit||'(sin título)'));
       linkedTasks.forEach(linkedTask=>{
         const titulo=(linkedTask.titulo||'').replace(/<[^>]*>/g,'').trim();
         const _tp=taskTypes.find(x=>x.id===(linkedTask.tipoTarea||'ot'))||{icono:'🔧',nombre:'OT'};
@@ -7801,7 +7801,7 @@ function generarPDFResumen(conPrecios){
   const htmlNotasFichajes = (e._showHorario!==false) ? seccion('📝 NOTAS', filas((function(){
     const lst=[];
     if((e.horaEntrada||e.horaSalida) && !(e.fichajes||[]).some(f=>f.entrada===e.horaEntrada && f.salida===e.horaSalida)) lst.push({entrada:e.horaEntrada||'',salida:e.horaSalida||'',nota:''});
-    (e.fichajes||[]).forEach(f=>{ if(f.entrada||f.salida) lst.push(f); });
+    (e.fichajes||[]).forEach(f=>{ if(fichajeResumenVisible(f)) lst.push(f); });
     const idsClaimed=new Set(lst.slice(1).map(f=>String(f.taskId)).filter(Boolean));
     const soloUnFichajeImg = lst.length<=1;
     const tareasFichaje1=soloUnFichajeImg?tareasDia.filter(t=>!idsClaimed.has(String(t.id))):[];
@@ -7832,7 +7832,7 @@ function generarPDFResumen(conPrecios){
     const tareasHtml = linkedTasks.map(lt=>`<div style="font-size:12px;color:#0f172a;font-weight:700;margin-top:3px">🔧 ${lt.otNumero?'O.T. '+lt.otNumero+' — ':''}${(lt.titulo||'').replace(/<[^>]*>/g,'')}</div>`).join('');
     return `
     <div style="padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:6px">
-      ${f._ocultarHorario?'':`<div style="font-size:10px;color:#475569;font-weight:700">${f.entrada||'—'} → ${f.salida||'—'}</div>`}
+      ${(f._ocultarHorario||!(f.entrada||f.salida))?'':`<div style="font-size:10px;color:#475569;font-weight:700">${f.entrada||'—'} → ${f.salida||'—'}</div>`}
       ${titulo?`<div style="font-size:13px;font-weight:600;color:#0f172a">${titulo}</div>`:'<div style="font-size:11px;color:#475569;font-style:italic">(sin título)</div>'}
       ${tareasHtml}
       ${nota?`<div style="font-size:12px;color:#475569;line-height:1.5;word-break:break-word;margin-top:3px">${nota}</div>`:''}
@@ -8055,13 +8055,13 @@ async function compartirComoImagen(conPrecios){
         if(!(e.fichajes||[]).some(function(f){return f.entrada===e.horaEntrada && f.salida===e.horaSalida;})) fichajesList.push({entrada:e.horaEntrada||'', salida:e.horaSalida||'', nota:''});
       }
       (e.fichajes||[]).forEach(function(f){
-        if(f.entrada || f.salida) fichajesList.push(f);
+        if(fichajeResumenVisible(f)) fichajesList.push(f);
       });
       // Para dibujar el horario se excluyen los fichajes marcados como
       // ocultos (sus horas siguen contando en los totales igual) — pero el
       // resto de este bloque (Notas/tareas de abajo) sigue usando la lista
       // completa fichajesList sin filtrar.
-      var fichajesVisImg = fichajesList.filter(function(f){ return !f._ocultarHorario; });
+      var fichajesVisImg = fichajesList.filter(function(f){ return !f._ocultarHorario && (f.entrada||f.salida); });
       if(fichajesVisImg.length>0){
         html += sec('⏱','HORARIO');
         fichajesVisImg.forEach(function(f,i){
@@ -8115,9 +8115,9 @@ async function compartirComoImagen(conPrecios){
                 +misViajes.map(function(j){return '<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:5px;padding:2px 7px;font-weight:700">🚗 '+(j.origen||'')+(j.destino?' → '+j.destino:'')+(j.km?' ('+j.km+'km)':'')+(showPrecioViajeFimg&&(j.precioManual||0)>0?' '+eur(j.precioManual):'')+'</span>';}).join('')
                 +'</div>';
             }
-            var tareasHtml = linkedTasks.map(function(lt){return '<div style="font-size:12px;color:#0f172a;font-weight:700;margin-top:3px">🔧 '+(lt.otNumero?'O.T. '+lt.otNumero+' — ':'')+(lt.titulo||'').replace(/<[^>]*>/g,'')+'</div>';}).join('');
+            var tareasHtml = linkedTasks.map(function(lt){var esOT=!!lt.otNumero; return '<div style="font-size:12px;color:#0f172a;font-weight:700;margin-top:3px'+(esOT?';background:#fef08a;border:1px solid #f59e0b;border-radius:6px;padding:4px 8px':'')+'">🔧 '+(lt.otNumero?'O.T. '+lt.otNumero+' — ':'')+(lt.titulo||'').replace(/<[^>]*>/g,'')+'</div>';}).join('');
             html += '<div style="padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:4px">'
-              +(f._ocultarHorario?'':('<div style="font-size:10px;color:#475569;font-weight:700">'+(f.entrada||'—')+' → '+(f.salida||'—')+'</div>'))
+              +((f._ocultarHorario||!(f.entrada||f.salida))?'':('<div style="font-size:10px;color:#475569;font-weight:700">'+(f.entrada||'—')+' → '+(f.salida||'—')+'</div>'))
               +(titulo?'<span style="font-size:14px;font-weight:600;color:#0f172a">'+titulo+'</span>':'<span style="font-size:12px;color:#475569;font-style:italic">(sin título)</span>')
               +tareasHtml
               +(nota?'<div style="font-size:12px;color:#475569;line-height:1.5;word-break:break-word;margin-top:3px">'+nota+'</div>':'')
@@ -12521,6 +12521,12 @@ function montielAEntrada(p,T){
   }
   const tareas=ots.map(n=>({...defTask(p.fecha),titulo:(p.lugar||'').trim()||('OT '+n),descripcion:txt,otNumero:n,usaOT:true,tipoTarea:'ot'}));
   return {e,tareas};
+}
+// Un fichaje sin horas pero con título/nota/tarea también debe verse en el Resumen
+function fichajeResumenVisible(f){
+  if(!f) return false;
+  const txt=x=>String(x||'').replace(/<[^>]*>/g,'').replace(/&nbsp;/g,' ').trim();
+  return !!(f.entrada||f.salida||txt(f.titulo)||txt(f.nota)||f.taskId);
 }
 async function importMontielFaltantes(file){
   if(!file)return;
