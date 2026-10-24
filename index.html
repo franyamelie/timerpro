@@ -1173,7 +1173,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261021-horasalida'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261024-guardado'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1221,7 +1221,7 @@ function cambiarDiseno(){
 let ddMasAbierto=false;
 const DD_DOCK_IDS=['fichar','calendario','resumen','nominas'];
 const DD_PASTELES=['#bbf7d0','#fde68a','#bfdbfe','#e9d5ff','#fed7aa','#fecaca','#99f6e4','#fbcfe8'];
-function irATab(id){ captureFormState(); saveDraft(); S.tab=id; ddMasAbierto=false; rerender(); }
+async function irATab(id){ captureFormState(); if(S.tab==='tareas'&&id!=='tareas') await autoGuardarTareaPendiente(); saveDraft(); S.tab=id; ddMasAbierto=false; rerender(); }
 function renderDock(){
   const TABS=getTabs();
   const principales=DD_DOCK_IDS.map(id=>TABS.find(t=>t.id===id)).filter(Boolean);
@@ -1278,7 +1278,7 @@ function renderTabs(){
       class:'tab'+(S.tab===t.id?' active':''),
       'data-tabId':t.id,
       style:t._tipoId?{borderBottom:'2px solid '+(taskTypes.find(x=>x.id===t._tipoId)||{}).color}:{},
-      on:{click:()=>{captureFormState();saveDraft();S.tab=t.id;rerender();}}
+      on:{click:async()=>{captureFormState();if(S.tab==='tareas'&&t.id!=='tareas') await autoGuardarTareaPendiente();saveDraft();S.tab=t.id;rerender();}}
     },
       t.id==='ia' ? h('span',{class:'tab-icon',html:GEMINI_ICON_SVG}) : h('span',{class:'tab-icon'},t.icon),t.label
     ))
@@ -3536,7 +3536,7 @@ function renderTareas(){
     // aquí solo forzamos un guardado inmediato antes de cambiar de pestaña.
     h('div',{style:{marginBottom:'.6rem'}},
       h('button',{class:'btn btn-gh btn-sm',style:{fontSize:'.8rem'},
-        on:{click:()=>{ saveDraft(); S.tab='fichar'; rerender(); }}},'← Volver al menú principal')
+        on:{click:async()=>{ captureFormState(); await autoGuardarTareaPendiente(); saveDraft(); S.tab='fichar'; rerender(); }}},'← Volver al menú principal')
     ),
     // Formulario nueva tarea
     h('div',{class:'card'},
@@ -7382,9 +7382,9 @@ function renderModalResumenDia(){
                   (f._ocultarHorario||!(f.entrada||f.salida))?null:h('span',{style:{fontSize:'.7rem',color:'#475569',fontWeight:700}},(f.entrada||'—')+' → '+(f.salida||'—')),
                   titulo?h('span',{style:{fontSize:'.92rem',fontWeight:600,color:'#0f172a'},html:titulo}):h('span',{style:{fontSize:'.8rem',color:'#475569',fontStyle:'italic'}},'(sin título)')
                 ),
-                ...linkedTasks.map(lt=>h('div',{style:{fontSize:'.78rem',color:'#0f172a',fontWeight:700,marginTop:'.2rem',...(lt.otNumero?{background:'#fef08a',border:'1px solid #f59e0b',borderRadius:'6px',padding:'4px 8px'}:{})}},
-                  '🔧 '+(lt.otNumero?'O.T. '+lt.otNumero+' — ':'')+(lt.titulo||'').replace(/<[^>]*>/g,'')
-                )),
+                ...linkedTasks.map(lt=>{const ti=tareaTipoInfo(lt);return h('div',{style:{fontSize:'.78rem',color:'#0f172a',fontWeight:700,marginTop:'.2rem',...(lt.otNumero?{background:ti.bg,border:'1px solid '+ti.borde,borderRadius:'6px',padding:'4px 8px'}:{})}},
+                  tareaEtiquetaResumen(lt)
+                );}),
                 nota?h('div',{style:{fontSize:'.78rem',color:'#475569',lineHeight:1.5,wordBreak:'break-word',marginTop:'.2rem'},html:nota}):null,
                 (misDietas.length||misTransporte.length||misViajes.length)?h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.35rem'}},
                   ...misDietas.map(d=>h('span',{style:{fontSize:'.7rem',background:'#fef3c7',color:'#92400e',borderRadius:'5px',padding:'.15rem .5rem',fontWeight:700}},'☀ '+(d.concepto||'Dieta')+(showPrecioDietaF?' '+eur(d.importe||0):''))),
@@ -7830,7 +7830,7 @@ function generarPDFResumen(conPrecios){
         ${misTransporte.map(t=>`<span style="font-size:10px;background:#dcfce7;color:#166534;border-radius:5px;padding:2px 7px;font-weight:700">🚗 ${t.tipo}${showPrecioViajeFpdf?' '+eur(t.importe||0):''}</span>`).join('')}
         ${misViajes.map(j=>`<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:5px;padding:2px 7px;font-weight:700">🚗 ${j.origen||''}${j.destino?' → '+j.destino:''}${j.km?' ('+j.km+'km)':''}${showPrecioViajeFpdf&&(j.precioManual||0)>0?' '+eur(j.precioManual):''}</span>`).join('')}
       </div>` : '';
-    const tareasHtml = linkedTasks.map(lt=>`<div style="font-size:12px;color:#0f172a;font-weight:700;margin-top:3px${lt.otNumero?';background:#fef08a;border:1px solid #f59e0b;border-radius:6px;padding:4px 8px':''}">🔧 ${lt.otNumero?'O.T. '+lt.otNumero+' — ':''}${(lt.titulo||'').replace(/<[^>]*>/g,'')}</div>`).join('');
+    const tareasHtml = linkedTasks.map(lt=>{const ti=tareaTipoInfo(lt);return `<div style="font-size:12px;color:#0f172a;font-weight:700;margin-top:3px${lt.otNumero?';background:'+ti.bg+';border:1px solid '+ti.borde+';border-radius:6px;padding:4px 8px':''}">${tareaEtiquetaResumen(lt)}</div>`;}).join('');
     return `
     <div style="padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:6px">
       ${(f._ocultarHorario||!(f.entrada||f.salida))?'':`<div style="font-size:10px;color:#475569;font-weight:700">${f.entrada||'—'} → ${f.salida||'—'}</div>`}
@@ -8083,6 +8083,8 @@ async function compartirComoImagen(conPrecios){
             +'</div>'
             +'</div>';
         });
+      } // fin del bloque HORARIO: las Notas de abajo ya no dependen de que haya horas visibles
+      {
         // Notas: título de cada fichaje con sus tareas/OT y descripción debajo, agrupado
         var idsClaimed1 = {};
         fichajesList.forEach(function(f){ if(f.taskId) idsClaimed1[f.taskId]=true; });
@@ -8116,7 +8118,7 @@ async function compartirComoImagen(conPrecios){
                 +misViajes.map(function(j){return '<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:5px;padding:2px 7px;font-weight:700">🚗 '+(j.origen||'')+(j.destino?' → '+j.destino:'')+(j.km?' ('+j.km+'km)':'')+(showPrecioViajeFimg&&(j.precioManual||0)>0?' '+eur(j.precioManual):'')+'</span>';}).join('')
                 +'</div>';
             }
-            var tareasHtml = linkedTasks.map(function(lt){var esOT=!!lt.otNumero; return '<div style="font-size:12px;color:#0f172a;font-weight:700;margin-top:3px'+(esOT?';background:#fef08a;border:1px solid #f59e0b;border-radius:6px;padding:4px 8px':'')+'">🔧 '+(lt.otNumero?'O.T. '+lt.otNumero+' — ':'')+(lt.titulo||'').replace(/<[^>]*>/g,'')+'</div>';}).join('');
+            var tareasHtml = linkedTasks.map(function(lt){var esOT=!!lt.otNumero; var ti=tareaTipoInfo(lt); return '<div style="font-size:12px;color:#0f172a;font-weight:700;margin-top:3px'+(esOT?';background:'+ti.bg+';border:1px solid '+ti.borde+';border-radius:6px;padding:4px 8px':'')+'">'+tareaEtiquetaResumen(lt)+'</div>';}).join('');
             html += '<div style="padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:4px">'
               +((f._ocultarHorario||!(f.entrada||f.salida))?'':('<div style="font-size:10px;color:#475569;font-weight:700">'+(f.entrada||'—')+' → '+(f.salida||'—')+'</div>'))
               +(titulo?'<span style="font-size:14px;font-weight:600;color:#0f172a">'+titulo+'</span>':'<span style="font-size:12px;color:#475569;font-style:italic">(sin título)</span>')
@@ -11633,6 +11635,54 @@ function renderCharts(){
 
 function scheduleSync(){
   // Auto-sync disabled - use manual button
+}
+
+
+// Tipo de una tarea (OT, ESTRAL, o los que cree el usuario) para rotular el Resumen
+function tareaTipoInfo(t){
+  const id=(t&&t.tipoTarea)||'ot';
+  const tp=(typeof taskTypes!=='undefined'?taskTypes:[]).find(x=>x.id===id)||{id:'ot',nombre:'OT',icono:'🔧',color:'#f59e0b'};
+  const color=/^#[0-9a-fA-F]{6}$/.test(tp.color||'')?tp.color:'#f59e0b';
+  const esOT=(tp.id||id)==='ot';
+  return {
+    nombre: esOT?'O.T.':(tp.nombre||'OT'),
+    icono: tp.icono||'🔧',
+    color,
+    bg: esOT?'#fef08a':(color+'33'),     // OT: amarillo de siempre; ESTRAL/otros: su propio color suave
+    borde: esOT?'#f59e0b':color
+  };
+}
+function tareaEtiquetaResumen(t){ const i=tareaTipoInfo(t); return i.icono+' '+(t.otNumero?i.nombre+' '+t.otNumero+' — ':'')+(t.titulo||'').replace(/<[^>]*>/g,''); }
+
+// Guarda SIEMPRE la tarea que se está escribiendo (OT, ESTRAL u otro tipo) al salir de la
+// pestaña Tareas, sin que haga falta pulsar "Guardar Tarea", y la vincula al fichaje desde
+// el que se creó. Si no hay nada escrito, no hace nada.
+async function autoGuardarTareaPendiente(){
+  try{
+    if(S.tab!=='tareas') return;
+    if(!fTask) return;
+    const tipo=(taskTypes.find(x=>x.id===(fTask.tipoTarea||'ot'))||{nombre:'OT'}).nombre;
+    const desc=String(fTask.descripcion||'').replace(/<[^>]*>/g,'').replace(/&nbsp;/g,' ').trim();
+    const tit=String(fTask.titulo||'').replace(/<[^>]*>/g,'').trim();
+    if(!tit && !fTask.otNumero && !desc) return;            // formulario vacío: nada que guardar
+    if(!tit) fTask.titulo = fTask.otNumero ? (tipo+' '+fTask.otNumero) : desc.slice(0,40);
+    let savedId=fTask.id;
+    if(fTask.id){
+      await dbPut(ST.tasks,fTask);
+      S.tasks=S.tasks.map(t=>t.id===fTask.id?{...fTask}:t);
+    }else{
+      savedId=await dbPut(ST.tasks,fTask);
+      S.tasks.push({...fTask,id:savedId});
+    }
+    if(_pendingFichajeTaskLink && _pendingFichajeTaskLink.fecha===fEntry.fecha){
+      const idx=_pendingFichajeTaskLink.idx;
+      if(idx!=='f1' && fEntry.fichajes && fEntry.fichajes[idx]){ fEntry.fichajes[idx].taskId=savedId; scheduleDraftSave(); }
+    }
+    _pendingFichajeTaskLink=null;
+    fTask=defTask(); editTaskId=null;
+    try{localStorage.removeItem('fTaskDraft');}catch(e){}
+    showAlert('✅ '+tipo+' guardada y asignada');
+  }catch(e){ console.error('autoGuardarTareaPendiente',e); }
 }
 
 async function saveTask(){
@@ -16053,7 +16103,7 @@ setInterval(checkFichajeOlvidado, 60000);
 function quickFichar(){
   const hora=nowTime();
   const ult=fEntry.fichajes.length>0?fEntry.fichajes[fEntry.fichajes.length-1]:null;
-  if(!ult||(ult.entrada&&ult.salida)){
+  if(!ult||!ult.entrada||(ult.entrada&&ult.salida)){ // un último fichaje sin horas (p.ej. "IR A URGENCIAS") no bloquea fichar
     fEntry.fichajes.push({_fid:Date.now(),entrada:hora,salida:'',nota:'',editing:false,taskId:''});
     showAlert('✅ ENTRADA: '+hora);
   } else if(ult.entrada&&!ult.salida){
