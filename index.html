@@ -637,8 +637,8 @@ function computeMonthTotals(periodoKey){
     t.horasNocturnas+=(+e.horasNocturnas||0); t.horasFestivas+=(+e.horasFestivas||0);
     t.importeNormales+=(+e.importeNormales||0); t.importeExtra+=(+e.importeExtra||0);
     t.importeNocturnas+=(+e.importeNocturnas||0); t.importeFestivas+=(+e.importeFestivas||0);
-    t.dieta+=(+e.dieta||0); t.transporte+=(+e.transporte||0);
-    (e.journeys||[]).forEach(j=>{ t.km+=(+j.km||0); t.viajes+=(+j.km||0)*(+j.precioManual||0.19); });
+    t.dieta+=(+e.dieta||0)+(e.dietasExtra||[]).reduce((a,d)=>a+(+d.importe||0),0); t.transporte+=(+e.transporte||0);
+    (e.journeys||[]).forEach(j=>{ t.km+=(+j.km||0); t.viajes+=(+j.precioManual||0); });
     t.otrosConceptos+=(e.otrosConceptos||[]).reduce((s,o)=>s+(+o.importe||0),0);
     t.dias++;
   });
@@ -1173,7 +1173,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261024-guardado'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261024-unificado'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1519,13 +1519,7 @@ function renderDayCard(){
   // Mismo cálculo de TOTAL que usa el Resumen (renderModalResumenDia), para
   // que esta tarjeta y el Resumen nunca se contradigan: incluye también las
   // dietas extra y los viajes por km, que antes faltaban aquí.
-  const importeT = Math.round((
-    (e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0)
-    +(e.dieta||0)+(e.dietasExtra||[]).reduce((a,b)=>a+(b.importe||0),0)
-    +(e.transporte||0)
-    +(e.journeys||[]).reduce((a,j)=>a+(j.km||0)*(j.vehicleId?(S.vehicles.find(v=>v.id==j.vehicleId)?.precioPorKm||0):j.precioManual||0),0)
-    +(e.otrosConceptos||[]).reduce((a,b)=>a+(b.importe||0),0)
-  )*100)/100;
+  const importeT = importeTotalDia(e);
   const fichajes = (e.fichajes||[]).filter(f=>f.entrada&&f.salida).length;
   const tareas = (S.tasks||[]).filter(t=>t.fecha&&t.fecha===e.fecha).length;
   const jornada = e.tipoJornada||e.jornada||'';
@@ -5320,7 +5314,7 @@ function openExportModal(mode){
     const dietasE=(e.dietasExtra||[]).reduce((a,d)=>a+(d.importe||0),0);
     const otros=(e.otrosConceptos||[]).reduce((a,o)=>a+(o.importe||0),0);
     const viajes=(e.journeys||[]).reduce((a,j)=>a+(j.precioManual||0),0);
-    const total=iN+iE+iNoc+iFes+dieta+transp+dietasE+otros+viajes;
+    const total=importeTotalDia(e);
     totHN+=hN;totHE+=hE;totHNoc+=hNoc;totHFes+=hFes;
     totIN+=iN;totIE+=iE;totINoc+=iNoc;totIFes+=iFes;totD+=dieta+dietasE;totT+=transp;totO+=otros;totViaj+=viajes;
 
@@ -5351,7 +5345,7 @@ function openExportModal(mode){
       </div>
       ${fichajes.length>0?`<div class="sub-sec">Fichajes: ${fichajes.map(f=>`${f.entrada}→${f.salida}`).join(' | ')}</div>`:''}
       ${filas?`<table class="det"><thead><tr><th>Concepto</th><th>Horas</th>${cp?'<th>Precio</th><th>Importe</th>':'<th colspan="2">Realizado</th>'}</tr></thead><tbody>${filas}</tbody></table>`:''}
-      ${tareas.length>0?`<div class="sub-sec">🔧 Tareas: ${tareas.map(t=>`${t.titulo||''}${t.otNumero?' (OT:'+t.otNumero+')':''}`).join(' | ')}</div>`:''}
+      ${tareas.length>0?`<div class="sub-sec">🔧 Tareas: ${tareas.map(t=>`${t.titulo||''}${t.otNumero?' ('+tareaTipoInfo(t).nombre+':'+t.otNumero+')':''}`).join(' | ')}</div>`:''}
       ${locE?`<div class="sub-sec">📍 Entrada: ${locE}</div>`:''}
       ${locS&&locS!==locE?`<div class="sub-sec">📍 Salida: ${locS}</div>`:''}
       ${notasText?`<div class="sub-sec nota">📝 ${notasText}</div>`:''}
@@ -5498,7 +5492,7 @@ function exportXLSX(conPrecios){
       const tt=e._transportType||'';
       const ttN=tt==='coche'?'Coche':tt==='camion'?'Camión':tt||'';
       const otros=n((e.otrosConceptos||[]).reduce((a,o)=>a+(o.importe||0),0));
-      const total=n(iN+iE+iNoc+iFes+dTotal+transp+otros);
+      const total=importeTotalDia(e);
       totHN+=hN;totHE+=hE;totHNoc+=hNoc;totHFes+=hFes;
       totIN+=iN;totIE+=iE;totINoc+=iNoc;totIFes+=iFes;
       totD+=dTotal;totT+=transp;totO+=otros;
@@ -6148,6 +6142,18 @@ function dayTypeOf(ds,isWorked){
 
 // ── Cálculo compartido de liquidación (día a día + desglose por precio) ──
 // allDates: opcional, array de fechas a incluir (incluso sin jornada) para mostrar el periodo completo
+// ═══ FÓRMULA ÚNICA DEL IMPORTE DE UNA JORNADA ═══
+// TODO total de la app (Resumen, Nóminas, informes, PDF, Excel, título de la
+// pestaña, semanas, historial…) debe usar ESTA función para que una
+// modificación en una jornada afecte a todos los sitios por igual.
+function importeTotalDia(e){
+  if(!e) return 0;
+  const n=v=>+v||0;
+  const sum=(arr,f)=>(arr||[]).reduce((a,x)=>a+n(f(x)),0);
+  return Math.round((n(e.importeNormales)+n(e.importeExtra)+n(e.importeNocturnas)+n(e.importeFestivas)
+    +n(e.dieta)+sum(e.dietasExtra,d=>d.importe)+n(e.transporte)
+    +sum(e.otrosConceptos,o=>o.importe)+sum(e.journeys,j=>j.precioManual))*100)/100;
+}
 function computeLiquidacion(entries,allDates){
   let totHN=0,totHE=0,totHNoc=0,totHFes=0,totIN=0,totIE=0,totINoc=0,totIFes=0,totD=0,totT=0,totO=0,totViaj=0;
   let totTranspCoche=0,totTranspCamion=0,totTranspOtro=0,nCoche=0,nCamion=0,nOtroTransp=0,nDietas=0;
@@ -6213,7 +6219,7 @@ function computeLiquidacion(entries,allDates){
     const nViajesConc=e?(e.journeys||[]).filter(j=>j.precioManual>0).length:0;
     const otrosConc=e?(e.otrosConceptos||[]).reduce((a,o)=>a+(o.importe||0),0):0;
     const viajes=e?(e.journeys||[]).reduce((a,j)=>a+(j.precioManual||0),0):0;
-    const total=iN+iE+iNoc+iFes+dieta+transp+dietasE+otrosConc+viajes;
+    const total=importeTotalDia(e);
     totHN+=hN;totHE+=hE;totHNoc+=hNoc;totHFes+=hFes;
     totIN+=iN;totIE+=iE;totINoc+=iNoc;totIFes+=iFes;totD+=dieta+dietasE;totT+=transp;totO+=otrosConc;totViaj+=viajes;
     // Celda de display "Otros": conceptos + viajes + transporte sin tipo
@@ -6411,7 +6417,7 @@ function renderResumen(){
     const wk=getWeekKey(e.fecha);
     if(!weeks[wk]) weeks[wk]={h:0,i:0,dias:0,label:''};
     weeks[wk].h+=(e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
-    weeks[wk].i+=(e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0)+(e.dieta||0)+(e.transporte||0)+(e.journeys||[]).reduce((s,j)=>s+(j.km||0)*(j.precioManual||0.19),0);
+    weeks[wk].i+=importeTotalDia(e);
     weeks[wk].dias++;
     const end2=new Date(wk+'T00:00:00'); end2.setDate(end2.getDate()+6);
     weeks[wk].label='Sem '+wk.slice(8,10)+'/'+wk.slice(5,7);
@@ -8379,7 +8385,7 @@ sendIAMsg._core = async function(userMsg){
   if(!S.iaMsgs) S.iaMsgs=[];
   const entries=S.entries.slice(-30);
   const totalH=entries.reduce((s,e)=>s+(e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0),0);
-  const totalI=entries.reduce((s,e)=>s+(e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0)+(e.dieta||0)+(e.transporte||0),0);
+  const totalI=entries.reduce((s,e)=>s+importeTotalDia(e),0);
   const context='Eres un asistente de TimerPro, app de control horario. Datos: '
     +S.entries.length+' jornadas totales, '
     +totalH.toFixed(1)+'h en ultimas 30 jornadas, '
@@ -8491,7 +8497,7 @@ async function sendIAMsg(){
   // Build context from user data
   const entries = S.entries.slice(-30); // last 30 entries
   const totalH = entries.reduce((s,e)=>s+(e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0),0);
-  const totalI = entries.reduce((s,e)=>s+(e.importeNormales||0)+(e.importeExtra||0)+(e.importeNocturnas||0)+(e.importeFestivas||0)+(e.dieta||0)+(e.transporte||0),0);
+  const totalI = entries.reduce((s,e)=>s+importeTotalDia(e),0);
   const context = 'Eres un asistente de TimerPro, app de control horario. Datos del usuario: '
     +'Jornadas: '+S.entries.length
     +', Ultimas 30: '+totalH.toFixed(1)+'h, '+totalI.toFixed(2)+'eur total'
@@ -11549,7 +11555,7 @@ function renderCharts(){
       byMonth[m].he+=(+e.horasExtra||0);
       byMonth[m].hnoc+=(+e.horasNocturnas||0);
       byMonth[m].hf+=(+e.horasFestivas||0);
-      byMonth[m].imp+=(+e.importeNormales||0)+(+e.importeExtra||0)+(+e.importeNocturnas||0)+(+e.importeFestivas||0)+(+e.dieta||0)+(+e.transporte||0);
+      byMonth[m].imp+=importeTotalDia(e);
     });
 
     const months=Object.keys(byMonth).sort().slice(-12);
@@ -12785,7 +12791,8 @@ function montielAEntrada(p,T){
   const okIni=/^\d{2}:\d{2}$/.test(p.hinicio||'')&&p.hinicio!==dd;
   const okFin=/^\d{2}:\d{2}$/.test(p.hfin||'');
   const e={...defEntry(),fecha:p.fecha,
-    horasNormales:hN,precioHoraNormal:pN,importeNormales:r2(hN*pN),
+    horasNormales:hN,precioHoraNormal:0,importeNormales:0, // las normales no se pagan aparte (sueldo base): sin precio, como en tus jornadas
+    
     horasExtra:hE,precioHoraExtra:pE,importeExtra:r2(hE*pE),
     horasNocturnas:hNoc,precioHoraNocturna:pNoc,importeNocturnas:r2(hNoc*pNoc),
     horasFestivas:hF,precioHoraFestiva:pF,importeFestivas:r2(hF*pF),
@@ -12809,6 +12816,20 @@ function fichajeResumenVisible(f){
   if(!f) return false;
   const txt=x=>String(x||'').replace(/<[^>]*>/g,'').replace(/&nbsp;/g,' ').trim();
   return !!(f.entrada||f.salida||txt(f.titulo)||txt(f.nota)||f.taskId);
+}
+// Quita el precio a las horas normales de las jornadas que se importaron de Montiel
+// (solo las marcadas _desdeMontiel). Idempotente: si ya están a 0 no hace nada.
+async function repararImportadosMontiel(){
+  try{
+    const malas=(S.entries||[]).filter(e=>e&&e._desdeMontiel&&((+e.importeNormales||0)>0||(+e.precioHoraNormal||0)>0));
+    for(const e of malas){
+      const n={...e,importeNormales:0,precioHoraNormal:0};
+      await dbPut(ST.entries,n);
+      S.entries=S.entries.map(x=>x.id===e.id?n:x);
+    }
+    if(malas.length) console.log('Montiel: corregidas '+malas.length+' jornadas (horas normales sin precio)');
+    return malas.length;
+  }catch(err){console.error('repararImportadosMontiel',err);return 0;}
 }
 async function importMontielFaltantes(file){
   if(!file)return;
@@ -13550,7 +13571,7 @@ async function exportPDFReal(noImportes=false, entriesOverride=null, periodoLabe
       if(eTasks.length>0){
         y=checkY(5,y);
         doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(...BL);
-        const tDesc=eTasks.map(t=>(t.titulo||(t.descripcion||'').slice(0,40))+(t.otNumero?' (OT:'+t.otNumero+')':'')).join('  |  ');
+        const tDesc=eTasks.map(t=>(t.titulo||(t.descripcion||'').slice(0,40))+(t.otNumero?' ('+tareaTipoInfo(t).nombre+':'+t.otNumero+')':'')).join('  |  ');
         const tLines=doc.splitTextToSize('Tareas: '+tDesc,W-2*M-6);
         tLines.forEach(l=>{y=checkY(5,y);doc.text(l,M+3,y);y+=4;});
         y+=1;
@@ -15042,6 +15063,7 @@ async function loadData(){
   const ac=companies.find(c=>c.id===activeCompanyId)||companies[0];
   if(aw) fWorker={...defWorker,...aw};
   if(ac) fCompany={...defCompany,...ac};
+  await repararImportadosMontiel();
 }
 
 
@@ -15275,7 +15297,7 @@ function updateTitle(){
   const thisMonth=today().slice(0,7);
   const monthEntries=S.entries.filter(e=>e.fecha.startsWith(thisMonth));
   const totalH=monthEntries.reduce((a,e)=>a+(+e.horasNormales||0)+(+e.horasExtra||0)+(+e.horasNocturnas||0)+(+e.horasFestivas||0),0);
-  const totalE=monthEntries.reduce((a,e)=>a+(+e.importeNormales||0)+(+e.importeExtra||0)+(+e.importeNocturnas||0)+(+e.importeFestivas||0)+(+e.dieta||0)+(+e.transporte||0),0);
+  const totalE=monthEntries.reduce((a,e)=>a+importeTotalDia(e),0);
   const timerStr=timerRunning?' ⏱'+formatTimer(timerElapsed):'';
   document.title='TimerPro'+timerStr+' · '+fmtH(totalH)+' · '+eur(totalE);
 }
@@ -16202,7 +16224,7 @@ function _renderHistorial(){
     const fDisplay=parts[2]+'/'+parts[1]+'/'+(parts[0]||'');
     let sitio='';
     try{sitio=(JSON.parse(en.ubicacionEntrada||'{}').label||'').toLowerCase();}catch(e){}
-    const imp=((en.importeNormales||0)+(en.importeExtra||0)+(en.dieta||0)+(en.transporte||0)).toFixed(2);
+    const imp=importeTotalDia(en).toFixed(2);
     const notasFich=(en.fichajes||[]).map(fj=>(fj.nota||'').toLowerCase()).join(' ');
     return fDisplay.includes(q)||f.includes(q)||
       (parts[2]||'').includes(q)||(parts[1]||'').includes(q)||(parts[0]||'').includes(q)||
@@ -16223,7 +16245,7 @@ function _renderHistorial(){
   filtered.forEach(en=>{
     const h_=(en.horasNormales||0)+(en.horasExtra||0)+(en.horasNocturnas||0)+(en.horasFestivas||0);
     const fi=(en.fichajes||[]).length;
-    const imp=(en.importeNormales||0)+(en.importeExtra||0)+(en.importeNocturnas||0)+(en.importeFestivas||0)+(en.dieta||0)+(en.transporte||0)+((en.otrosConceptos||[]).reduce((a,b)=>a+(b.importe||0),0))+((en.dietasExtra||[]).reduce((a,b)=>a+(b.importe||0),0));
+    const imp=importeTotalDia(en);
     let sitio=''; try{sitio=(JSON.parse(en.ubicacionEntrada||'{}').label||'').slice(0,18);}catch(e){}
     const row=document.createElement('div');
     row.className='sum-row';
