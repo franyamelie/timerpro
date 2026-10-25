@@ -145,7 +145,7 @@ main{flex:1;overflow-y:auto;padding:1rem}
 .imp-wrap{display:flex;gap:.4rem;align-items:center}
 .imp-wrap select,.imp-wrap input{flex:1}
 .journey-card{background:var(--surf3);border-radius:var(--r2);padding:.7rem;margin-bottom:.4rem}
-.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
 .cal-dn{text-align:center;font-size:.65rem;color:var(--ink2);font-weight:700;padding:.3rem 0}
 .cal-day{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:var(--r2);cursor:pointer;font-size:.8rem;position:relative;background:var(--surf2);transition:background .15s}
 .cal-day:hover{background:var(--surf3)}
@@ -155,6 +155,11 @@ main{flex:1;overflow-y:auto;padding:1rem}
 .cal-day.worked{background:rgba(34,197,94,.28);color:#16a34a;font-weight:700;border:1.5px solid rgba(34,197,94,.5)}
 .cal-day.worked::after{content:'✓';position:absolute;bottom:1px;right:2px;font-size:.55rem;color:#16a34a;opacity:.8}
 .cal-day.weekend-rest{background:#c4b5fd;color:#3b0764!important;font-weight:700;border:1.5px solid #8b5cf6!important}
+.cal-extras{font-weight:800;font-size:clamp(.42rem,1.7vw,.85rem);line-height:1.15;text-align:center;padding:0 1px;margin-top:2px;max-width:100%;color:inherit;opacity:.95}
+.cal-day.con-extras{aspect-ratio:auto;min-height:3.2rem;padding:.25rem 1px .3rem}
+.cal-day.con-extras::after{display:none!important}
+.cal-extras>div{white-space:normal;overflow-wrap:anywhere}
+@media(max-width:480px){.cal-extras{font-size:.41rem;letter-spacing:-.02em}.cal-day.con-extras{padding-left:0;padding-right:0}}
 .cal-day.holiday{background:#ef4444;color:#fff;font-weight:800;border:1.5px solid #b91c1c}
 .cal-day.holiday::before{content:'★';position:absolute;top:2px;left:3px;font-size:.6rem;color:#fff}
 .cal-day.pending{background:rgba(148,163,184,.14);border:1.5px dashed rgba(148,163,184,.45);color:var(--ink2)}
@@ -179,7 +184,7 @@ main{flex:1;overflow-y:auto;padding:1rem}
 .cal-nav button{background:none;border:none;cursor:pointer;color:var(--ink);font-size:1.2rem;padding:.3rem}
 .cal-nav span{font-weight:700}
 .firma-canvas{border:2px dashed var(--brd);border-radius:var(--r);touch-action:none;display:block;background:var(--surf2);cursor:crosshair}
-.alert-box{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);padding:.6rem 1.2rem;border-radius:20px;font-size:.85rem;font-weight:600;z-index:999;animation:slideUp .2s ease;box-shadow:var(--sh);white-space:nowrap}
+.alert-box{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);padding:.9rem 1.4rem;border-radius:18px;font-size:1.1rem;line-height:1.35;font-weight:700;z-index:999;animation:slideUp .2s ease;box-shadow:var(--sh);white-space:normal;text-align:center;width:max-content;max-width:min(92vw,560px)}
 .alert-ok{background:var(--acc);color:#000}.alert-err{background:var(--red);color:#fff}
 @keyframes slideUp{from{opacity:0;transform:translateX(-50%) translateY(1rem)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;display:flex;align-items:flex-end;justify-content:center}
@@ -638,7 +643,7 @@ function computeMonthTotals(periodoKey){
     t.importeNormales+=(+e.importeNormales||0); t.importeExtra+=(+e.importeExtra||0);
     t.importeNocturnas+=(+e.importeNocturnas||0); t.importeFestivas+=(+e.importeFestivas||0);
     t.dieta+=(+e.dieta||0)+(e.dietasExtra||[]).reduce((a,d)=>a+(+d.importe||0),0); t.transporte+=(+e.transporte||0);
-    (e.journeys||[]).forEach(j=>{ t.km+=(+j.km||0); t.viajes+=(+j.precioManual||0); });
+    (e.journeys||[]).forEach(j=>{ t.km+=(+j.km||0); t.viajes+=importeViaje(j); });
     t.otrosConceptos+=(e.otrosConceptos||[]).reduce((s,o)=>s+(+o.importe||0),0);
     t.dias++;
   });
@@ -1173,7 +1178,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261024-unificado'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261025-todo'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -4355,6 +4360,26 @@ function renderAnioCalendario(){
   );
 }
 
+// Texto corto con los EXTRAS de un día (dieta, horas extra/nocturnas/festivas,
+// viajes de coche/camión, otros) para verlos en el calendario sin abrir cada
+// jornada. Sale de computeLiquidacion → misma fuente que Resumen y Nóminas.
+function extrasCalendarioDia(ds){ return extrasCalendarioItems(ds).join(' + '); }
+function extrasCalendarioItems(ds){
+  const e=S.entries.find(x=>x.fecha===ds);
+  if(!e) return [];
+  let L; try{ L=computeLiquidacion([e],null); }catch(err){ return []; }
+  const p=[], fh=v=>(Math.round(v*100)/100).toString().replace('.',',');
+  const nDiet=L.nDietas+((e.dietasExtra||[]).length);
+  if(nDiet>0) p.push(nDiet>1?nDiet+' Dietas':'Dieta');
+  if(L.totHE>0) p.push(fh(L.totHE)+'h Extra');
+  if(L.totHNoc>0) p.push(fh(L.totHNoc)+'h Noct.');
+  if(L.totHFes>0) p.push(fh(L.totHFes)+'h Fest.');
+  if(L.nCoche>0) p.push(L.nCoche+' V.Coche');
+  if(L.nCamion>0) p.push(L.nCamion+' V.Camión');
+  if(L.nOtroTransp>0) p.push(L.nOtroTransp+' Transp.');
+  if((e.otrosConceptos||[]).length>0||(e.journeys||[]).some(j=>importeViaje(j)>0)) p.push('Otros');
+  return p;
+}
 function renderCalendario(){
   const year=calYear, month=calMonth;
   const firstDay=new Date(year,month,1).getDay();
@@ -4408,6 +4433,8 @@ function renderCalendario(){
           if(isToday) cls+=' today';
           if(paintMode) cls+=' paint-target';
           if(hasEntry||hasTasks) cls+=' has-e';
+          const _itExtras=extrasCalendarioItems(ds);
+          if(_itExtras.length) cls+=' con-extras';
           return h('div',{class:cls,
             on:{
               click:()=>{
@@ -4422,7 +4449,7 @@ function renderCalendario(){
               }
             },
             title:paintMode?('Click = marcar como '+TAG_LABELS[paintMode]+' · Clic derecho = quitar etiqueta'):(tag?('Etiqueta manual: '+TAG_LABELS[tag]+' — clic derecho para quitar'):'Elige una opción abajo y pulsa aquí para marcar · Clic derecho para quitar')
-          },cell.d);
+          },cell.d,(function(){return _itExtras.length?h('div',{class:'cal-extras'},..._itExtras.map(x=>h('div',{},x.replace(/ /g,'\u00a0')))):null;})());
         })
       )
     ),
@@ -5313,7 +5340,7 @@ function openExportModal(mode){
     }
     const dietasE=(e.dietasExtra||[]).reduce((a,d)=>a+(d.importe||0),0);
     const otros=(e.otrosConceptos||[]).reduce((a,o)=>a+(o.importe||0),0);
-    const viajes=(e.journeys||[]).reduce((a,j)=>a+(j.precioManual||0),0);
+    const viajes=(e.journeys||[]).reduce((a,j)=>a+importeViaje(j),0);
     const total=importeTotalDia(e);
     totHN+=hN;totHE+=hE;totHNoc+=hNoc;totHFes+=hFes;
     totIN+=iN;totIE+=iE;totINoc+=iNoc;totIFes+=iFes;totD+=dieta+dietasE;totT+=transp;totO+=otros;totViaj+=viajes;
@@ -5330,7 +5357,7 @@ function openExportModal(mode){
     (e.dietasExtra||[]).forEach(d=>{if(d.importe>0) filas+=`<tr><td>${d.concepto||'Dieta extra'}</td><td>1 × ${eur2(d.importe)}</td>${cp?`<td>${eur2(d.importe)}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
     if(transp>0){const _ttn=(S.transportTypes||[]).find(t=>t.id===e._transportType);const _tnm=_ttn?' ('+_ttn.nombre+')':'';filas+=`<tr><td>Transporte${_tnm}</td><td>${cantT} × ${eur2(precioUnitT)}</td>${cp?'<td>'+eur2(transp)+'</td>':'<td colspan="2">✓</td>'}</tr>`;}
     (e.otrosConceptos||[]).forEach(o=>{if(o.importe>0) filas+=`<tr><td>${o.concepto||'Otro'}</td><td>—</td>${cp?`<td>—</td><td>${eur2(o.importe)}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
-    (e.journeys||[]).forEach(j=>{if(j.precioManual>0) filas+=`<tr><td>Viaje</td><td>—</td>${cp?`<td>—</td><td>${eur2(j.precioManual)}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
+    (e.journeys||[]).forEach(j=>{if(importeViaje(j)>0) filas+=`<tr><td>Viaje</td><td>—</td>${cp?`<td>—</td><td>${eur2(importeViaje(j))}</td>`:'<td colspan="2">✓</td>'}</tr>`;});
 
     const locE=e.ubicacionEntrada?JSON.parse(e.ubicacionEntrada).label||e.ubicacionEntrada:'';
     const locS=e.ubicacionSalida?JSON.parse(e.ubicacionSalida).label||e.ubicacionSalida:'';
@@ -5762,7 +5789,7 @@ function openCustomExportHTML(fields){
     const diet=(+e.dieta||0)+((e.dietasExtra||[]).reduce((a,d)=>a+(+d.importe||0),0));
     const transp=+e.transporte||0;
     const otros=(e.otrosConceptos||[]).reduce((a,c)=>a+(+c.importe||0),0);
-    const viajes=(e.journeys||[]).reduce((a,j)=>a+(+j.precioManual||0),0);
+    const viajes=(e.journeys||[]).reduce((a,j)=>a+importeViaje(j),0);
 
     if(fields.hNormales)totHN+=hN;
     if(fields.hExtra)totHE+=hE;
@@ -5789,7 +5816,7 @@ function openCustomExportHTML(fields){
     const _tt=e._transportType;
     if(transp>0&&((_tt==='coche'&&fields.transpCoche)||(_tt==='camion'&&fields.transpCamion))){const tt=(S.transportTypes||[]).find(t=>t.id===_tt);filas+=`<tr><td>Transporte${tt?' ('+tt.nombre+')':''}</td><td>1 × ${eur2(transp)}</td>${fields.importes?`<td>${eur2(transp)}</td>`:''}</tr>`;}
     if(fields.otros)(e.otrosConceptos||[]).forEach(o=>{if(+o.importe>0)filas+=`<tr><td>${o.concepto||'Otro'}</td><td>—</td>${fields.importes?`<td>—</td><td>${eur2(o.importe)}</td>`:''}</tr>`;});
-    if(fields.viajes)(e.journeys||[]).forEach(j=>{if(+j.precioManual>0)filas+=`<tr><td>Viaje</td><td>—</td>${fields.importes?`<td>—</td><td>${eur2(j.precioManual)}</td>`:''}</tr>`;});
+    if(fields.viajes)(e.journeys||[]).forEach(j=>{if(importeViaje(j)>0)filas+=`<tr><td>Viaje</td><td>—</td>${fields.importes?`<td>—</td><td>${eur2(importeViaje(j))}</td>`:''}</tr>`;});
 
     let locE='',locS='';
     if(fields.ubicacion){
@@ -5937,7 +5964,7 @@ async function exportCustomExcel(fields){
       if(fields.transpCoche) row.push(e._transportType==='coche'?+e.transporte||0:0);
       if(fields.transpCamion) row.push(e._transportType==='camion'?+e.transporte||0:0);
       if(fields.otros) row.push((e.otrosConceptos||[]).reduce((x,c)=>x+(+c.importe||0),0));
-      if(fields.viajes) row.push((e.journeys||[]).reduce((x,j)=>x+(+j.precioManual||0),0));
+      if(fields.viajes) row.push((e.journeys||[]).reduce((x,j)=>x+importeViaje(j),0));
       if(fields.notas) row.push(htmlToText(e.notas||''));
       if(fields.ubicacion){
         let le='',ls='';
@@ -6146,13 +6173,39 @@ function dayTypeOf(ds,isWorked){
 // TODO total de la app (Resumen, Nóminas, informes, PDF, Excel, título de la
 // pestaña, semanas, historial…) debe usar ESTA función para que una
 // modificación en una jornada afecte a todos los sitios por igual.
+// Líneas de "extras" de una jornada (dietas, transporte, otros, viajes) con su
+// importe, para mostrar junto a las horas cuando se comparte CON precios, de
+// modo que la suma mostrada sea la del día completo y no solo la de las horas.
+function resumenExtrasFilas(e){
+  const f=[]; const n=v=>+v||0;
+  const dietas=n(e.dieta)+(e.dietasExtra||[]).reduce((a,d)=>a+n(d.importe),0);
+  if(dietas>0) f.push(['Dietas',dietas]);
+  if(n(e.transporte)>0){
+    const tt=(S.transportTypes||[]).find(t=>t.id===e._transportType);
+    f.push(['Transporte'+(tt?' ('+tt.nombre+')':'')+((e.transporteCantidad||1)>1?' x'+e.transporteCantidad:''),n(e.transporte)]);
+  }
+  const otros=(e.otrosConceptos||[]).reduce((a,o)=>a+n(o.importe),0);
+  if(otros>0) f.push(['Otros conceptos',otros]);
+  const viajes=(e.journeys||[]).reduce((a,j)=>a+importeViaje(j),0);
+  if(viajes>0) f.push(['Viajes',viajes]);
+  return f;
+}
+function importeViaje(j){
+  if(!j) return 0;
+  const km=+j.km||0;
+  if(km>0){
+    const v=j.vehicleId?(S.vehicles||[]).find(x=>x.id==j.vehicleId):null;
+    return Math.round(km*((v?+v.precioPorKm:+j.precioManual)||0)*100)/100;
+  }
+  return +j.precioManual||0;
+}
 function importeTotalDia(e){
   if(!e) return 0;
   const n=v=>+v||0;
   const sum=(arr,f)=>(arr||[]).reduce((a,x)=>a+n(f(x)),0);
   return Math.round((n(e.importeNormales)+n(e.importeExtra)+n(e.importeNocturnas)+n(e.importeFestivas)
     +n(e.dieta)+sum(e.dietasExtra,d=>d.importe)+n(e.transporte)
-    +sum(e.otrosConceptos,o=>o.importe)+sum(e.journeys,j=>j.precioManual))*100)/100;
+    +sum(e.otrosConceptos,o=>o.importe)+sum(e.journeys,importeViaje))*100)/100;
 }
 function computeLiquidacion(entries,allDates){
   let totHN=0,totHE=0,totHNoc=0,totHFes=0,totIN=0,totIE=0,totINoc=0,totIFes=0,totD=0,totT=0,totO=0,totViaj=0;
@@ -6216,9 +6269,9 @@ function computeLiquidacion(entries,allDates){
     if(dieta>0){nDietas++;const pk=dieta.toFixed(2);dietaPrecios[pk]=(dietaPrecios[pk]||0)+1;}
     const dietasE=e?(e.dietasExtra||[]).reduce((a,d)=>a+(d.importe||0),0):0;
     const nOtrosConc=e?(e.otrosConceptos||[]).length:0;
-    const nViajesConc=e?(e.journeys||[]).filter(j=>j.precioManual>0).length:0;
+    const nViajesConc=e?(e.journeys||[]).filter(j=>importeViaje(j)>0).length:0;
     const otrosConc=e?(e.otrosConceptos||[]).reduce((a,o)=>a+(o.importe||0),0):0;
-    const viajes=e?(e.journeys||[]).reduce((a,j)=>a+(j.precioManual||0),0):0;
+    const viajes=e?(e.journeys||[]).reduce((a,j)=>a+importeViaje(j),0):0;
     const total=importeTotalDia(e);
     totHN+=hN;totHE+=hE;totHNoc+=hNoc;totHFes+=hFes;
     totIN+=iN;totIE+=iE;totINoc+=iNoc;totIFes+=iFes;totD+=dieta+dietasE;totT+=transp;totO+=otrosConc;totViaj+=viajes;
@@ -6393,7 +6446,7 @@ function renderResumen(){
     transp: acc.transp+(e.transporte||0),
     otros: acc.otros+(e.otrosConceptos||[]).reduce((s,o)=>s+(o.importe||0),0),
     km: acc.km+(e.journeys||[]).reduce((s,j)=>s+(j.km||0),0),
-    viajes: acc.viajes+(e.journeys||[]).reduce((s,j)=>s+(j.km||0)*(j.precioManual||0.19),0),
+    viajes: acc.viajes+(e.journeys||[]).reduce((s,j)=>s+importeViaje(j),0),
     dias: acc.dias+1,
     transpCoche: acc.transpCoche+((e._transportType==='coche')?e.transporte||0:0),
     transpCamion: acc.transpCamion+((e._transportType==='camion')?e.transporte||0:0),
@@ -7005,26 +7058,26 @@ function _renderSyncDiffLines(diff, isUpload, localLabel, remoteLabel){
   onlyLostSide.forEach(fecha=>{
     rows.push(h('div',{style:{marginBottom:'.5rem'}},
       h('div',{style:{fontWeight:800,color:'var(--ink)'}},'📅 '+dlbl(fecha)),
-      h('div',{style:{fontSize:'.75rem',color:'#ef4444',paddingLeft:'.4rem'}},'Jornada entera '+onlySideLabel+' — se perdería')
+      h('div',{style:{fontSize:'.92rem',color:'#ef4444',paddingLeft:'.4rem',fontWeight:700}},'Este día '+onlySideLabel+': se perdería')
     ));
   });
   diff.differing.forEach(({fecha,lines})=>{
     rows.push(h('div',{style:{marginBottom:'.5rem'}},
       h('div',{style:{fontWeight:800,color:'var(--ink)'}},'📅 '+dlbl(fecha)+' — datos distintos'),
-      ...lines.map(l=>h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',paddingLeft:'.4rem'}},'• '+l+' (se perderá lo de '+loseLabel+', quedará lo de '+keepLabel+')'))
+      ...lines.map(l=>h('div',{style:{fontSize:'.92rem',color:'var(--ink2)',paddingLeft:'.4rem'}},'• '+l+' (se pierde lo de '+loseLabel+', queda lo de '+keepLabel+')'))
     ));
   });
   const tasksOnlyLost = isUpload ? diff.tasksOnlyRemote : diff.tasksOnlyLocal;
   tasksOnlyLost.forEach(t=>{
     rows.push(h('div',{style:{marginBottom:'.5rem'}},
       h('div',{style:{fontWeight:800,color:'var(--ink)'}},'📝 '+(t.titulo||'Tarea/OT')+(t.otNumero?' ['+t.otNumero+']':'')),
-      h('div',{style:{fontSize:'.75rem',color:'#ef4444',paddingLeft:'.4rem'}},'Tarea/OT '+onlySideLabel+' — se perdería')
+      h('div',{style:{fontSize:'.92rem',color:'#ef4444',paddingLeft:'.4rem',fontWeight:700}},'Esta tarea '+onlySideLabel+': se perdería')
     ));
   });
   diff.tasksDiffering.forEach(({titulo,lines})=>{
     rows.push(h('div',{style:{marginBottom:'.5rem'}},
       h('div',{style:{fontWeight:800,color:'var(--ink)'}},'📝 '+titulo+' — datos distintos'),
-      ...lines.map(l=>h('div',{style:{fontSize:'.75rem',color:'var(--ink2)',paddingLeft:'.4rem'}},'• '+l))
+      ...lines.map(l=>h('div',{style:{fontSize:'.92rem',color:'var(--ink2)',paddingLeft:'.4rem'}},'• '+l))
     ));
   });
   return rows;
@@ -7034,47 +7087,43 @@ function renderModalSyncWarning(){
   if(!info) return null;
   const isUpload = info.direction==='upload';
   const diff = info.diff;
-  // Nombre de ESTE dispositivo (donde se está viendo el aviso) y del OTRO lado
-  // (el que subió por última vez lo que hay en Drive), para que el aviso diga
-  // explícitamente "Teléfono" / "Ordenador" en vez de "aquí"/"en Drive".
   const localLabel = getDeviceLabel();
-  const remoteLabel = (info.remoteData && info.remoteData.deviceName) ? info.remoteData.deviceName : 'Drive (otro dispositivo)';
+  const remoteLabel = (info.remoteData && info.remoteData.deviceName) ? info.remoteData.deviceName : 'otro dispositivo';
   const rows = _renderSyncDiffLines(diff, isUpload, localLabel, remoteLabel);
-  // Solo cuenta lo que de verdad se perdería EN ESTA dirección concreta
-  // (subir pierde lo "solo en Drive"/distinto; cargar pierde lo "solo aquí"/distinto).
-  const total = isUpload
-    ? diff.onlyRemote.length + diff.differing.length + diff.tasksOnlyRemote.length + diff.tasksDiffering.length
-    : diff.onlyLocal.length + diff.differing.length + diff.tasksOnlyLocal.length + diff.tasksDiffering.length;
-  const loseLabel = isUpload ? remoteLabel : localLabel;
-  const keepLabel = isUpload ? localLabel : remoteLabel;
+  const loseLabel = isUpload ? 'Drive' : localLabel;   // lo que se perdería
+  const big={fontSize:'1.05rem',lineHeight:1.4};
+  const btnBase={width:'100%',padding:'.9rem 1rem',fontSize:'1.1rem',fontWeight:800,lineHeight:1.25,marginBottom:'.3rem',whiteSpace:'normal',textAlign:'center'};
+  const sub={fontSize:'.95rem',lineHeight:1.4,color:'var(--ink2)',textAlign:'center',marginBottom:'.9rem',padding:'0 .3rem'};
   return h('div',{
     class:'modal-bg',
-    style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',
-      display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:'1rem'}
+    style:{position:'fixed',inset:0,background:'rgba(0,0,0,.78)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:'.8rem'}
   },
-    h('div',{style:{
-      background:'var(--surf)',borderRadius:'16px',padding:'1.5rem',
-      maxWidth:'420px',width:'100%',boxShadow:'0 25px 60px rgba(0,0,0,.4)'
-    }},
-      h('div',{style:{fontSize:'1.8rem',textAlign:'center',marginBottom:'.4rem'}},'⚠️'),
-      h('div',{style:{fontWeight:900,fontSize:'1.05rem',textAlign:'center',color:'var(--ink)',marginBottom:'.5rem'}},
-        '¡Cuidado! Vas a perder datos de '+loseLabel),
-      h('div',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.3rem',textAlign:'center'}},
-        'Estás en: '+localLabel+' · '+(isUpload?'vas a SUBIR a Drive':'vas a CARGAR desde Drive')
-      ),
-      h('div',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.6rem',textAlign:'center'}},
-        'Si continúas sin fusionar, esto de '+loseLabel+' se perderá y quedará lo de '+keepLabel+':'
-      ),
-      h('div',{style:{maxHeight:'260px',overflowY:'auto',background:'var(--surf2)',borderRadius:'8px',padding:'.6rem .8rem',marginBottom:'1rem',fontSize:'.8rem',color:'var(--ink)'}},
-        ...rows
-      ),
-      h('button',{class:'btn btn-g',style:{width:'100%',marginBottom:'.6rem',fontWeight:700},
-        on:{click:()=>{ isUpload?proceedMergeThenUpload():proceedMergeInsteadOfLoad(); }}
-      }, '🔀 Fusionar'),
-      h('button',{class:'btn btn-gh',style:{width:'100%',marginBottom:'.6rem',color:'#ef4444',fontWeight:700},
+    h('div',{style:{background:'var(--surf)',borderRadius:'18px',padding:'1.3rem 1.1rem',maxWidth:'520px',width:'100%',maxHeight:'94vh',overflowY:'auto',boxShadow:'0 25px 60px rgba(0,0,0,.45)'}},
+      h('div',{style:{fontSize:'2.2rem',textAlign:'center',marginBottom:'.2rem'}},'⚠️'),
+      h('div',{style:{fontWeight:900,fontSize:'1.35rem',lineHeight:1.25,textAlign:'center',color:'var(--ink)',marginBottom:'.5rem'}},
+        isUpload ? 'Drive no tiene lo mismo que este '+localLabel : 'Drive tiene datos distintos a los de este '+localLabel),
+      h('div',{style:{...big,color:'var(--ink)',textAlign:'center',marginBottom:'.8rem'}},
+        isUpload ? 'Estás guardando los cambios de este '+localLabel+' en Drive. ¿Qué quieres que mande?'
+                 : 'Estás cargando los datos de Drive en este '+localLabel+'. ¿Qué quieres que mande?'),
+
+      // Opción 1: lo de ESTE dispositivo manda (subir) / lo de DRIVE manda (cargar)
+      h('button',{class:'btn btn-g',style:btnBase,
         on:{click:()=>{ isUpload?proceedUploadAnyway():proceedLoadAnyway(); }}
-      }, isUpload?'Subir':'Cargar'),
-      h('button',{class:'btn btn-gh',style:{width:'100%'},on:{click:cancelSyncWarning}},'Cancelar')
+      }, isUpload ? '✅ Dejar los datos de este '+localLabel+' en Drive y en todos los dispositivos'
+                  : '✅ Dejar los datos de Drive en este '+localLabel),
+      h('div',{style:sub}, isUpload
+        ? 'Los demás dispositivos quedarán igual que este. Se borra de Drive lo que solo estaba en Drive (lo que ves abajo).'
+        : 'Este '+localLabel+' quedará igual que Drive. Se borra de este '+localLabel+' lo que solo estaba aquí (lo que ves abajo).'),
+
+      // Opción 2: juntar (no se pierde nada)
+      h('button',{class:'btn btn-b',style:btnBase,
+        on:{click:()=>{ isUpload?proceedMergeThenUpload():proceedMergeInsteadOfLoad(); }}
+      }, '🔀 Juntar los dos (no se pierde nada)'),
+      h('div',{style:sub},'Se queda todo lo de este '+localLabel+' y todo lo de Drive. Ojo: un día que hayas borrado en uno volverá a aparecer si sigue en el otro.'),
+
+      rows.length ? h('div',{style:{fontWeight:800,fontSize:'1.05rem',color:'var(--ink)',marginBottom:'.4rem'}},'Lo que se perdería si eliges la primera opción:') : null,
+      rows.length ? h('div',{style:{maxHeight:'240px',overflowY:'auto',background:'var(--surf2)',borderRadius:'10px',padding:'.7rem .8rem',marginBottom:'1rem',fontSize:'.98rem',lineHeight:1.45,color:'var(--ink)'}},...rows) : null,
+      h('button',{class:'btn btn-gh',style:{...btnBase,fontWeight:700,display:'block',textAlign:'center'},on:{click:cancelSyncWarning}},'Cancelar (no hacer nada)')
     )
   );
 }
@@ -7165,8 +7214,7 @@ function renderModalResumenDia(){
   const impDietas = (e.dieta||0)+(e.dietasExtra||[]).reduce((s,d)=>s+(d.importe||0),0);
   const impTransp = e.transporte||0;
   const impOtros = (e.otrosConceptos||[]).reduce((s,o)=>s+(o.importe||0),0);
-  const impViajes = (e.journeys||[]).reduce((s,j)=>s+(j.km||0)*(j.vehicleId?
-    (S.vehicles.find(v=>v.id==j.vehicleId)?.precioPorKm||0):j.precioManual||0),0);
+  const impViajes = (e.journeys||[]).reduce((s,j)=>s+importeViaje(j),0);
   const totalI = impHoras+impDietas+impTransp+impOtros+impViajes;
   const tareasDia = (S.tasks||[]).filter(t=> t.fecha && t.fecha === e.fecha);
   // La nueva sección "Notas" (agrupada por fichaje, con título+tarea+descripción
@@ -7411,9 +7459,10 @@ function renderModalResumenDia(){
           dHoras.he>0?row('Extra',dHoras.he+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraExtra||0)+' = '+eur(dHoras.he*(e.precioHoraExtra||0)):'')):null,
           dHoras.hnoc>0?row('Nocturnas',dHoras.hnoc+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraNocturna||0)+' = '+eur(dHoras.hnoc*(e.precioHoraNocturna||0)):'')):null,
           dHoras.hf>0?row('Festivas',dHoras.hf+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraFestiva||0)+' = '+eur(dHoras.hf*(e.precioHoraFestiva||0)):'')):null,
-          impHoras>0&&S._shareConPrecios===true?h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.4rem .6rem',background:'#f0fdf4',borderRadius:'6px',marginTop:'.3rem'}},
-            h('span',{style:{fontSize:'.83rem',fontWeight:700,color:'#15803d'}},'Subtotal horas'),
-            h('span',{style:{fontWeight:800,color:'#15803d'}},eur(impHoras))
+          ...(S._shareConPrecios===true?resumenExtrasFilas(e).map(x=>row(x[0],eur(x[1]))):[]),
+          totalI>0&&S._shareConPrecios===true?h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.4rem .6rem',background:'#f0fdf4',borderRadius:'6px',marginTop:'.3rem'}},
+            h('span',{style:{fontSize:'.83rem',fontWeight:700,color:'#15803d'}},'Suma total (horas + extras)'),
+            h('span',{style:{fontWeight:800,color:'#15803d'}},eur(totalI))
           ):null
         ):null,
 
@@ -7567,7 +7616,8 @@ function shareResumen(method, conPrecios){
   const impDietas = (e.dieta||0)+(e.dietasExtra||[]).reduce((s,d)=>s+(d.importe||0),0);
   const impTransp = e.transporte||0;
   const impOtros = (e.otrosConceptos||[]).reduce((s,o)=>s+(o.importe||0),0);
-  const totalI = impHoras+impDietas+impTransp+impOtros;
+  const impViajes = (e.journeys||[]).reduce((s,j)=>s+importeViaje(j),0);
+  const totalI = impHoras+impDietas+impTransp+impOtros+impViajes;
   const tareasDia = S.tasks.filter(t=>t.fecha===e.fecha);
   const hayFichajes = (e.fichajes||[]).length>0;
   const multiFichajes = hayFichajes;
@@ -7756,7 +7806,8 @@ function generarPDFResumen(conPrecios){
   const impDietas = (e.dieta||0)+(e.dietasExtra||[]).reduce((s,d)=>s+(d.importe||0),0);
   const impTransp = e.transporte||0;
   const impOtros = (e.otrosConceptos||[]).reduce((s,o)=>s+(o.importe||0),0);
-  const totalI = impHoras+impDietas+impTransp+impOtros;
+  const impViajes = (e.journeys||[]).reduce((s,j)=>s+importeViaje(j),0);
+  const totalI = impHoras+impDietas+impTransp+impOtros+impViajes;
   const tareasDia = S.tasks.filter(t=>t.fecha===e.fecha);
   const hayFichajes = (e.fichajes||[]).length>0 || !!(e.horaEntrada||e.horaSalida);
   const multiFichajes = hayFichajes;
@@ -7855,7 +7906,7 @@ function generarPDFResumen(conPrecios){
     if(dHoras.he>0)    rows += fila('Horas extra', dHoras.he+'h' + (cp?' × '+eur(e.precioHoraExtra||0)+' = <b>'+eur(dHoras.he*(e.precioHoraExtra||0))+'</b>':''));
     if(dHoras.hnoc>0)rows += fila('Horas nocturnas', dHoras.hnoc+'h' + (cp?' × '+eur(e.precioHoraNocturna||0)+' = <b>'+eur(dHoras.hnoc*(e.precioHoraNocturna||0))+'</b>':''));
     if(dHoras.hf>0) rows += fila('Horas festivas', dHoras.hf+'h' + (cp?' × '+eur(e.precioHoraFestiva||0)+' = <b>'+eur(dHoras.hf*(e.precioHoraFestiva||0))+'</b>':''));
-    if(conPrecios) rows += `<div class="fila subtotal"><span class="flabel">Subtotal horas</span><span class="fval">${eur(impHoras)}</span></div>`;
+    if(conPrecios){ resumenExtrasFilas(e).forEach(x=>{ rows += fila(x[0], '<b>'+eur(x[1])+'</b>'); }); rows += `<div class="fila subtotal"><span class="flabel">Suma total (horas + extras)</span><span class="fval">${eur(totalI)}</span></div>`; }
     htmlHoras = seccion('🕐 HORAS E IMPORTES', rows);
   }
 
@@ -8024,7 +8075,8 @@ async function compartirComoImagen(conPrecios){
     )*100)/100;
     const totalI = impH+(e.transporte||0)+(e.dieta||0)
       +(e.dietasExtra||[]).reduce(function(s,d){return s+(d.importe||0);},0)
-      +(e.otrosConceptos||[]).reduce(function(s,o){return s+(o.importe||0);},0);
+      +(e.otrosConceptos||[]).reduce(function(s,o){return s+(o.importe||0);},0)
+      +(e.journeys||[]).reduce(function(s,j){return s+importeViaje(j);},0);
     const tareas = (S.tasks||[]).filter(function(t){return t.fecha===e.fecha;});
     const multiFichajes = (e.fichajes||[]).length>0;
 
@@ -8144,6 +8196,10 @@ async function compartirComoImagen(conPrecios){
       if(dHoras.he>0)    html += row('Extra',    dHoras.he+'h'+(cp?' × '+eur(e.precioHoraExtra||0)+' = '+eur(dHoras.he*(e.precioHoraExtra||0)):''));
       if(dHoras.hnoc>0)html += row('Nocturnas',dHoras.hnoc+'h'+(cp?' × '+eur(e.precioHoraNocturna||0)+' = '+eur(dHoras.hnoc*(e.precioHoraNocturna||0)):''));
       if(dHoras.hf>0) html += row('Festivas', dHoras.hf+'h'+(cp?' × '+eur(e.precioHoraFestiva||0)+' = '+eur(dHoras.hf*(e.precioHoraFestiva||0)):''));
+      if(cp){
+        resumenExtrasFilas(e).forEach(function(x){ html += row(x[0], eur(x[1])); });
+        html += '<div style="display:flex;justify-content:space-between;padding:6px 8px;background:#f0fdf4;border-radius:6px;margin-top:4px;color:#15803d;font-weight:800;font-size:13px"><span>Suma total (horas + extras)</span><span>'+eur(totalI)+'</span></div>';
+      }
     }
 
     // Dietas (independiente del transporte/viajes). El total agregado del día
@@ -8687,7 +8743,7 @@ function diaTPParaComparativa(fecha, entries){
     else vOtro=transp;
   }
   const otrosConc=(e.otrosConceptos||[]).reduce((a,o)=>a+(o.importe||0),0);
-  const viajes=(e.journeys||[]).reduce((a,j)=>a+(j.precioManual||0),0);
+  const viajes=(e.journeys||[]).reduce((a,j)=>a+importeViaje(j),0);
   const otros=Math.round((otrosConc+viajes+vOtro)*100)/100;
   const total=Math.round(((+e.importeNormales||0)+impExtra+impNoc+impFest+dieta+transp+otrosConc+viajes)*100)/100;
   return {dieta,hExtra,impExtra,hFest,impFest,hNoc,impNoc,vCamion,vCoche,otros,total};
@@ -11192,7 +11248,7 @@ function showAlert(msg, type='ok'){
   if(S.alertTimer)clearTimeout(S.alertTimer);
   S.alertMsg=msg; S.alertType=type;
   rerender();
-  S.alertTimer=setTimeout(()=>{S.alertMsg=null;rerender();},2800);
+  S.alertTimer=setTimeout(()=>{S.alertMsg=null;rerender();},Math.min(12000,Math.max(type==='err'?6000:4000,String(msg||'').length*70)));
 }
 
 function openModal(m){ S.modal=m; rerender(); }
