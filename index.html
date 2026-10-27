@@ -1183,7 +1183,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261025-calendario'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261025-escaneo'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -9901,6 +9901,8 @@ function renderComparativaEmpresaCard(mesKey){
     h('input',{type:'file',accept:'image/*,application/pdf',
       on:{change:ev=>{ const f=ev.target.files[0]; if(f) procesarComparativaEmpresa(f, mesKey); ev.target.value=''; }}
     }),
+    h('button',{class:'btn btn-g btn-sm',style:{marginTop:'.5rem',width:'100%',padding:'.7rem',fontSize:'1rem',fontWeight:800},
+      on:{click:()=>abrirEscaner({tipo:'empresa',mesKey})}},'📄 Escanear el resumen de la empresa con la cámara'),
     compEmpresa.procesando?h('div',{style:{fontSize:'.8rem',color:'var(--acc)',marginTop:'.5rem'}},'🤖 Leyendo documento...'):null,
     docsDelMes.length===0
       ? null
@@ -10602,6 +10604,8 @@ function renderNominas(){
       h('input',{type:'file',accept:'image/*,application/pdf',
         on:{change:ev=>{ const f=ev.target.files[0]; if(f) subirNomina(f, mesKey); ev.target.value=''; }}
       }),
+      h('button',{class:'btn btn-g btn-sm',style:{marginTop:'.5rem',width:'100%',padding:'.7rem',fontSize:'1rem',fontWeight:800},
+        on:{click:()=>abrirEscaner({tipo:'nomina',mesKey})}},'📄 Escanear la nómina con la cámara'),
       nominaPreview[mesKey]?h('div',{style:{marginTop:'.6rem'}},
         h('img',{src:nominaPreview[mesKey],style:{maxWidth:'100%',borderRadius:'var(--r2)',border:'1px solid var(--brd)',display:'block'}})
       ):null,
@@ -11993,7 +11997,7 @@ async function saveActiveIds(){
 // Foto con la cámara (o galería) → recorte → efecto "escaneado" → varias
 // páginas → PDF. Las páginas también se pueden guardar como fotos de la
 // jornada (Fotos de Tickets y Gastos). No cambia nada de lo existente.
-const ESC={pages:[],sel:0,el:null,busy:false};
+const ESC={pages:[],sel:0,el:null,busy:false,destino:null};
 function escImg(src){return new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=src;});}
 async function escLeer(file,maxSide){
   const url=URL.createObjectURL(file);
@@ -12104,7 +12108,7 @@ function escArrastre(esq,ev){
 function escCerrar(){
   if(ESC.pages.length&&!confirm('Hay páginas escaneadas sin guardar. ¿Cerrar y descartarlas?'))return;
   if(ESC.el){ESC.el.remove();ESC.el=null;}
-  ESC.pages=[];ESC.sel=0;document.body.style.overflow='';
+  ESC.pages=[];ESC.sel=0;ESC.destino=null;document.body.style.overflow='';
 }
 function escRender(){
   if(!ESC.el)return;
@@ -12118,13 +12122,13 @@ function escRender(){
   ESC.el.innerHTML='';
   ESC.el.appendChild(h('div',{style:{background:'var(--surf)',color:'var(--ink)',borderRadius:'14px',width:'min(640px,100%)',maxHeight:'100%',overflow:'auto',padding:'14px',boxShadow:'0 10px 40px rgba(0,0,0,.5)'}},
     h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}},
-      h('div',{style:{fontWeight:800,fontSize:'1rem'}},'📄 Escáner de documentos'),
+      h('div',{style:{fontWeight:800,fontSize:'1rem'}},ESC.destino?(ESC.destino.tipo==='nomina'?'📄 Escanear nómina':'📄 Escanear resumen de la empresa'):'📄 Escáner de documentos'),
       bt('✕ Cerrar',escCerrar)),
     h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'10px'}},
       bt('📷 Hacer foto',()=>escElegir(true)),
       bt('🖼 Galería',()=>escElegir(false))),
     ESC.pages.length===0
-      ? h('p',{style:{color:'var(--ink2)',fontSize:'.85rem'}},'Haz una foto al ticket o documento. Puedes añadir varias páginas y juntarlas en un solo PDF.')
+      ? h('p',{style:{color:'var(--ink2)',fontSize:'.85rem'}},ESC.destino?'Haz una foto al documento (o elige una de la galería). Puedes añadir varias páginas; al terminar pulsa «Usar» y la IA lo lee y lo compara.':'Haz una foto al ticket o documento. Puedes añadir varias páginas y juntarlas en un solo PDF.')
       : h('div',{},
         h('div',{style:{display:'flex',gap:'6px',overflowX:'auto',marginBottom:'8px'}},
           ...ESC.pages.map((p,i)=>h('div',{
@@ -12148,8 +12152,10 @@ function escRender(){
           handle('lb',{left:'0%',top:'100%',transform:'translate(-50%,-50%)'}),
           handle('rb',{left:'100%',top:'100%',transform:'translate(-50%,-50%)'})),
         h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginTop:'12px'}},
+          ESC.destino?h('button',{class:'btn btn-sm',style:{background:'#22c55e',color:'#fff',fontWeight:800},on:{click:escUsarEnDestino}},
+            ESC.destino.tipo==='nomina'?'✅ Usar como nómina ('+ESC.pages.length+' pág.)':'✅ Usar como resumen de la empresa ('+ESC.pages.length+' pág.)'):null,
           h('button',{class:'btn btn-sm',style:{background:'#dc2626',color:'#fff'},on:{click:escCrearPDF}},'📄 Crear PDF ('+ESC.pages.length+' pág.)'),
-          h('button',{class:'btn btn-sm',style:{background:'#22c55e',color:'#fff'},on:{click:escGuardarJornada}},'💾 Guardar en la jornada'))
+          ESC.destino?null:h('button',{class:'btn btn-sm',style:{background:'#22c55e',color:'#fff'},on:{click:escGuardarJornada}},'💾 Guardar en la jornada'))
       )
   ));
   if(pg){
@@ -12168,6 +12174,38 @@ async function escCanvasesFinales(){
   const out=[];
   for(const pg of ESC.pages)out.push(await escProcesar(pg,1800));
   return out;
+}
+// Construye el PDF A4 con todas las páginas escaneadas y devuelve {file,blob,nombre}
+async function escPDFFile(prefijo){
+  const cvs=await escCanvasesFinales();
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const W=210,H=297,M=8;
+  cvs.forEach((c,i)=>{
+    if(i>0)doc.addPage();
+    const k=Math.min((W-2*M)/c.width,(H-2*M)/c.height);
+    const w=c.width*k,hh=c.height*k;
+    doc.addImage(c.toDataURL('image/jpeg',.85),'JPEG',(W-w)/2,M,w,hh);
+  });
+  const d=new Date(),p2=n=>String(n).padStart(2,'0');
+  const nombre=(prefijo||'Escaneo')+'_'+d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+'_'+p2(d.getHours())+p2(d.getMinutes())+'.pdf';
+  const blob=doc.output('blob');
+  return {file:new File([blob],nombre,{type:'application/pdf'}),blob,nombre};
+}
+// Escaneo desde Nóminas: el PDF se manda directamente al mismo proceso que
+// "Subir nómina" / "Comparativa con la empresa" (se guarda el original y la IA lo lee).
+async function escUsarEnDestino(){
+  if(ESC.busy||!ESC.pages.length||!ESC.destino)return;
+  if(!window.jspdf){showAlert('Cargando librería PDF… prueba de nuevo en unos segundos','err');return;}
+  ESC.busy=true;showAlert('⏳ Preparando el documento…');
+  try{
+    const dest=ESC.destino;
+    const r=await escPDFFile(dest.tipo==='nomina'?'Nomina':'Resumen_empresa');
+    ESC.pages=[];ESC.sel=0;ESC.busy=false;
+    escCerrar();
+    if(dest.tipo==='nomina') await subirNomina(r.file,dest.mesKey);
+    else await procesarComparativaEmpresa(r.file,dest.mesKey);
+  }catch(ex){ESC.busy=false;showAlert('Error preparando el documento: '+ex.message,'err');}
 }
 async function escCrearPDF(){
   if(ESC.busy||!ESC.pages.length)return;
@@ -12211,8 +12249,9 @@ async function escGuardarJornada(){
   }catch(ex){showAlert('Error guardando: '+ex.message,'err');}
   ESC.busy=false;
 }
-function abrirEscaner(){
+function abrirEscaner(destino){
   if(ESC.el)return;
+  ESC.destino=(destino&&destino.tipo)?destino:null;
   ESC.pages=[];ESC.sel=0;
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;z-index:99990;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:10px;';
