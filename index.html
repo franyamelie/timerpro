@@ -1183,7 +1183,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261029-descanso'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261029-ciclo2'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -9347,7 +9347,7 @@ function promptNomina(){
   return 'Analiza esta imagen de una nómina (hoja de salario) laboral española y extrae TODOS los datos visibles.\n'
     +'Responde ÚNICAMENTE con un JSON válido sin texto adicional ni markdown:\n'
     +'{\n'
-    +'  "mes": "YYYY-MM (el mes/periodo que corresponde esta nómina, tu mejor estimación)",\n'
+    +'  "mes": "YYYY-MM = el mes en el que CIERRA el periodo de la nómina. Los ciclos de este trabajador van del día 26 de un mes al día 25 del siguiente, así que una nómina de un ciclo 26 sep – 25 oct es 2026-10, y la de 26 oct – 25 nov es 2026-11. Si la nómina indica fechas de periodo, usa la fecha FINAL; si solo pone el mes de pago, usa ese mes",\n'
     +'  "horasNormales": 0,\n'
     +'  "horasExtra": 0,\n'
     +'  "horasNocturnas": 0,\n'
@@ -10198,6 +10198,7 @@ function renderPrediccionModusOperandiCard(mesKey, app, payslipsDelMes){
 
     h('div',{style:{marginTop:'.5rem',fontSize:'.78rem'}},
       h('div',{},'Parte variable prevista (tus horas extra/festivas/nocturnas ya fichadas): '+eur(pred.variableBruto)),
+      h('div',{},'Dietas, transporte y viajes (sin retención): '+eur((app.dieta||0)+(app.transporte||0)+(app.viajes||0))),
       h('div',{},'Retención prevista sobre la parte variable: '+eur(pred.retencionPredicha)+' ('+pred.pctRetUsado+'%, según '+pred.origenPct+')'),
       h('div',{style:{fontWeight:800,marginTop:'.3rem'}},'Neto previsto: '+eur(pred.netoPredicho))
     )
@@ -10453,14 +10454,36 @@ async function enviarMensajeNomina(mesKey){
   }
   const app=computeMonthTotals(mesKey);
   const ultimaNomina=[...(S.payslips||[])].filter(p=>p.mes===mesKey).sort((a,b)=>(b.uploadedAt||'').localeCompare(a.uploadedAt||''))[0];
-  const context='Eres el asistente de nóminas de TimerPro (app de control horario), hablando sobre el mes de '+periodoLabel(mesKey)+' del usuario.\n'
-    +'Datos calculados por la app para ese mes: '+JSON.stringify(app)+'\n'
-    +(ultimaNomina?('Última nómina subida y leída por IA para ese mes: '+JSON.stringify(ultimaNomina.extracted)+'\n'):'El usuario todavía no ha subido ninguna nómina para este mes.\n')
-    +'Ayuda al usuario a aclarar dudas, diferencias o cálculos de ese mes. Responde en español, conciso y claro.';
+  const rng=periodoRangoDe(mesKey);
+  let ctxPred='', ctxPatron='';
+  try{
+    const hist=historicoNominas();
+    if(hist.length){
+      const pr=predecirNominaMes(mesKey, app, hist);
+      ctxPred='PREDICCIÓN de la app para este ciclo (confianza '+pr.confianza+', basada en '+pr.nMesesHistorico+' nóminas reales anteriores): '+JSON.stringify({pactoFijo:pr.pactoFijo,repartoFijoPrevisto:pr.desgloseFijoPredicho,parteVariableBruta:pr.variableBruto,retencionVariablePct:pr.pctRetUsado,retencionPrevista:pr.retencionPredicha,netoPrevisto:pr.netoPredicho})+'\n';
+      try{ ctxPatron='PATRÓN aprendido de la empresa: '+String(explicarPatronEmpresa(hist)).replace(/<[^>]+>/g,'').slice(0,1500)+'\n'; }catch(_){}
+    }
+  }catch(_){}
+  const dias=S.entries.filter(e=>e.fecha>=rng.inicio&&e.fecha<=rng.fin).sort((a,b)=>a.fecha.localeCompare(b.fecha)).map(e=>({
+    fecha:e.fecha, normales:+e.horasNormales||0, extra:+e.horasExtra||0, nocturnas:+e.horasNocturnas||0, festivas:+e.horasFestivas||0,
+    dieta:(+e.dieta||0)+(e.dietasExtra||[]).reduce((a,d)=>a+(+d.importe||0),0), transporte:+e.transporte||0,
+    viajes:(e.journeys||[]).reduce((a,j)=>a+importeViaje(j),0), otros:(e.otrosConceptos||[]).reduce((a,o)=>a+(+o.importe||0),0),
+    totalDia:Math.round(importeTotalDia(e)*100)/100
+  }));
+  const context='Eres el asistente de nóminas de TimerPro, la app de control horario de un trabajador de Talleres Montiel.\n'
+    +'REGLA DE ORO: el ciclo de nómina SIEMPRE va del día 26 del mes anterior al día 25 del mes siguiente, ambos incluidos. Todo lo que respondas se refiere SOLO a este ciclo: '
+    +'del '+rng.inicio+' al '+rng.fin+' ('+periodoLabel(mesKey)+'). Las horas fuera de esas fechas pertenecen a otro ciclo y no cuentan aquí. Nunca inventes otro periodo ni fechas.\n'
+    +'TOTALES del ciclo calculados por la app (suma de los días de abajo; sueldoBase y guardia son fijos por ciclo): '+JSON.stringify(app)+'\n'
+    +'TOTAL ESTIMADO del ciclo según la app (horas + extras + dietas + transporte + viajes + otros + fijos): '+Math.round(totalPeriodo(app)*100)/100+' €\n'
+    +'DETALLE DÍA A DÍA del ciclo: '+JSON.stringify(dias)+'\n'
+    +ctxPred+ctxPatron
+    +(ultimaNomina?('Nómina real de este ciclo ya subida y leída por IA: '+JSON.stringify(ultimaNomina.extracted)+'\n'):'Aún no hay nómina real subida para este ciclo, así que hay que apoyarse en la predicción y en el patrón de meses anteriores.\n')
+    +'Tu objetivo: acercar lo más posible lo que calcula la app a la nómina real que hará la empresa, y explicar diferencias con datos concretos (días, importes). '
+    +'Usa SOLO los datos de arriba; si falta algo, dilo en vez de inventarlo. Responde en español, corto y claro, en texto plano (sin asteriscos ni markdown).';
   try{
     const cleanMsgs=chatRec.messages.filter(m=>!m.content.startsWith('Error:')).slice(-10);
     const geminiContents=cleanMsgs.map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:m.content}]}));
-    const body=JSON.stringify({systemInstruction:{parts:[{text:context}]},contents:geminiContents,generationConfig:{maxOutputTokens:800,temperature:0.5}});
+    const body=JSON.stringify({systemInstruction:{parts:[{text:context}]},contents:geminiContents,generationConfig:{maxOutputTokens:1200,temperature:0.3}});
     const modelo=localStorage.getItem('gemini_model')||'gemini-flash-latest';
     const res=await conReintentoGemini(()=>fetch('https://generativelanguage.googleapis.com/v1beta/models/'+modelo+':generateContent?key='+geminiKey,{method:'POST',headers:{'Content-Type':'application/json'},body}));
     if(!res.ok){
@@ -10539,7 +10562,13 @@ function renderSimulacionNomina(mesKey, app){
 
 function renderNominas(){
   const meses=mesesDisponibles();
-  if(!nominaMesActual || !meses.includes(nominaMesActual)) nominaMesActual=meses[0];
+  if(!nominaMesActual || !meses.includes(nominaMesActual)){
+    // Por defecto: el ciclo CERRADO más reciente que aún no tiene nómina real
+    // subida (es la nómina que toca comparar ahora); si no hay, el más reciente.
+    const conNomina=new Set((S.payslips||[]).map(p=>p.mes));
+    const pend=meses.find(m=>periodoEstaCerrado(m) && !conNomina.has(m) && S.entries.some(e=>e.fecha>=periodoRangoDe(m).inicio && e.fecha<=periodoRangoDe(m).fin));
+    nominaMesActual=pend||meses[0];
+  }
   const mesKey=nominaMesActual;
   const app=computeMonthTotals(mesKey);
   const payslipsDelMes=(S.payslips||[]).filter(p=>p.mes===mesKey).sort((a,b)=>(b.uploadedAt||'').localeCompare(a.uploadedAt||''));
