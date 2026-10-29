@@ -1183,7 +1183,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261025-escaneo'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261029-descanso'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1423,6 +1423,43 @@ function migrarFichajeBaseSiHaceFalta(){
   fEntry.fichajes=[f0, ...(fEntry.fichajes||[])]; // va primero cronológicamente
   fEntry.horaEntrada=''; fEntry.horaSalida='';
   recomputeDayAggregates();
+  scheduleDraftSave();
+}
+// ═══ CÁLCULO AUTOMÁTICO E INSTANTÁNEO DE HORAS (descuenta el descanso) ═══
+// Cualquier cambio de entrada/salida/descanso de un fichaje — escrito a mano,
+// con el reloj, con «Ahora», con «Iniciar jornada / Salida» o con el
+// cronómetro — recalcula las horas normales/extra de ESE fichaje descontando
+// su descanso, y refresca los campos de horas que se ven en pantalla sin
+// reconstruir la página (para no perder el foco mientras se escribe).
+const _horaValida=v=>/^([01]?\d|2[0-3])[:.][0-5]\d$/.test(String(v||'').trim());
+function refrescarHorasPantalla(){
+  try{
+    const tipos=[['Normales','normales'],['Extra','extra'],['Nocturnas','nocturnas'],['Festivas','festivas']];
+    const t1=(typeof getFichaje1Target==='function')?getFichaje1Target():fEntry;
+    tipos.forEach(([tipo,low])=>{
+      const hk='horas'+tipo;
+      const el=document.getElementById('hmain-'+low);
+      if(el&&document.activeElement!==el) el.value=(parseFloat(t1[hk])||0)||'';
+      const di=document.getElementById('imp-'+low);
+      if(di){
+        const c=Math.round((parseFloat(t1[hk])||0)*(parseFloat(fEntry['precioHora'+tipo])||0)*100)/100;
+        di.textContent=c>0?eur(c):'—';
+      }
+    });
+    (fEntry.fichajes||[]).forEach(fj=>{
+      tipos.forEach(([tipo,low])=>{
+        const el=document.getElementById('hdet-'+fj._fid+'-'+low);
+        if(el&&document.activeElement!==el) el.value=(parseFloat(fj['horas'+tipo])||0)||'';
+        const di=document.getElementById('idet-'+fj._fid+'-'+low);
+        if(di){ const c=Math.round((parseFloat(fj['horas'+tipo])||0)*(parseFloat(fEntry['precioHora'+tipo])||0)*100)/100; di.textContent=eur(c); }
+      });
+    });
+  }catch(e){}
+}
+function recalcFichajeYPintar(){
+  autoCalcHorasFromFichajes();
+  recomputeDayAggregates();
+  refrescarHorasPantalla();
   scheduleDraftSave();
 }
 function autoCalcHorasFromFichajes(){
@@ -1812,6 +1849,7 @@ function renderFichar(){
               localStorage.setItem('timerDeduct',timerDeduct);
               autoCalcHorasFromFichajes();
               recomputeDayAggregates();
+              refrescarHorasPantalla();
               scheduleDraftSave();
               // Pinta el recuadro "Tiempo en este fichaje / Total descontando
               // descanso" al instante, sin esperar al blur (sin reconstruir
@@ -1835,7 +1873,7 @@ function renderFichar(){
               placeholder:'07:00',
               style:{flex:1,background:'var(--surf2)',border:'2px solid var(--acc)',borderRadius:'var(--r2)',padding:'.5rem .6rem',color:'var(--ink)',fontSize:'1rem',fontWeight:700,textAlign:'center'},
               on:{
-                input:ev=>{ensureFichaje1().entrada=ev.target.value;updateHorarioLiveCalc();},
+                input:ev=>{const f=ensureFichaje1();f.entrada=ev.target.value;if(_horaValida(ev.target.value)){f.entrada=normalizeTimeStr(ev.target.value);f._horasManual=false;recalcFichajeYPintar();}updateHorarioLiveCalc();},
                 blur:ev=>{
                   let v=ev.target.value;
                   const norm=normalizeTimeStr(v);
@@ -1872,7 +1910,7 @@ function renderFichar(){
               placeholder:'15:00',
               style:{flex:1,background:'var(--surf2)',border:'2px solid #ef4444',borderRadius:'var(--r2)',padding:'.5rem .6rem',color:'var(--ink)',fontSize:'1rem',fontWeight:700,textAlign:'center'},
               on:{
-                input:ev=>{ensureFichaje1().salida=ev.target.value;updateHorarioLiveCalc();},
+                input:ev=>{const f=ensureFichaje1();f.salida=ev.target.value;if(_horaValida(ev.target.value)){f.salida=normalizeTimeStr(ev.target.value);f._horasManual=false;recalcFichajeYPintar();}updateHorarioLiveCalc();},
                 blur:ev=>{
                   let v=ev.target.value;
                   const norm=normalizeTimeStr(v);
@@ -1986,7 +2024,7 @@ function renderFichar(){
                 }}
               },'⚙️')
             ),
-            h('input',{type:'text',inputmode:'decimal',
+            h('input',{type:'text',inputmode:'decimal',id:'hmain-'+tipo.toLowerCase(),
               value:horas||'',placeholder:'0',
               on:{
                 input:ev=>{
@@ -2795,7 +2833,7 @@ function renderFichajeDetailScreen(idx){
               placeholder:'07:00',
               style:{flex:1,background:'var(--surf2)',border:'2px solid var(--acc)',borderRadius:'var(--r2)',padding:'.5rem .6rem',color:'var(--ink)',fontSize:'1rem',fontWeight:700,textAlign:'center'},
               on:{
-                input:ev=>{fj.entrada=ev.target.value;updateFichajeDetailLiveCalc(fj);},
+                input:ev=>{fj.entrada=ev.target.value;if(_horaValida(ev.target.value)){fj.entrada=normalizeTimeStr(ev.target.value);fj._horasManual=false;recalcFichajeYPintar();}updateFichajeDetailLiveCalc(fj);},
                 blur:ev=>{
                   let v=ev.target.value;
                   const norm=normalizeTimeStr(v);
@@ -2831,7 +2869,7 @@ function renderFichajeDetailScreen(idx){
               placeholder:'15:00',
               style:{flex:1,background:'var(--surf2)',border:'2px solid #ef4444',borderRadius:'var(--r2)',padding:'.5rem .6rem',color:'var(--ink)',fontSize:'1rem',fontWeight:700,textAlign:'center'},
               on:{
-                input:ev=>{fj.salida=ev.target.value;updateFichajeDetailLiveCalc(fj);},
+                input:ev=>{fj.salida=ev.target.value;if(_horaValida(ev.target.value)){fj.salida=normalizeTimeStr(ev.target.value);fj._horasManual=false;recalcFichajeYPintar();}updateFichajeDetailLiveCalc(fj);},
                 blur:ev=>{
                   let v=ev.target.value;
                   const norm=normalizeTimeStr(v);
@@ -2862,7 +2900,7 @@ function renderFichajeDetailScreen(idx){
         h('input',{type:'number',min:'0',step:'5',value:fj.descanso||0,
           id:'fich-detail-descanso-'+fj._fid,
           on:{
-            input:ev=>{ fj.descanso=parseInt(ev.target.value)||0; updateFichajeDetailLiveCalc(fj); },
+            input:ev=>{ fj.descanso=parseInt(ev.target.value)||0; fj._horasManual=false; recalcFichajeYPintar(); updateFichajeDetailLiveCalc(fj); },
             change:ev=>{
             fj.descanso=parseInt(ev.target.value)||0;
             // Igual que en la fila resumen: el descanso nuevo tiene que
@@ -3026,7 +3064,7 @@ function renderFichajeDetailScreen(idx){
         return h('div',{style:{display:'grid',gridTemplateColumns:'1fr auto 1fr auto',gap:'.4rem',alignItems:'center',marginBottom:'.5rem'}},
           h('div',{class:'field',style:{margin:0}},
             h('label',{style:{margin:0}},tipo.toUpperCase()),
-            h('input',{type:'text',inputmode:'decimal',value:horas||'',placeholder:'0',
+            h('input',{type:'text',inputmode:'decimal',id:'hdet-'+fj._fid+'-'+tipo.toLowerCase(),value:horas||'',placeholder:'0',
               on:{
                 input:ev=>{ const v=(ev.target.value||'').replace(',','.'); fj[hk]=parseFloat(v)||0; recomputeDayAggregates(); },
                 blur:ev=>{ const v=(ev.target.value||'').replace(',','.'); fj[hk]=parseFloat(v)||0; fj._horasManual=true; recomputeDayAggregates(); scheduleDraftSave(); pushHist(); rerender(); }
@@ -3038,7 +3076,7 @@ function renderFichajeDetailScreen(idx){
             h('input',{type:'text',inputmode:'decimal',value:precio||'',placeholder:'0,00',
               on:{blur:ev=>{ const v=(ev.target.value||'').replace(',','.'); fEntry[pk]=parseFloat(v)||0; fEntry['_precio'+tipo+'Manual']=true; recomputeDayAggregates(); scheduleDraftSave(); pushHist(); rerender(); }}})
           ),
-          h('div',{style:{textAlign:'right',fontWeight:700,fontSize:'.85rem',color:(horas*precio)>0?'var(--acc)':'var(--ink3)',marginTop:'1rem'}},
+          h('div',{id:'idet-'+fj._fid+'-'+tipo.toLowerCase(),style:{textAlign:'right',fontWeight:700,fontSize:'.85rem',color:(horas*precio)>0?'var(--acc)':'var(--ink3)',marginTop:'1rem'}},
             eur(Math.round(horas*precio*100)/100)
           )
         );
@@ -16158,6 +16196,7 @@ function finishTimer(){
     fEntry.fichajes[openIdx].salida=endTime;
     fEntry.fichajes[openIdx].nota=(fEntry.fichajes[openIdx].nota?(fEntry.fichajes[openIdx].nota+' | '):'')+'⏱ '+formatTimerFull(totalSecs)+(timerDeduct>0?' (-'+timerDeduct+'min)':'');
     fEntry.fichajes[openIdx].descanso=timerDeduct;
+    fEntry.fichajes[openIdx]._horasManual=false;
   } else {
     fEntry.fichajes.push({_fid:Date.now(),entrada:startTime,salida:endTime,nota:'⏱ '+formatTimerFull(totalSecs)+(timerDeduct>0?' (-'+timerDeduct+'min descanso)':''),editing:false,taskId:'',descanso:timerDeduct});
   }
@@ -16169,6 +16208,8 @@ function finishTimer(){
   // correcto (porque ese sale de horasNormales, ya neto). Lo guardamos aquí
   // para que el resumen lo explique igual de bien en cualquier aparato.
   fEntry.timerDeduct=timerDeduct;
+  // Horas desde el horario del fichaje, descontando su descanso (normales hasta 8h, resto extra)
+  autoCalcHorasFromFichajes(); recomputeDayAggregates();
   if(!fEntry.horasNormales||fEntry.horasNormales===0){
     fEntry.horasNormales=netHours;
     if(fEntry.precioHoraNormal>0) fEntry.importeNormales=Math.round(netHours*fEntry.precioHoraNormal*100)/100;
@@ -16209,7 +16250,7 @@ function checkFichajeOlvidado(){
   bt.style.cssText='background:#000;color:#fff;border:none;padding:.3rem .7rem;border-radius:5px;cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0';
   bt.onclick=()=>{
     const idx=fEntry.fichajes.findIndex(f=>f._fid===fj._fid);
-    if(idx>=0){fEntry.fichajes[idx].salida=nowTime();scheduleDraftSave();rerender();}
+    if(idx>=0){fEntry.fichajes[idx].salida=nowTime();fEntry.fichajes[idx]._horasManual=false;autoCalcHorasFromFichajes();recomputeDayAggregates();scheduleDraftSave();rerender();}
     b.remove();
   };
   const bc=document.createElement('button');
@@ -16226,11 +16267,19 @@ function quickFichar(){
   const hora=nowTime();
   const ult=fEntry.fichajes.length>0?fEntry.fichajes[fEntry.fichajes.length-1]:null;
   if(!ult||!ult.entrada||(ult.entrada&&ult.salida)){ // un último fichaje sin horas (p.ej. "IR A URGENCIAS") no bloquea fichar
-    fEntry.fichajes.push({_fid:Date.now(),entrada:hora,salida:'',nota:'',editing:false,taskId:''});
+    // el primer fichaje del día lleva el descanso de la jornada; los demás, el suyo (0 al crearlos)
+    const _primero=fEntry.fichajes.length===0;
+    const _desc=_primero?(parseInt(timerDeduct)||parseInt(fEntry.timerDeduct)||0):0;
+    fEntry.fichajes.push({_fid:Date.now(),entrada:hora,salida:'',nota:'',editing:false,taskId:'',descanso:_desc});
+    if(_primero&&_desc>0) fEntry.timerDeduct=_desc;
     showAlert('✅ ENTRADA: '+hora);
   } else if(ult.entrada&&!ult.salida){
-    fEntry.fichajes[fEntry.fichajes.length-1].salida=hora;
-    showAlert('✅ SALIDA: '+hora+' · '+fmtH(calcH(ult.entrada,hora)));
+    const _u=fEntry.fichajes[fEntry.fichajes.length-1];
+    _u.salida=hora; _u._horasManual=false;
+    if(fEntry.fichajes.length===1&&!_u.descanso&&(timerDeduct||fEntry.timerDeduct)){ _u.descanso=parseInt(timerDeduct)||parseInt(fEntry.timerDeduct)||0; }
+    autoCalcHorasFromFichajes(); recomputeDayAggregates();
+    const _neto=Math.max(0,calcH(_u.entrada,hora)-(_u.descanso||0)/60);
+    showAlert('✅ SALIDA: '+hora+' · '+fmtH(_neto)+((_u.descanso||0)>0?' (descontados '+_u.descanso+' min de descanso)':''));
   }
   scheduleDraftSave();rerender();
 }
