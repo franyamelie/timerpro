@@ -1355,7 +1355,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261101-avisos'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261101-comparativa'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -8608,7 +8608,8 @@ function renderIAChat(){
           color:m.role==='user'?'#000':'var(--ink)',
           maxWidth:'88%',padding:'.5rem .8rem',fontSize:'.83rem',
           lineHeight:1.5,whiteSpace:'pre-wrap',margin:0
-        }},m.content))
+        }},m.content)),
+      S.iaPensando?h('div',{class:'card',style:{alignSelf:'flex-start',background:'var(--surf2)',color:'var(--ink2)',padding:'.5rem .8rem',fontSize:'.83rem',margin:0,fontStyle:'italic'}},'⏳ Pensando…'):null
     ),
     h('div',{style:{display:'flex',gap:'.5rem'}},
       h('input',{
@@ -8631,10 +8632,12 @@ async function sendIAMsgPage(){
   const userMsg=inp.value.trim();
   inp.value='';
   if(!S.iaMsgs) S.iaMsgs=[];
+  if(S.iaPensando){ showAlert('⏳ Espera: la IA todavía está respondiendo','err'); setTimeout(()=>{const i=document.getElementById('ia-input-page'); if(i&&!i.value) i.value=userMsg;},60); return; }
   S.iaMsgs.push({role:'user',content:userMsg});
+  S.iaPensando=true;
   rerender();
   setTimeout(()=>{const el=document.getElementById('ia-msgs-page');if(el)el.scrollTop=el.scrollHeight;},50);
-  await sendIAMsg._core(userMsg);
+  try{ await sendIAMsg._core(userMsg); }finally{ S.iaPensando=false; rerender(); }
 }
 
 
@@ -8642,6 +8645,27 @@ async function sendIAMsgPage(){
 // temporal de Google), con una espera creciente entre intentos. Se usa en los
 // chats de texto con la IA (el de la pestaña IA y el de cada mes en Nóminas),
 // igual que ya se hacía en la lectura de imágenes de nóminas/jornadas.
+// Llamada a Google con tiempo máximo: si no responde, corta y avisa (antes se quedaba esperando sin decir nada)
+function fetchConTiempo(url,opts,ms){
+  const c=new AbortController();
+  const t=setTimeout(()=>c.abort(),ms||25000);
+  return fetch(url,{...(opts||{}),signal:c.signal}).finally(()=>clearTimeout(t));
+}
+// Traduce un fallo de Google a un mensaje claro en español
+function explicarErrorGemini(status,texto){
+  const t=String(texto||'');
+  if(status===429||/RESOURCE_EXHAUSTED|quota/i.test(t)) return 'Has alcanzado el límite gratuito de Gemini. Espera 1 minuto y vuelve a intentarlo.';
+  if(status>=500) return 'Los servidores de Google están saturados ahora mismo. Espera un minuto y vuelve a intentarlo.';
+  if((status===400&&/API key|API_KEY/i.test(t))||status===401) return 'Tu clave de Gemini no es válida o ha caducado. Cámbiala con el botón 🔑 de la pestaña IA (se crea gratis en aistudio.google.com/apikey).';
+  if(status===403) return 'Google rechaza tu clave de Gemini (bloqueada, sin permiso o no disponible en tu zona). Crea una nueva con el botón 🔑 de la pestaña IA.';
+  if(status===404) return 'El modelo de Gemini no está disponible. Vuelve a intentarlo; la app buscará otro.';
+  return 'Error '+status+' de Google: '+t.replace(/\s+/g,' ').slice(0,160);
+}
+function mensajeErrorGemini(e){
+  if(e&&e.name==='AbortError') return 'Google no ha respondido en 25 segundos. Inténtalo de nuevo en un minuto.';
+  if(e&&(e.name==='TypeError'||/Failed to fetch|NetworkError|Load failed/i.test(e.message||''))) return 'No hay conexión con Google. Revisa tu internet y vuelve a intentarlo.';
+  return (e&&e.message)||'Error desconocido';
+}
 async function conReintentoGemini(fetchFn){
   let res=await fetchFn();
   const esperas=[1500,4000];
@@ -8690,9 +8714,9 @@ sendIAMsg._core = async function(userMsg){
     // Buscar un modelo que funcione: probar candidatos hasta que uno responda (se cachea el bueno)
     let res=null;
     let modelo=localStorage.getItem('gemini_model')||'';
-    const probar=async(m)=>fetch('https://generativelanguage.googleapis.com/v1beta/models/'+m+':generateContent?key='+apiKey,{
+    const probar=async(m)=>fetchConTiempo('https://generativelanguage.googleapis.com/v1beta/models/'+m+':generateContent?key='+apiKey,{
       method:'POST',headers:{'Content-Type':'application/json'},body:_geminiBody
-    });
+    },25000);
     if(modelo){
       res=await conReintentoGemini(()=>probar(modelo));
       if(!res.ok){
@@ -8707,7 +8731,7 @@ sendIAMsg._core = async function(userMsg){
     if(!modelo){
       let candidatos=[];
       try{
-        const lm=await fetch('https://generativelanguage.googleapis.com/v1beta/models?key='+apiKey);
+        const lm=await fetchConTiempo('https://generativelanguage.googleapis.com/v1beta/models?key='+apiKey,{},15000);
         if(lm.ok){
           const ml=await lm.json();
           candidatos=(ml.models||[])
@@ -8727,12 +8751,16 @@ sendIAMsg._core = async function(userMsg){
         }
       }catch(ex){}
       if(candidatos.length===0) candidatos=['gemini-flash-latest','gemini-pro-latest'];
+      let _ultFallo=null;
       for(const cand of candidatos.slice(0,8)){
         res=await probar(cand);
         if(res.ok){modelo=cand;localStorage.setItem('gemini_model',cand);break;}
+        _ultFallo={status:res.status,txt:await res.clone().text().catch(()=>'')};
+        // Un problema de la clave (400/401/403) o de cuota/saturación afecta a todos los modelos: no seguir probando
+        if(res.status===400||res.status===401||res.status===403||res.status===429||res.status>=500) break;
       }
       if(!res||!res.ok){
-        throw new Error('Ningún modelo Gemini funciona con tu key. Crea una key nueva en aistudio.google.com/apikey');
+        throw new Error(_ultFallo?explicarErrorGemini(_ultFallo.status,_ultFallo.txt):'Ningún modelo Gemini funciona con tu clave. Crea una nueva con el botón 🔑.');
       }
     }
     if(!res.ok){
@@ -8740,7 +8768,7 @@ sendIAMsg._core = async function(userMsg){
       if(res.status===401||res.status===403){
         showAlert('Error de autenticación con Gemini. Verifica tu API Key con el botón 🔑','err');
       }
-      throw new Error('Error '+res.status+': '+(await res.text()).slice(0,200));
+      throw new Error(explicarErrorGemini(res.status,await res.text()));
     }
     const data=await res.json();
     const reply=data.candidates?.[0]?.content?.parts?.[0]?.text||'Sin respuesta';
@@ -8750,7 +8778,7 @@ sendIAMsg._core = async function(userMsg){
     const isQuota = msg.includes('quota')||msg.includes('429')||msg.includes('RESOURCE_EXHAUSTED');
     S.iaMsgs.push({role:'assistant',content:isQuota
       ? '⏳ Límite de peticiones alcanzado. Espera 1 minuto y vuelve a intentarlo.\n(Es el límite gratuito de Gemini, se resetea cada minuto)'
-      : 'Error: '+msg});
+      : 'Error: '+mensajeErrorGemini(e)});
   }
   rerender();
   setTimeout(()=>{
@@ -10326,6 +10354,58 @@ function renderComparativaNominasCard(mesKey, app, payslipsDelMes){
 // según cuántos meses de histórico hay todavía. No es una herramienta para
 // buscar irregularidades — es para entender y poder anticipar el "cómo y
 // por qué" del reparto, sea cual sea la respuesta.
+
+// ── Comparativa de nóminas reales mes a mes (ciclos 26→25) ──
+// Para cada ciclo con nómina subida: parte fija, variable, retención y neto
+// reales, lo que la app tenía registrado como variable, y cuánto habría
+// predicho TimerPro ANTES de ver esa nómina (sin usar ese mes como pista).
+function renderComparativaNominas(){
+  const hist=historicoNominas().filter(x=>x.netoEmp>0);
+  if(!hist.length) return null;
+  const todos=historicoNominas();
+  const filas=hist.slice().sort((a,b)=>b.mes.localeCompare(a.mes)).map(x=>{
+    let pred=null;
+    if(todos.length>=2){ try{ pred=predecirNominaMes(x.mes,x.appMes,todos); }catch(e){} }
+    const desv=pred?Math.round((pred.netoPredicho-x.netoEmp)*100)/100:null;
+    return {x,pred,desv};
+  });
+  const conDesv=filas.filter(f=>f.desv!=null);
+  const media=conDesv.length?conDesv.reduce((a,f)=>a+Math.abs(f.desv),0)/conDesv.length:null;
+  const colorDesv=d=>d==null?'var(--ink3)':Math.abs(d)<=5?'var(--acc2)':Math.abs(d)<=25?'var(--yel)':'var(--red)';
+  const td=(txt,extra)=>h('td',{style:{padding:'.35rem .5rem',borderBottom:'1px solid var(--brd)',textAlign:'right',whiteSpace:'nowrap',fontSize:'.76rem',...(extra||{})}},txt);
+  const th=(txt,left)=>h('th',{style:{padding:'.35rem .5rem',textAlign:left?'left':'right',fontSize:'.68rem',color:'var(--ink2)',whiteSpace:'nowrap',borderBottom:'2px solid var(--brd)'}},txt);
+  return h('div',{class:'card'},
+    h('div',{class:'sec-title'},'📊 Comparativa de nóminas reales'),
+    h('div',{style:{fontSize:'.74rem',color:'var(--ink2)',marginBottom:'.5rem',lineHeight:1.5}},
+      'Cada ciclo (26→25) con su nómina real. "Predicción" es lo que TimerPro habría calculado antes de ver esa nómina; "Desvío" = predicción − neto real.'),
+    media!=null?h('div',{style:{fontSize:'.8rem',fontWeight:700,marginBottom:'.5rem',color:colorDesv(media)}},
+      'Desvío medio de la predicción: '+eur(media)+' en '+conDesv.length+' ciclo'+(conDesv.length===1?'':'s')+
+      (conDesv.length>=4?(function(){
+        const ult=conDesv.slice(0,2).reduce((a,f)=>a+Math.abs(f.desv),0)/2;
+        const ant=conDesv.slice(2).reduce((a,f)=>a+Math.abs(f.desv),0)/(conDesv.length-2);
+        return ult<ant-1?' · 📈 va mejorando':(ult>ant+1?' · 📉 ha empeorado últimamente':' · estable');
+      })():'')
+    ):null,
+    h('div',{style:{overflowX:'auto'}},
+      h('table',{style:{width:'100%',borderCollapse:'collapse'}},
+        h('thead',{},h('tr',{},th('Ciclo',true),th('Fijo'),th('Variable'),th('Variable app'),th('Retención'),th('Neto real'),th('Predicción'),th('Desvío'))),
+        h('tbody',{},...filas.map(f=>{
+          const x=f.x;
+          const pctTxt=x.pctRetVariable!=null?' ('+x.pctRetVariable.toFixed(1)+'%)':'';
+          return h('tr',{},
+            td(periodoLabel(x.mes),{textAlign:'left',fontWeight:700}),
+            td(eur(x.sumaFija)),td(eur(x.sumaVariable)),td(eur(x.extraApp)),
+            td(eur(x.retTotal)+pctTxt),td(eur(x.netoEmp),{fontWeight:800}),
+            td(f.pred?eur(f.pred.netoPredicho):'—'),
+            td(f.desv!=null?((f.desv>0?'+':'')+eur(f.desv)):'—',{fontWeight:800,color:colorDesv(f.desv)}));
+        }))
+      )
+    ),
+    h('div',{style:{fontSize:'.68rem',color:'var(--ink3)',marginTop:'.4rem',lineHeight:1.5}},
+      '"Variable app" = extras + nocturnas + festivas + otros que tenías registrados en la app. Si se parece al "Variable" de la nómina, la app va bien encaminada. La predicción necesita al menos 2 nóminas.')
+  );
+}
+
 function renderPrediccionModusOperandiCard(mesKey, app, payslipsDelMes){
   const historicoCompleto=historicoNominas();
   if(!historicoCompleto.length){
@@ -10610,6 +10690,7 @@ async function enviarMensajeNomina(mesKey){
   const inp=document.getElementById('nomina-chat-input');
   if(!inp||!inp.value.trim()) return;
   const userMsg=inp.value.trim();
+  if(S.chatPensando){ showAlert('⏳ Espera: la IA todavía está respondiendo','err'); setTimeout(()=>{const i=document.getElementById('nomina-chat-input'); if(i&&!i.value) i.value=userMsg;},60); return; }
   inp.value='';
   let chatRec=(S.monthChats||[]).find(c=>c.mes===mesKey);
   if(!chatRec){
@@ -10619,13 +10700,14 @@ async function enviarMensajeNomina(mesKey){
     S.monthChats.push(chatRec);
   }
   chatRec.messages.push({role:'user',content:userMsg});
+  S.chatPensando=mesKey;
   rerender();
   setTimeout(()=>{const el=document.getElementById('nomina-chat-msgs');if(el)el.scrollTop=el.scrollHeight;},50);
 
   const geminiKey=localStorage.getItem('gemini_api_key')||'';
   if(!geminiKey){
     chatRec.messages.push({role:'assistant',content:'Necesitas una API Key de Gemini. Ve a la pestaña IA y configúrala primero (gratis en aistudio.google.com/apikey).'});
-    await dbPut(ST.monthChats, chatRec); rerender(); return;
+    S.chatPensando=null; await dbPut(ST.monthChats, chatRec); rerender(); return;
   }
   const app=computeMonthTotals(mesKey);
   const ultimaNomina=[...(S.payslips||[])].filter(p=>p.mes===mesKey).sort((a,b)=>(b.uploadedAt||'').localeCompare(a.uploadedAt||''))[0];
@@ -10660,18 +10742,17 @@ async function enviarMensajeNomina(mesKey){
     const geminiContents=cleanMsgs.map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:m.content}]}));
     const body=JSON.stringify({systemInstruction:{parts:[{text:context}]},contents:geminiContents,generationConfig:{maxOutputTokens:1200,temperature:0.3}});
     const modelo=localStorage.getItem('gemini_model')||'gemini-flash-latest';
-    const res=await conReintentoGemini(()=>fetch('https://generativelanguage.googleapis.com/v1beta/models/'+modelo+':generateContent?key='+geminiKey,{method:'POST',headers:{'Content-Type':'application/json'},body}));
+    const res=await conReintentoGemini(()=>fetchConTiempo('https://generativelanguage.googleapis.com/v1beta/models/'+modelo+':generateContent?key='+geminiKey,{method:'POST',headers:{'Content-Type':'application/json'},body},25000));
     if(!res.ok){
-      const errTxt=(await res.text()).slice(0,200);
-      const saturado=res.status>=500||res.status===429;
-      throw new Error((saturado?'Los servidores de Google están saturados ahora mismo. ':'')+'Error '+res.status+': '+errTxt+(saturado?' — espera un minuto y vuelve a intentarlo.':''));
+      throw new Error(explicarErrorGemini(res.status,await res.text()));
     }
     const data=await res.json();
     const reply=data.candidates?.[0]?.content?.parts?.[0]?.text||'Sin respuesta';
     chatRec.messages.push({role:'assistant',content:reply});
   }catch(e){
-    chatRec.messages.push({role:'assistant',content:'Error: '+e.message});
+    chatRec.messages.push({role:'assistant',content:'Error: '+mensajeErrorGemini(e)});
   }
+  S.chatPensando=null;
   await dbPut(ST.monthChats, chatRec);
   rerender();
   setTimeout(()=>{const el=document.getElementById('nomina-chat-msgs');if(el)el.scrollTop=el.scrollHeight;},100);
@@ -10824,6 +10905,7 @@ function renderNominas(){
 
     renderComparativaNominasCard(mesKey, app, payslipsDelMes),
     renderPrediccionModusOperandiCard(mesKey, app, payslipsDelMes),
+    renderComparativaNominas(),
 
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'Exportar '+periodoLabel(mesKey)),
@@ -10882,7 +10964,8 @@ function renderNominas(){
               color:m.role==='user'?'#000':'var(--ink)',
               maxWidth:'92%',padding:'.5rem .8rem',borderRadius:'var(--r2)',fontSize:'.83rem',
               lineHeight:1.5,whiteSpace:'pre-wrap'
-            }},m.content))
+            }},m.content)),
+        S.chatPensando===mesKey?h('div',{style:{alignSelf:'flex-start',background:'var(--surf2)',color:'var(--ink2)',padding:'.5rem .8rem',borderRadius:'var(--r2)',fontSize:'.83rem',fontStyle:'italic'}},'⏳ Pensando…'):null
       ),
       h('div',{style:{display:'flex',gap:'.5rem',marginTop:'.4rem'}},
         h('input',{type:'text',id:'nomina-chat-input',placeholder:'Pregunta algo sobre '+periodoLabel(mesKey)+'...',
