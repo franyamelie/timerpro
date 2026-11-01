@@ -149,6 +149,8 @@ main{flex:1;overflow-y:auto;padding:1rem}
 .cal-dn{text-align:center;font-size:.65rem;color:var(--ink2);font-weight:700;padding:.3rem 0}
 .cal-day{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:var(--r2);cursor:pointer;font-size:.8rem;position:relative;background:var(--surf2);transition:background .15s}
 .cal-day:hover{background:var(--surf3)}
+.cal-aviso{position:absolute;top:1px;right:3px;font-size:.62rem;line-height:1;color:#d97706;font-weight:900;text-shadow:0 0 2px rgba(255,255,255,.8)}
+.cal-day.con-aviso{outline:1.5px dashed #d97706;outline-offset:-2px}
 .cal-day.today{box-shadow:0 0 0 2px var(--acc) inset;font-weight:700}
 .cal-day.selected{background:var(--acc);color:#000;font-weight:700}
 .cal-day.has-e::after{content:'';position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--acc)}
@@ -1066,6 +1068,175 @@ function captureFormState(){
   }catch(e){}
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// REVISIÓN AUTOMÁTICA DE DÍAS · AVISO DE CIERRE DE CICLO · COPIAS DE SEGURIDAD
+// (todo es de SOLO LECTURA sobre tus jornadas: avisa, nunca modifica datos)
+// ══════════════════════════════════════════════════════════════════════
+const _lsGet=k=>{ try{ return localStorage.getItem(k); }catch(e){ return null; } };
+const _lsSet=(k,v)=>{ try{ localStorage.setItem(k,v); }catch(e){} };
+
+// Posibles fallos de UNA jornada (lista de textos; vacía = todo bien)
+function revisarDia(e){
+  const av=[];
+  if(!e||!e.fecha) return av;
+  const hoy=today();
+  const fj=Array.isArray(e.fichajes)?e.fichajes:[];
+  fj.forEach((f,i)=>{
+    const en=normalizeTimeStr(f.entrada), sa=normalizeTimeStr(f.salida);
+    if(en && !sa && e.fecha<hoy) av.push('Fichaje '+(i+1)+' sin hora de salida');
+    if(en && sa){
+      const neto=calcH(en,sa)-((+f.descanso||0)/60);
+      if(neto>12) av.push('Fichaje '+(i+1)+' de más de 12 h seguidas ('+fmtH(neto)+')');
+    }
+  });
+  const hN=+e.horasNormales||0,hE=+e.horasExtra||0,hNo=+e.horasNocturnas||0,hF=+e.horasFestivas||0;
+  const tot=hN+hE+hNo+hF;
+  if(tot>14) av.push('Más de 14 h en el día ('+fmtH(tot)+')');
+  if(hE>0 && !((+e.importeExtra||0)>0)) av.push('Horas extra sin precio');
+  if(hNo>0 && !((+e.importeNocturnas||0)>0)) av.push('Horas nocturnas sin precio');
+  if(hF>0 && !((+e.importeFestivas||0)>0)) av.push('Horas festivas sin precio');
+  const hayImporte=(+e.dieta||0)>0||(+e.transporte||0)>0||(e.dietasExtra||[]).length||(e.otrosConceptos||[]).length||(e.journeys||[]).length;
+  const hayFichaje=fj.some(f=>normalizeTimeStr(f.entrada));
+  if(tot===0 && !hayImporte && !hayFichaje && e.fecha<hoy) av.push('Jornada vacía: 0 horas y sin importes');
+  return av;
+}
+function revisarDiaFecha(ds){
+  const es=S.entries.filter(e=>e.fecha===ds);
+  let r=[]; es.forEach(e=>{ r=r.concat(revisarDia(e)); });
+  return r;
+}
+
+// Estado de un ciclo: días laborables sin jornada + jornadas con avisos
+function resumenCiclo(periodoKey){
+  const {inicio,fin}=periodoRangoDe(periodoKey);
+  const hoy=today();
+  const ayerD=new Date(hoy+'T12:00:00'); ayerD.setDate(ayerD.getDate()-1);
+  const ayer=ayerD.getFullYear()+'-'+pad(ayerD.getMonth()+1)+'-'+pad(ayerD.getDate());
+  const tope=fin<ayer?fin:ayer;
+  const sinFichar=dateRangeArray(inicio,tope).filter(ds=>{
+    const dow=new Date(ds+'T12:00:00').getDay();
+    if(dow===0||dow===6) return false;
+    if(isHolidayES(ds)) return false;
+    const tg=getDayTag(ds);
+    if(tg==='vacaciones'||tg==='festivo') return false;
+    return !S.entries.some(e=>e.fecha===ds);
+  });
+  const avisos=[];
+  S.entries.filter(e=>e.fecha>=inicio&&e.fecha<=fin).sort((a,b)=>a.fecha.localeCompare(b.fecha)).forEach(e=>{
+    const m=revisarDia(e); if(m.length) avisos.push({fecha:e.fecha,msgs:m});
+  });
+  const diasRestantes=Math.round((new Date(fin+'T12:00:00')-new Date(hoy+'T12:00:00'))/86400000);
+  return {key:periodoKey,inicio,fin,sinFichar,avisos,diasRestantes};
+}
+// Qué ciclo vigilar hoy: del 22 al 25 el que está a punto de cerrar; del 26 al 28 el que acaba de cerrar
+function cicloAVigilar(){
+  const hoy=today(), dia=+hoy.slice(8,10);
+  if(dia>=22&&dia<=25) return {modo:'abierto',key:periodoKeyDe(hoy)};
+  if(dia>=26&&dia<=28) return {modo:'cerrado',key:periodoKeyDe(hoy.slice(0,8)+'25')};
+  return null;
+}
+const _fCorta=ds=>{ const p=ds.split('-'); return p[2]+'/'+p[1]; };
+
+// ── Copias de seguridad ──
+function marcarCopiaHecha(tipo){ _lsSet(tipo==='drive'?'bk_drive':'bk_descarga',String(Date.now())); }
+function diasDesdeUltimaCopia(){
+  const last=Math.max(+(_lsGet('bk_descarga')||0),+(_lsGet('bk_drive')||0));
+  if(!last) return null;
+  return {dias:Math.floor((Date.now()-last)/86400000),ts:last};
+}
+// Copia interna automática: una al día (al abrir la app) y otra fija al cerrar cada ciclo
+function copiaAutomaticaDiaria(){
+  try{
+    if(!S.entries||!S.entries.length) return;
+    const hoy=today();
+    const bd=_lsGet('backup_date');
+    if(!bd || bd.slice(0,10)!==new Date().toISOString().slice(0,10)) saveLocalBackup();
+    const dia=+hoy.slice(8,10);
+    if(dia>=26){
+      const key=periodoKeyDe(hoy.slice(0,8)+'25');
+      const nombre='bk_cierre_'+key;
+      if(!_lsGet(nombre)){
+        const json=JSON.stringify({ciclo:key,savedAt:new Date().toISOString(),entries:S.entries.map(e=>({...e,fotosGastos:[]})),dayTags});
+        if(json.length<2500000){
+          _lsSet(nombre,json);
+          // conserva solo los 3 últimos cierres
+          const ks=Object.keys(localStorage).filter(k=>k.indexOf('bk_cierre_')===0).sort();
+          while(ks.length>3){ try{ localStorage.removeItem(ks.shift()); }catch(e){} }
+        }
+      }
+    }
+  }catch(e){ console.warn('copia automática:',e); }
+}
+
+// ── Avisos arriba de la app ──
+function renderAvisosApp(){
+  const hoy=today();
+  const filas=[];
+  const estiloFila=(bg,bd)=>({display:'flex',alignItems:'center',gap:'.5rem',flexWrap:'wrap',padding:'.5rem .8rem',background:bg,borderBottom:'1px solid '+bd,fontSize:'.82rem',fontWeight:600,color:'var(--ink)',flexShrink:0});
+  // 1) Cierre de ciclo
+  const cv=cicloAVigilar();
+  if(cv && _lsGet('avisoCiclo')!==hoy+'|'+cv.modo){
+    const r=resumenCiclo(cv.key);
+    const hayAlgo=r.sinFichar.length||r.avisos.length;
+    if(cv.modo==='abierto'||hayAlgo){
+      const partes=[];
+      partes.push(cv.modo==='abierto'
+        ?('📅 El ciclo cierra el 25 ('+(r.diasRestantes<=0?'hoy':'faltan '+r.diasRestantes+' día'+(r.diasRestantes===1?'':'s'))+')')
+        :('📅 Ciclo cerrado ('+_fCorta(r.inicio)+' – '+_fCorta(r.fin)+')'));
+      if(r.sinFichar.length) partes.push('📭 '+r.sinFichar.length+' día'+(r.sinFichar.length===1?'':'s')+' sin fichar');
+      if(r.avisos.length) partes.push('⚠️ '+r.avisos.length+' jornada'+(r.avisos.length===1?'':'s')+' por revisar');
+      if(!hayAlgo) partes.push('✅ todo en orden');
+      filas.push(h('div',{style:estiloFila(hayAlgo?'var(--yel-lt)':'var(--acc-lt)','var(--brd)')},
+        h('span',{style:{flex:1,minWidth:'180px'}},partes.join(' · ')),
+        hayAlgo?h('button',{class:'btn btn-sm btn-g',on:{click:()=>{ S.revisionCiclo=cv.key; S.modal='revisionCiclo'; rerender(); }}},'Revisar'):null,
+        h('button',{class:'btn btn-sm btn-gh',on:{click:()=>{ _lsSet('avisoCiclo',hoy+'|'+cv.modo); rerender(); }}},'✕')
+      ));
+    }
+  }
+  // 2) Copia de seguridad
+  const dc=diasDesdeUltimaCopia();
+  const dia=+hoy.slice(8,10);
+  const cierreSinCopia=dia>=26 && dc && dc.ts<new Date(+hoy.slice(0,4),+hoy.slice(5,7)-1,26).getTime();
+  if((dc===null || dc.dias>=7 || cierreSinCopia) && _lsGet('avisoCopia')!==hoy){
+    const msg=dc===null?'💾 Todavía no has hecho ninguna copia de seguridad desde esta versión'
+      :cierreSinCopia?'💾 El ciclo acaba de cerrar y no has hecho copia desde entonces'
+      :'💾 Hace '+dc.dias+' días que no haces copia de seguridad';
+    filas.push(h('div',{style:estiloFila('var(--blu-lt, var(--surf2))','var(--brd)')},
+      h('span',{style:{flex:1,minWidth:'180px'}},msg),
+      h('button',{class:'btn btn-sm btn-g',on:{click:()=>{ emergencyExport(); _lsSet('avisoCopia',hoy); rerender(); }}},'⬇️ Descargar copia'),
+      h('button',{class:'btn btn-sm btn-gh',on:{click:()=>{ _lsSet('avisoCopia',hoy); rerender(); }}},'Luego')
+    ));
+  }
+  if(!filas.length) return null;
+  return h('div',{id:'avisos-app',style:{flexShrink:0}},...filas);
+}
+
+// Ventana con el detalle de lo que hay que revisar del ciclo
+function renderModalRevisionCiclo(){
+  const key=S.revisionCiclo||periodoKeyDe(today());
+  const r=resumenCiclo(key);
+  const cerrar=()=>{ S.modal=null; rerender(); };
+  const ir=ds=>{ S.modal=null; calYear=+ds.slice(0,4); calMonth=+ds.slice(5,7)-1; selDate=ds; S.tab='calendario'; rerender(); };
+  const fila=(ds,txt)=>h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'.5rem',padding:'.45rem 0',borderBottom:'1px solid var(--brd)',fontSize:'.82rem'}},
+    h('div',{},h('b',{},_fCorta(ds)),h('span',{style:{color:'var(--ink2)',marginLeft:'.4rem'}},txt)),
+    h('button',{class:'btn btn-sm btn-gh',on:{click:()=>ir(ds)}},'Ir al día')
+  );
+  return h('div',{class:'modal-bg',style:{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:'1rem'},
+    on:{click:ev=>{ if(ev.target===ev.currentTarget) cerrar(); }}},
+    h('div',{style:{background:'var(--surf)',borderRadius:'16px',width:'100%',maxWidth:'480px',maxHeight:'85vh',overflowY:'auto',padding:'1.2rem',boxShadow:'0 25px 60px rgba(0,0,0,.4)'}},
+      h('div',{style:{fontWeight:900,fontSize:'1.05rem',color:'var(--ink)',marginBottom:'.2rem'}},'🔎 Revisión del ciclo'),
+      h('div',{style:{fontSize:'.78rem',color:'var(--ink2)',marginBottom:'.8rem'}},periodoLabel(key)+' · solo avisa, no cambia nada.'),
+      r.sinFichar.length?h('div',{style:{fontWeight:800,fontSize:'.85rem',margin:'.4rem 0 .1rem'}},'📭 Días laborables sin jornada ('+r.sinFichar.length+')'):null,
+      ...r.sinFichar.map(ds=>fila(ds,'sin jornada')),
+      r.avisos.length?h('div',{style:{fontWeight:800,fontSize:'.85rem',margin:'.8rem 0 .1rem'}},'⚠️ Jornadas por revisar ('+r.avisos.length+')'):null,
+      ...r.avisos.map(a=>fila(a.fecha,a.msgs.join(' · '))),
+      (!r.sinFichar.length&&!r.avisos.length)?h('div',{style:{padding:'1rem 0',textAlign:'center',color:'var(--ink2)'}},'✅ Todo en orden en este ciclo'):null,
+      h('div',{style:{fontSize:'.72rem',color:'var(--ink3)',marginTop:'.8rem'}},'Los fines de semana, festivos y días marcados como vacaciones no cuentan como "sin jornada".'),
+      h('button',{class:'btn btn-gh',style:{width:'100%',marginTop:'.8rem'},on:{click:cerrar}},'Cerrar')
+    )
+  );
+}
+
 function renderApp(){
   captureFormState();
   restoreEntry(); // restore fEntry from localStorage (same day only)
@@ -1077,6 +1248,7 @@ function renderApp(){
     while(app.firstChild) app.removeChild(app.firstChild);
     try { app.appendChild(renderNav()); } catch(e) { app.appendChild(errEl('nav',e)); }
     try { app.appendChild(renderTabs()); } catch(e) { app.appendChild(errEl('tabs',e)); }
+    try { const _av=renderAvisosApp(); if(_av) app.appendChild(_av); } catch(e) { console.warn('avisos:',e); }
     try { app.appendChild(h('main',{},renderMain())); renderCharts(); } catch(e) { app.appendChild(errEl('main:'+S.tab,e)); }
     document.documentElement.classList.toggle('dd',disenoNuevoActivo());
     document.querySelectorAll('.modal-bg,.alert-box').forEach(el=>el.remove());
@@ -1183,7 +1355,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261029-ciclo2'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261101-avisos'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -4478,6 +4650,8 @@ function renderCalendario(){
           if(hasEntry||hasTasks) cls+=' has-e';
           const _itExtras=extrasCalendarioItems(ds);
           if(_itExtras.length) cls+=' con-extras';
+          const _avDia=revisarDiaFecha(ds);
+          if(_avDia.length) cls+=' con-aviso';
           return h('div',{class:cls,
             on:{
               click:()=>{
@@ -4492,7 +4666,7 @@ function renderCalendario(){
               }
             },
             title:paintMode?('Click = marcar como '+TAG_LABELS[paintMode]+' · Clic derecho = quitar etiqueta'):(tag?('Etiqueta manual: '+TAG_LABELS[tag]+' — clic derecho para quitar'):'Elige una opción abajo y pulsa aquí para marcar · Clic derecho para quitar')
-          },h('span',{class:'cal-num'},cell.d),(function(){return _itExtras.length?h('div',{class:'cal-extras'},..._itExtras.map(x=>h('div',{},x.replace(/ /g,'\u00a0')))):null;})());
+          },h('span',{class:'cal-num'},cell.d),(_avDia.length?h('span',{class:'cal-aviso',title:'Revisar: '+_avDia.join(' · ')},'⚠'):null),(function(){return _itExtras.length?h('div',{class:'cal-extras'},..._itExtras.map(x=>h('div',{},x.replace(/ /g,'\u00a0')))):null;})());
         })
       )
     ),
@@ -7177,6 +7351,7 @@ async function proceedUploadAnyway(){
   _syncInProgress=true; syncStatus='syncing'; rerender();
   try{
     await gdriveSaveData(info.data);
+    marcarCopiaHecha('drive');
     _syncInProgress=false; syncStatus='ok';
     lastSync=new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
     localStorage.setItem('lastSync',lastSync);
@@ -10724,6 +10899,7 @@ function renderNominas(){
 function renderModal(){
   if(S.modal==='backupReminder') return renderModalBackupReminder();
   if(S.modal==='syncWarning') return renderModalSyncWarning();
+  if(S.modal==='revisionCiclo') return renderModalRevisionCiclo();
   if(S.modal==='ia') return renderModalIA();
   if(S.modal==='transportConfig') return renderModalTransportConfig();
     if(S.modal==='minicalendar') { S.modal=null; S.view='cal'; rerender(); return null; }
@@ -12927,12 +13103,13 @@ async function exportJSON(){
   // Try Web Share first, then download
   if(navigator.share && navigator.canShare && navigator.canShare({files:[new File([blob],'x.json',{type:'application/json'})]})){
     const file=new File([blob],'TimerPro_'+today()+'.json',{type:'application/json'});
-    try{ await navigator.share({files:[file],title:'TimerPro Datos'}); return; }catch(e){}
+    try{ await navigator.share({files:[file],title:'TimerPro Datos'}); marcarCopiaHecha('descarga'); return; }catch(e){}
   }
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
   a.download='TimerPro_'+today()+'.json';
   a.click();
+  marcarCopiaHecha('descarga');
   showAlert('JSON descargado ✓');
 }
 
@@ -14626,6 +14803,7 @@ async function driveSync(skipSafetyCheck){
       }
     }
     await gdriveSaveData(data);
+    marcarCopiaHecha('drive');
     _syncInProgress = false;
     syncStatus='ok';
     lastSync = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
@@ -15703,6 +15881,7 @@ function emergencyExport(){
     a.download = 'TimerPro_Backup_' + new Date().toISOString().slice(0,10) + '.json';
     a.click();
     URL.revokeObjectURL(a.href);
+    marcarCopiaHecha('descarga');
     showAlert('Backup descargado: ' + S.entries.length + ' jornadas');
   }catch(e){ showAlert('Error al exportar: ' + e.message, 'err'); }
 }
@@ -15811,6 +15990,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     await openDB();
     await loadData();
     await checkAndRestoreFromLocalBackup();
+    copiaAutomaticaDiaria();
     // URL ya fija en el código - guardar en storage por si acaso
     try{
       localStorage.setItem('driveUrl', driveUrl);
