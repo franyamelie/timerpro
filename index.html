@@ -448,6 +448,13 @@ function horasResumenDesglose(e){
     hnoc:Math.round(hnoc*100)/100, hf:Math.round(hf*100)/100
   };
 }
+// Desglose REAL (todas las horas del día, sin filtrar por modo). Con "Mostrar
+// precios" el Resumen enseña siempre lo que realmente se computa en euros;
+// la opción "Qué horas computar" solo decide qué horas se ven en el KPI/sin precios.
+function horasRealDesglose(e){
+  const c=Object.assign({},e,{fichajes:(e.fichajes||[]).map(f=>Object.assign({},f,{_horasEnResumen:'todas'}))});
+  return horasResumenDesglose(c);
+}
 // Total del día para el KPI "HORAS TRABAJADAS", a partir del mismo desglose
 // de arriba (para que KPI y desglose nunca puedan desajustarse entre sí).
 function horasResumenTotal(e){
@@ -1394,7 +1401,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261102-resumen'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261102-precios'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -7484,7 +7491,7 @@ function renderModalResumenDia(){
   // mostradas × precio/hora real) en vez de usar e.importeNormales/etc
   // directamente, porque esos campos son del total REAL (horas reales), no
   // del total que se ha decidido enseñar en este Resumen.
-  const dHoras = horasResumenDesglose(e);
+  const dHoras = S._shareConPrecios===true ? horasRealDesglose(e) : horasResumenDesglose(e);
   const impHoras = Math.round((
     dHoras.hn*(e.precioHoraNormal||0) + dHoras.he*(e.precioHoraExtra||0)
     + dHoras.hnoc*(e.precioHoraNocturna||0) + dHoras.hf*(e.precioHoraFestiva||0)
@@ -7731,8 +7738,8 @@ function renderModalResumenDia(){
         // Horas e importes — refleja el desglose AJUSTADO (dHoras), que
         // respeta "qué horas computar en el Resumen" de cada fichaje, para
         // que nunca contradiga al KPI "HORAS TRABAJADAS" de arriba.
-        (totalHDisplay>0 || (S._shareConPrecios===true&&resumenExtrasFilas(e).length>0)) ? h('div',{},
-          sec('🕐',totalHDisplay>0?'Horas e Importes':'Importes'),
+        (totalHDisplay>0 || (dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0 || (S._shareConPrecios===true&&resumenExtrasFilas(e).length>0)) ? h('div',{},
+          sec('🕐',(dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0?'Horas e Importes':'Importes'),
           dHoras.hn>0?row('Normales',dHoras.hn+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraNormal||0)+' = '+eur(dHoras.hn*(e.precioHoraNormal||0)):'')):null,
           dHoras.he>0?row('Extra',dHoras.he+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraExtra||0)+' = '+eur(dHoras.he*(e.precioHoraExtra||0)):'')):null,
           dHoras.hnoc>0?row('Nocturnas',dHoras.hnoc+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraNocturna||0)+' = '+eur(dHoras.hnoc*(e.precioHoraNocturna||0)):'')):null,
@@ -7886,7 +7893,7 @@ function shareResumen(method, conPrecios){
   const e = fEntry;
   const cp = conPrecios === true; // ONLY show prices if explicitly true
   const totalH = horasResumenTotal(e); // respeta "qué horas computar en el Resumen" de cada fichaje
-  const dHoras = horasResumenDesglose(e); // mismo desglose ajustado, para el detalle Normales/Extra/etc
+  const dHoras = cp ? horasRealDesglose(e) : horasResumenDesglose(e); // con precios: lo que realmente se computa
   const impHoras = Math.round((
     dHoras.hn*(e.precioHoraNormal||0) + dHoras.he*(e.precioHoraExtra||0)
     + dHoras.hnoc*(e.precioHoraNocturna||0) + dHoras.hf*(e.precioHoraFestiva||0)
@@ -8076,7 +8083,7 @@ function generarPDFResumen(conPrecios){
   const e = fEntry;
   const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
   const totalHDisplay = horasResumenTotal(e); // KPI "HORAS TRABAJADAS" — respeta la opción de cada fichaje
-  const dHoras = horasResumenDesglose(e); // mismo desglose ajustado, para Normales/Extra/etc
+  const dHoras = (conPrecios===true) ? horasRealDesglose(e) : horasResumenDesglose(e); // con precios: lo que realmente se computa
   const impHoras = Math.round((
     dHoras.hn*(e.precioHoraNormal||0) + dHoras.he*(e.precioHoraExtra||0)
     + dHoras.hnoc*(e.precioHoraNocturna||0) + dHoras.hf*(e.precioHoraFestiva||0)
@@ -8178,14 +8185,14 @@ function generarPDFResumen(conPrecios){
 
   // Horas
   let htmlHoras = '';
-  if(totalHDisplay>0 || (conPrecios&&resumenExtrasFilas(e).length>0)){
+  if(totalHDisplay>0 || (dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0 || (conPrecios&&resumenExtrasFilas(e).length>0)){
     let rows = '';
     if(dHoras.hn>0) rows += fila('Horas normales', dHoras.hn+'h' + (cp?' × '+eur(e.precioHoraNormal||0)+' = <b>'+eur(dHoras.hn*(e.precioHoraNormal||0))+'</b>':''));
     if(dHoras.he>0)    rows += fila('Horas extra', dHoras.he+'h' + (cp?' × '+eur(e.precioHoraExtra||0)+' = <b>'+eur(dHoras.he*(e.precioHoraExtra||0))+'</b>':''));
     if(dHoras.hnoc>0)rows += fila('Horas nocturnas', dHoras.hnoc+'h' + (cp?' × '+eur(e.precioHoraNocturna||0)+' = <b>'+eur(dHoras.hnoc*(e.precioHoraNocturna||0))+'</b>':''));
     if(dHoras.hf>0) rows += fila('Horas festivas', dHoras.hf+'h' + (cp?' × '+eur(e.precioHoraFestiva||0)+' = <b>'+eur(dHoras.hf*(e.precioHoraFestiva||0))+'</b>':''));
     if(conPrecios){ resumenExtrasFilas(e).forEach(x=>{ rows += fila(x[0], '<b>'+eur(x[1])+'</b>'); }); rows += `<div class="fila subtotal"><span class="flabel">Suma total (horas + extras)</span><span class="fval">${eur(totalI)}</span></div>`; }
-    htmlHoras = seccion(totalHDisplay>0?'🕐 HORAS E IMPORTES':'💶 IMPORTES', rows);
+    htmlHoras = seccion((dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0?'🕐 HORAS E IMPORTES':'💶 IMPORTES', rows);
   }
 
   // Dietas (independiente del transporte/viajes). El total agregado del día
@@ -8346,7 +8353,7 @@ async function compartirComoImagen(conPrecios){
     const cp = conPrecios === true;
     const totalH = (e.horasNormales||0)+(e.horasExtra||0)+(e.horasNocturnas||0)+(e.horasFestivas||0);
     const totalHDisplay = horasResumenTotal(e); // KPI "HORAS TRABAJADAS" — respeta la opción de cada fichaje
-    const dHoras = horasResumenDesglose(e); // mismo desglose ajustado, para Normales/Extra/etc
+    const dHoras = cp ? horasRealDesglose(e) : horasResumenDesglose(e); // con precios: lo que realmente se computa
     const impH = Math.round((
       dHoras.hn*(e.precioHoraNormal||0) + dHoras.he*(e.precioHoraExtra||0)
       + dHoras.hnoc*(e.precioHoraNocturna||0) + dHoras.hf*(e.precioHoraFestiva||0)
@@ -8468,8 +8475,8 @@ async function compartirComoImagen(conPrecios){
     }
 
     // Horas
-    if(totalHDisplay>0 || (cp&&resumenExtrasFilas(e).length>0)){
-      html += sec('🕐',totalHDisplay>0?'HORAS E IMPORTES':'IMPORTES');
+    if(totalHDisplay>0 || (dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0 || (cp&&resumenExtrasFilas(e).length>0)){
+      html += sec('🕐',(dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0?'HORAS E IMPORTES':'IMPORTES');
       if(dHoras.hn>0) html += row('Normales', dHoras.hn+'h'+(cp?' × '+eur(e.precioHoraNormal||0)+' = '+eur(dHoras.hn*(e.precioHoraNormal||0)):''));
       if(dHoras.he>0)    html += row('Extra',    dHoras.he+'h'+(cp?' × '+eur(e.precioHoraExtra||0)+' = '+eur(dHoras.he*(e.precioHoraExtra||0)):''));
       if(dHoras.hnoc>0)html += row('Nocturnas',dHoras.hnoc+'h'+(cp?' × '+eur(e.precioHoraNocturna||0)+' = '+eur(dHoras.hnoc*(e.precioHoraNocturna||0)):''));
