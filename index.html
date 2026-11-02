@@ -151,6 +151,10 @@ main{flex:1;overflow-y:auto;padding:1rem}
 .cal-day:hover{background:var(--surf3)}
 .cal-aviso{position:absolute;top:1px;right:3px;font-size:.62rem;line-height:1;color:#d97706;font-weight:900;text-shadow:0 0 2px rgba(255,255,255,.8)}
 .cal-day.con-aviso{outline:1.5px dashed #d97706;outline-offset:-2px}
+.cal-day .cal-num{font-weight:900;color:var(--ink);font-size:.9rem}
+.cal-day.holiday .cal-num,.cal-day.festivo-trabajado .cal-num{color:#fff}
+.cal-day.selected .cal-num{color:#000}
+.cal-day.weekend-rest .cal-num{color:#3b0764}
 .cal-day.today{box-shadow:0 0 0 2px var(--acc) inset;font-weight:700}
 .cal-day.selected{background:var(--acc);color:#000;font-weight:700}
 .cal-day.has-e::after{content:'';position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--acc)}
@@ -680,6 +684,38 @@ const defEmpresaDoc = (mes) => ({mes:mes||'', fileName:'', uploadedAt:'', items:
 // razonable en la simulación de la nómina del periodo en curso. Si no hay
 // ninguna nómina con esos datos todavía, devuelve null en cada campo (el
 // usuario tendrá que escribir el % a mano la primera vez).
+// ═══ % DE RETENCIÓN ÚNICO ═══
+// La simulación, la nómina oficial simulada, la comparativa con la nómina real
+// y la PREDICCIÓN usan este mismo % (aplicado a la parte variable), para que
+// den siempre la misma cifra. Orden: el % que hayas escrito a mano > la media
+// histórica REAL (retención ÷ parte variable de cada nómina subida) > la media
+// sobre el bruto (solo si no hay otra cosa). Si el ciclo ya tiene su nómina real,
+// se calcula "a ciegas" (sin mirar esa nómina) para poder medir el acierto.
+function pctsRetencion(opts){
+  opts=opts||{};
+  const t=getTarifas();
+  const man=(t.irpfPct!=null&&t.irpfPct!=='')||(t.ssPct!=null&&t.ssPct!=='');
+  if(man && !opts.ignorarManual){ const i=+t.irpfPct||0, sx=+t.ssPct||0; return {irpf:i,ss:sx,total:i+sx,origen:'manual',n:0}; }
+  const todos=historicoNominas().filter(m=>m.pctRetVariable!=null);
+  let base=opts.excluirMes?todos.filter(m=>m.mes!==opts.excluirMes):todos;
+  if(!base.length) base=todos;
+  if(base.length){
+    const total=base.reduce((a,m)=>a+m.pctRetVariable,0)/base.length;
+    let rI=0,rS=0;
+    base.forEach(m=>{
+      const ps=(S.payslips||[]).filter(x=>x.mes===m.mes).sort((a,b)=>(b.uploadedAt||'').localeCompare(a.uploadedAt||''))[0];
+      if(ps&&ps.extracted){ rI+=+ps.extracted.retencionIRPF||0; rS+=+ps.extracted.retencionSS||0; }
+    });
+    const share=(rI+rS)>0?rI/(rI+rS):0.75;
+    return {irpf:total*share,ss:total*(1-share),total,origen:'historico',n:base.length};
+  }
+  const hb=promedioRetencionesHistoricas();
+  if(hb.irpf||hb.ss) return {irpf:hb.irpf||0,ss:hb.ss||0,total:(hb.irpf||0)+(hb.ss||0),origen:'bruto',n:Math.max(hb.nIrpf,hb.nSs)};
+  return {irpf:0,ss:0,total:0,origen:'ninguno',n:0};
+}
+function pctsRetencionCiclo(mesKey){
+  return pctsRetencion({excluirMes:mesKey,ignorarManual:(S.payslips||[]).some(p=>p.mes===mesKey)});
+}
 function promedioRetencionesHistoricas(){
   const irpfPcts=[], ssPcts=[];
   (S.payslips||[]).forEach(p=>{
@@ -1355,7 +1391,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261101-comparativa'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261101-todo'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -4261,42 +4297,54 @@ function renderWeekView(){
   const dow = now.getDay();
   const monday = new Date(now);
   monday.setDate(now.getDate() - (dow===0?6:dow-1));
-  const days = Array.from({length:7},(_,i)=>{
-    const d=new Date(monday);d.setDate(monday.getDate()+i);
-    return d.toISOString().slice(0,10);
+  const fmtD=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+  const days = Array.from({length:7},(_,i)=>{ const d=new Date(monday); d.setDate(monday.getDate()+i); return fmtD(d); });
+  const irSemana=delta=>{
+    const d=new Date(selDate+'T12:00:00'); d.setDate(d.getDate()+delta*7);
+    selDate=fmtD(d); calYear=d.getFullYear(); calMonth=d.getMonth(); rerender();
+  };
+  let totH=0,totI=0;
+  const filas=days.map((ds,i)=>{
+    const entry=S.entries.find(e=>e.fecha===ds);
+    const tasks=S.tasks.filter(t=>t.fecha===ds);
+    const isToday=ds===today(), isSel=ds===selDate;
+    const tag=getDayTag(ds);
+    const dw=new Date(ds+'T12:00:00').getDay();
+    const finde=dw===0||dw===6, fest=isHolidayES(ds)||tag==='festivo';
+    const horas=entry?(entry.horasNormales||0)+(entry.horasExtra||0)+(entry.horasNocturnas||0)+(entry.horasFestivas||0):0;
+    const imp=entry?importeTotalDia(entry):0;
+    totH+=horas; totI+=imp;
+    const extras=extrasCalendarioItems(ds);
+    const av=revisarDiaFecha(ds);
+    const borde=tag==='vacaciones'?'#eab308':fest?'#ef4444':entry?'#22c55e':finde?'#8b5cf6':'rgba(148,163,184,.6)';
+    return h('div',{
+      style:{display:'grid',gridTemplateColumns:'3.4rem 1fr auto',gap:'.5rem',alignItems:'center',
+        background:isSel?'var(--acc-lt)':'var(--surf2)',borderRadius:'var(--r2)',padding:'.5rem .6rem',cursor:'pointer',
+        borderLeft:'5px solid '+borde,outline:isToday?'2px solid var(--acc)':'none',outlineOffset:'-2px'},
+      on:{click:()=>{selDate=ds;rerender();},dblclick:()=>goToDay(ds)}
+    },
+      h('div',{style:{lineHeight:1.15}},
+        h('div',{style:{fontSize:'.68rem',color:'var(--ink2)',fontWeight:700}},WSHORT[i]),
+        h('div',{style:{fontSize:'1.15rem',fontWeight:900,color:fest?'#ef4444':'var(--ink)'}},parseInt(ds.slice(8)))
+      ),
+      h('div',{style:{minWidth:0}},
+        entry?h('div',{style:{fontSize:'.85rem',fontWeight:800}},fmtH(horas)+(av.length?' ⚠':'')):h('div',{style:{fontSize:'.76rem',color:'var(--ink3)'}},fest?'Festivo':finde?'Fin de semana':(tag==='vacaciones'?'Vacaciones':'Sin jornada')),
+        extras.length?h('div',{style:{fontSize:'.74rem',fontWeight:800,color:'var(--ink)',lineHeight:1.35,overflowWrap:'anywhere'}},extras.join(' + ')):null,
+        tasks.length?h('div',{style:{fontSize:'.68rem',color:'var(--blu)'}},tasks.length+' tarea'+(tasks.length>1?'s':'')):null
+      ),
+      h('div',{style:{fontSize:'.85rem',fontWeight:800,whiteSpace:'nowrap'}},entry?eur(imp):'')
+    );
   });
   return h('div',{},
-    h('div',{style:{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'4px',marginBottom:'.5rem'}},
-      ...days.map(ds=>{
-        const entry=S.entries.find(e=>e.fecha===ds);
-        const tasks=S.tasks.filter(t=>t.fecha===ds);
-        const isToday=ds===today();
-        const isSel=ds===selDate;
-        return h('div',{
-          style:{
-            background:isSel?'var(--acc)':isToday?'var(--acc-lt)':'var(--surf2)',
-            color:isSel?'#000':'var(--ink)',
-            borderRadius:'var(--r2)',padding:'.5rem .3rem',
-            cursor:'pointer',minHeight:'80px',fontSize:'.75rem',
-            border:'1px solid '+(isSel?'var(--acc)':'var(--brd)')
-          },
-          on:{
-  click:()=>{selDate=ds;rerender();},
-  dblclick:()=>goToDay(ds)
-}
-        },
-          h('div',{style:{fontWeight:700,fontSize:'.8rem',marginBottom:'.2rem'}},
-            WSHORT[days.indexOf(ds)]+' '+parseInt(ds.slice(8))
-          ),
-          entry?h('div',{style:{background:'var(--acc)',color:'#000',borderRadius:'4px',padding:'1px 3px',marginBottom:'2px',fontSize:'.65rem'}},
-            fmtH((entry.horasNormales||0)+(entry.horasExtra||0)+(entry.horasNocturnas||0)+(entry.horasFestivas||0))
-          ):null,
-          tasks.length>0?h('div',{style:{background:'var(--blu-lt)',color:'var(--blu)',borderRadius:'4px',padding:'1px 3px',fontSize:'.65rem'}},
-            tasks.length+' tarea'+(tasks.length>1?'s':'')
-          ):null
-        );
-      })
-    )
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',margin:'.3rem 0 .5rem',gap:'.4rem'}},
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>irSemana(-1)}},'◄ Semana'),
+      h('span',{style:{fontSize:'.76rem',fontWeight:700,color:'var(--ink2)',textAlign:'center'}},
+        parseInt(days[0].slice(8))+'/'+days[0].slice(5,7)+' – '+parseInt(days[6].slice(8))+'/'+days[6].slice(5,7)),
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>irSemana(1)}},'Semana ►')
+    ),
+    h('div',{style:{display:'flex',flexDirection:'column',gap:'.35rem',marginBottom:'.5rem'}},...filas),
+    h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.5rem .7rem',background:'var(--surf3)',borderRadius:'var(--r2)',fontWeight:900,fontSize:'.9rem'}},
+      h('span',{},'TOTAL SEMANA · '+fmtH(totH)),h('span',{},eur(totI)))
   );
 }
 
@@ -9374,16 +9422,16 @@ function predecirNominaMes(mesKey, app, historicoCompleto){
   // % de retención real que la empresa ha aplicado históricamente sobre la
   // parte variable (más fiable, si hay datos, que el % configurado a mano en
   // Tarifas, porque es el que la empresa usa DE VERDAD).
-  const pctsHist=baseHistorico.map(m=>m.pctRetVariable).filter(v=>v!=null);
-  const pctRetHistorico=pctsHist.length?(pctsHist.reduce((s,v)=>s+v,0)/pctsHist.length):null;
-  const pctRetUsado=pctRetHistorico!=null?pctRetHistorico:((t.irpfPct||0)+(t.ssPct||0));
+  const _P=pctsRetencionCiclo(mesKey);
+  const pctRetHistorico=_P.origen==='historico'?_P.total:null;
+  const pctRetUsado=_P.total;
   const retencionPredicha=Math.round(variableBruto*pctRetUsado/100*100)/100;
   const netoPredicho=Math.round((pactoFijo+sim.exento+variableBruto-retencionPredicha)*100)/100;
 
   return {
     pactoFijo, desgloseFijoPredicho, variableBruto,
     pctRetUsado:Math.round(pctRetUsado*100)/100,
-    origenPct: pctRetHistorico!=null?'histórico real':'tarifas configuradas',
+    origenPct: _P.origen==='historico'?'histórico real':_P.origen==='manual'?'el % que has fijado a mano':_P.origen==='bruto'?'media sobre el bruto de tus nóminas':'sin datos de nóminas',
     retencionPredicha, netoPredicho,
     nMesesHistorico: baseHistorico.length,
     confianza: baseHistorico.length>=3?'alta':(baseHistorico.length>=1?'media':'baja')
@@ -10133,6 +10181,96 @@ function renderComparativaResultadoInline(r){
   );
 }
 
+
+// ── Resumen del ciclo para la empresa (mismos conceptos que su documento) ──
+function resumenEmpresaDatos(mesKey){
+  const {inicio,fin}=periodoRangoDe(mesKey);
+  const ents=S.entries.filter(e=>e.fecha>=inicio&&e.fecha<=fin).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  const n=v=>+v||0, r2=v=>Math.round(v*100)/100;
+  const G={
+    extra:{titulo:'Horas extra',filas:[]}, noct:{titulo:'Horas nocturnas',filas:[]}, fest:{titulo:'Horas festivas',filas:[]},
+    dieta:{titulo:'Dietas',filas:[]}, transp:{titulo:'Transporte',filas:[]}, viaje:{titulo:'Viajes',filas:[]}, otros:{titulo:'Otros conceptos',filas:[]}
+  };
+  ents.forEach(e=>{
+    const tit=String(e.titulo||'').replace(/&nbsp;/g,' ').trim();
+    const horas=(k,hk,ik,pk)=>{ if(n(e[hk])>0&&n(e[ik])>0) G[k].filas.push({fecha:e.fecha,concepto:tit,uds:n(e[hk]),precio:r2(n(e[ik])/n(e[hk])),importe:r2(n(e[ik]))}); };
+    horas('extra','horasExtra','importeExtra'); horas('noct','horasNocturnas','importeNocturnas'); horas('fest','horasFestivas','importeFestivas');
+    const dietas=n(e.dieta)+(e.dietasExtra||[]).reduce((a,d)=>a+n(d.importe),0);
+    const nd=(n(e.dieta)>0?1:0)+(e.dietasExtra||[]).length;
+    if(dietas>0) G.dieta.filas.push({fecha:e.fecha,concepto:tit,uds:nd||1,precio:r2(dietas/(nd||1)),importe:r2(dietas)});
+    if(n(e.transporte)>0){
+      const tt=(S.transportTypes||[]).find(t=>t.id===e._transportType), q=e.transporteCantidad||1;
+      G.transp.filas.push({fecha:e.fecha,concepto:tt?tt.nombre:tit,uds:q,precio:r2(n(e.transporte)/q),importe:r2(n(e.transporte))});
+    }
+    (e.journeys||[]).forEach(j=>{ const iv=importeViaje(j); if(iv>0){ const km=n(j.km); G.viaje.filas.push({fecha:e.fecha,concepto:km>0?(km+' km'):tit,uds:1,precio:r2(iv),importe:r2(iv)}); } });
+    (e.otrosConceptos||[]).forEach(o=>{ if(n(o.importe)>0) G.otros.filas.push({fecha:e.fecha,concepto:o.concepto||'',uds:1,precio:r2(n(o.importe)),importe:r2(n(o.importe))}); });
+  });
+  const grupos=Object.values(G).filter(g=>g.filas.length).map(g=>({...g,subtotal:r2(g.filas.reduce((a,f)=>a+f.importe,0)),uds:r2(g.filas.reduce((a,f)=>a+f.uds,0))}));
+  return {inicio,fin,grupos,total:r2(grupos.reduce((a,g)=>a+g.subtotal,0))};
+}
+function resumenEmpresaTexto(mesKey){
+  const D=resumenEmpresaDatos(mesKey);
+  const fd=ds=>ds.slice(8)+'/'+ds.slice(5,7);
+  const nombre=((fWorker.nombre||'')+' '+(fWorker.apellidos||'')).trim();
+  let t='RESUMEN DEL CICLO — '+periodoLabel(mesKey)+'\n'+(nombre?nombre+'\n':'')+'\n';
+  if(!D.grupos.length) return t+'Sin extras, dietas ni viajes con importe en este ciclo.';
+  D.grupos.forEach(g=>{
+    t+=g.titulo.toUpperCase()+'\n';
+    g.filas.forEach(f=>{ t+='  '+fd(f.fecha)+'  '+(f.uds!==1||g.titulo.startsWith('Horas')?f.uds+(g.titulo.startsWith('Horas')?' h':' ud')+' × '+eur(f.precio)+' = ':'')+eur(f.importe)+(f.concepto?'  ('+f.concepto+')':'')+'\n'; });
+    t+='  Subtotal '+g.titulo.toLowerCase()+': '+eur(g.subtotal)+'\n\n';
+  });
+  return t+'TOTAL: '+eur(D.total);
+}
+function resumenEmpresaPDF(mesKey){
+  if(!window.jspdf){ showAlert('Cargando librería PDF...','err'); setTimeout(()=>resumenEmpresaPDF(mesKey),1500); return; }
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const D=resumenEmpresaDatos(mesKey);
+  let y=16;
+  const salto=(h)=>{ if(y+h>285){ doc.addPage(); y=16; } };
+  doc.setFontSize(14); doc.setFont(undefined,'bold'); doc.text('Resumen del ciclo — '+periodoLabel(mesKey),14,y); y+=7;
+  const nombre=((fWorker.nombre||'')+' '+(fWorker.apellidos||'')).trim();
+  doc.setFontSize(10); doc.setFont(undefined,'normal'); if(nombre){ doc.text(nombre,14,y); y+=6; } y+=2;
+  if(!D.grupos.length){ doc.text('Sin extras, dietas ni viajes con importe en este ciclo.',14,y); }
+  D.grupos.forEach(g=>{
+    salto(14+g.filas.length*5);
+    doc.setFont(undefined,'bold'); doc.setFontSize(11); doc.text(g.titulo,14,y); y+=5.5;
+    doc.setFontSize(8.5); doc.text('Fecha',14,y); doc.text('Concepto',32,y); doc.text('Uds',112,y,{align:'right'}); doc.text('Precio',140,y,{align:'right'}); doc.text('Importe',196,y,{align:'right'}); y+=1.5; doc.line(14,y,196,y); y+=4;
+    doc.setFont(undefined,'normal');
+    g.filas.forEach(f=>{ salto(6);
+      doc.text(f.fecha.slice(8)+'/'+f.fecha.slice(5,7),14,y);
+      doc.text(String(f.concepto||'').slice(0,48),32,y);
+      doc.text(String(f.uds).replace('.',','),112,y,{align:'right'});
+      doc.text(eur(f.precio),140,y,{align:'right'}); doc.text(eur(f.importe),196,y,{align:'right'}); y+=5; });
+    doc.setFont(undefined,'bold'); doc.text('Subtotal '+g.titulo.toLowerCase()+': '+eur(g.subtotal),196,y,{align:'right'}); y+=9; doc.setFont(undefined,'normal');
+  });
+  if(D.grupos.length){ salto(12); doc.setFontSize(12); doc.setFont(undefined,'bold'); doc.text('TOTAL: '+eur(D.total),196,y,{align:'right'}); }
+  dlDialog={blob:doc.output('blob'),filename:'resumen_empresa_'+mesKey+'.pdf',type:'pdf',title:'Resumen para la empresa '+periodoLabel(mesKey)};
+  S.modal='dl'; rerender();
+}
+function renderResumenEmpresaCard(mesKey){
+  const D=resumenEmpresaDatos(mesKey);
+  const fd=ds=>ds.slice(8)+'/'+ds.slice(5,7);
+  return h('div',{class:'card'},
+    h('div',{class:'sec-title'},'🏢 Resumen del ciclo para la empresa'),
+    h('div',{style:{fontSize:'.74rem',color:'var(--ink2)',marginBottom:'.5rem',lineHeight:1.5}},
+      'Tus extras, dietas, transporte y viajes de '+periodoLabel(mesKey)+', agrupados por concepto con fecha, unidades, precio e importe — para ponerlo al lado del documento de la empresa y comparar.'),
+    !D.grupos.length?h('div',{style:{fontSize:'.8rem',color:'var(--ink3)'}},'Sin extras, dietas ni viajes con importe en este ciclo.'):
+    h('div',{},
+      ...D.grupos.map(g=>h('div',{style:{marginBottom:'.6rem'}},
+        h('div',{style:{fontWeight:800,fontSize:'.82rem',borderBottom:'2px solid var(--brd)',padding:'.15rem 0'}},g.titulo+' · '+eur(g.subtotal)),
+        ...g.filas.map(f=>h('div',{style:{display:'flex',justifyContent:'space-between',gap:'.5rem',fontSize:'.76rem',padding:'.2rem 0',borderBottom:'1px solid var(--brd)'}},
+          h('span',{style:{minWidth:0,overflowWrap:'anywhere'}},h('b',{},fd(f.fecha)),' '+(g.titulo.startsWith('Horas')?f.uds+' h × '+eur(f.precio):(f.uds>1?f.uds+' × '+eur(f.precio):''))+(f.concepto?' · '+f.concepto:'')),
+          h('b',{style:{whiteSpace:'nowrap'}},eur(f.importe))))
+      )),
+      h('div',{style:{display:'flex',justifyContent:'space-between',fontWeight:900,fontSize:'.95rem',padding:'.4rem 0'}},h('span',{},'TOTAL'),h('span',{},eur(D.total)))
+    ),
+    h('div',{style:{display:'flex',gap:'.5rem',marginTop:'.4rem'}},
+      h('button',{class:'btn btn-g btn-sm',style:{flex:1},on:{click:()=>resumenEmpresaPDF(mesKey)}},'📄 PDF'),
+      h('button',{class:'btn btn-gh btn-sm',style:{flex:1},on:{click:async()=>{ const tx=resumenEmpresaTexto(mesKey); try{ if(navigator.share){ await navigator.share({title:'Resumen '+periodoLabel(mesKey),text:tx}); return; } }catch(e){ if(e&&e.name==='AbortError') return; } try{ await navigator.clipboard.writeText(tx); showAlert('📋 Resumen copiado'); }catch(e){ showAlert('No se pudo copiar','err'); } }}},'📤 Compartir / copiar'))
+  );
+}
+
 function renderComparativaEmpresaCard(mesKey){
   const docsDelMes=(S.empresaDocs||[]).filter(d=>d.mes===mesKey).sort((a,b)=>(b.uploadedAt||'').localeCompare(a.uploadedAt||''));
   return h('div',{class:'card'},
@@ -10224,9 +10362,8 @@ function renderComparativaNominasCard(mesKey, app, payslipsDelMes){
   const payslip=payslipsDelMes[0]; // la más reciente subida para este mes
   const ex=payslip.extracted||{};
   const t=getTarifas();
-  const hist=promedioRetencionesHistoricas();
-  const irpfPct=(t.irpfPct!=null && t.irpfPct!=='')?+t.irpfPct:(hist.irpf||0);
-  const ssPct=(t.ssPct!=null && t.ssPct!=='')?+t.ssPct:(hist.ss||0);
+  const _P=pctsRetencionCiclo(mesKey);
+  const irpfPct=_P.irpf, ssPct=_P.ss;
   const sim=simularNomina(app, irpfPct, ssPct);
 
   const pactoApp=sim.pactado;
@@ -10532,9 +10669,8 @@ function renderModalCompPreguntas(){
 // la imagen final para compartir/descargar.
 function buildNominaOficialHtml(mesKey, app){
   const t=getTarifas();
-  const hist=promedioRetencionesHistoricas();
-  const irpfPct=(t.irpfPct!=null && t.irpfPct!=='')?+t.irpfPct:(hist.irpf||0);
-  const ssPct=(t.ssPct!=null && t.ssPct!=='')?+t.ssPct:(hist.ss||0);
+  const _P=pctsRetencionCiclo(mesKey);
+  const irpfPct=_P.irpf, ssPct=_P.ss;
   const sim=simularNomina(app, irpfPct, ssPct);
   const cerrado=periodoEstaCerrado(mesKey);
   const {inicio,fin}=periodoRangoDe(mesKey);
@@ -10767,11 +10903,11 @@ async function enviarMensajeNomina(mesKey){
 // quedando el total a medida que se acerca el día 25/26 de cierre.
 function renderSimulacionNomina(mesKey, app){
   const t=getTarifas();
-  const hist=promedioRetencionesHistoricas();
-  const irpfPct=(t.irpfPct!=null && t.irpfPct!=='')?+t.irpfPct:(hist.irpf||0);
-  const ssPct=(t.ssPct!=null && t.ssPct!=='')?+t.ssPct:(hist.ss||0);
+  const _P=pctsRetencionCiclo(mesKey);
+  const hist={irpf:_P.irpf,ss:_P.ss,nIrpf:_P.n,nSs:_P.n};
+  const irpfPct=_P.irpf, ssPct=_P.ss;
   const sim=simularNomina(app, irpfPct, ssPct);
-  const sinHistorial=!hist.nIrpf && !hist.nSs && t.irpfPct==null && t.ssPct==null;
+  const sinHistorial=_P.origen==='ninguno';
   return h('div',{class:'card'},
     h('div',{class:'sec-title'},'🧮 Simulación aproximada de '+periodoLabel(mesKey)),
     h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.6rem'}},
@@ -10781,7 +10917,9 @@ function renderSimulacionNomina(mesKey, app){
     sinHistorial?h('div',{style:{fontSize:'.72rem',color:'var(--yel)',marginBottom:'.6rem',fontWeight:600}},
       '⚠️ Todavía no hay ninguna nómina real analizada de la que sacar un % medio — escribe tú el % de IRPF y Seg. Social que te suelen aplicar.'
     ):h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.6rem'}},
-      '% calculado como la media de '+(hist.nIrpf||hist.nSs)+' nómina(s) real(es) ya analizada(s) (puedes cambiarlo a mano).'
+      _P.origen==='manual'?'% fijado por ti a mano (déjalo vacío para que use la media de tus nóminas reales).'
+      :_P.origen==='historico'?'% = retención media real de '+_P.n+' nómina(s) analizada(s) sobre su parte variable — el MISMO que usa la predicción (puedes cambiarlo a mano).'
+      :'% calculado sobre el bruto de '+_P.n+' nómina(s) (aproximado; mejorará al subir nóminas con su desglose).'
     ),
     h('div',{style:{fontSize:'.78rem',fontWeight:700,color:'var(--ink2)',marginBottom:'.3rem'}},'DEVENGOS'),
     h('div',{style:{fontSize:'.85rem',marginBottom:'.15rem'}},'Sueldo Base + Guardia (pactados, sin retención): '+eur(sim.pactado)),
@@ -10792,14 +10930,14 @@ function renderSimulacionNomina(mesKey, app){
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.4rem',alignItems:'end',marginBottom:'.4rem'}},
       h('div',{},
         h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'% IRPF'),
-        h('input',{type:'number',min:'0',step:'0.01',value:t.irpfPct!=null?t.irpfPct:(hist.irpf?hist.irpf.toFixed(2):''),placeholder:hist.irpf?hist.irpf.toFixed(2):'0.00',
+        h('input',{type:'number',min:'0',step:'0.01',value:(t.irpfPct!=null&&t.irpfPct!=='')?t.irpfPct:(hist.irpf?hist.irpf.toFixed(2):''),placeholder:hist.irpf?hist.irpf.toFixed(2):'0.00',
           style:{width:'100%',fontWeight:700},
           on:{change:ev=>{ const tt=getTarifas(); tt.irpfPct=ev.target.value===''?null:parseFloat(ev.target.value)||0; saveTarifas(tt); rerender(); }}
         })
       ),
       h('div',{},
         h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'% Seg. Social'),
-        h('input',{type:'number',min:'0',step:'0.01',value:t.ssPct!=null?t.ssPct:(hist.ss?hist.ss.toFixed(2):''),placeholder:hist.ss?hist.ss.toFixed(2):'0.00',
+        h('input',{type:'number',min:'0',step:'0.01',value:(t.ssPct!=null&&t.ssPct!=='')?t.ssPct:(hist.ss?hist.ss.toFixed(2):''),placeholder:hist.ss?hist.ss.toFixed(2):'0.00',
           style:{width:'100%',fontWeight:700},
           on:{change:ev=>{ const tt=getTarifas(); tt.ssPct=ev.target.value===''?null:parseFloat(ev.target.value)||0; saveTarifas(tt); rerender(); }}
         })
@@ -10902,6 +11040,7 @@ function renderNominas(){
     ),
 
     renderComparativaEmpresaCard(mesKey),
+    renderResumenEmpresaCard(mesKey),
 
     renderComparativaNominasCard(mesKey, app, payslipsDelMes),
     renderPrediccionModusOperandiCard(mesKey, app, payslipsDelMes),
