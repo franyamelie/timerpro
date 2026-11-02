@@ -451,6 +451,7 @@ function horasResumenDesglose(e){
 // Desglose REAL (todas las horas del día, sin filtrar por modo). Con "Mostrar
 // precios" el Resumen enseña siempre lo que realmente se computa en euros;
 // la opción "Qué horas computar" solo decide qué horas se ven en el KPI/sin precios.
+const PSING={Normales:'Normal',Extra:'Extra',Nocturnas:'Nocturna',Festivas:'Festiva'}; // nombre REAL del campo de precio
 function horasRealDesglose(e){
   const c=Object.assign({},e,{fichajes:(e.fichajes||[]).map(f=>Object.assign({},f,{_horasEnResumen:'todas'}))});
   return horasResumenDesglose(c);
@@ -1401,7 +1402,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261102-precios'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261102-precios2'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -1660,7 +1661,7 @@ function refrescarHorasPantalla(){
       if(el&&document.activeElement!==el) el.value=(parseFloat(t1[hk])||0)||'';
       const di=document.getElementById('imp-'+low);
       if(di){
-        const c=Math.round((parseFloat(t1[hk])||0)*(parseFloat(fEntry['precioHora'+tipo])||0)*100)/100;
+        const c=Math.round((parseFloat(t1[hk])||0)*(parseFloat(fEntry['precioHora'+PSING[tipo]])||0)*100)/100;
         di.textContent=c>0?eur(c):'—';
       }
     });
@@ -1669,7 +1670,7 @@ function refrescarHorasPantalla(){
         const el=document.getElementById('hdet-'+fj._fid+'-'+low);
         if(el&&document.activeElement!==el) el.value=(parseFloat(fj['horas'+tipo])||0)||'';
         const di=document.getElementById('idet-'+fj._fid+'-'+low);
-        if(di){ const c=Math.round((parseFloat(fj['horas'+tipo])||0)*(parseFloat(fEntry['precioHora'+tipo])||0)*100)/100; di.textContent=eur(c); }
+        if(di){ const c=Math.round((parseFloat(fj['horas'+tipo])||0)*(parseFloat(fEntry['precioHora'+PSING[tipo]])||0)*100)/100; di.textContent=eur(c); }
       });
     });
   }catch(e){}
@@ -2202,12 +2203,19 @@ function renderFichar(){
       if(tar.precioExtra&&!fEntry.precioHoraExtra&&!fEntry._precioExtraManual) {fEntry.precioHoraExtra=tar.precioExtra;}
       if(tar.precioNocturna&&!fEntry.precioHoraNocturna&&!fEntry._precioNocturnaManual) {fEntry.precioHoraNocturna=tar.precioNocturna;}
       if(tar.precioFestiva&&!fEntry.precioHoraFestiva&&!fEntry._precioFestivaManual) {fEntry.precioHoraFestiva=tar.precioFestiva;}
+      // Reparación: precios guardados antes con el nombre equivocado (plural)
+      [['Normales','Normal'],['Nocturnas','Nocturna'],['Festivas','Festiva']].forEach(([pl,sg])=>{
+        const mal=fEntry['precioHora'+pl];
+        if(mal>0&&!fEntry['precioHora'+sg]){ fEntry['precioHora'+sg]=mal; fEntry['_precio'+sg+'Manual']=true; }
+        if(mal!==undefined){ delete fEntry['precioHora'+pl]; }
+      });
       // Si no hay tarifa pero sí precio por defecto (⚙️), también se APLICA
       // (antes solo se mostraba en el campo y el importe seguía en 0).
       ['Normales','Extra','Nocturnas','Festivas'].forEach(t=>{
-        const k='precioHora'+t;
-        if(!fEntry[k]&&!fEntry['_precio'+t+'Manual']&&S[k+'Default']>0){ fEntry[k]=S[k+'Default']; }
+        const k='precioHora'+PSING[t];
+        if(!fEntry[k]&&!fEntry['_precio'+PSING[t]+'Manual']&&S[k+'Default']>0){ fEntry[k]=S[k+'Default']; }
       });
+      if(fEntry.fichajes&&fEntry.fichajes.length) recomputeDayAggregates(); // recalcula importes con los precios ya aplicados
       return null;
     })(),
     // Horas e importes del fichaje 1 (la pantalla principal). Con 2+ fichajes,
@@ -2224,7 +2232,12 @@ function renderFichar(){
         h('div',{style:{fontSize:'.65rem',fontWeight:700,color:'var(--ink3)',textTransform:'uppercase',textAlign:'right'}},'IMPORTE')
       ),
       ...(['Normales','Extra','Nocturnas','Festivas'].map(tipo=>{
-        const pk='precioHora'+tipo;
+        // Nombre REAL del campo de precio (singular: precioHoraNormal / Nocturna /
+        // Festiva). Antes se usaba 'precioHora'+tipo (plural) y el precio se
+        // guardaba en un campo que nada más leía → el importe se veía pero el
+        // precio real quedaba a 0 en Resumen, nóminas, etc.
+        const tipoS={Normales:'Normal',Extra:'Extra',Nocturnas:'Nocturna',Festivas:'Festiva'}[tipo];
+        const pk='precioHora'+tipoS;
         const hk='horas'+tipo;
         const ik='importe'+tipo;
         const at=getFichaje1Target();
@@ -2241,7 +2254,7 @@ function renderFichar(){
                 style:{background:'none',border:'none',cursor:'pointer',fontSize:'.7rem',color:'var(--ink3)',padding:'0'},
                 on:{click:ev=>{
                   ev.stopPropagation();
-                  const key='precioHora'+tipo+'Default';
+                  const key='precioHora'+PSING[tipo]+'Default';
                   showPriceModal('€/hora '+tipo+' por defecto',S[key]||0,function(val){
                     S[key]=val;localStorage.setItem(key,S[key]);showAlert('✅ '+tipo+': '+eur(S[key])+'/h');rerender();
                   });
@@ -2282,7 +2295,7 @@ function renderFichar(){
           h('div',{class:'field',style:{margin:0}},
             h('label',{},'€/HORA'),
             h('input',{type:'text',inputmode:'decimal',
-              value:(precio>0?precio:(S['precioHora'+tipo+'Default']>0?S['precioHora'+tipo+'Default']:'')),placeholder:'0,00',
+              value:(precio>0?precio:(S['precioHora'+PSING[tipo]+'Default']>0?S['precioHora'+PSING[tipo]+'Default']:'')),placeholder:'0,00',
               on:{
                 input:ev=>{
                   // Don't parseFloat here - keep raw text so user can type decimals freely
@@ -2302,7 +2315,7 @@ function renderFichar(){
                   const v=ev.target.value.replace(',','.');
                   const p2=parseFloat(v)||0;
                   fEntry[pk]=p2;
-                  fEntry['_precio'+tipo+'Manual']=true;
+                  fEntry['_precio'+tipoS+'Manual']=true;
                   fEntry[ik]=Math.round((parseFloat(e[hk])||0)*p2*100)/100;
                   histPush('horas', snapHorasF1, 'f1');
                   rerender();
@@ -3283,7 +3296,7 @@ function renderFichajeDetailScreen(idx){
         h('div',{style:{fontSize:'.65rem',fontWeight:700,color:'var(--ink3)',textTransform:'uppercase',textAlign:'right'}},'IMPORTE')
       ),
       ...(['Normales','Extra','Nocturnas','Festivas'].map(tipo=>{
-        const pk='precioHora'+tipo, hk='horas'+tipo, ik='importe'+tipo;
+        const pk='precioHora'+PSING[tipo], hk='horas'+tipo, ik='importe'+tipo;
         const horas=parseFloat(fj[hk])||0;
         const precio=parseFloat(fEntry[pk])||0;
         const pushHist=()=>histPush('horasFich',()=>({horasNormales:fj.horasNormales,horasExtra:fj.horasExtra,horasNocturnas:fj.horasNocturnas,horasFestivas:fj.horasFestivas,
@@ -3301,7 +3314,7 @@ function renderFichajeDetailScreen(idx){
           h('div',{class:'field',style:{margin:0}},
             h('label',{},'€/HORA'),
             h('input',{type:'text',inputmode:'decimal',value:precio||'',placeholder:'0,00',
-              on:{blur:ev=>{ const v=(ev.target.value||'').replace(',','.'); fEntry[pk]=parseFloat(v)||0; fEntry['_precio'+tipo+'Manual']=true; recomputeDayAggregates(); scheduleDraftSave(); pushHist(); rerender(); }}})
+              on:{blur:ev=>{ const v=(ev.target.value||'').replace(',','.'); fEntry[pk]=parseFloat(v)||0; fEntry['_precio'+PSING[tipo]+'Manual']=true; recomputeDayAggregates(); scheduleDraftSave(); pushHist(); rerender(); }}})
           ),
           h('div',{id:'idet-'+fj._fid+'-'+tipo.toLowerCase(),style:{textAlign:'right',fontWeight:700,fontSize:'.85rem',color:(horas*precio)>0?'var(--acc)':'var(--ink3)',marginTop:'1rem'}},
             eur(Math.round(horas*precio*100)/100)
