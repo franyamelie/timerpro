@@ -438,6 +438,9 @@ function horasResumenDesglose(e){
     if(modo==='ninguna') return;
     if(modo==='extra'){ he+=fhe; return; }
     if(modo==='normales'){ hn+=fhn; return; }
+    if(modo==='nocturnas'){ hnoc+=fhnoc; return; }
+    if(modo==='festivas'){ hf+=fhf; return; }
+    if(modo==='ne'){ hn+=fhn; he+=fhe; return; }
     hn+=fhn; he+=fhe; hnoc+=fhnoc; hf+=fhf; // 'todas'
   });
   return {
@@ -1391,7 +1394,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261101-todo'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261102-resumen'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -2192,6 +2195,12 @@ function renderFichar(){
       if(tar.precioExtra&&!fEntry.precioHoraExtra&&!fEntry._precioExtraManual) {fEntry.precioHoraExtra=tar.precioExtra;}
       if(tar.precioNocturna&&!fEntry.precioHoraNocturna&&!fEntry._precioNocturnaManual) {fEntry.precioHoraNocturna=tar.precioNocturna;}
       if(tar.precioFestiva&&!fEntry.precioHoraFestiva&&!fEntry._precioFestivaManual) {fEntry.precioHoraFestiva=tar.precioFestiva;}
+      // Si no hay tarifa pero sí precio por defecto (⚙️), también se APLICA
+      // (antes solo se mostraba en el campo y el importe seguía en 0).
+      ['Normales','Extra','Nocturnas','Festivas'].forEach(t=>{
+        const k='precioHora'+t;
+        if(!fEntry[k]&&!fEntry['_precio'+t+'Manual']&&S[k+'Default']>0){ fEntry[k]=S[k+'Default']; }
+      });
       return null;
     })(),
     // Horas e importes del fichaje 1 (la pantalla principal). Con 2+ fichajes,
@@ -2978,9 +2987,12 @@ function renderVisibilidadFichajeCard(fj){
       h('div',{style:{fontSize:'.82rem',color:'var(--ink2)',marginBottom:'.4rem'}},'Qué horas computar en el Resumen'),
       h('div',{style:{display:'flex',gap:'.3rem',flexWrap:'wrap'}},
         ...[
-          ['todas','Normales + Extra'],
-          ['extra','Solo extra'],
+          ['todas','Todas'],
+          ['ne','Normales + Extra'],
           ['normales','Solo normales'],
+          ['extra','Solo extra'],
+          ['nocturnas','Solo nocturnas'],
+          ['festivas','Solo festivas'],
           ['ninguna','Ninguna']
         ].map(([val,lbl])=>{
           const activo=(fj._horasEnResumen||'todas')===val;
@@ -7542,11 +7554,11 @@ function renderModalResumenDia(){
           },'✕')
         ),
         // KPIs rápidos
-        h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.6rem',marginTop:'1rem'}},
-          h('div',{style:{background:'rgba(255,255,255,.12)',borderRadius:'8px',padding:'.6rem .8rem',textAlign:'center'}},
+        h('div',{style:{display:'grid',gridTemplateColumns:(totalHDisplay>0&&S._shareConPrecios===true)?'1fr 1fr':'1fr',gap:'.6rem',marginTop:'1rem'}},
+          totalHDisplay>0?h('div',{style:{background:'rgba(255,255,255,.12)',borderRadius:'8px',padding:'.6rem .8rem',textAlign:'center'}},
             h('div',{style:{fontSize:'1.4rem',fontWeight:900}},fmtH(totalHDisplay)),
             h('div',{style:{fontSize:'.68rem',opacity:.75,marginTop:'.1rem'}},'HORAS TRABAJADAS')
-          ),
+          ):null,
           S._shareConPrecios===true?h('div',{style:{background:'rgba(255,255,255,.12)',borderRadius:'8px',padding:'.6rem .8rem',textAlign:'center'}},
             h('div',{style:{fontSize:'1.4rem',fontWeight:900}},eur(totalI)),
             h('div',{style:{fontSize:'.68rem',opacity:.75,marginTop:'.1rem'}},'TOTAL A COBRAR')
@@ -7719,8 +7731,8 @@ function renderModalResumenDia(){
         // Horas e importes — refleja el desglose AJUSTADO (dHoras), que
         // respeta "qué horas computar en el Resumen" de cada fichaje, para
         // que nunca contradiga al KPI "HORAS TRABAJADAS" de arriba.
-        totalHDisplay>0 ? h('div',{},
-          sec('🕐','Horas e Importes'),
+        (totalHDisplay>0 || (S._shareConPrecios===true&&resumenExtrasFilas(e).length>0)) ? h('div',{},
+          sec('🕐',totalHDisplay>0?'Horas e Importes':'Importes'),
           dHoras.hn>0?row('Normales',dHoras.hn+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraNormal||0)+' = '+eur(dHoras.hn*(e.precioHoraNormal||0)):'')):null,
           dHoras.he>0?row('Extra',dHoras.he+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraExtra||0)+' = '+eur(dHoras.he*(e.precioHoraExtra||0)):'')):null,
           dHoras.hnoc>0?row('Nocturnas',dHoras.hnoc+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraNocturna||0)+' = '+eur(dHoras.hnoc*(e.precioHoraNocturna||0)):'')):null,
@@ -7970,7 +7982,7 @@ function shareResumen(method, conPrecios){
   // Precios SOLO si conPrecios===true
   if(cp){
     lines.push('─────────────────────────');
-    lines.push('🕐 HORAS: '+fmtH(totalH));
+    if(totalH>0) lines.push('🕐 HORAS: '+fmtH(totalH));
     if(dHoras.hn>0) lines.push('  • Normales '+dHoras.hn+'h × '+eur(e.precioHoraNormal||0)+' = '+eur(dHoras.hn*(e.precioHoraNormal||0)));
     if(dHoras.he>0)    lines.push('  • Extra '+dHoras.he+'h × '+eur(e.precioHoraExtra||0)+' = '+eur(dHoras.he*(e.precioHoraExtra||0)));
     if(dHoras.hnoc>0)lines.push('  • Nocturnas '+dHoras.hnoc+'h × '+eur(e.precioHoraNocturna||0)+' = '+eur(dHoras.hnoc*(e.precioHoraNocturna||0)));
@@ -7986,7 +7998,7 @@ function shareResumen(method, conPrecios){
     lines.push('💰 TOTAL: '+eur(totalI));
   } else {
     lines.push('');
-    lines.push('🕐 '+fmtH(totalH)+' trabajadas');
+    if(totalH>0) lines.push('🕐 '+fmtH(totalH)+' trabajadas');
   }
 
   lines.push('─ TimerPro ─');
@@ -8166,14 +8178,14 @@ function generarPDFResumen(conPrecios){
 
   // Horas
   let htmlHoras = '';
-  if(totalHDisplay>0){
+  if(totalHDisplay>0 || (conPrecios&&resumenExtrasFilas(e).length>0)){
     let rows = '';
     if(dHoras.hn>0) rows += fila('Horas normales', dHoras.hn+'h' + (cp?' × '+eur(e.precioHoraNormal||0)+' = <b>'+eur(dHoras.hn*(e.precioHoraNormal||0))+'</b>':''));
     if(dHoras.he>0)    rows += fila('Horas extra', dHoras.he+'h' + (cp?' × '+eur(e.precioHoraExtra||0)+' = <b>'+eur(dHoras.he*(e.precioHoraExtra||0))+'</b>':''));
     if(dHoras.hnoc>0)rows += fila('Horas nocturnas', dHoras.hnoc+'h' + (cp?' × '+eur(e.precioHoraNocturna||0)+' = <b>'+eur(dHoras.hnoc*(e.precioHoraNocturna||0))+'</b>':''));
     if(dHoras.hf>0) rows += fila('Horas festivas', dHoras.hf+'h' + (cp?' × '+eur(e.precioHoraFestiva||0)+' = <b>'+eur(dHoras.hf*(e.precioHoraFestiva||0))+'</b>':''));
     if(conPrecios){ resumenExtrasFilas(e).forEach(x=>{ rows += fila(x[0], '<b>'+eur(x[1])+'</b>'); }); rows += `<div class="fila subtotal"><span class="flabel">Suma total (horas + extras)</span><span class="fval">${eur(totalI)}</span></div>`; }
-    htmlHoras = seccion('🕐 HORAS E IMPORTES', rows);
+    htmlHoras = seccion(totalHDisplay>0?'🕐 HORAS E IMPORTES':'💶 IMPORTES', rows);
   }
 
   // Dietas (independiente del transporte/viajes). El total agregado del día
@@ -8292,7 +8304,7 @@ function generarPDFResumen(conPrecios){
     ${!cp?'<div class="sin-precios-badge">Sin precios</div>':''}
   </div>
   <div class="kpis">
-    <div class="kpi"><div class="kpi-val">${fmtH(totalHDisplay)}</div><div class="kpi-label">HORAS TRABAJADAS</div></div>
+    ${totalHDisplay>0?`<div class="kpi"><div class="kpi-val">${fmtH(totalHDisplay)}</div><div class="kpi-label">HORAS TRABAJADAS</div></div>`:''}
     ${((e._showHorario!==false)&&(_hEntPdf||_hSalPdf))?`<div class="kpi"><div class="kpi-val" style="font-size:1rem">${_hEntPdf||'--'} → ${_hSalPdf||'--'}</div><div class="kpi-label">HORARIO</div></div>`:''}
     ${cp?`<div class="kpi"><div class="kpi-val">${eur(totalI)}</div><div class="kpi-label">TOTAL A COBRAR</div></div>`:''}
   </div>
@@ -8307,7 +8319,7 @@ function generarPDFResumen(conPrecios){
   ${htmlTareas}
   ${htmlNotas}
   ${cp?`<div class="total-box">
-    <div><div class="total-label">Total día</div><div class="total-horas">${fmtH(totalHDisplay)}</div></div>
+    <div><div class="total-label">Total día</div>${totalHDisplay>0?`<div class="total-horas">${fmtH(totalHDisplay)}</div>`:''}</div>
     <div class="total-val">${eur(totalI)}</div>
   </div>`:''}
   <div class="footer">Generado con TimerPro · ${e.fecha}</div>
@@ -8347,11 +8359,11 @@ async function compartirComoImagen(conPrecios){
     const multiFichajes = (e.fichajes||[]).length>0;
 
     // Build HTML string
-    var kpis = '<div style="display:grid;grid-template-columns:'+(cp?'1fr 1fr':'1fr')+';gap:8px;margin-top:12px">'
-      +'<div style="background:rgba(255,255,255,.14);border-radius:8px;padding:10px;text-align:center">'
+    var kpis = '<div style="display:grid;grid-template-columns:'+((cp&&totalHDisplay>0)?'1fr 1fr':'1fr')+';gap:8px;margin-top:12px">'
+      +(totalHDisplay>0?'<div style="background:rgba(255,255,255,.14);border-radius:8px;padding:10px;text-align:center">'
       +'<div style="font-size:20px;font-weight:900">'+fmtH(totalHDisplay)+'</div>'
       +'<div style="font-size:9px;opacity:.65;letter-spacing:.08em;margin-top:2px">HORAS TRABAJADAS</div>'
-      +'</div>'
+      +'</div>':'')
       +(cp?'<div style="background:rgba(255,255,255,.14);border-radius:8px;padding:10px;text-align:center">'
         +'<div style="font-size:20px;font-weight:900">'+eur(totalI)+'</div>'
         +'<div style="font-size:9px;opacity:.65;letter-spacing:.08em;margin-top:2px">TOTAL A COBRAR</div>'
@@ -8456,8 +8468,8 @@ async function compartirComoImagen(conPrecios){
     }
 
     // Horas
-    if(totalHDisplay>0){
-      html += sec('🕐','HORAS E IMPORTES');
+    if(totalHDisplay>0 || (cp&&resumenExtrasFilas(e).length>0)){
+      html += sec('🕐',totalHDisplay>0?'HORAS E IMPORTES':'IMPORTES');
       if(dHoras.hn>0) html += row('Normales', dHoras.hn+'h'+(cp?' × '+eur(e.precioHoraNormal||0)+' = '+eur(dHoras.hn*(e.precioHoraNormal||0)):''));
       if(dHoras.he>0)    html += row('Extra',    dHoras.he+'h'+(cp?' × '+eur(e.precioHoraExtra||0)+' = '+eur(dHoras.he*(e.precioHoraExtra||0)):''));
       if(dHoras.hnoc>0)html += row('Nocturnas',dHoras.hnoc+'h'+(cp?' × '+eur(e.precioHoraNocturna||0)+' = '+eur(dHoras.hnoc*(e.precioHoraNocturna||0)):''));
@@ -8517,7 +8529,7 @@ async function compartirComoImagen(conPrecios){
     if(cp){
       html += '<div style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:10px;padding:12px 16px;margin-top:14px;display:flex;justify-content:space-between;align-items:center">'
         +'<div><div style="color:rgba(255,255,255,.6);font-size:10px;letter-spacing:.1em">TOTAL DÍA</div>'
-        +'<div style="color:var(--ink3);font-size:10px;margin-top:2px">'+fmtH(totalHDisplay)+'</div></div>'
+        +(totalHDisplay>0?'<div style="color:var(--ink3);font-size:10px;margin-top:2px">'+fmtH(totalHDisplay)+'</div>':'')+'</div>'
         +'<div style="font-size:26px;font-weight:900;color:#4ade80">'+eur(totalI)+'</div></div>';
     }
 
