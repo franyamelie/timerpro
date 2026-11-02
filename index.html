@@ -1402,7 +1402,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261102-precios2'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261102-desglose'),
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -7751,7 +7751,7 @@ function renderModalResumenDia(){
         // Horas e importes — refleja el desglose AJUSTADO (dHoras), que
         // respeta "qué horas computar en el Resumen" de cada fichaje, para
         // que nunca contradiga al KPI "HORAS TRABAJADAS" de arriba.
-        (totalHDisplay>0 || (dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0 || (S._shareConPrecios===true&&resumenExtrasFilas(e).length>0)) ? h('div',{},
+        ((S._shareConPrecios!==true||S._showDesglose!==false) && (totalHDisplay>0 || (dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0 || (S._shareConPrecios===true&&resumenExtrasFilas(e).length>0))) ? h('div',{},
           sec('🕐',(dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0?'Horas e Importes':'Importes'),
           dHoras.hn>0?row('Normales',dHoras.hn+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraNormal||0)+' = '+eur(dHoras.hn*(e.precioHoraNormal||0)):'')):null,
           dHoras.he>0?row('Extra',dHoras.he+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraExtra||0)+' = '+eur(dHoras.he*(e.precioHoraExtra||0)):'')):null,
@@ -7852,6 +7852,18 @@ function renderModalResumenDia(){
               on:{click:()=>{S._shareConPrecios=S._shareConPrecios===true?false:true;rerender();}}
             },S._shareConPrecios===true?'✓ Sí':'✗ No')
           ),
+          S._shareConPrecios===true?h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.6rem',
+            background:'#f8fafc',borderRadius:'8px',padding:'.5rem .8rem',border:'1px solid #e2e8f0'}},
+            h('span',{style:{fontSize:'.82rem',color:'#475569',flex:1}},'Mostrar desglose de horas e importes'),
+            h('button',{
+              style:{
+                background:S._showDesglose!==false?'#22c55e':'#94a3b8',
+                color:'#fff',border:'none',borderRadius:'20px',
+                padding:'.25rem .7rem',cursor:'pointer',fontWeight:700,fontSize:'.78rem'
+              },
+              on:{click:()=>{S._showDesglose=S._showDesglose===false?true:false;rerender();}}
+            },S._showDesglose!==false?'✓ Sí':'✗ No')
+          ):null,
           h('div',{style:{display:'flex',gap:'.5rem',marginBottom:'.5rem'}},
             h('button',{
               style:{flex:1,background:'#dc2626',color:'#fff',border:'none',borderRadius:'8px',
@@ -8002,6 +8014,7 @@ function shareResumen(method, conPrecios){
   // Precios SOLO si conPrecios===true
   if(cp){
     lines.push('─────────────────────────');
+    const _iniDesglose=lines.length;
     if(totalH>0) lines.push('🕐 HORAS: '+fmtH(totalH));
     if(dHoras.hn>0) lines.push('  • Normales '+dHoras.hn+'h × '+eur(e.precioHoraNormal||0)+' = '+eur(dHoras.hn*(e.precioHoraNormal||0)));
     if(dHoras.he>0)    lines.push('  • Extra '+dHoras.he+'h × '+eur(e.precioHoraExtra||0)+' = '+eur(dHoras.he*(e.precioHoraExtra||0)));
@@ -8014,7 +8027,8 @@ function shareResumen(method, conPrecios){
     }
     (e.dietasExtra||[]).forEach(d=>lines.push('  • '+(d.concepto||'Dieta extra')+': '+eur(d.importe||0)));
     (e.otrosConceptos||[]).forEach(o=>lines.push('  • '+(o.concepto||'Concepto')+': '+eur(o.importe||0)));
-    lines.push('─────────────────────────');
+    if(S._showDesglose===false){ lines.length=_iniDesglose; lines.pop(); lines.push('─────────────────────────'); } // sin desglose: solo el total
+    else lines.push('─────────────────────────');
     lines.push('💰 TOTAL: '+eur(totalI));
   } else {
     lines.push('');
@@ -8198,7 +8212,7 @@ function generarPDFResumen(conPrecios){
 
   // Horas
   let htmlHoras = '';
-  if(totalHDisplay>0 || (dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0 || (conPrecios&&resumenExtrasFilas(e).length>0)){
+  if(!(conPrecios===true&&S._showDesglose===false) && (totalHDisplay>0 || (dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0 || (conPrecios&&resumenExtrasFilas(e).length>0))){
     let rows = '';
     if(dHoras.hn>0) rows += fila('Horas normales', dHoras.hn+'h' + (cp?' × '+eur(e.precioHoraNormal||0)+' = <b>'+eur(dHoras.hn*(e.precioHoraNormal||0))+'</b>':''));
     if(dHoras.he>0)    rows += fila('Horas extra', dHoras.he+'h' + (cp?' × '+eur(e.precioHoraExtra||0)+' = <b>'+eur(dHoras.he*(e.precioHoraExtra||0))+'</b>':''));
@@ -8488,7 +8502,7 @@ async function compartirComoImagen(conPrecios){
     }
 
     // Horas
-    if(totalHDisplay>0 || (dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0 || (cp&&resumenExtrasFilas(e).length>0)){
+    if(!(cp&&S._showDesglose===false) && (totalHDisplay>0 || (dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0 || (cp&&resumenExtrasFilas(e).length>0))){
       html += sec('🕐',(dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0?'HORAS E IMPORTES':'IMPORTES');
       if(dHoras.hn>0) html += row('Normales', dHoras.hn+'h'+(cp?' × '+eur(e.precioHoraNormal||0)+' = '+eur(dHoras.hn*(e.precioHoraNormal||0)):''));
       if(dHoras.he>0)    html += row('Extra',    dHoras.he+'h'+(cp?' × '+eur(e.precioHoraExtra||0)+' = '+eur(dHoras.he*(e.precioHoraExtra||0)):''));
