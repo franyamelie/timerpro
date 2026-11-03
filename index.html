@@ -1404,7 +1404,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261103-supabase2'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261103-supabase3'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -15225,8 +15225,12 @@ async function tpAplica(filas){
     }
     if(tocaAbierto){
       /* El día abierto se pinta sin leer la pantalla, que aún tiene los valores anteriores. */
+      /* Sin esto, el siguiente pintado recuperaba el formulario anterior y vaciaba campos como la ubicación. */
+      try{localStorage.removeItem('_fEntry');}catch(e){}
       var ed=document.getElementById('notas-editor');
       if(ed)ed.innerHTML=fEntry.notas||'';
+      var tit=document.getElementById('jornada-titulo-input');
+      if(tit)tit.innerHTML=fEntry.titulo||'';
       var previo=_skipDomCapture;
       _skipDomCapture=true;
       try{renderApp();}finally{_skipDomCapture=previo;}
@@ -17447,6 +17451,7 @@ window.renderFichar = function(){
 const _captureFormState_orig = captureFormState;
 window.captureFormState = function(){
   _captureFormState_orig();
+  if(_skipDomCapture) return;
   const tEl = document.getElementById('jornada-titulo-input');
   if(tEl){ fEntry.titulo = tEl.innerHTML; if(fEntry.fichajes&&fEntry.fichajes.length>=2) fEntry.fichajes[0].titulo=tEl.innerHTML; }
 };
