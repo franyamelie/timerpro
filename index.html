@@ -1404,7 +1404,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261103-supabase3'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261103-otvisibles1'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -2181,7 +2181,9 @@ function renderFichar(){
           on:{click:()=>{ autoCalcHorasFromFichajes(); S.modal='resumendia'; S._shareConPrecios=false; rerender(); }}
         },'📊 Resumen')
       ),
+      tpFilaFichaje1(e),
       e.fichajes.map((fj,i)=>i===0?null:renderFichajeSummaryRow(fj,i)),
+      tpTareasSinAsignar(e),
       h('button',{class:'btn btn-gh btn-sm',style:{marginTop:'.3rem'},on:{click:addFichaje}},'➕ Añadir fichaje'),
       e.fichajes.length>0&&e.fichajes[0].entrada
         ? h('div',{class:'locked-badge',style:{marginTop:'.5rem'}},
@@ -2696,7 +2698,7 @@ function renderFichar(){
               border:'1px solid '+(vinculadaF1?'#22c55e':'var(--brd)'),
               fontSize:'.76rem',fontWeight:700,color:vinculadaF1?'#16a34a':'var(--ink3)'}},
               vinculadaF1
-                ? '✅ Fichaje 1 tiene fija: '+(vinculadaF1.titulo||'Tarea')+(vinculadaF1.otNumero?' [O.T. '+vinculadaF1.otNumero+']':'')
+                ? '✅ Fichaje 1 tiene fija: '+tpTextoTarea(vinculadaF1)+(vinculadaF1.otNumero?' ['+tpEtiquetaTarea(vinculadaF1)+']':'')
                 : '— Sin tarea fija: se muestran arriba todas las tareas del día que ningún otro fichaje se haya vinculado —'
             )
           );
@@ -2927,6 +2929,66 @@ function fichajeTone(idx){
   return pasos[Math.min(idx,pasos.length-1)];
 }
 
+// ── O.T. Y TAREAS VINCULADAS, A LA VISTA ──
+function tpTextoTarea(t){ return String((t&&t.titulo)||'').replace(/<[^>]*>/g,'').trim()||'Tarea sin título'; }
+function tpTipoTarea(t){ return taskTypes.find(x=>x.id===(t.tipoTarea||'ot'))||{id:'ot',nombre:'O.T.',color:'#f59e0b',icono:'🔧'}; }
+function tpEtiquetaTarea(t){ const tp=tpTipoTarea(t); return tp.nombre+(t.otNumero?' '+t.otNumero:''); }
+function tpChipTarea(t,grande){
+  const tp=tpTipoTarea(t);
+  return h('div',{style:{display:'flex',alignItems:'center',flexWrap:'wrap',gap:'.4rem',marginTop:'.35rem',padding:grande?'.6rem .7rem':'.35rem .5rem',
+    background:'var(--surf)',color:'var(--ink)',borderRadius:'8px',borderLeft:'5px solid '+tp.color,textAlign:'left'}},
+    h('span',{style:{background:tp.color,color:tp.id==='ot'?'#1e293b':'#fff',borderRadius:'6px',padding:'.1rem .45rem',fontWeight:800,fontSize:grande?'.95rem':'.74rem',whiteSpace:'nowrap'}},(tp.icono||'')+' '+tpEtiquetaTarea(t)),
+    h('span',{style:{fontWeight:700,fontSize:grande?'.95rem':'.78rem',wordBreak:'break-word',flex:'1 1 8rem'}},tpTextoTarea(t))
+  );
+}
+/* Misma regla que el Resumen: lo vinculado al fichaje y, si el día solo tiene uno, las tareas del día. */
+function tpTareasDeFichaje(e,idx){
+  const lista=e.fichajes||[], fj=lista[idx];
+  if(!fj) return [];
+  if(fj.taskId){ const t=(S.tasks||[]).find(x=>String(x.id)===String(fj.taskId)); return t?[t]:[]; }
+  if(idx!==0||lista.length>1) return [];
+  return (S.tasks||[]).filter(t=>t.fecha===(e.fecha||today()));
+}
+function tpBloqueTareas(tareas,colorVacio){
+  if(tareas.length) return h('div',{},...tareas.map(t=>tpChipTarea(t,false)));
+  return h('div',{style:{marginTop:'.3rem',fontSize:'.72rem',fontWeight:700,color:colorVacio}},'Sin O.T. ni tarea vinculada');
+}
+function tpFilaFichaje1(e){
+  const f0=(e.fichajes||[])[0];
+  if(!f0) return null;
+  const tareas=tpTareasDeFichaje(e,0);
+  if(!f0.entrada&&!f0.salida&&!tareas.length) return null;
+  const tono=fichajeTone(0);
+  return h('div',{style:{display:'flex',alignItems:'flex-start',gap:'.6rem',padding:'.7rem',marginBottom:'.4rem',background:tono.bg,border:'1px solid '+tono.brd,borderRadius:'var(--r2)'}},
+    h('span',{style:{fontWeight:800,color:tono.text,fontSize:'.85rem',flexShrink:0}},'1.'),
+    h('div',{style:{flex:1,minWidth:0}},
+      h('div',{style:{fontWeight:700,color:tono.text}},(f0.entrada||'--')+' → '+(f0.salida||'--')),
+      tpBloqueTareas(tareas,tono.text2)
+    )
+  );
+}
+function tpTareasSinAsignar(e){
+  const lista=e.fichajes||[];
+  if(lista.length<2) return null;
+  const usadas=new Set(lista.map(f=>String(f.taskId)).filter(Boolean));
+  const libres=(S.tasks||[]).filter(t=>t.fecha===(e.fecha||today())&&!usadas.has(String(t.id)));
+  if(!libres.length) return null;
+  return h('div',{style:{padding:'.6rem .7rem',marginBottom:'.4rem',background:'var(--surf2)',border:'1px dashed var(--brd)',borderRadius:'var(--r2)'}},
+    h('div',{style:{fontSize:'.76rem',fontWeight:800,color:'var(--ink2)'}},'Del día, sin vincular a ningún fichaje'),
+    ...libres.map(t=>tpChipTarea(t,false))
+  );
+}
+function tpTarjetaVinculo(idx){
+  const tareas=tpTareasDeFichaje(fEntry,idx);
+  return h('div',{class:'card',style:{border:'2px solid '+(tareas.length?'#22c55e':'var(--brd)')}},
+    h('div',{class:'sec-title',style:{marginBottom:'.2rem'}},tareas.length>1?'O.T. y tareas de este fichaje':'O.T. o tarea de este fichaje'),
+    tareas.length?h('div',{},...tareas.map(t=>tpChipTarea(t,true))):h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'.5rem',flexWrap:'wrap'}},
+      h('span',{style:{fontWeight:700,color:'var(--ink2)'}},'No tiene ninguna vinculada'),
+      h('button',{class:'btn btn-b btn-sm',on:{click:()=>{const c=document.getElementById('tp-card-vinculo');if(c)c.scrollIntoView({behavior:'smooth',block:'center'});}}},'Vincular')
+    )
+  );
+}
+
 // Fila compacta y clicable para cada fichaje cuando el día tiene 2 o más.
 // Al pulsarla se abre la pantalla completa de detalle de ese fichaje.
 function renderFichajeSummaryRow(fj,idx){
@@ -2949,7 +3011,8 @@ function renderFichajeSummaryRow(fj,idx){
         totalH>0?h('span',{style:{fontWeight:700,color:tono.text}},'🕐 '+fmtH(totalH)+' netas'+((fj.descanso||0)>0?' (-'+fj.descanso+'min)':'')):null,
         (fj.dieta||0)>0?h('span',{},'☀ '+eur(fj.dieta)):null,
         (fj.transporte||0)>0?h('span',{},'🚗 '+eur(fj.transporte)):null
-      )
+      ),
+      tpBloqueTareas(tpTareasDeFichaje(fEntry,idx),tono.text2)
     ),
     h('button',{class:'btn btn-r btn-sm',style:{flexShrink:0},title:'Eliminar este fichaje',
       on:{click:ev=>{
@@ -3060,6 +3123,7 @@ function renderFichajeDetailScreen(idx){
       h('div',{style:{textAlign:'center',fontSize:'.75rem',color:fichajeTone(idx).text2,marginTop:'.4rem'}},
         'Fichaje '+(idx+1)+' de '+fEntry.fichajes.length+' · '+dlbl(fEntry.fecha))
     ),
+    tpTarjetaVinculo(idx),
 
     // Horario propio de este fichaje — mismo selector que el fichaje principal
     h('div',{class:'card',style:{background:fichajeTone(idx).bg,border:'1px solid '+fichajeTone(idx).brd}},
@@ -3224,7 +3288,7 @@ function renderFichajeDetailScreen(idx){
     ),
 
     // Tarea / OT vinculada
-    h('div',{class:'card'},
+    h('div',{class:'card',id:'tp-card-vinculo'},
       h('div',{class:'sec-title'},'Tarea / O.T. vinculada'),
       h('div',{style:{display:'flex',gap:'.4rem'}},
         h('select',{
@@ -3262,7 +3326,7 @@ function renderFichajeDetailScreen(idx){
           display:'flex',alignItems:'center',justifyContent:'space-between',gap:'.5rem'}},
           h('span',{},
             vinculada
-              ? '✅ Este fichaje '+(idx+1)+' tiene vinculada: '+(vinculada.titulo||'Tarea')+(vinculada.otNumero?' [O.T. '+vinculada.otNumero+']':'')
+              ? '✅ Este fichaje '+(idx+1)+' tiene vinculada: '+tpTextoTarea(vinculada)+(vinculada.otNumero?' ['+tpEtiquetaTarea(vinculada)+']':'')
               : '— Este fichaje '+(idx+1)+' no tiene ninguna tarea/OT vinculada —'
           ),
           // Borrar la tarea/OT del todo (no solo desvincularla), por si se
@@ -15046,7 +15110,7 @@ async function gdriveLoadData(){
 // ===== SINCRONIZACION CON SUPABASE =====
 var TP_TABLA='timerpro_registros',TP_LIM_DB=500*1024*1024,TP_LIM_ARCH=1024*1024*1024;
 var TP_STORES={e:'entries',t:'tasks',s:'sites',w:'workorders',v:'vehicles',k:'workers',c:'companies',p:'payslips',m:'monthChats'};
-var TP_RUIDO={_savedAt:1,editing:1,_draft:1,_f1Migrado:1,_horaFinManual:1,_horaInicioManual:1,timerDeduct:1};
+var TP_RUIDO={_savedAt:1,editing:1,_draft:1,_f1Migrado:1};
 var _tpOcupado=false,_tpOtra=false,_tpTimer=null,_tpAplicando=false,_tpVaciado=false,_tpEsperas=0,_tpTexto='',_tpColor='';
 function tpLee(k,d){try{var v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}}
 function tpPon(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
@@ -15227,6 +15291,9 @@ async function tpAplica(filas){
       /* El día abierto se pinta sin leer la pantalla, que aún tiene los valores anteriores. */
       /* Sin esto, el siguiente pintado recuperaba el formulario anterior y vaciaba campos como la ubicación. */
       try{localStorage.removeItem('_fEntry');}catch(e){}
+      timerDeduct=fEntry.timerDeduct||0;timerEndManual=fEntry._horaFinManual||'';
+      if(fichajeDetailIndex!=null&&!(fEntry.fichajes||[])[fichajeDetailIndex])fichajeDetailIndex=null;
+      if(!(fEntry.fichajes||[])[fichajeSeleccionado])fichajeSeleccionado=0;
       var ed=document.getElementById('notas-editor');
       if(ed)ed.innerHTML=fEntry.notas||'';
       var tit=document.getElementById('jornada-titulo-input');
@@ -15305,7 +15372,8 @@ async function tpNubeSync(manual){
     }
     /* Se guarda lo que haya en pantalla después de recibir, nunca antes: abrir un día no debe pisar un cambio de otro aparato. */
     _tpAplicando=true;
-    try{captureFormState();if(fEntry&&fEntry.fecha)await saveDraft();}catch(e){}
+    /* Si hay un pintado pendiente, la pantalla aún no refleja el día: no se lee. */
+    try{if(!renderScheduled&&!_skipDomCapture){captureFormState();if(fEntry&&fEntry.fecha)await saveDraft();}}catch(e){}
     _tpAplicando=false;
     est=await tpLeeEstado();
     if(filas.length){tpPon('tp_sb_cursor',filas[filas.length-1].actualizado);}
