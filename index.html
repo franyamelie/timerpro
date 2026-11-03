@@ -1404,7 +1404,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261103-otvisibles1'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261103-otvisibles2'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -2937,8 +2937,8 @@ function tpChipTarea(t,grande){
   const tp=tpTipoTarea(t);
   return h('div',{style:{display:'flex',alignItems:'center',flexWrap:'wrap',gap:'.4rem',marginTop:'.35rem',padding:grande?'.6rem .7rem':'.35rem .5rem',
     background:'var(--surf)',color:'var(--ink)',borderRadius:'8px',borderLeft:'5px solid '+tp.color,textAlign:'left'}},
-    h('span',{style:{background:tp.color,color:tp.id==='ot'?'#1e293b':'#fff',borderRadius:'6px',padding:'.1rem .45rem',fontWeight:800,fontSize:grande?'.95rem':'.74rem',whiteSpace:'nowrap'}},(tp.icono||'')+' '+tpEtiquetaTarea(t)),
-    h('span',{style:{fontWeight:700,fontSize:grande?'.95rem':'.78rem',wordBreak:'break-word',flex:'1 1 8rem'}},tpTextoTarea(t))
+    h('span',{style:{background:tp.color,color:tp.id==='ot'?'#1e293b':'#fff',borderRadius:'6px',padding:'.1rem .45rem',fontWeight:900,fontSize:grande?'1.1rem':'.85rem',whiteSpace:'nowrap'}},(tp.icono||'')+' '+tpEtiquetaTarea(t)),
+    h('span',{style:{fontWeight:800,fontSize:grande?'1.1rem':'.88rem',color:'var(--ink)',wordBreak:'break-word',flex:'1 1 8rem'}},tpTextoTarea(t))
   );
 }
 /* Misma regla que el Resumen: lo vinculado al fichaje y, si el día solo tiene uno, las tareas del día. */
@@ -2951,7 +2951,7 @@ function tpTareasDeFichaje(e,idx){
 }
 function tpBloqueTareas(tareas,colorVacio){
   if(tareas.length) return h('div',{},...tareas.map(t=>tpChipTarea(t,false)));
-  return h('div',{style:{marginTop:'.3rem',fontSize:'.72rem',fontWeight:700,color:colorVacio}},'Sin O.T. ni tarea vinculada');
+  return h('div',{style:{marginTop:'.3rem',fontSize:'.82rem',fontWeight:800,color:colorVacio}},'Sin O.T. ni tarea vinculada');
 }
 function tpFilaFichaje1(e){
   const f0=(e.fichajes||[])[0];
@@ -2983,7 +2983,7 @@ function tpTarjetaVinculo(idx){
   return h('div',{class:'card',style:{border:'2px solid '+(tareas.length?'#22c55e':'var(--brd)')}},
     h('div',{class:'sec-title',style:{marginBottom:'.2rem'}},tareas.length>1?'O.T. y tareas de este fichaje':'O.T. o tarea de este fichaje'),
     tareas.length?h('div',{},...tareas.map(t=>tpChipTarea(t,true))):h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'.5rem',flexWrap:'wrap'}},
-      h('span',{style:{fontWeight:700,color:'var(--ink2)'}},'No tiene ninguna vinculada'),
+      h('span',{style:{fontWeight:800,fontSize:'1rem',color:'var(--ink)'}},'⚠️ No tiene ninguna vinculada'),
       h('button',{class:'btn btn-b btn-sm',on:{click:()=>{const c=document.getElementById('tp-card-vinculo');if(c)c.scrollIntoView({behavior:'smooth',block:'center'});}}},'Vincular')
     )
   );
@@ -3292,7 +3292,7 @@ function renderFichajeDetailScreen(idx){
       h('div',{class:'sec-title'},'Tarea / O.T. vinculada'),
       h('div',{style:{display:'flex',gap:'.4rem'}},
         h('select',{
-          style:{flex:1,background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)',fontSize:'.85rem'},
+          style:{flex:1,minWidth:0,background:'var(--surf)',border:'2px solid var(--ink3)',borderRadius:'var(--r2)',padding:'.55rem',color:'var(--ink)',fontSize:'1rem',fontWeight:800},
           on:{change:ev=>{
             fj.taskId=ev.target.value;
             scheduleDraftSave();
@@ -3319,15 +3319,15 @@ function renderFichajeDetailScreen(idx){
       // el clic se ha quedado guardado o no.
       (()=>{
         const vinculada=fj.taskId?S.tasks.find(t=>String(t.id)===String(fj.taskId)):null;
-        return h('div',{style:{marginTop:'.5rem',padding:'.5rem .6rem',borderRadius:'var(--r2)',
-          background:vinculada?'rgba(34,197,94,.12)':'var(--surf2)',
-          border:'1px solid '+(vinculada?'#22c55e':'var(--brd)'),
-          fontSize:'.8rem',fontWeight:700,color:vinculada?'#16a34a':'var(--ink3)',
-          display:'flex',alignItems:'center',justifyContent:'space-between',gap:'.5rem'}},
-          h('span',{},
-            vinculada
-              ? '✅ Este fichaje '+(idx+1)+' tiene vinculada: '+tpTextoTarea(vinculada)+(vinculada.otNumero?' ['+tpEtiquetaTarea(vinculada)+']':'')
-              : '— Este fichaje '+(idx+1)+' no tiene ninguna tarea/OT vinculada —'
+        return h('div',{style:{marginTop:'.6rem',padding:'.7rem .8rem',borderRadius:'var(--r2)',
+          background:'var(--surf)',
+          border:'3px solid '+(vinculada?'#15803d':'#b91c1c'),
+          color:'var(--ink)',
+          display:'flex',alignItems:'center',justifyContent:'space-between',gap:'.6rem'}},
+          h('div',{style:{flex:1,minWidth:0}},
+            h('div',{style:{fontSize:'1rem',fontWeight:800,color:'var(--ink)'}},
+              vinculada?'✅ Fichaje '+(idx+1)+' vinculado a:':'⚠️ Fichaje '+(idx+1)+' sin O.T. ni tarea vinculada'),
+            vinculada?tpChipTarea(vinculada,true):null
           ),
           // Borrar la tarea/OT del todo (no solo desvincularla), por si se
           // metió por error — sin tener que ir a la pestaña Tareas.
