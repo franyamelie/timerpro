@@ -498,9 +498,9 @@ function openDB(){
   });
 }
 const dbAll=st=>new Promise((res,rej)=>{const t=db.transaction(st,'readonly'),r=t.objectStore(st).getAll();r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});
-const dbPut=(st,obj)=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrite'),r=t.objectStore(st).put(obj);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});
-const dbDel=(st,id)=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrite'),r=t.objectStore(st).delete(id);r.onsuccess=()=>res();r.onerror=()=>rej(r.error);});
-const dbClear=st=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrite'),r=t.objectStore(st).clear();r.onsuccess=()=>res();r.onerror=()=>rej(r.error);});
+const dbPut=(st,obj)=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrite'),r=t.objectStore(st).put(tpConId(st,obj));r.onsuccess=()=>{res(r.result);tpNubeCambio();};r.onerror=()=>rej(r.error);});
+const dbDel=(st,id)=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrite'),r=t.objectStore(st).delete(id);r.onsuccess=()=>{res();tpNubeCambio();};r.onerror=()=>rej(r.error);});
+const dbClear=st=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrite'),r=t.objectStore(st).clear();r.onsuccess=()=>{if(st!=='snapshots')tpNubeVaciado();res();tpNubeCambio();};r.onerror=()=>rej(r.error);});
 
 // ── ESTADO GLOBAL ────────────────────────────────────────
 // ── TIPOS DE TAREA (dinámicos, guardados en localStorage) ──
@@ -516,6 +516,7 @@ function getTaskTypes(){
 }
 function saveTaskTypes(types){
   localStorage.setItem('tp_task_types',JSON.stringify(types));
+  tpNubeCambio();
 }
 var taskTypes=getTaskTypes();
 
@@ -1187,7 +1188,7 @@ const _fCorta=ds=>{ const p=ds.split('-'); return p[2]+'/'+p[1]; };
 // ── Copias de seguridad ──
 function marcarCopiaHecha(tipo){ _lsSet(tipo==='drive'?'bk_drive':'bk_descarga',String(Date.now())); }
 function diasDesdeUltimaCopia(){
-  const last=Math.max(+(_lsGet('bk_descarga')||0),+(_lsGet('bk_drive')||0));
+  const last=Math.max(+(_lsGet('bk_descarga')||0),+(_lsGet('bk_drive')||0),+(_lsGet('bk_nube')||0));
   if(!last) return null;
   return {dias:Math.floor((Date.now()-last)/86400000),ts:last};
 }
@@ -1402,7 +1403,8 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261102-desglose'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261103-supabase1'),
+    tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
     h('div',{class:'nav-btns'},
@@ -4120,7 +4122,7 @@ function mostrarGestorTipos(){
 function getTarifas(){
   try{ return JSON.parse(localStorage.getItem('tp_tarifas')||'null')||{}; }catch(e){ return {}; }
 }
-function saveTarifas(t){ localStorage.setItem('tp_tarifas',JSON.stringify(t)); }
+function saveTarifas(t){ localStorage.setItem('tp_tarifas',JSON.stringify(t)); tpNubeCambio(); }
 function getTarifa(key,def){ return parseFloat(getTarifas()[key]||def||0); }
 
 var _tarifasEdit=null; // estado edición local
@@ -6992,6 +6994,7 @@ function renderSincronizar(){
         h('span',{style:{fontWeight:700}},S.entries.length+' jornadas')
       ),
       h('div',{class:'btn-row',style:{flexDirection:'column',marginTop:'.5rem'}},
+        h('button',{class:'btn btn-y btn-full btn-lg',on:{click:tpNubeAbrir}},tpNubeActiva()?'⚡ Supabase activado':'⚡ Activar Supabase'),
         h('button',{class:'btn btn-g btn-full btn-lg',style:{opacity:isOnline?1:.5},on:{click:()=>{if(!isOnline){showAlert('Sin conexion. Los datos se subiran cuando vuelva el internet.','err');pendingSync=true;return;}confirmColor('¿Seguro que quieres SUBIR todos los datos a la nube? Sobreescribirá los datos en la nube.','#22c55e',()=>driveSync()); return;}}},
           isOnline?'☁️ Subir TODO a Drive':'☁️ Subir (sin conexion)'
         ),
@@ -11438,6 +11441,7 @@ function renderModalDriveAccount(){
       h('div',{class:'sum-row'},h('span',{class:'sum-label'},'Ultima subida'),h('span',{},lastSync||'—')),
       h('div',{class:'sum-row'},h('span',{class:'sum-label'},'Jornadas locales'),h('span',{style:{fontWeight:700}},S.entries.length+' jornadas')),
       h('div',{class:'btn-row',style:{flexDirection:'column',marginTop:'.5rem'}},
+        h('button',{class:'btn btn-y btn-full',on:{click:()=>{S.modal=null;rerender();tpNubeAbrir();}}},tpNubeActiva()?'⚡ Supabase activado':'⚡ Activar Supabase'),
         h('button',{class:'btn btn-g btn-full',on:{click:()=>{S.modal=null;rerender();confirmColor('¿Seguro que quieres SUBIR todos los datos a la nube? Sobreescribirá los datos en la nube.','#22c55e',()=>driveSync()); return;}}},'Subir TODO a Drive'),
         h('button',{class:'btn btn-b btn-full',on:{click:()=>{S.modal=null;rerender();confirmColor('¿Seguro que quieres CARGAR desde la nube? Sobreescribirá los datos locales.','#3b82f6',()=>_doLoad(true,false,true)); return;}}},'Cargar TODO desde Drive'),
         h('button',{class:'btn btn-gh btn-full',on:{click:()=>{S.modal=null;rerender();}}},'Cerrar')
@@ -15038,6 +15042,499 @@ async function gdriveLoadData(){
   return await r.json();
 }
 
+// ===== SINCRONIZACION CON SUPABASE =====
+var TP_TABLA='timerpro_registros',TP_LIM_DB=500*1024*1024,TP_LIM_ARCH=1024*1024*1024;
+var TP_STORES={e:'entries',t:'tasks',s:'sites',w:'workorders',v:'vehicles',k:'workers',c:'companies',p:'payslips',m:'monthChats'};
+var TP_RUIDO={_savedAt:1,editing:1,_draft:1,_f1Migrado:1,_horaFinManual:1,_horaInicioManual:1,timerDeduct:1};
+var _tpOcupado=false,_tpOtra=false,_tpTimer=null,_tpAplicando=false,_tpVaciado=false,_tpEsperas=0,_tpTexto='',_tpColor='';
+function tpLee(k,d){try{var v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}}
+function tpPon(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+function tpConf(){return tpLee('tp_sb_conf',null);}
+function tpSesion(){return tpLee('tp_sb_sesion',null);}
+function tpNubeConectada(){return !!(tpConf()&&tpSesion());}
+function tpNubeActiva(){return tpNubeConectada()&&!tpLee('tp_sb_pausa',false);}
+function tpDispositivo(){var d=tpLee('tp_sb_disp','');if(!d){d='d'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);tpPon('tp_sb_disp',d);}return d;}
+function tpError(m,tipo){var e=new Error(m);e.humano=true;e.tipo=tipo||'';return e;}
+/* Ids únicos entre dispositivos: el autonumérico de cada aparato podía repetirse. */
+function tpConId(st,o){
+  if(!o||o.id!=null||!Object.values(TP_STORES).includes(st))return o;
+  return Object.assign({},o,{id:Date.now()*1000+Math.floor(Math.random()*1000)});
+}
+function tpCanon(o){
+  if(o===null||o===undefined)return 'null';
+  if(typeof o==='string'){
+    if(o.length>20000)return JSON.stringify(o.length+'|'+o.slice(0,4000)+'|'+o.slice(o.length/2,o.length/2+4000)+'|'+o.slice(-4000));
+    return JSON.stringify(o);
+  }
+  if(typeof o!=='object')return JSON.stringify(o);
+  if(Array.isArray(o))return '['+o.map(tpCanon).join(',')+']';
+  return '{'+Object.keys(o).filter(function(k){
+    var v=o[k];
+    if(v===undefined||v===null||v===''||v===0||v===false)return false;
+    if(Array.isArray(v)&&!v.length)return false;
+    if(typeof v==='object'&&!Array.isArray(v)&&!Object.keys(v).length)return false;
+    return !TP_RUIDO[k];
+  }).sort().map(function(k){return JSON.stringify(k)+':'+tpCanon(o[k]);}).join(',')+'}';
+}
+function tpHash(id,o){
+  if(id.indexOf('e:')===0&&o&&o.id!==undefined){o=Object.assign({},o);delete o.id;}
+  var s=tpCanon(o),a=5381,b=52711;
+  for(var i=0;i<s.length;i++){var c=s.charCodeAt(i);a=(a*33)^c;b=(b*31)^c;a|=0;b|=0;}
+  return s.length+':'+(a>>>0).toString(16)+':'+(b>>>0).toString(16);
+}
+function tpLimpiaUbic(v){if(!v)return v;try{var d=JSON.parse(v);if(d&&d.mapImg){delete d.mapImg;return JSON.stringify(d);}}catch(e){}return v;}
+function tpLimpiaEntrada(e){
+  var o=Object.assign({},e,{fotosGastos:[]});
+  o.ubicacionEntrada=tpLimpiaUbic(o.ubicacionEntrada);o.ubicacionSalida=tpLimpiaUbic(o.ubicacionSalida);
+  if(Array.isArray(o.fichajes))o.fichajes=o.fichajes.map(function(f){return Object.assign({},f,{ubicacionEntrada:tpLimpiaUbic(f.ubicacionEntrada),ubicacionSalida:tpLimpiaUbic(f.ubicacionSalida)});});
+  return o;
+}
+async function tpLeeEstado(){
+  var r=await Promise.all(['entries','tasks','sites','workorders','vehicles','workers','companies','payslips','monthChats','settings'].map(function(s){return dbAll(ST[s]);}));
+  var f={},pon=function(id,d){f[id]={datos:d,h:tpHash(id,d)};};
+  var porFecha={};
+  r[0].forEach(function(e){if(!e.fecha)return;var y=porFecha[e.fecha];if(!y||String(e._savedAt||'')>=String(y._savedAt||''))porFecha[e.fecha]=e;});
+  Object.keys(porFecha).forEach(function(k){pon('e:'+k,tpLimpiaEntrada(porFecha[k]));});
+  r[1].forEach(function(t){pon('t:'+t.id,Object.assign({},t,{fotos:[]}));});
+  r[2].forEach(function(x){pon('s:'+x.id,x);});
+  r[3].forEach(function(x){pon('w:'+x.id,x);});
+  r[4].forEach(function(x){pon('v:'+x.id,x);});
+  r[5].forEach(function(x){pon('k:'+x.id,x);});
+  r[6].forEach(function(x){pon('c:'+x.id,x);});
+  r[7].forEach(function(x){pon('p:'+x.id,x);});
+  r[8].forEach(function(x){pon('m:'+x.id,x);});
+  var st=r[9][0]||{};
+  pon('cfg:dayTags',st.dayTags||{});
+  pon('cfg:templates',st.templates||[]);
+  pon('cfg:activos',{activeWorkerId:st.activeWorkerId||null,activeCompanyId:st.activeCompanyId||null});
+  pon('cfg:transportTypes',S.transportTypes||[]);
+  pon('cfg:taskTypes',getTaskTypes()||[]);
+  pon('cfg:precios',{dieta:S.dietaDefault||0,normal:S.precioHoraNormalDefault||0,extra:S.precioHoraExtraDefault||0,nocturna:S.precioHoraNocturnaDefault||0,festiva:S.precioHoraFestivaDefault||0});
+  pon('cfg:tarifas',getTarifas()||{});
+  return f;
+}
+function tpTextoPct(){
+  var u=tpLee('tp_sb_uso',null);
+  if(!u)return '';
+  var p=tpPct();
+  return (p<10?(Math.round(p*10)/10).toString().replace('.',','):String(Math.round(p)))+' %';
+}
+function tpColorPct(){var p=tpPct();return p>=95?'#b91c1c':p>=80?'#b45309':'#15803d';}
+function tpPintaNav(){
+  var el=document.getElementById('tp-nube-estado');
+  if(el){el.textContent=_tpTexto||'⚡ Supabase';el.style.color=_tpColor||'var(--ink)';}
+  var c=document.getElementById('tp-nube-pct');
+  if(c){c.textContent=tpTextoPct()?'Almacén '+tpTextoPct():'';c.style.color=tpColorPct();}
+}
+function tpEstado(txt,color){
+  _tpTexto=txt;_tpColor=color||'var(--ink)';
+  tpPintaNav();
+}
+function tpGuardaSesion(j){tpPon('tp_sb_sesion',{access:j.access_token,refresh:j.refresh_token,exp:Date.now()+(j.expires_in||3600)*1000});}
+async function tpToken(){
+  var s=tpSesion(),c=tpConf();
+  if(!s)throw tpError('Hay que volver a entrar con la contraseña.','sesion');
+  if(Date.now()<s.exp-60000)return s.access;
+  var r=await fetch(c.url+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:c.key,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:s.refresh})});
+  if(r.status===400||r.status===401){localStorage.removeItem('tp_sb_sesion');throw tpError('La sesión ha caducado. Vuelve a entrar con la contraseña.','sesion');}
+  if(!r.ok)throw tpError('Supabase no responde (error '+r.status+').','caido');
+  tpGuardaSesion(await r.json());
+  return tpSesion().access;
+}
+async function tpApi(ruta,op){
+  op=op||{};
+  var c=tpConf(),h=Object.assign({apikey:c.key,Authorization:'Bearer '+(await tpToken())},op.headers||{});
+  var r=await fetch(c.url+'/rest/v1/'+ruta,Object.assign({},op,{headers:h}));
+  if(r.ok)return r;
+  var t='';try{t=await r.text();}catch(e){}
+  if(r.status===402||r.status===507||/25006|read-only|read only/i.test(t))throw tpError('Supabase no ha aceptado el guardado porque ha llegado a su límite.','lleno');
+  if(r.status===404)throw tpError('Falta crear la tabla de TimerPro en Supabase. Ejecuta el código de preparación.','tabla');
+  if(r.status===401||r.status===403)throw tpError('Supabase no permite el acceso. Revisa el código de preparación y tu correo.','permiso');
+  throw tpError('Supabase no responde (error '+r.status+').','caido');
+}
+async function tpTrae(desde){
+  var filas=[],off=0;
+  while(true){
+    var q=TP_TABLA+'?select=id,datos,actualizado,borrado,dispositivo&order=actualizado.asc,id.asc&limit=100&offset='+off;
+    if(desde)q+='&actualizado=gte.'+encodeURIComponent(new Date(new Date(desde).getTime()-300000).toISOString());
+    var t=await (await tpApi(q)).json();
+    filas=filas.concat(t);
+    if(t.length<100)break;
+    off+=100;
+  }
+  return filas;
+}
+async function tpAplica(filas){
+  if(!filas.length)return;
+  _tpAplicando=true;
+  var abierto=(fEntry&&fEntry.fecha)||'',tocaAbierto=false;
+  try{
+    var locE=await dbAll(ST.entries),locT=await dbAll(ST.tasks),locW=await dbAll(ST.workers),locC=await dbAll(ST.companies),locP=await dbAll(ST.payslips);
+    for(var i=0;i<filas.length;i++){
+      var r=filas[i],sep=r.id.indexOf(':'),pre=r.id.slice(0,sep),cl=r.id.slice(sep+1),d=r.datos;
+      if(pre==='cfg'){
+        if(r.borrado)continue;
+        if(cl==='dayTags'){dayTags=d||{};await saveDayTags();}
+        else if(cl==='templates'){var s1=(await dbAll(ST.settings))[0]||{};templates=d||[];await dbPut(ST.settings,Object.assign({},s1,{id:1,templates:templates}));}
+        else if(cl==='activos'){var s2=(await dbAll(ST.settings))[0]||{};activeWorkerId=d.activeWorkerId||null;activeCompanyId=d.activeCompanyId||null;await dbPut(ST.settings,Object.assign({},s2,{id:1,activeWorkerId:activeWorkerId,activeCompanyId:activeCompanyId}));}
+        else if(cl==='transportTypes'){S.transportTypes=d||[];localStorage.setItem('transportTypes',JSON.stringify(S.transportTypes));}
+        else if(cl==='taskTypes'){if(d&&d.length){taskTypes=d;saveTaskTypes(d);}}
+        else if(cl==='precios'){
+          S.dietaDefault=d.dieta||0;S.precioHoraNormalDefault=d.normal||0;S.precioHoraExtraDefault=d.extra||0;S.precioHoraNocturnaDefault=d.nocturna||0;S.precioHoraFestivaDefault=d.festiva||0;
+          localStorage.setItem('dietaDefault',S.dietaDefault);localStorage.setItem('precioHoraNormalDefault',S.precioHoraNormalDefault);localStorage.setItem('precioHoraExtraDefault',S.precioHoraExtraDefault);localStorage.setItem('precioHoraNocturnaDefault',S.precioHoraNocturnaDefault);localStorage.setItem('precioHoraFestivaDefault',S.precioHoraFestivaDefault);
+        }
+        else if(cl==='tarifas'){saveTarifas(d||{});}
+        continue;
+      }
+      if(pre==='e'){
+        if(cl===abierto)tocaAbierto=true;
+        var mismas=locE.filter(function(x){return x.fecha===cl;});
+        if(r.borrado){
+          for(var a=0;a<mismas.length;a++)await dbDel(ST.entries,mismas[a].id);
+          locE=locE.filter(function(x){return x.fecha!==cl;});
+          continue;
+        }
+        var prin=mismas[mismas.length-1],idUsar=prin?prin.id:d.id;
+        if(!prin&&(idUsar==null||locE.some(function(x){return x.id===idUsar;})))idUsar=Date.now()*1000+Math.floor(Math.random()*1000);
+        for(var b=0;b<mismas.length;b++)if(mismas[b].id!==idUsar)await dbDel(ST.entries,mismas[b].id);
+        var rec=Object.assign({},d,{id:idUsar,fotosGastos:prin&&prin.fotosGastos?prin.fotosGastos:[]});
+        await dbPut(ST.entries,rec);
+        locE=locE.filter(function(x){return x.fecha!==cl;}).concat([rec]);
+        continue;
+      }
+      var st=TP_STORES[pre];
+      if(!st)continue;
+      var idN=d&&d.id!==undefined?d.id:(/^\d+$/.test(cl)?Number(cl):cl);
+      if(r.borrado){try{await dbDel(ST[st],idN);}catch(e){}continue;}
+      var o=Object.assign({},d);
+      if(pre==='t'){var lt=locT.find(function(x){return x.id===idN;});o.fotos=lt&&lt.fotos?lt.fotos:[];}
+      if(pre==='k'){var lw=locW.find(function(x){return x.id===idN;})||{};o.foto=o.foto||lw.foto||'';o.firma=o.firma||lw.firma||'';}
+      if(pre==='c'){var lc=locC.find(function(x){return x.id===idN;})||{};o.logo=o.logo||lc.logo||'';}
+      if(pre==='p'){var lp=locP.find(function(x){return x.id===idN;})||{};o.dataUrl=o.dataUrl||lp.dataUrl||'';o.fileType=o.fileType||lp.fileType||'';}
+      await dbPut(ST[st],o);
+    }
+    /* La copia interna no debe resucitar lo que se ha borrado en otro aparato. */
+    S.entries=await dbAll(ST.entries);S.sites=await dbAll(ST.sites);
+    try{_lsSave();}catch(e){}
+    await loadData();
+    if(tocaAbierto){
+      var rg=S.entries.find(function(e){return e.fecha===abierto;});
+      if(rg){fEntry=Object.assign({},rg,{fichajes:(rg.fichajes||[]).map(function(f){return Object.assign({},f);}),dietasExtra:(rg.dietasExtra||[]).slice(),otrosConceptos:(rg.otrosConceptos||[]).slice(),journeys:(rg.journeys||[]).slice()});editingEntry=true;}
+      else{fEntry=Object.assign({},defEntry(),{fecha:abierto,precioHoraNormal:S.precioHoraNormalDefault||0,precioHoraExtra:S.precioHoraExtraDefault||0,precioHoraNocturna:S.precioHoraNocturnaDefault||0,precioHoraFestiva:S.precioHoraFestivaDefault||0});editingEntry=false;}
+    }
+    if(tocaAbierto){
+      /* El día abierto se pinta sin leer la pantalla, que aún tiene los valores anteriores. */
+      var ed=document.getElementById('notas-editor');
+      if(ed)ed.innerHTML=fEntry.notas||'';
+      var previo=_skipDomCapture;
+      _skipDomCapture=true;
+      try{renderApp();}finally{_skipDomCapture=previo;}
+    }
+  }finally{_tpAplicando=false;}
+  if(typeof rerender==='function')rerender();
+}
+async function tpPreparaSubida(id,d){
+  if(id.indexOf('k:')===0){return Object.assign({},d,{foto:await compressImage(d.foto,120,.6),firma:await compressImage(d.firma,250,.7)});}
+  if(id.indexOf('c:')===0){return Object.assign({},d,{logo:await compressImage(d.logo,120,.6)});}
+  return d;
+}
+async function tpSube(lista,esp,cola){
+  var dev=tpDispositivo(),lote=[],tam=0;
+  var envia=async function(){
+    if(!lote.length)return;
+    await tpApi(TP_TABLA+'?on_conflict=id',{method:'POST',headers:{'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(lote.map(function(x){return x.fila;}))});
+    lote.forEach(function(x){if(x.h)esp[x.fila.id]=x.h;else delete esp[x.fila.id];delete cola[x.fila.id];});
+    tpPon('tp_sb_espejo',esp);tpPon('tp_sb_cola',cola);
+    lote=[];tam=0;
+  };
+  for(var i=0;i<lista.length;i++){
+    var x=lista[i],datos=x.borrado?{}:await tpPreparaSubida(x.id,x.datos),n=JSON.stringify(datos).length;
+    if(lote.length&&(tam+n>3000000||lote.length>=100))await envia();
+    lote.push({h:x.borrado?null:x.h,fila:{id:x.id,datos:datos,borrado:!!x.borrado,dispositivo:dev}});
+    tam+=n;
+  }
+  await envia();
+}
+function tpEscribiendo(){
+  var a=document.activeElement;
+  return !!(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.isContentEditable));
+}
+function tpMarcaCambios(est,esp,cola){
+  var ahora=new Date().toISOString();
+  Object.keys(est).forEach(function(id){if(est[id].h!==esp[id]){if(!cola[id])cola[id]=ahora;}else delete cola[id];});
+  Object.keys(esp).forEach(function(id){if(!est[id]&&!cola[id])cola[id]=ahora;});
+  Object.keys(cola).forEach(function(id){if(!est[id]&&!esp[id])delete cola[id];});
+}
+async function tpNubeSync(manual){
+  if(!tpNubeActiva())return;
+  if(_tpOcupado){_tpOtra=true;return;}
+  if(!navigator.onLine){tpEstado('⚠️ Sin conexión','var(--red)');return;}
+  _tpOcupado=true;
+  tpEstado('⏳ Guardando');
+  try{
+    var est=await tpLeeEstado(),esp=tpLee('tp_sb_espejo',{}),cola=tpLee('tp_sb_cola',{});
+    tpMarcaCambios(est,esp,cola);tpPon('tp_sb_cola',cola);
+    var cursor=tpLee('tp_sb_cursor',null),filas=await tpTrae(cursor),dev=tpDispositivo(),apl=[];
+    filas.forEach(function(r){
+      var L=est[r.id],m=esp[r.id],cambiado=(L?L.h:null)!==(m||null),propia=r.dispositivo===dev;
+      if(propia&&L)return;
+      if(r.borrado){
+        if(!L){delete esp[r.id];delete cola[r.id];return;}
+        if(!cambiado||!cola[r.id]||new Date(r.actualizado)>new Date(cola[r.id]))apl.push(r);
+        return;
+      }
+      if(L&&L.h===tpHash(r.id,r.datos)){esp[r.id]=L.h;delete cola[r.id];return;}
+      if(!cambiado||!cola[r.id]||new Date(r.actualizado)>new Date(cola[r.id]))apl.push(r);
+    });
+    if(apl.length&&!manual&&tpEscribiendo()&&_tpEsperas<6){
+      _tpEsperas++;
+      clearTimeout(_tpTimer);_tpTimer=setTimeout(function(){tpNubeSync(false);},10000);
+      tpEstado('⏳ Cambios');
+      return;
+    }
+    _tpEsperas=0;
+    await tpAplica(apl);
+    if(apl.length){
+      est=await tpLeeEstado();
+      apl.forEach(function(r){if(est[r.id])esp[r.id]=est[r.id].h;else delete esp[r.id];delete cola[r.id];});
+    }
+    /* Se guarda lo que haya en pantalla después de recibir, nunca antes: abrir un día no debe pisar un cambio de otro aparato. */
+    _tpAplicando=true;
+    try{captureFormState();if(fEntry&&fEntry.fecha)await saveDraft();}catch(e){}
+    _tpAplicando=false;
+    est=await tpLeeEstado();
+    if(filas.length){tpPon('tp_sb_cursor',filas[filas.length-1].actualizado);}
+    tpMarcaCambios(est,esp,cola);
+    var borrar=Object.keys(esp).filter(function(id){return !est[id];});
+    if(_tpVaciado||borrar.length>25){
+      /* Un vaciado por importación no borra nada en la nube: lo que falte vuelve de allí. */
+      borrar.forEach(function(id){delete esp[id];delete cola[id];});
+      tpPon('tp_sb_cursor',null);
+      borrar=[];_tpVaciado=false;_tpOtra=true;
+    }
+    tpPon('tp_sb_espejo',esp);tpPon('tp_sb_cola',cola);
+    var lista=Object.keys(est).filter(function(id){return est[id].h!==esp[id];}).map(function(id){return {id:id,datos:est[id].datos,h:est[id].h};});
+    borrar.forEach(function(id){lista.push({id:id,borrado:true});});
+    if(lista.length)await tpSube(lista,esp,cola);
+    tpPon('tp_sb_fallos',0);tpPon('tp_sb_lleno',false);
+    try{_lsSave();}catch(e){}
+    try{_lsSet('bk_nube',String(Date.now()));}catch(e){}
+    tpEstado('⚡ '+new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}),'#15803d');
+    tpMideUso(!!manual);
+    if(manual&&apl.length&&typeof showAlert==='function')showAlert('✅ Actualizado desde Supabase');
+  }catch(e){
+    _tpAplicando=false;
+    if(e&&e.tipo==='lleno'){tpPon('tp_sb_lleno',true);tpEstado('⚠️ Supabase lleno','var(--red)');}
+    else if(e&&e.tipo==='sesion'){tpEstado('⚠️ Entrar','var(--red)');}
+    else{
+      tpPon('tp_sb_fallos',(tpLee('tp_sb_fallos',0)||0)+1);
+      tpEstado('⚠️ Sin subir','var(--red)');
+    }
+    if(manual&&typeof showAlert==='function')showAlert(e&&e.humano?e.message:'No se ha podido conectar con Supabase.','err');
+  }finally{
+    _tpOcupado=false;
+    tpPintaAviso();
+    if(document.getElementById('tp-nube-panel'))tpPintaPanel();
+    if(_tpOtra){_tpOtra=false;setTimeout(function(){tpNubeSync(false);},300);}
+  }
+}
+function tpNubeCambio(){
+  if(_tpAplicando||!tpNubeActiva())return;
+  clearTimeout(_tpTimer);
+  _tpTimer=setTimeout(function(){tpNubeSync(false);},1500);
+}
+function tpNubeVaciado(){if(!_tpAplicando)_tpVaciado=true;}
+async function tpMideUso(forzar){
+  var u=tpLee('tp_sb_uso',null);
+  if(!forzar&&u&&Date.now()-u.t<3600000)return;
+  try{
+    var r=await tpApi('rpc/timerpro_uso',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    var j=await r.json();
+    tpPon('tp_sb_uso',{db:+j.db||0,archivos:+j.archivos||0,t:Date.now()});
+    tpPintaNav();
+    tpPintaAviso();
+    if(document.getElementById('tp-nube-panel'))tpPintaPanel();
+  }catch(e){}
+}
+function tpPct(){
+  var u=tpLee('tp_sb_uso',null);
+  if(!u)return 0;
+  return Math.max(u.db/TP_LIM_DB,u.archivos/TP_LIM_ARCH)*100;
+}
+function tpMB(b){return b>=1073741824?(b/1073741824).toFixed(2).replace('.',',')+' GB':Math.round(b/1048576)+' MB';}
+function tpEsc(t){return String(t==null?'':t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function tpPintaAviso(){
+  var el=document.getElementById('tp-nube-aviso');
+  if(el)el.remove();
+  if(!tpNubeConectada()||tpLee('tp_sb_pausa',false))return;
+  var pct=Math.round(tpPct()),lleno=tpLee('tp_sb_lleno',false),fallos=tpLee('tp_sb_fallos',0)||0,txt='',rojo=false,ocultable=false;
+  if(lleno){txt='Supabase no ha aceptado el último guardado. Tus datos siguen en este dispositivo. Pulsa Seguir con Drive.';rojo=true;}
+  else if(pct>=95){txt='Supabase está casi lleno: '+pct+' %. Pulsa Seguir con Drive para no perder la sincronización.';rojo=true;}
+  else if(fallos>=3&&navigator.onLine){txt='Supabase lleva varios intentos sin responder. Tus datos siguen en este dispositivo. Puedes seguir con Drive.';rojo=true;}
+  else if(pct>=80){txt='Supabase está al '+pct+' %. Sigue funcionando. Si llega al 95 %, te avisaré para seguir con Drive.';ocultable=true;}
+  if(!txt)return;
+  if(ocultable&&Date.now()<(tpLee('tp_sb_aviso_oculto',0)||0))return;
+  el=document.createElement('div');el.id='tp-nube-aviso';
+  el.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9998;padding:.9rem 1rem;font-size:1.05rem;font-weight:700;line-height:1.35;color:#fff;background:'+(rojo?'#b91c1c':'#b45309');
+  el.innerHTML='<div style="margin-bottom:.6rem">'+tpEsc(txt)+'</div>'
+    +(rojo?'<button id="tp-aviso-drive" style="font:inherit;padding:.5rem .9rem;border-radius:8px;border:0;background:#fff;color:#111;margin-right:.5rem">Seguir con Drive</button>':'')
+    +'<button id="tp-aviso-ver" style="font:inherit;padding:.5rem .9rem;border-radius:8px;border:2px solid #fff;background:transparent;color:#fff;margin-right:.5rem">Ver detalles</button>'
+    +(ocultable?'<button id="tp-aviso-luego" style="font:inherit;padding:.5rem .9rem;border-radius:8px;border:2px solid #fff;background:transparent;color:#fff">Luego</button>':'');
+  document.body.appendChild(el);
+  var d=document.getElementById('tp-aviso-drive');if(d)d.onclick=tpSeguirConDrive;
+  document.getElementById('tp-aviso-ver').onclick=tpNubeAbrir;
+  var l=document.getElementById('tp-aviso-luego');if(l)l.onclick=function(){tpPon('tp_sb_aviso_oculto',Date.now()+7*86400000);tpPintaAviso();};
+}
+function tpSeguirConDrive(){
+  tpPon('tp_sb_pausa',true);
+  clearTimeout(_tpTimer);
+  tpEstado('');tpPintaAviso();
+  var p=document.getElementById('tp-nube-panel');if(p)p.remove();
+  if(typeof rerender==='function')rerender();
+  driveSync();
+}
+function tpVolverASupabase(){
+  tpPon('tp_sb_pausa',false);tpPon('tp_sb_lleno',false);tpPon('tp_sb_fallos',0);
+  tpPintaPanel();
+  if(typeof rerender==='function')rerender();
+  tpNubeSync(true);
+}
+function tpNubeAbrir(){
+  var p=document.getElementById('tp-nube-panel');
+  if(!p){
+    p=document.createElement('div');p.id='tp-nube-panel';
+    p.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);overflow:auto;padding:1rem;display:flex;align-items:flex-start;justify-content:center';
+    p.addEventListener('click',function(e){if(e.target===p)p.remove();});
+    document.body.appendChild(p);
+  }
+  tpPintaPanel();
+  if(tpNubeActiva())tpMideUso(true);
+}
+function tpPintaPanel(){
+  var p=document.getElementById('tp-nube-panel');if(!p)return;
+  var bS='font:inherit;font-weight:700;width:100%;padding:.75rem;border-radius:10px;margin-top:.5rem;cursor:pointer;',bP=bS+'background:#15803d;color:#fff;border:0;',bG=bS+'background:transparent;color:var(--ink);border:2px solid var(--brd);';
+  var inp='width:100%;font:inherit;padding:.6rem;border:1px solid var(--brd);border-radius:8px;background:var(--surf);color:var(--ink);box-sizing:border-box';
+  var cuerpo='',pausa=tpLee('tp_sb_pausa',false);
+  if(tpNubeConectada()&&pausa){
+    cuerpo='<p style="line-height:1.5">Este dispositivo está usando <strong>Drive</strong>. Supabase está en pausa aquí.</p>'
+      +'<button id="tp-p-volver" style="'+bP+'">Volver a Supabase</button>';
+  }else if(tpNubeConectada()){
+    var u=tpLee('tp_sb_uso',null),pend=Object.keys(tpLee('tp_sb_cola',{})).length;
+    cuerpo='<p style="line-height:1.5;font-weight:700;color:#15803d">Sincronización automática activada</p>'
+      +'<p style="line-height:1.5">Última sincronización: '+tpEsc(String(_tpTexto||'').replace('⚡ ',''))+(pend?'. Quedan '+pend+' cambios por subir.':'')+'</p>'
+      +(u?'<p style="line-height:1.5"><strong>Base de datos:</strong> '+tpMB(u.db)+' de 500 MB<br><strong>Archivos:</strong> '+tpMB(u.archivos)+' de 1 GB<br><small>Este proyecto lo comparte con DeCA y Parte Diario. El límite mensual de transferencia solo se ve en el panel de Supabase.</small></p>':'<p>Midiendo el espacio…</p>')
+      +'<button id="tp-p-sync" style="'+bP+'">Sincronizar ahora</button>'
+      +'<button id="tp-p-drive" style="'+bG+'">Seguir con Drive</button>'
+      +'<button id="tp-p-salir" style="'+bG+'">Desconectar este dispositivo</button>';
+  }else{
+    var a=tpConf()||tpLee('pd_sb_conf',null)||tpLee('deca_conf',{})||{};
+    cuerpo='<p style="line-height:1.5">Se conecta una vez por dispositivo. Empieza por el que tenga los datos más al día. Antes de unir los datos se descarga una copia.</p>'
+      +'<label style="display:block;margin-top:.5rem;font-weight:700">Dirección del proyecto</label><input id="tp-url" style="'+inp+'" value="'+tpEsc(a.url)+'" autocomplete="off">'
+      +'<label style="display:block;margin-top:.5rem;font-weight:700">Clave pública</label><input id="tp-key" style="'+inp+'" value="'+tpEsc(a.key)+'" autocomplete="off">'
+      +'<label style="display:block;margin-top:.5rem;font-weight:700">Correo</label><input id="tp-email" type="email" style="'+inp+'" value="'+tpEsc(a.email)+'" autocomplete="off">'
+      +'<label style="display:block;margin-top:.5rem;font-weight:700">Contraseña</label><input id="tp-pass" type="password" style="'+inp+'" autocomplete="current-password">'
+      +'<div id="tp-msg" style="color:#b91c1c;font-weight:700;margin-top:.5rem"></div>'
+      +'<button id="tp-p-conectar" style="'+bP+'">Conectar y sincronizar</button>';
+  }
+  p.innerHTML='<div style="background:var(--surf);color:var(--ink);border-radius:14px;padding:1.1rem;width:100%;max-width:440px;font-size:1rem">'
+    +'<div style="font-size:1.2rem;font-weight:800;margin-bottom:.4rem">Supabase</div>'+cuerpo
+    +'<button id="tp-p-cerrar" style="'+bG+'">Cerrar</button></div>';
+  var on=function(id,f){var b=document.getElementById(id);if(b)b.onclick=f;};
+  on('tp-p-cerrar',function(){p.remove();});
+  on('tp-p-volver',tpVolverASupabase);
+  on('tp-p-sync',function(){tpNubeSync(true);});
+  on('tp-p-drive',tpSeguirConDrive);
+  on('tp-p-salir',function(){if(confirm('¿Desconectar este dispositivo? Los datos se quedan aquí y en Supabase, pero dejarán de sincronizarse.')){localStorage.removeItem('tp_sb_sesion');tpEstado('');tpPintaPanel();tpPintaAviso();if(typeof rerender==='function')rerender();}});
+  on('tp-p-conectar',tpNubeConectar);
+}
+function tpElige(n){
+  return new Promise(function(res){
+    var m=document.createElement('div');
+    m.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:1rem';
+    var b='font:inherit;font-weight:700;width:100%;padding:.85rem;border-radius:10px;margin-top:.6rem;cursor:pointer;border:0;color:#fff;';
+    m.innerHTML='<div style="background:var(--surf);color:var(--ink);border-radius:14px;padding:1.1rem;max-width:440px;font-size:1.05rem;line-height:1.45"><div style="font-size:1.25rem;font-weight:800;margin-bottom:.5rem">Hay diferencias</div>'
+      +'<p>'+(n===1?'Hay 1 dato distinto':'Hay '+n+' datos distintos')+' entre Supabase y este dispositivo. Ya se ha descargado una copia de este dispositivo. ¿Cuáles quieres conservar?</p>'
+      +'<button id="tp-el-nube" style="'+b+'background:#1d4ed8">Dejar los de Supabase en este dispositivo</button>'
+      +'<button id="tp-el-aqui" style="'+b+'background:#15803d">Dejar los de este dispositivo en Supabase</button></div>';
+    document.body.appendChild(m);
+    document.getElementById('tp-el-nube').onclick=function(){m.remove();res('nube');};
+    document.getElementById('tp-el-aqui').onclick=function(){m.remove();res('aqui');};
+  });
+}
+async function tpCopiaPrevia(){
+  try{await createSnapshot('Antes de conectar Supabase');}catch(e){}
+  var datos=await buildSyncDataWithPhotos();
+  var u=URL.createObjectURL(new Blob([JSON.stringify(datos)],{type:'application/json'}));
+  var a=document.createElement('a');a.href=u;a.download='TimerPro_copia_antes_de_Supabase_'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(function(){URL.revokeObjectURL(u);},60000);
+}
+async function tpNubeConectar(){
+  var v=function(id){return (document.getElementById(id).value||'').trim();};
+  var c={url:v('tp-url').replace(/\/+$/,''),key:v('tp-key'),email:v('tp-email').toLowerCase()},pass=document.getElementById('tp-pass').value;
+  var msg=function(t){var el=document.getElementById('tp-msg');if(el)el.textContent=t;};
+  if(!/^https:\/\/[^\/]+$/.test(c.url)||!c.key||!c.email||!pass){msg('Faltan datos: dirección, clave, correo o contraseña.');return;}
+  var previa=tpConf(),boton=document.getElementById('tp-p-conectar');
+  if(boton)boton.disabled=true;
+  try{
+    msg('Conectando…');
+    var r=await fetch(c.url+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:c.key,'Content-Type':'application/json'},body:JSON.stringify({email:c.email,password:pass})});
+    if(r.status===400||r.status===401)throw tpError('El correo o la contraseña no son correctos.');
+    if(!r.ok)throw tpError('Supabase ha rechazado la entrada (error '+r.status+').');
+    tpPon('tp_sb_conf',c);tpGuardaSesion(await r.json());
+    if(!tpLee('tp_sb_unido',false)){
+      msg('Preparando los datos…');
+      var remotas=await tpTrae(null);
+      await tpCopiaPrevia();
+      _tpAplicando=true;
+      try{captureFormState();if(fEntry&&fEntry.fecha)await saveDraft();}catch(e){}
+      _tpAplicando=false;
+      var est=await tpLeeEstado(),esp={},cola={},ahora=new Date().toISOString(),distintas=[];
+      remotas.forEach(function(f){
+        if(f.borrado||!est[f.id])return;
+        var pre=f.id.split(':')[0];
+        if(pre!=='cfg'&&pre!=='k'&&pre!=='c'&&est[f.id].h!==tpHash(f.id,f.datos))distintas.push(f.id);
+      });
+      var quien='nube';
+      if(distintas.length)quien=await tpElige(distintas.length);
+      var apl=[];
+      remotas.forEach(function(f){
+        var L=est[f.id];
+        if(f.borrado){if(L&&quien==='nube')apl.push(f);else if(L)cola[f.id]=ahora;return;}
+        if(!L){apl.push(f);return;}
+        if(L.h===tpHash(f.id,f.datos)){esp[f.id]=L.h;return;}
+        if(quien==='nube')apl.push(f);else cola[f.id]=ahora;
+      });
+      await tpAplica(apl);
+      if(apl.length){
+        est=await tpLeeEstado();
+        apl.forEach(function(f){if(est[f.id])esp[f.id]=est[f.id].h;});
+      }
+      tpPon('tp_sb_espejo',esp);tpPon('tp_sb_cola',cola);
+      tpPon('tp_sb_cursor',remotas.length?remotas[remotas.length-1].actualizado:null);
+      tpPon('tp_sb_unido',true);
+    }
+    tpPon('tp_sb_pausa',false);
+    await tpNubeSync(true);
+    tpMideUso(true);
+    showAlert('✅ Supabase conectado: '+S.entries.length+' jornadas, '+S.tasks.length+' tareas, '+(S.payslips||[]).length+' nóminas');
+    tpPintaPanel();
+    if(typeof rerender==='function')rerender();
+  }catch(err){
+    _tpAplicando=false;
+    if(!tpLee('tp_sb_unido',false)){if(previa)tpPon('tp_sb_conf',previa);else localStorage.removeItem('tp_sb_conf');localStorage.removeItem('tp_sb_sesion');}
+    msg(err&&err.humano?err.message:'No se ha podido conectar con Supabase. Si lleva días sin usarse, abre el proyecto y pulsa Resume project.');
+    if(boton)boton.disabled=false;
+  }
+}
+function tpNubeIniciar(){
+  tpPintaAviso();
+  if(tpNubeActiva())setTimeout(function(){tpNubeSync(false);},200);
+  window.addEventListener('focus',function(){tpNubeSync(false);});
+  document.addEventListener('visibilitychange',function(){tpNubeSync(false);});
+  window.addEventListener('online',function(){tpNubeSync(false);});
+}
+
 // Override driveSync and _doLoad to use Google Drive OAuth
 let syncWarningInfo = null; // {diff, direction, data, remoteData} para el modal de aviso
 
@@ -15658,7 +16155,7 @@ async function loadData(){
   if(settings.activeWorkerId) activeWorkerId=settings.activeWorkerId;
   if(settings.activeCompanyId) activeCompanyId=settings.activeCompanyId;
   // Legacy single worker/company migration
-  try{var _ld=_lsLoad();if(_ld&&_ld.e&&_ld.e.length>S.entries.length){var _ds=new Set(S.entries.map(function(x){return x.fecha;}));_ld.e.forEach(function(e){if(!_ds.has(e.fecha)){S.entries.push(e);dbPut(ST.entries,e).catch(function(){});}});if(_ld.s&&_ld.s.length&&!S.sites.length){S.sites=_ld.s;_ld.s.forEach(function(x){dbPut(ST.sites,x).catch(function(){});});}}}catch(_ex){}
+  try{var _ld=_lsLoad();if(!tpNubeActiva()&&_ld&&_ld.e&&_ld.e.length>S.entries.length){var _ds=new Set(S.entries.map(function(x){return x.fecha;}));_ld.e.forEach(function(e){if(!_ds.has(e.fecha)){S.entries.push(e);dbPut(ST.entries,e).catch(function(){});}});if(_ld.s&&_ld.s.length&&!S.sites.length){S.sites=_ld.s;_ld.s.forEach(function(x){dbPut(ST.sites,x).catch(function(){});});}}}catch(_ex){}
   if(settings.worker && workers.length===0){
     const id=await dbPut(ST.workers,settings.worker);
     workers=[{...settings.worker,id}];
@@ -15734,6 +16231,7 @@ localStorage.setItem('appVersion', '1779004086714');
 
 // ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
 function checkDriveForNewData(){
+  if(tpNubeActiva()) return;
   // Only run if user has been idle for at least 10 seconds
   if(Date.now() - lastActivity < 10000) return;
   if(!driveUrl) return;
@@ -15799,7 +16297,7 @@ function handleOnline(){
   showAlert('Conexion restaurada');
   rerender();
   // Auto-sync if there are pending changes
-  if(driveUrl && S.entries.length > 0){
+  if(driveUrl && S.entries.length > 0 && !tpNubeActiva()){
     setTimeout(warmupDriveScript, 1000); // warm up script on startup
     setTimeout(()=>{
       checkDriveForNewData();
@@ -16269,7 +16767,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     pinCode=localStorage.getItem('pinCode')||'';
     if(pinCode){pinLocked=true;pinEntered='';}
     // Auto-load from Drive on startup silently
-    if(driveUrl){
+    if(driveUrl&&!tpNubeActiva()){
       syncStatus='syncing'; rerender();
       try{
         await new Promise((res)=>{
@@ -16503,6 +17001,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     }
     updateTitle();
     autoSnapshot();
+    tpNubeIniciar();
     // Clean URL param on load
     if(location.search){ history.replaceState(null,'',location.pathname); }
     // Version check: on startup after 10s, then every 5 minutes
@@ -16521,14 +17020,14 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
       clearTimeout(_idleCheckTimer);
       // Schedule auto-sync after 30s idle
       _idleSyncTimer = setTimeout(()=>{
-        if(!_syncInProgress && isOnline && driveUrl){
+        if(!_syncInProgress && isOnline && driveUrl && !tpNubeActiva()){
           console.log('Auto-sync: 90s idle');
           driveSync();
         }
       }, IDLE_MS);
       // Schedule drive check after 35s idle
       _idleCheckTimer = setTimeout(()=>{
-        checkDriveForNewData();
+        if(!tpNubeActiva())checkDriveForNewData();
       }, IDLE_MS + 5000);
     }
 
@@ -16906,7 +17405,7 @@ const _saveEntry_orig = saveEntry;
 window.saveEntry = async function(){
   await _saveEntry_orig();
   if(isOnline && driveUrl && !_syncInProgress){
-    setTimeout(()=>{ if(!_syncInProgress) driveSync(); }, 3000);
+    setTimeout(()=>{ if(!_syncInProgress&&!tpNubeActiva()) driveSync(); }, 3000);
   }
 }
 
