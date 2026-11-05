@@ -1404,7 +1404,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261105-editot'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261105-meses3'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -1838,6 +1838,71 @@ function renderDayCard(){
 // tanto para las jornadas sueltas del ciclo en curso como para las que
 // están dentro de una carpeta de ciclo cerrado — es exactamente la misma
 // fila de siempre, solo que ahora está en una función reutilizable.
+// Días de un mes natural (1 → último día), en orden, con TODOS los días:
+// trabajados, sin fichar, fines de semana, vacaciones/festivos (etiquetas del
+// Calendario). Solo para consultar el historial; no crea ni cambia datos.
+function renderDiasDelMes(mesKey,entries){
+  const [y,m]=mesKey.split('-').map(Number);
+  const nDias=new Date(y,m,0).getDate();
+  const porFecha=new Map(); (entries||[]).forEach(en=>{ if(en.fecha) porFecha.set(en.fecha,en); });
+  const out=[];
+  for(let d=1; d<=nDias; d++){
+    const ds=mesKey+'-'+String(d).padStart(2,'0');
+    const en=porFecha.get(ds);
+    const dow=new Date(y,m-1,d).getDay();
+    const finde=(dow===0||dow===6);
+    const tag=(typeof dayTags!=='undefined'&&dayTags)?dayTags[ds]:null;
+    // Colores: trabajado=verde · vacaciones=amarillo · festivo=rojo · festivo trabajado=naranja
+    //          fin de semana sin fichar=rosa · día laborable sin fichar=gris
+    // Colores SÓLIDOS (la tarjeta del historial tiene fondo propio y los
+    // translúcidos se confundían con él). Claro / oscuro.
+    const osc=!!S.dark;
+    const C={
+      trab:  osc?['#0f172a','#22c55e','#e2e8f0']:['#ffffff','#16a34a','#0f172a'],
+      vac:   osc?['#422006','#eab308','#fef9c3']:['#fef9c3','#eab308','#422006'],
+      fest:  osc?['#450a0a','#ef4444','#fee2e2']:['#fee2e2','#ef4444','#450a0a'],
+      festT: osc?['#431407','#f97316','#ffedd5']:['#ffedd5','#f97316','#431407'],
+      finde: osc?['#3b0a24','#f472b6','#fce7f3']:['#fdf2f8','#f472b6','#500724'],
+      nada:  osc?['#1e293b','#64748b','#cbd5e1']:['#f1f5f9','#94a3b8','#475569']
+    };
+    let k='nada',txt='Sin fichar';
+    if(en) { k=(tag==='festivo_trabajado')?'festT':'trab'; txt=''; }
+    else if(tag==='vacaciones'){ k='vac'; txt='☀ Vacaciones'; }
+    else if(tag==='festivo'){ k='fest'; txt='★ Festivo'; }
+    else if(tag==='festivo_trabajado'){ k='festT'; txt='★ Festivo trabajado'; }
+    else if(finde){ k='finde'; txt='Fin de semana · sin fichar'; }
+    const [bg,brd,fg]=C[k];
+    const caja=(contenido)=>h('div',{style:{background:bg,color:fg,borderLeft:'6px solid '+brd,borderRadius:'8px',marginBottom:'.3rem',overflow:'hidden'}},contenido);
+    if(en){
+      const fila=renderHistorialRow(en);
+      fila.style.background='transparent'; fila.style.color=fg;
+      out.push(caja(fila));
+    } else {
+      out.push(caja(h('div',{class:'sum-row',style:{cursor:'pointer',background:'transparent',display:'flex',justifyContent:'space-between',alignItems:'center'},
+        title:'Abrir este día',on:{click:()=>goToDay(ds)}},
+        h('div',{},
+          h('div',{style:{fontWeight:700,fontSize:'.85rem'}},`${cap(wday(ds))}, ${dlbl(ds)}`),
+          h('div',{style:{fontSize:'.72rem',color:fg,fontWeight:700}},txt)
+        ),
+        // Mismas opciones que un día con jornada (✏️ 💾 🗑)
+        h('div',{style:{display:'flex',gap:'.3rem'}},
+          h('button',{class:'btn btn-b btn-sm',title:'Editar / rellenar este día',on:{click:ev=>{ev.stopPropagation();goToDay(ds);}}},'✏️'),
+          h('button',{class:'btn btn-g btn-sm',title:'Guardar la jornada actual en este día',on:{click:ev=>{
+            ev.stopPropagation();
+            if(fEntry.fecha!==ds){ showAlert('Carga primero este día con ✏️ antes de guardar','err'); return; }
+            if(!confirm('¿Guardar la jornada del '+ds+'?')) return;
+            saveEntry();
+          }}},'💾'),
+          h('button',{class:'btn btn-r btn-sm',title:'Eliminar jornada',on:{click:ev=>{
+            ev.stopPropagation();
+            showAlert('Este día no tiene ninguna jornada guardada que eliminar','err');
+          }}},'🗑')
+        )
+      )));
+    }
+  }
+  return out;
+}
 function renderHistorialRow(en){
   return h('div',{class:'sum-row',style:{cursor:'pointer',borderLeft:en.fecha===fEntry.fecha?'3px solid var(--acc)':'',background:en.fecha===fEntry.fecha?'var(--acc-lt)':''},on:{click:()=>loadHistorial(en),dblclick:()=>loadHistorial(en)}},
     h('div',{},
@@ -2836,7 +2901,18 @@ function renderFichar(){
               // una carpeta "mes de ..." para que la lista se vea más
               // ordenada. Es puramente visual: los datos y el orden de
               // dentro de cada carpeta son los mismos de siempre.
-              const {sueltas,carpetas}=agruparJornadasPorCiclo(filtradas);
+              // SOLO AQUÍ (consulta del historial) las carpetas son MESES NATURALES
+              // (del 1 al 28/29/30/31), no ciclos de nómina. El mes en curso queda
+              // suelto como siempre; los meses anteriores van en carpeta.
+              const mesActualH=today().slice(0,7);
+              const sueltas=[]; const _pm=new Map();
+              filtradas.forEach(en=>{
+                const mk=(en.fecha||'').slice(0,7); if(!mk) return;
+                if(mk>=mesActualH){ sueltas.push(en); return; }
+                if(!_pm.has(mk)) _pm.set(mk,[]);
+                _pm.get(mk).push(en);
+              });
+              const carpetas=Array.from(_pm.entries()).sort((a,b)=>b[0].localeCompare(a[0])).map(([periodoKey,entries])=>({periodoKey,entries}));
               const nodos=sueltas.map(en=>renderHistorialRow(en));
               // Carpeta de un mes (ciclo cerrado). "sangria" desplaza la
               // carpeta y sus jornadas cuando va dentro de una carpeta de año.
@@ -2854,7 +2930,7 @@ function renderFichar(){
                   h('div',{},(abierta?'📂 ':'📁 ')+periodoFolderLabel(periodoKey)),
                   h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',fontWeight:400}},entries.length+' jornada'+(entries.length!==1?'s':''))
                 );
-                const hijos=abierta?entries.map(en=>h('div',{style:{paddingLeft:'1rem'}},renderHistorialRow(en))):[];
+                const hijos=abierta?[h('div',{style:{margin:'.3rem 0 .5rem 1rem',padding:'.4rem',borderRadius:'10px',background:S.dark?'#0b1220':'#ffffff',border:'1px solid var(--brd)'}},...renderDiasDelMes(periodoKey,entries))]:[];
                 return h('div',{style:sangria?{paddingLeft:'1rem'}:{}},fila,...hijos);
               };
               // Meses de un año YA COMPLETO (su último ciclo, el que cierra el
@@ -2863,7 +2939,7 @@ function renderFichar(){
               const porAnio=new Map(); const mesesSueltos=[];
               carpetas.forEach(c=>{
                 const anio=c.periodoKey.slice(0,4);
-                if(periodoEstaCerrado(anio+'-12')){
+                if(+anio < +mesActualH.slice(0,4)){
                   if(!porAnio.has(anio)) porAnio.set(anio,[]);
                   porAnio.get(anio).push(c);
                 } else mesesSueltos.push(c);
