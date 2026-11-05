@@ -1404,7 +1404,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261103-otvisibles2'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261105-editot'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -2938,7 +2938,15 @@ function tpChipTarea(t,grande){
   return h('div',{style:{display:'flex',alignItems:'center',flexWrap:'wrap',gap:'.4rem',marginTop:'.35rem',padding:grande?'.6rem .7rem':'.35rem .5rem',
     background:'var(--surf)',color:'var(--ink)',borderRadius:'8px',borderLeft:'5px solid '+tp.color,textAlign:'left'}},
     h('span',{style:{background:tp.color,color:tp.id==='ot'?'#1e293b':'#fff',borderRadius:'6px',padding:'.1rem .45rem',fontWeight:900,fontSize:grande?'1.1rem':'.85rem',whiteSpace:'nowrap'}},(tp.icono||'')+' '+tpEtiquetaTarea(t)),
-    h('span',{style:{fontWeight:800,fontSize:grande?'1.1rem':'.88rem',color:'var(--ink)',wordBreak:'break-word',flex:'1 1 8rem'}},tpTextoTarea(t))
+    h('span',{style:{fontWeight:800,fontSize:grande?'1.1rem':'.88rem',color:'var(--ink)',wordBreak:'break-word',flex:'1 1 8rem'}},tpTextoTarea(t)),
+    // ✏️ Editar esta O.T./tarea desde cualquier fichaje; al guardar vuelve a Fichar
+    // y la vinculación del fichaje no cambia (idx 'f1' = solo volver).
+    h('button',{class:'btn btn-b btn-sm',style:{flexShrink:0},title:'Editar esta O.T./tarea',
+      on:{click:ev=>{ev.stopPropagation();
+        fTask={...defTask(t.fecha),...t,fotos:[...(t.fotos||[])],journeys:[...(t.journeys||[])]};
+        editTaskId=t.id;
+        _pendingFichajeTaskLink={fecha:(fEntry&&fEntry.fecha)||today(),idx:'f1'};
+        S.tab='tareas';rerender();}}},'✏️ Editar')
   );
 }
 /* Misma regla que el Resumen: lo vinculado al fichaje y, si el día solo tiene uno, las tareas del día. */
