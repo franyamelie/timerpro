@@ -1404,7 +1404,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261105-meses3'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261105-calclic'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -4763,11 +4763,11 @@ function renderAnioCalendario(){
       const {base,info}=dias[ds];
       if(mostrarTodo){
         const cls=base==='weekend'?'weekend-rest':base;
-        celdas.push(h('div',{class:'cal-day '+cls,title:ds},d));
+        celdas.push(h('div',{class:'cal-day '+cls,title:ds+' · pulsa para abrir este día',style:{cursor:'pointer'},on:{click:()=>goToDay(ds)}},d));
       } else {
         const f=activos.find(a=>anioCoincide(a.id,base,info));
-        if(f) celdas.push(h('div',{class:'cal-day',title:ds+' · '+f.label,style:{background:f.bg,color:f.fg,fontWeight:'800'}},d));
-        else celdas.push(h('div',{class:'cal-day',title:ds,style:{opacity:'.35'}},d));
+        if(f) celdas.push(h('div',{class:'cal-day',title:ds+' · '+f.label+' · pulsa para abrir este día',style:{background:f.bg,color:f.fg,fontWeight:'800',cursor:'pointer'},on:{click:()=>goToDay(ds)}},d));
+        else celdas.push(h('div',{class:'cal-day',title:ds+' · pulsa para abrir este día',style:{opacity:'.35',cursor:'pointer'},on:{click:()=>goToDay(ds)}},d));
       }
     }
     return h('div',{class:'ya-mes'},
