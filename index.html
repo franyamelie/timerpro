@@ -808,6 +808,35 @@ function loadFTaskDraft(){
 // ── PERSISTENT FORM STATE ──────────────────────────
 // Save/restore entire fEntry to localStorage so data
 // survives tab switches, rerenders, and sync operations
+// El editor de notas SOLO se lee si pertenece al día que está abierto: así unas
+// notas que se ven en pantalla de OTRO día nunca pueden copiarse a este.
+function notasEditorEl(){
+  const el=document.getElementById('notas-editor');
+  if(!el) return null;
+  if(el.dataset && el.dataset.fecha && fEntry && el.dataset.fecha!==fEntry.fecha) return null;
+  return el;
+}
+// Jornadas antiguas con la hora de entrada/salida "suelta" (campos del día) y
+// sin fichaje real: se rellena el fichaje 1 con esas horas para que la
+// pantalla principal, el listado y el Resumen vean lo mismo. Solo en memoria.
+function normalizarEntrada(e){
+  try{
+    if(!e) return e;
+    const he=e.horaEntrada, hs=e.horaSalida;
+    if(!(he||hs)) return e;
+    if(!Array.isArray(e.fichajes)) e.fichajes=[];
+    if(e.fichajes.some(f=>(he&&f.entrada===he)||(hs&&f.salida===hs))) return e;
+    const f0=e.fichajes[0];
+    if(!f0){
+      const nf=defFichaje(); nf.entrada=he||''; nf.salida=hs||'';
+      ['horasNormales','horasExtra','horasNocturnas','horasFestivas'].forEach(k=>{ nf[k]=+e[k]||0; });
+      e.fichajes=[nf];
+    } else if(!f0.entrada&&!f0.salida){
+      f0.entrada=he||''; f0.salida=hs||'';
+    }
+  }catch(ex){}
+  return e;
+}
 function persistEntry(){
   try{ localStorage.setItem('_fEntry', JSON.stringify(fEntry)); }catch(e){}
 }
@@ -815,7 +844,7 @@ function persistEntry(){
 // Se usa tras cada comando de formato (execCommand) para no depender solo del evento 'input',
 // que puede no dispararse siempre justo después de aplicar negrita/cursiva/subrayado.
 function syncNotasFromEditor(){
-  const el=document.getElementById('notas-editor');
+  const el=notasEditorEl();
   if(!el) return;
   fEntry.notas=el.innerHTML;
   if(fEntry.fichajes && fEntry.fichajes.length>=2) fEntry.fichajes[0].nota=el.innerHTML;
@@ -1026,7 +1055,7 @@ function attachFichajeListeners(){
 
 function rerenderSetNotas(){
   requestAnimationFrame(()=>{
-    const el=document.getElementById('notas-editor');
+    const el=notasEditorEl();
     if(el && el.contentEditable==='true' && document.activeElement!==el){
       // Read from localStorage first (most up to date), then fEntry
       // Use fEntry.notas as single source of truth (avoids contamination from localStorage)
@@ -1052,7 +1081,7 @@ function captureFormState(){
   fEntry._horaInicioManual=timerStart?new Date(timerStart).toTimeString().slice(0,5):(fEntry._horaInicioManual||'');
 
     // Read notas FIRST before persisting (fix: was saving stale data)
-    const notasElFirst=document.getElementById('notas-editor');
+    const notasElFirst=notasEditorEl();
     if(notasElFirst && notasElFirst.innerHTML.trim()){
       fEntry.notas=notasElFirst.innerHTML;
       localStorage.setItem('notas_'+fEntry.fecha, notasElFirst.innerHTML);
@@ -1111,7 +1140,7 @@ function captureFormState(){
           : textToLoc(site.direccion||site.nombre))
         : textToLoc(val);
     });
-    const notasEl=document.getElementById('notas-editor');
+    const notasEl=notasEditorEl();
     if(notasEl && notasEl.innerHTML.trim()){
       fEntry.notas=notasEl.innerHTML;
       localStorage.setItem('notas_'+fEntry.fecha, notasEl.innerHTML);
@@ -1414,7 +1443,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final2'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final3'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -1948,7 +1977,7 @@ function renderHistorialRow(en){
         if(!confirm('¿Guardar la jornada del '+en.fecha+'?')) return;
         // Read DOM first THEN snapshot (fichajes + notas need DOM read first)
         captureFormState();
-        const notasEl=document.getElementById('notas-editor');
+        const notasEl=notasEditorEl();
         if(notasEl&&notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
         // Read inputs directly before snapshot
         fEntry.fichajes.forEach((fj,i)=>{
@@ -2675,7 +2704,7 @@ function renderFichar(){
             on:{mousedown:ev=>{ev.preventDefault();document.execCommand('redo');syncNotasFromEditor();}}},'↷')
         ),
         h('div',{
-          id:'notas-editor',
+          id:'notas-editor','data-fecha':fEntry.fecha||'',
           contenteditable:'true',
           html:fEntry.notas||'',
           spellcheck:true, lang:'es',
@@ -4867,6 +4896,12 @@ async function exportarAnioTexto(){
 }
 
 // Contador automático de vacaciones (30 días) y asuntos propios (20 h) del año.
+function asuntosHorasAnio(y){
+  const _set=new Set(Object.keys(dayTags).filter(ds=>ds.startsWith(y+'-')&&getDayTag(ds)==='asuntos'));
+  S.entries.forEach(e=>{ if(e.fecha&&e.fecha.startsWith(y+'-')&&(+e.horasAsuntos>0)&&!e._draft) _set.add(e.fecha); });
+  const t=[..._set].reduce((a,ds)=>a+horasAsuntosDia(ds),0);
+  return (Math.round(t*100)/100).toString().replace('.',',');
+}
 function renderContadorAnio(y,cuentas){
   const vacCog=cuentas.vacaciones||0, vacQuedan=VAC_BASE_DIAS-vacCog;
   const _set=new Set(Object.keys(dayTags).filter(ds=>ds.startsWith(y+'-')&&getDayTag(ds)==='asuntos'));
@@ -4882,7 +4917,7 @@ function renderContadorAnio(y,cuentas){
   return h('div',{style:{margin:'.2rem 0 .7rem'}},
     h('div',{style:{display:'flex',gap:'.6rem',flexWrap:'wrap'}},
       caja('☀ Vacaciones '+y,vacQuedan>=0?'Quedan '+vacQuedan+' días':'Te pasas '+(-vacQuedan)+' días','Cogidos '+vacCog+' de '+VAC_BASE_DIAS+' días',vacQuedan<0),
-      caja('A · Asuntos propios '+y,apQuedan>=0?'Quedan '+fh(apQuedan)+' h':'Te pasas '+fh(-apQuedan)+' h','Cogidas '+fh(apCog)+' h de '+AP_BASE_HORAS+' h ('+dias.length+' día'+(dias.length===1?'':'s')+')',apQuedan<0)
+      caja('A · Asuntos propios '+y,apQuedan>=0?'Quedan '+fh(apQuedan)+' h':'Te pasas '+fh(-apQuedan)+' h','Cogidas '+fh(apCog)+' h de '+AP_BASE_HORAS+' h',apQuedan<0)
     ),
     dias.length?h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.5rem',alignItems:'center'}},
       h('span',{style:{fontSize:'.72rem',color:'var(--ink2)',fontWeight:700}},'Horas de cada día de asuntos propios:'),
@@ -4956,7 +4991,7 @@ function renderAnioCalendario(){
           style:{display:'flex',alignItems:'center',gap:'.3rem'},
           on:{click:()=>{ if(on) anioFiltros.delete(f.id); else anioFiltros.add(f.id); rerender(); }}},
           h('span',{style:{width:'12px',height:'12px',borderRadius:'3px',background:f.bg,display:'inline-block',border:'1px solid rgba(0,0,0,.25)'}}),
-          f.label+' · '+cuentas[f.id]);
+          f.label+' · '+(f.id==='asuntos'?(asuntosHorasAnio(y)+' h'):cuentas[f.id]));
       }),
       activos.length?h('button',{class:'btn btn-sm btn-gh',on:{click:()=>{anioFiltros=new Set();rerender();}}},'✕ Quitar filtros'):null
     ),
@@ -4995,6 +5030,53 @@ function extrasCalendarioItems(ds){
   if((e.otrosConceptos||[]).length>0||(e.journeys||[]).some(j=>importeViaje(j)>0)) p.push('Otros');
   return p;
 }
+
+// ═══ REVISIÓN DE JORNADAS (solo lectura: avisa, no cambia nada) ═══
+function auditarJornadas(){
+  const out=[]; const fh=v=>(Math.round(v*100)/100).toString().replace('.',',');
+  const porFecha={};
+  (S.entries||[]).forEach(e=>{ if(e.fecha) (porFecha[e.fecha]=porFecha[e.fecha]||[]).push(e); });
+  Object.keys(porFecha).sort().forEach(ds=>{
+    const lista=porFecha[ds];
+    if(lista.length>1) out.push({ds,txt:'Hay '+lista.length+' jornadas guardadas el mismo día'});
+    const e=lista[0]; if(!e) return;
+    const fj=Array.isArray(e.fichajes)?e.fichajes:[];
+    const horas=(+e.horasNormales||0)+(+e.horasExtra||0)+(+e.horasNocturnas||0)+(+e.horasFestivas||0);
+    const tag=getDayTag(ds);
+    const conHorario=fj.filter(f=>f.entrada&&f.salida);
+    if((tag==='vacaciones'||tag==='festivo'||tag==='asuntos')&&horas>0)
+      out.push({ds,txt:'Día marcado como '+TAG_LABELS[tag]+' pero con '+fh(horas)+' h de trabajo guardadas'});
+    if(horas>0&&!conHorario.length&&!e.horaEntrada&&!e.horaSalida)
+      out.push({ds,txt:fh(horas)+' h guardadas pero sin ninguna hora de entrada/salida'});
+    if((e.horaEntrada||e.horaSalida)&&!fj.some(f=>f.entrada||f.salida))
+      out.push({ds,txt:'Tiene hora de entrada/salida suelta que no está en ningún fichaje'});
+    conHorario.forEach((f,i)=>{
+      const h4=(+f.horasNormales||0)+(+f.horasExtra||0)+(+f.horasNocturnas||0)+(+f.horasFestivas||0);
+      if(fj.length>1&&!h4) out.push({ds,txt:'Un fichaje con horario ('+f.entrada+'→'+f.salida+') tiene todas sus horas a 0'});
+    });
+    const ents=fj.filter(f=>f.entrada).map(f=>f.entrada);
+    if(ents.some((x,i)=>i>0&&x<ents[i-1])) out.push({ds,txt:'Los fichajes no están en orden de hora'});
+  });
+  return out;
+}
+function renderAuditoriaJornadas(){
+  const abierto=!!S._auditOpen;
+  const lista=abierto?auditarJornadas():[];
+  return h('div',{class:'card'},
+    h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',flexWrap:'wrap'}},
+      h('div',{class:'sec-title',style:{margin:0,flex:1}},'🔍 Revisión de jornadas'),
+      h('button',{class:'btn btn-b btn-sm',on:{click:()=>{S._auditOpen=!S._auditOpen;rerender();}}},abierto?'Cerrar':'Revisar todas las jornadas')
+    ),
+    h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginTop:'.3rem'}},'Solo avisa de cosas raras en las jornadas guardadas; no cambia nada por sí sola.'),
+    abierto?(lista.length
+      ?h('div',{style:{marginTop:'.5rem'}},h('div',{style:{fontWeight:800,fontSize:'.8rem',marginBottom:'.3rem'}},lista.length+' aviso'+(lista.length>1?'s':'')),
+        ...lista.map(a=>h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',padding:'.35rem .5rem',borderBottom:'1px solid var(--brd)',fontSize:'.78rem'}},
+          h('b',{style:{flexShrink:0}},dlbl(a.ds)),h('span',{style:{flex:1}},a.txt),
+          h('button',{class:'btn btn-g btn-sm',on:{click:()=>goToDay(a.ds)}},'Abrir'))))
+      :h('div',{style:{marginTop:'.5rem',fontSize:'.8rem',color:'var(--acc)',fontWeight:700}},'✔ Todo en orden: no se ha encontrado nada raro.')):null
+  );
+}
+
 function renderCalendario(){
   const year=calYear, month=calMonth;
   const firstDay=new Date(year,month,1).getDay();
@@ -5089,6 +5171,7 @@ function renderCalendario(){
       h('span',{style:{color:'var(--ink3)',marginLeft:'auto'}},paintMode?'Modo activo: '+TAG_LABELS[paintMode]:'Pulsa una opción para activar el marcado')
     ),
 
+    renderAuditoriaJornadas(),
     // Marcar rango con la etiqueta activa (o vacaciones si no hay ninguna seleccionada) de una sola vez
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'✎ Marcar un periodo completo'),
@@ -5405,7 +5488,7 @@ function goToDay(ds){
   // Save current day before switching
   try{
     captureFormState();
-    const notasEl=document.getElementById('notas-editor');
+    const notasEl=notasEditorEl();
     if(notasEl && fEntry.fecha && notasEl.innerHTML.trim()){
       fEntry.notas=notasEl.innerHTML;
       localStorage.setItem('notas_'+fEntry.fecha, notasEl.innerHTML);
@@ -5423,6 +5506,7 @@ function goToDay(ds){
   if(existing){
     fEntry={...existing, fichajes:[...(existing.fichajes||[]).map(f=>({...f}))], dietasExtra:[...(existing.dietasExtra||[])], otrosConceptos:[...(existing.otrosConceptos||[])], journeys:[...(existing.journeys||[])]};
     // notas come from DB entry
+    normalizarEntrada(fEntry);
     editingEntry=true;
   } else {
     fEntry={...defEntry(), fecha:ds,
@@ -11928,7 +12012,7 @@ function textToLoc(text){
 function scheduleDraftSave(){
   if(draftSaveTimer) clearTimeout(draftSaveTimer);
   draftSaveTimer = setTimeout(()=>{
-    const notasEl=document.getElementById('notas-editor');
+    const notasEl=notasEditorEl();
     if(notasEl && notasEl.innerHTML.trim()){
       fEntry.notas=notasEl.innerHTML;
       localStorage.setItem('notas_'+fEntry.fecha, notasEl.innerHTML);
@@ -11971,7 +12055,7 @@ function entryHasData(e){
 }
 async function saveDraft(){
   // Capture all DOM values before saving
-  const notasEl=document.getElementById('notas-editor');
+  const notasEl=notasEditorEl();
   if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
   // fEntry.fichajes maintained by input handlers
   if(!fEntry.fecha) return;
@@ -12261,7 +12345,7 @@ async function saveEntry(){
   if(_isSaving) return;
   _isSaving = true;
   // Read notas from contenteditable div (not textarea)
-  const notasEl = document.getElementById('notas-editor');
+  const notasEl = notasEditorEl();
   if(notasEl && notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
   // Also capture all form inputs before saving
   captureFormState();
@@ -12396,7 +12480,7 @@ function loadHistorial(entry){
   // Save current day's notas before switching
   try{
     captureFormState();
-    const notasEl=document.getElementById('notas-editor');
+    const notasEl=notasEditorEl();
     if(notasEl && fEntry.fecha && notasEl.innerHTML.trim()){
       fEntry.notas=notasEl.innerHTML;
       localStorage.setItem('notas_'+fEntry.fecha, notasEl.innerHTML);
@@ -12413,6 +12497,7 @@ function loadHistorial(entry){
   fichajeDetailIndex=null;
   fEntry={...entry,fichajes:[...(entry.fichajes||[]).map(f=>({...f}))],dietasExtra:[...(entry.dietasExtra||[])],otrosConceptos:[...(entry.otrosConceptos||[])],journeys:[...(entry.journeys||[])]};
   // notas come from the DB entry — don't override with localStorage
+  normalizarEntrada(fEntry);
   editingEntry=true;
   S.tab='fichar';
   restoreTimerForDay(entry.fecha); // restore this day's timer if it has one
@@ -15572,7 +15657,7 @@ async function tpAplica(filas){
       timerDeduct=fEntry.timerDeduct||0;timerEndManual=fEntry._horaFinManual||'';
       if(fichajeDetailIndex!=null&&!(fEntry.fichajes||[])[fichajeDetailIndex])fichajeDetailIndex=null;
       if(!(fEntry.fichajes||[])[fichajeSeleccionado])fichajeSeleccionado=0;
-      var ed=document.getElementById('notas-editor');
+      var ed=notasEditorEl();
       if(ed)ed.innerHTML=fEntry.notas||'';
       var tit=document.getElementById('jornada-titulo-input');
       if(tit)tit.innerHTML=fEntry.titulo||'';
@@ -15893,7 +15978,7 @@ async function driveSync(skipSafetyCheck){
   if(_syncInProgress) return;
   _syncInProgress = true;
   captureFormState();
-  const notasEl=document.getElementById('notas-editor');
+  const notasEl=notasEditorEl();
   if(notasEl&&notasEl.innerHTML.trim()) fEntry.notas=notasEl.innerHTML;
   if(fEntry.fecha) await saveDraft();
   syncStatus='syncing'; rerender();
@@ -16525,6 +16610,7 @@ async function loadData(){
   if(aw) fWorker={...defWorker,...aw};
   if(ac) fCompany={...defCompany,...ac};
   await repararImportadosMontiel();
+  (S.entries||[]).forEach(normalizarEntrada);
 }
 
 
@@ -17455,7 +17541,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     setInterval(()=>{
       if(_isSaving) return; // don't interfere during save
       // Save notas de jornada
-      const notasEl = document.getElementById('notas-editor');
+      const notasEl = notasEditorEl();
       if(notasEl && notasEl.innerHTML.trim()) {
         fEntry.notas = notasEl.innerHTML;
       }
