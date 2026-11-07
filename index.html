@@ -878,6 +878,67 @@ async function migrarDatosUnaVez(){
   }catch(ex){ console.warn('Migración:',ex); }
 }
 
+// ── TIPO DE TRANSPORTE (coche / camión) ─────────────────────────
+// Un viaje con importe pero sin tipo cae en "Transporte otros" en los informes.
+// Si el día no tiene tipo se toma del fichaje; si tampoco, del importe del viaje
+// (el de coche y el de camión que ya usas en tus otras jornadas). Solo pone el
+// tipo: nunca cambia importes.
+var _trPrecCache=null;
+function preciosTransporteUsados(){
+  try{
+    const n=(S.entries||[]).length;
+    if(!_trPrecCache||_trPrecCache._n!==n){
+      const c={};
+      (S.entries||[]).forEach(e=>{
+        const t=e._transportType; const tr=+e.transporte||0;
+        if(!(t==='coche'||t==='camion')||!(tr>0)) return;
+        const q=+e.transporteCantidad||1; const u=Math.round(tr/q*100)/100;
+        c[t]=c[t]||{}; c[t][u]=(c[t][u]||0)+1;
+      });
+      const r={_n:n};
+      ['coche','camion'].forEach(t=>{ let b=0,bn=0; Object.keys(c[t]||{}).forEach(u=>{ if(c[t][u]>bn){bn=c[t][u];b=+u;} }); r[t]=b; });
+      _trPrecCache=r;
+    }
+    return _trPrecCache;
+  }catch(e){ return {}; }
+}
+function repararTipoTransporte(e){
+  try{
+    if(!e||e._transportType||!(+e.transporte>0)) return false;
+    let tipo='';
+    const by={};
+    (e.fichajes||[]).forEach(f=>{ if(f._transportType&&+f.transporte>0) by[f._transportType]=(by[f._transportType]||0)+(+f.transporte); });
+    const ks=Object.keys(by).sort((a,b)=>by[b]-by[a]);
+    if(ks.length) tipo=ks[0];
+    else{
+      const P=preciosTransporteUsados();
+      const q=+e.transporteCantidad||1;
+      const cand=[+e.transporte, Math.round(+e.transporte/q*100)/100];
+      if(P.coche>0&&P.camion>0){
+        const esC=cand.some(u=>Math.abs(u-P.coche)<0.01), esM=cand.some(u=>Math.abs(u-P.camion)<0.01);
+        if(esC&&!esM) tipo='coche'; else if(esM&&!esC) tipo='camion';
+      }
+    }
+    if(!tipo) return false;
+    e._transportType=tipo;
+    if((e.fichajes||[]).length===1&&!e.fichajes[0]._transportType) e.fichajes[0]._transportType=tipo;
+    return true;
+  }catch(ex){ return false; }
+}
+async function migrarTransporteUnaVez(){
+  const KEY='mig_20261107_transporte_v1';
+  try{ if(localStorage.getItem(KEY)) return; }catch(e){}
+  try{
+    const ahora=new Date().toISOString(); const lista=[];
+    for(const e of (S.entries||[])){
+      if(!e||!e.fecha||e._draft) continue;
+      if(repararTipoTransporte(e)){ e._savedAt=ahora; await dbPut(ST.entries,{...e}); lista.push(e.fecha+': '+e._transportType); }
+    }
+    localStorage.setItem(KEY,'1');
+    if(lista.length) console.log('Tipo de viaje puesto:',lista.join(' | '));
+    window._transporteReparado=lista;
+  }catch(ex){ console.warn('Reparación de tipo de viaje:',ex); }
+}
 // Reparación única de precios a 0 (v2): guarda en la base de datos los días con
 // horas extra/nocturnas/festivas sin precio. Devuelve la lista para informar.
 async function migrarPreciosUnaVez(){
@@ -911,6 +972,7 @@ function normalizarEntrada(e){
   try{
     if(!e) return e;
     repararPreciosHoras(e);
+    repararTipoTransporte(e);
     const he=e.horaEntrada, hs=e.horaSalida;
     if(!(he||hs)) return e;
     if(!Array.isArray(e.fichajes)) e.fichajes=[];
@@ -1549,7 +1611,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final10'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final11'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -17783,6 +17845,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     await loadVacaciones();
     await migrarDatosUnaVez();
     await migrarPreciosUnaVez();
+    await migrarTransporteUnaVez();
     // Migración: Groq → Gemini (la key de Gemini se configura en la pestaña IA)
     // Handle Google OAuth redirect
     if(gdriveHandleRedirect()){
