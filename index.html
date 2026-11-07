@@ -810,6 +810,35 @@ function loadFTaskDraft(){
 // survives tab switches, rerenders, and sync operations
 // El editor de notas SOLO se lee si pertenece al día que está abierto: así unas
 // notas que se ven en pantalla de OTRO día nunca pueden copiarse a este.
+// Correcciones de datos que se aplican UNA sola vez (se recuerda en este aparato):
+//  · Días de vacaciones: no llevan horas, dietas, transporte ni horario → a 0.
+//  · 16/09/2026: las 6 h extra del fichaje 1 eran un duplicado de las del fichaje 2.
+async function migrarDatosUnaVez(){
+  const KEY='mig_20261107_v1';
+  try{ if(localStorage.getItem(KEY)) return; }catch(e){}
+  const HK=['horasNormales','horasExtra','horasNocturnas','horasFestivas'];
+  const ahora=new Date().toISOString();
+  const guardar=async e=>{ e._savedAt=ahora; try{ await dbPut(ST.entries,{...e}); }catch(ex){} };
+  try{
+    for(const e of (S.entries||[])){
+      if(!e||!e.fecha) continue;
+      if(getDayTag(e.fecha)==='vacaciones'){
+        const tiene=HK.some(k=>+e[k]>0)||+e.dieta>0||+e.transporte>0||(e.dietasExtra||[]).length||(e.journeys||[]).length||(e.fichajes||[]).some(f=>f.entrada||f.salida)||e.horaEntrada||e.horaSalida;
+        if(!tiene) continue;
+        HK.forEach(k=>{ e[k]=0; });
+        ['importeNormales','importeExtra','importeNocturnas','importeFestivas','dieta','dietaCantidad','dietaPrecioUnit','transporte','transporteCantidad','transportePrecioUnit'].forEach(k=>{ if(k in e) e[k]=0; });
+        e.dietasExtra=[]; e.journeys=[]; e.fichajes=[]; e.horaEntrada=''; e.horaSalida='';
+        await guardar(e);
+      }
+    }
+    const e916=(S.entries||[]).find(x=>x.fecha==='2026-09-16');
+    if(e916&&e916.fichajes&&e916.fichajes.length===2){
+      const [a,b]=e916.fichajes;
+      if((+a.horasExtra||0)===6&&(+b.horasExtra||0)===6&&(+e916.horasExtra||0)===6){ a.horasExtra=0; await guardar(e916); }
+    }
+    localStorage.setItem(KEY,'1');
+  }catch(ex){ console.warn('Migración:',ex); }
+}
 function notasEditorEl(){
   const el=document.getElementById('notas-editor');
   if(!el) return null;
@@ -1443,7 +1472,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final3'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final5'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -1724,6 +1753,7 @@ function recalcFichajeYPintar(){
   scheduleDraftSave();
 }
 function autoCalcHorasFromFichajes(){
+  if(getDayTag(fEntry.fecha)==='vacaciones') return;
   // Solo calcular si no hay horas introducidas manualmente
   if(!fEntry.fichajes || fEntry.fichajes.length===0) return;
   fEntry.fichajes.forEach((fj,i)=>{
@@ -5018,6 +5048,7 @@ function extrasCalendarioItems(ds){
   if(!e){ return (getDayTag(ds)==='asuntos')?[_fh(horasAsuntosDia(ds))+'h Asuntos']:[]; }
   let L; try{ L=computeLiquidacion([e],null); }catch(err){ return []; }
   const p=[], fh=_fh;
+  if(L.totHN>0) p.push(fh(L.totHN)+'h Normales');
   if((+e.horasAsuntos||0)>0) p.push(fh(+e.horasAsuntos)+'h Asuntos');
   const nDiet=L.nDietas+((e.dietasExtra||[]).length);
   if(nDiet>0) p.push(nDiet>1?nDiet+' Dietas':'Dieta');
@@ -5046,14 +5077,16 @@ function auditarJornadas(){
     const conHorario=fj.filter(f=>f.entrada&&f.salida);
     if((tag==='vacaciones'||tag==='festivo'||tag==='asuntos')&&horas>0)
       out.push({ds,txt:'Día marcado como '+TAG_LABELS[tag]+' pero con '+fh(horas)+' h de trabajo guardadas'});
-    if(horas>0&&!conHorario.length&&!e.horaEntrada&&!e.horaSalida)
-      out.push({ds,txt:fh(horas)+' h guardadas pero sin ninguna hora de entrada/salida'});
     if((e.horaEntrada||e.horaSalida)&&!fj.some(f=>f.entrada||f.salida))
       out.push({ds,txt:'Tiene hora de entrada/salida suelta que no está en ningún fichaje'});
     conHorario.forEach((f,i)=>{
       const h4=(+f.horasNormales||0)+(+f.horasExtra||0)+(+f.horasNocturnas||0)+(+f.horasFestivas||0);
       if(fj.length>1&&!h4) out.push({ds,txt:'Un fichaje con horario ('+f.entrada+'→'+f.salida+') tiene todas sus horas a 0'});
     });
+    if(fj.length>1){
+      const sf=fj.reduce((a,f)=>a+(+f.horasNormales||0)+(+f.horasExtra||0)+(+f.horasNocturnas||0)+(+f.horasFestivas||0),0);
+      if(Math.abs(sf-horas)>0.01) out.push({ds,txt:'El total del día ('+fh(horas)+' h) no coincide con la suma de sus fichajes ('+fh(sf)+' h)'});
+    }
     const ents=fj.filter(f=>f.entrada).map(f=>f.entrada);
     if(ents.some((x,i)=>i>0&&x<ents[i-1])) out.push({ds,txt:'Los fichajes no están en orden de hora'});
   });
@@ -5400,7 +5433,17 @@ function recomputeDayAggregates(){
   // descanso) igual que a los demás, para que el total del día y la pantalla
   // principal coincidan siempre con lo que se ve en el listado.
   if(fEntry.fichajes.length>1){
+    const _HK=['horasNormales','horasExtra','horasNocturnas','horasFestivas'];
+    const _hF=f=>_HK.reduce((a,k)=>a+(+f[k]||0),0); let _movido=false;
+    // Jornada antigua: el total del día tiene horas pero NINGÚN fichaje las
+    // tiene (se guardaron sueltas). Se pasan al primer fichaje con horario
+    // para que el total del día no se borre ni cambie al recalcular.
+    if(fEntry.fichajes.every(f=>_hF(f)===0) && _HK.some(k=>(+fEntry[k]||0)>0)){
+      const f1=fEntry.fichajes.find(f=>f.entrada&&f.salida);
+      if(f1){ _HK.forEach(k=>{ f1[k]=+fEntry[k]||0; }); f1._horasManual=true; _movido=true; }
+    }
     fEntry.fichajes.forEach(fj=>{
+      if(_movido) return; // jornada antigua: el total del día ya está repartido, no se inventan más horas
       if(!fj.entrada||!fj.salida) return;
       if((+fj.horasNormales||0)+(+fj.horasExtra||0)+(+fj.horasNocturnas||0)+(+fj.horasFestivas||0)) return;
       const mins=Math.max(0,calcH(fj.entrada,fj.salida)*60-(fj.descanso||0));
@@ -16611,6 +16654,12 @@ async function loadData(){
   if(ac) fCompany={...defCompany,...ac};
   await repararImportadosMontiel();
   (S.entries||[]).forEach(normalizarEntrada);
+  // Jornadas que quedaron marcadas como "borrador" por versiones antiguas: son
+  // días reales trabajados y el Resumen/Nóminas las dejaba fuera. Se marcan como
+  // guardadas (solo cambia esa marca, no los datos del día).
+  for(const e of (S.entries||[])){
+    if(e._draft){ e._draft=false; try{ await dbPut(ST.entries,{...e,_draft:false}); }catch(ex){} }
+  }
 }
 
 
@@ -17436,6 +17485,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     const savedCfg=localStorage.getItem('fbConfig');
     if(savedCfg){ try{ fbConfig=JSON.parse(savedCfg); await initFirebase(); }catch(e){} }
     await loadVacaciones();
+    await migrarDatosUnaVez();
     // Migración: Groq → Gemini (la key de Gemini se configura en la pestaña IA)
     // Handle Google OAuth redirect
     if(gdriveHandleRedirect()){
