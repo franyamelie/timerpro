@@ -1708,7 +1708,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final14'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final15'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -11295,12 +11295,48 @@ function renderComparacionDirectaCard(mesKey, app, payslipsDelMes){
     });
     return {fecha:x.fecha,lin};
   });
+  // Tabla día a día con color (TimerPro frente a empresa): rojo = lo de TimerPro que no coincide, naranja = lo de la empresa
+  const BG_ROJO='#fecaca', BG_NAR='#fed7aa', BG_DIA='#fef3c7', BG_CELDA_DIA='#fffbe6', BG_CAB='#1e293b', BG_FECHA='#eef2f7', BG_TOTR='#fca5a5', BG_TOTN='#fdba74', TXT='#1e293b';
+  const ff=v=>Math.abs(v)<0.005?'—':eur(v);
+  const horasDe=o=>(o.hExtra||0)+(o.hFest||0)+(o.hNoc||0);
+  const impHDe=o=>Math.round(((o.impExtra||0)+(o.impFest||0)+(o.impNoc||0))*100)/100;
+  const txtH=o=>{ const i=impHDe(o); return i<0.005?'—':(String(Math.round(horasDe(o)*100)/100).replace('.',',')+' h · '+eur(i)); };
+  const txtV=o=>{ const l=[]; if((o.vCamion||0)>0.004) l.push('camión '+eur(o.vCamion)); if((o.vCoche||0)>0.004) l.push('coche '+eur(o.vCoche)); if((o.otros||0)>0.004) l.push('otros '+eur(o.otros)); return l.length?l.join(' + '):'—'; };
+  const sumV=o=>Math.round(((o.vCamion||0)+(o.vCoche||0)+(o.otros||0))*100)/100;
+  const dist=(a,b)=>Math.abs(a-b)>=0.009;
+  const td=(txt,bg,extra,esTot)=>h('td',Object.assign({style:{padding:'.22rem .3rem',textAlign:'right',whiteSpace:'nowrap',fontSize:'.7rem',background:bg||'#ffffff',color:bg?(bg===BG_NAR||bg===BG_TOTN?'#9a3412':'#b91c1c'):TXT,fontWeight:bg?800:500,border:'1px solid #d5dbe5'}},extra||{}),txt);
+  const th=(txt,cols,bg)=>h('th',{colSpan:cols||1,style:{padding:'.25rem .3rem',fontSize:'.68rem',background:bg||BG_CAB,color:'#fff',textAlign:'center',border:'1px solid #d5dbe5'}},txt);
+  const filasDia=(r.rows||[]).map(x=>{
+    const dH=dist(impHDe(x.tp),impHDe(x.emp)), dD=dist(x.tp.dieta||0,x.emp.dieta||0), dV=dist(sumV(x.tp),sumV(x.emp))||dist(x.tp.vCamion||0,x.emp.vCamion||0)||dist(x.tp.vCoche||0,x.emp.vCoche||0), dT=dist(x.tp.total||0,x.emp.total||0);
+    const dif=dH||dD||dV||dT;
+    const c=(d,tp,emp)=>[td(tp,d?BG_ROJO:(dif?BG_CELDA_DIA:null)),td(emp,d?BG_NAR:(dif?BG_CELDA_DIA:null))];
+    if(dif) c.__d=1;
+    const cc=(d,tp,emp)=>[td(tp,d?BG_ROJO:null,dif&&!d?{style:{padding:'.22rem .3rem',textAlign:'right',whiteSpace:'nowrap',fontSize:'.7rem',background:BG_CELDA_DIA,color:TXT,fontWeight:500,border:'1px solid #d5dbe5'}}:null),td(emp,d?BG_NAR:null,dif&&!d?{style:{padding:'.22rem .3rem',textAlign:'right',whiteSpace:'nowrap',fontSize:'.7rem',background:BG_CELDA_DIA,color:TXT,fontWeight:500,border:'1px solid #d5dbe5'}}:null)];
+    return h('tr',{},
+      h('td',{style:{padding:'.22rem .35rem',fontWeight:800,fontSize:'.7rem',whiteSpace:'nowrap',background:dif?BG_DIA:BG_FECHA,color:TXT,border:'1px solid #d5dbe5'}},dd(x.fecha)+' '+cap(wday(x.fecha)).slice(0,3)+(dif?' ⚠️':'')),
+      ...cc(dH,txtH(x.tp),txtH(x.emp)),...cc(dD,ff(x.tp.dieta||0),ff(x.emp.dieta||0)),...cc(dV,txtV(x.tp),txtV(x.emp)),...cc(dT,ff(x.tp.total||0),ff(x.emp.total||0)));
+  });
+  const tT=(a,b,side)=>td(eur(side==='tp'?a:b),dist(a,b)?(side==='tp'?BG_TOTR:BG_TOTN):BG_FECHA,{style:{padding:'.3rem .3rem',textAlign:'right',whiteSpace:'nowrap',fontSize:'.72rem',fontWeight:900,background:dist(a,b)?(side==='tp'?BG_TOTR:BG_TOTN):BG_FECHA,color:dist(a,b)?(side==='tp'?'#b91c1c':'#9a3412'):TXT,border:'1px solid #d5dbe5'}});
+  const _h1=R.impExtra+R.impFest+R.impNoc,_h2=E.impExtra+E.impFest+E.impNoc,_v1=R.vCamion+R.vCoche+R.otros,_v2=E.vCamion+E.vCoche+E.otros;
+  const totRow=h('tr',{},h('td',{style:{padding:'.3rem .35rem',fontWeight:900,fontSize:'.72rem',background:'#dfe6ef',color:TXT,border:'1px solid #d5dbe5'}},'TOTAL CICLO'),
+    tT(_h1,_h2,'tp'),tT(_h1,_h2,'emp'),tT(R.dieta,E.dieta,'tp'),tT(R.dieta,E.dieta,'emp'),tT(_v1,_v2,'tp'),tT(_v1,_v2,'emp'),tT(R.total,E.total,'tp'),tT(R.total,E.total,'emp'));
+  const chip=(t,bg,col)=>h('span',{style:{background:bg,color:col,padding:'.12rem .5rem',borderRadius:'8px',fontWeight:800}},t);
+  const leyenda=h('div',{style:{display:'flex',flexWrap:'wrap',gap:'.3rem',fontSize:'.66rem',margin:'.3rem 0',alignItems:'center'}},
+    chip('TIMERPRO','#2563eb','#fff'),chip('EMPRESA','#ea580c','#fff'),
+    chip('rojo: TimerPro no coincide con la empresa',BG_ROJO,'#b91c1c'),chip('naranja: lo de la empresa que no coincide',BG_NAR,'#9a3412'),chip('⚠️ día con diferencias',BG_DIA,TXT));
+  const tablaColor=h('div',{style:{overflowX:'auto',margin:'.3rem 0'}},
+    h('table',{style:{borderCollapse:'collapse',width:'100%',minWidth:'640px'}},
+      h('thead',{},h('tr',{},th('Fecha',1),th('HORAS EXTRA',2),th('DIETAS',2),th('VIAJES',2),th('TOTAL DEL DÍA',2)),
+        h('tr',{},h('th',{style:{background:BG_CAB}}),...['TimerPro','Empresa','TimerPro','Empresa','TimerPro','Empresa','TimerPro','Empresa'].map((t,i)=>th(t.toUpperCase(),1,i%2?'#ea580c':'#2563eb')))),
+      h('tbody',{},...filasDia,totRow)));
   const _rg=periodoRangoDe(mesKey);
   const _fuera=(doc.items||[]).filter(i=>!(i.fecha>=_rg.inicio&&i.fecha<=_rg.fin)).map(i=>({fecha:i.fecha,concepto:i.concepto||i.tipo,importe:+i.importe||0})).concat(doc.omitidas||[]);
   const nodos=[titulo,
     _fuera.length?h('div',{style:{background:'rgba(234,179,8,.18)',border:'1px solid var(--yel)',borderRadius:'var(--r2)',padding:'.4rem .6rem',fontSize:'.74rem',marginBottom:'.4rem'}},
       '⚠️ '+_fuera.length+' línea(s) del documento quedan fuera de este ciclo y NO se cuentan: '+_fuera.map(x=>((/^\d{4}-/.test(x.fecha||'')?x.fecha.slice(8)+'/'+x.fecha.slice(5,7):'sin fecha')+' '+(x.concepto||'')+' '+eur(x.importe))).join(' · ')):null,
     h('div',{style:{fontSize:'.7rem',color:'var(--ink3)',marginBottom:'.3rem'}},'Documento: '+(doc.fileName||'empresa')+' · ciclo del '+dd(r.from)+' al '+dd(r.to)+' (26→25)'),
+    leyenda,tablaColor,
+    h('div',{style:{fontWeight:800,fontSize:'.8rem',margin:'.5rem 0 .1rem'}},'Totales por concepto'),
     cab,
     fila('Horas extra',R.impExtra,E.impExtra,R.hExtra,E.hExtra),
     fila('Horas festivas',R.impFest,E.impFest,R.hFest,E.hFest),
@@ -11323,12 +11359,36 @@ function renderComparacionDirectaCard(mesKey, app, payslipsDelMes){
         filaComparativaNomina('Neto (líquido)',sim.liquido,+ps.extracted.salarioNeto)));
     }catch(e){}
   }
-  if(!dias.length) nodos.push(h('div',{style:{fontSize:'.78rem',color:'var(--acc2)',fontWeight:700,marginTop:'.3rem'}},'✅ Todos los días del documento coinciden con TimerPro.'));
-  else nodos.push(h('div',{style:{marginTop:'.5rem'}},
-    h('div',{style:{fontWeight:800,fontSize:'.8rem',marginBottom:'.2rem'}},'🔎 Días que no coinciden ('+dias.length+')'),
-    ...dias.map(d=>h('div',{style:{padding:'.3rem 0',borderBottom:'1px solid var(--brd)',fontSize:'.75rem'}},
-      h('b',{},dd(d.fecha)+' '+cap(wday(d.fecha))),...d.lin.map(l=>h('div',{style:{color:'var(--ink2)'}},l))))));
-  return h('div',{class:'card'},...nodos);
+  const frases=[];
+  (r.rows||[]).forEach(x=>{
+    const f=[]; const T=x.tp,Em=x.emp;
+    const hT=impHDe(T),hE=impHDe(Em);
+    if(dist(hT,hE)){ const dh=Math.round(Math.abs(horasDe(Em)-horasDe(T))*100)/100; const ht=String(dh).replace('.',',')+' h extra';
+      f.push(hE>hT?'la empresa paga <b>'+ht+' más</b> (+'+eur(hE-hT)+')':'la empresa <b>no paga '+ht+'</b> (−'+eur(hT-hE)+')'); }
+    if(dist(T.dieta||0,Em.dieta||0)){ const a=T.dieta||0,b=Em.dieta||0;
+      f.push(b===0?'la empresa <b>no paga la dieta de '+String(a).replace('.',',')+' €</b> (−'+eur(a)+')':a===0?'la empresa <b>paga una dieta de más</b> ('+eur(b)+', +'+eur(b)+')':'dieta distinta: TimerPro '+eur(a)+' · empresa '+eur(b)+' ('+(b>a?'+':'−')+eur(Math.abs(b-a))+')'); }
+    if(dist(sumV(T),sumV(Em))||dist(T.vCamion||0,Em.vCamion||0)||dist(T.vCoche||0,Em.vCoche||0)){
+      const a=sumV(T),b=sumV(Em), nom=o=>(o.vCamion>0.004?'camión':'coche');
+      if(b<0.005) f.push('la empresa <b>no paga el viaje en '+nom(T)+'</b> (−'+eur(a)+')');
+      else if(a<0.005) f.push('la empresa <b>paga el viaje en '+nom(Em)+' de más</b> (+'+eur(b)+')');
+      else f.push('empresa <b>'+nom(Em)+' '+eur(Em.vCamion>0.004?Em.vCamion:Em.vCoche)+'</b> frente a <b>'+nom(T)+' '+eur(T.vCamion>0.004?T.vCamion:T.vCoche)+'</b> ('+(b>a?'+':'−')+eur(Math.abs(b-a))+')');
+    }
+    if(!f.length&&dist(T.total||0,Em.total||0)) f.push('importes distintos (TimerPro '+eur(T.total)+' · empresa '+eur(Em.total)+')');
+    f.forEach(t=>frases.push({fecha:x.fecha,t}));
+  });
+  const frasesLi=[];
+  frases.forEach((fr,i)=>{
+    const _nodosFrases=[];
+    _nodosFrases.push(dd(fr.fecha)+' · ');
+    const partes=fr.t.split(/(<b>.*?<\/b>)/);
+    partes.forEach(pt=>{ const m=/^<b>(.*)<\/b>$/.exec(pt); if(m) _nodosFrases.push(h('b',{style:{color:'#b91c1c'}},m[1])); else if(pt) _nodosFrases.push(pt); });
+    frasesLi.push(h('li',{},..._nodosFrases));
+  });
+  if(!frases.length) nodos.push(h('div',{style:{fontSize:'.78rem',color:'var(--acc2)',fontWeight:700,marginTop:'.3rem'}},'✅ Todos los días del documento coinciden con TimerPro.'));
+  else nodos.push(h('div',{style:{marginTop:'.5rem',border:'2px solid #1e293b',borderRadius:'12px',padding:'.6rem .8rem',background:'#ffffff',color:TXT}},
+    h('div',{style:{fontWeight:800,fontSize:'.82rem',color:'#b91c1c',marginBottom:'.3rem'}},'Diferencias (TimerPro suma '+eur(R.total)+'; la empresa, '+eur(E.total)+' → '+eur(Math.abs(r.diffTotal))+' de diferencia)'),
+    h('ul',{style:{margin:0,paddingLeft:'1.2rem',fontSize:'.8rem',lineHeight:1.7}},...frasesLi)));
+  return h('div',{class:'card',style:{background:'#ffffff',color:'#1e293b','--ink':'#1e293b','--ink2':'#475569','--ink3':'#64748b','--brd':'#d5dbe5','--acc2':'#15803d','--red':'#b91c1c'}},...nodos);
 }
 
 function renderComparativaNominasCard(mesKey, app, payslipsDelMes){
@@ -11943,11 +12003,8 @@ function renderSimulacionNomina(mesKey, app){
 function renderNominas(){
   const meses=mesesDisponibles();
   if(!nominaMesActual || !meses.includes(nominaMesActual)){
-    // Por defecto: el ciclo CERRADO más reciente que aún no tiene nómina real
-    // subida (es la nómina que toca comparar ahora); si no hay, el más reciente.
-    const conNomina=new Set((S.payslips||[]).map(p=>p.mes));
-    const pend=meses.find(m=>periodoEstaCerrado(m) && !conNomina.has(m) && S.entries.some(e=>e.fecha>=periodoRangoDe(m).inicio && e.fecha<=periodoRangoDe(m).fin));
-    nominaMesActual=pend||meses[0];
+    // Por defecto: siempre el ciclo más reciente (el primero de la lista)
+    nominaMesActual=meses[0];
   }
   const mesKey=nominaMesActual;
   const app=computeMonthTotals(mesKey);
