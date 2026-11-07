@@ -858,10 +858,16 @@ function normalizarEntrada(e){
     const f0=e.fichajes[0];
     if(!f0){
       const nf=defFichaje(); nf.entrada=he||''; nf.salida=hs||'';
-      ['horasNormales','horasExtra','horasNocturnas','horasFestivas'].forEach(k=>{ nf[k]=+e[k]||0; });
+      ['horasNormales','horasExtra','horasNocturnas','horasFestivas','dieta','dietaCantidad','dietaPrecioUnit','transporte','transporteCantidad','transportePrecioUnit'].forEach(k=>{ if(e[k]!=null&&e[k]!=='') nf[k]=+e[k]||0; });
+      if(e._transportType) nf._transportType=e._transportType;
+      if(e.titulo) nf.titulo=e.titulo;
       e.fichajes=[nf];
     } else if(!f0.entrada&&!f0.salida){
       f0.entrada=he||''; f0.salida=hs||'';
+      if(e.fichajes.length===1){
+        ['dieta','dietaCantidad','dietaPrecioUnit','transporte','transporteCantidad','transportePrecioUnit'].forEach(k=>{ if(!(+f0[k]>0)&&+e[k]>0) f0[k]=+e[k]; });
+        if(!f0._transportType&&e._transportType) f0._transportType=e._transportType;
+      }
     }
   }catch(ex){}
   return e;
@@ -1472,7 +1478,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final5'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final6'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -5440,7 +5446,11 @@ function recomputeDayAggregates(){
     // para que el total del día no se borre ni cambie al recalcular.
     if(fEntry.fichajes.every(f=>_hF(f)===0) && _HK.some(k=>(+fEntry[k]||0)>0)){
       const f1=fEntry.fichajes.find(f=>f.entrada&&f.salida);
-      if(f1){ _HK.forEach(k=>{ f1[k]=+fEntry[k]||0; }); f1._horasManual=true; _movido=true; }
+      if(f1){ _HK.forEach(k=>{ f1[k]=+fEntry[k]||0; }); f1._horasManual=true; _movido=true;
+        // dieta y transporte sueltos del día (si ningún fichaje los tiene) pasan al mismo fichaje
+        if(fEntry.fichajes.every(f=>!(+f.dieta>0)) && +fEntry.dieta>0){ ['dieta','dietaCantidad','dietaPrecioUnit'].forEach(k=>{ if(fEntry[k]!=null) f1[k]=fEntry[k]; }); }
+        if(fEntry.fichajes.every(f=>!(+f.transporte>0)) && +fEntry.transporte>0){ ['transporte','transporteCantidad','transportePrecioUnit','_transportType'].forEach(k=>{ if(fEntry[k]!=null) f1[k]=fEntry[k]; }); }
+      }
     }
     fEntry.fichajes.forEach(fj=>{
       if(_movido) return; // jornada antigua: el total del día ya está repartido, no se inventan más horas
