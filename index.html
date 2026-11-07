@@ -177,6 +177,9 @@ main{flex:1;overflow-y:auto;padding:1rem}
 .cal-day.pending{background:rgba(148,163,184,.14);border:1.5px dashed rgba(148,163,184,.45);color:var(--ink2)}
 .cal-day.pending::after{content:'?';position:absolute;bottom:1px;right:2px;font-size:.55rem;color:var(--ink3);opacity:.8}
 .cal-day.vacation{background:rgba(234,179,8,.28)!important;color:#b45309!important;font-weight:700;border:1.5px solid rgba(234,179,8,.6)!important}
+.cal-day.asuntos{background:rgba(180,83,9,.30)!important;color:#7c2d12!important;font-weight:700;border:1.5px solid rgba(180,83,9,.7)!important}
+.cal-day.asuntos::before{content:''!important}
+.cal-day.asuntos::after{content:'A';position:absolute;bottom:1px;right:2px;font-size:.5rem;font-weight:900;color:#7c2d12;opacity:.9}
 .cal-day.vacation::before{content:''!important}
 .cal-day.vacation::after{content:'☀';position:absolute;bottom:1px;right:2px;font-size:.55rem;color:#b45309;opacity:.9}
 .cal-day.festivo-trabajado{background:#f97316;color:#fff;font-weight:800;border:1.5px solid #c2410c}
@@ -874,8 +877,13 @@ let selDate = today();
 let paintMode = null; // null | 'trabajado'|'festivo'|'festivo_trabajado'|'vacaciones'|'pendiente' — modo de marcado activo en el calendario
 const TAG_LABELS = {
   trabajado:'Trabajado', festivo:'Festivo', festivo_trabajado:'Festivo trabajado',
-  vacaciones:'Vacaciones', pendiente:'Pendiente (sin jornada)'
+  vacaciones:'Vacaciones', asuntos:'Asuntos propios', pendiente:'Pendiente (sin jornada)'
 };
+// Cupos anuales para el contador del Calendario (año completo)
+const VAC_BASE_DIAS=30;   // días de vacaciones al año
+const AP_BASE_HORAS=20;   // horas de asuntos propios al año
+const AP_JORNADA_H=8;     // un día de asuntos propios = jornada completa (8 h) salvo que se indique otra cosa
+
 function renderTagChip(tag,icon,bg,border,color){
   const active = paintMode===tag;
   return h('button',{
@@ -1167,7 +1175,7 @@ function resumenCiclo(periodoKey){
     if(dow===0||dow===6) return false;
     if(isHolidayES(ds)) return false;
     const tg=getDayTag(ds);
-    if(tg==='vacaciones'||tg==='festivo') return false;
+    if(tg==='vacaciones'||tg==='festivo'||tg==='asuntos') return false;
     return !S.entries.some(e=>e.fecha===ds);
   });
   const avisos=[];
@@ -1404,7 +1412,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261105-calclic'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final1'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -1701,7 +1709,8 @@ function autoCalcHorasFromFichajes(){
     // (aunque sea para dejarlas a 0), no se vuelven a tocar nunca.
     fEntry.fichajes.forEach(fj=>{
       if(!fj.entrada||!fj.salida) return;
-      if(fj._horasManual) return;
+      const _sinHoras=!((+fj.horasNormales||0)+(+fj.horasExtra||0)+(+fj.horasNocturnas||0)+(+fj.horasFestivas||0));
+      if(fj._horasManual && !_sinHoras) return;
       const mins=Math.max(0,calcH(fj.entrada,fj.salida)*60-(fj.descanso||0));
       if(mins<=0) return;
       const horasNetas=Math.round(mins*100/60)/100;
@@ -1724,7 +1733,8 @@ function autoCalcHorasFromFichajes(){
   // Si el usuario ya editó las horas a mano (aunque sea para dejarlas a 0),
   // no se vuelven a recalcular nunca en esta jornada.
   const f1=fEntry.fichajes[0];
-  if(f1._horasManual) return;
+  const _f1Sin=!((+f1.horasNormales||0)+(+f1.horasExtra||0)+(+f1.horasNocturnas||0)+(+f1.horasFestivas||0));
+  if(f1._horasManual && !_f1Sin) return;
   let totalMins=0;
   fEntry.fichajes.forEach(fj=>{
     if(fj.entrada&&fj.salida) totalMins+=calcH(fj.entrada,fj.salida)*60;
@@ -1851,7 +1861,7 @@ function renderDiasDelMes(mesKey,entries){
     const en=porFecha.get(ds);
     const dow=new Date(y,m-1,d).getDay();
     const finde=(dow===0||dow===6);
-    const tag=(typeof dayTags!=='undefined'&&dayTags)?dayTags[ds]:null;
+    const tag=getDayTag(ds);
     // Colores: trabajado=verde · vacaciones=amarillo · festivo=rojo · festivo trabajado=naranja
     //          fin de semana sin fichar=rosa · día laborable sin fichar=gris
     // Colores SÓLIDOS (la tarjeta del historial tiene fondo propio y los
@@ -1860,6 +1870,7 @@ function renderDiasDelMes(mesKey,entries){
     const C={
       trab:  osc?['#0f172a','#22c55e','#e2e8f0']:['#ffffff','#16a34a','#0f172a'],
       vac:   osc?['#422006','#eab308','#fef9c3']:['#fef9c3','#eab308','#422006'],
+      asun:  osc?['#431407','#b45309','#fed7aa']:['#fde8d0','#b45309','#431407'],
       fest:  osc?['#450a0a','#ef4444','#fee2e2']:['#fee2e2','#ef4444','#450a0a'],
       festT: osc?['#431407','#f97316','#ffedd5']:['#ffedd5','#f97316','#431407'],
       finde: osc?['#3b0a24','#f472b6','#fce7f3']:['#fdf2f8','#f472b6','#500724'],
@@ -1868,6 +1879,7 @@ function renderDiasDelMes(mesKey,entries){
     let k='nada',txt='Sin fichar';
     if(en) { k=(tag==='festivo_trabajado')?'festT':'trab'; txt=''; }
     else if(tag==='vacaciones'){ k='vac'; txt='☀ Vacaciones'; }
+    else if(tag==='asuntos'){ k='asun'; txt='A · Asuntos propios'; }
     else if(tag==='festivo'){ k='fest'; txt='★ Festivo'; }
     else if(tag==='festivo_trabajado'){ k='festT'; txt='★ Festivo trabajado'; }
     else if(finde){ k='finde'; txt='Fin de semana · sin fichar'; }
@@ -2351,8 +2363,7 @@ function renderFichar(){
                   const v=ev.target.value.replace(',','.');
                   const h2=parseFloat(v)||0;
                   const t1=getFichaje1Target();
-                  t1[hk]=h2;
-                  t1._horasManual=true;
+                  if((parseFloat(t1[hk])||0)!==h2){ t1[hk]=h2; t1._horasManual=true; }
                   recomputeDayAggregates();
                   fEntry[ik]=Math.round((fEntry[hk]||0)*(parseFloat(e[pk])||0)*100)/100;
                   scheduleDraftSave();
@@ -2402,6 +2413,21 @@ function renderFichar(){
           }},calc>0?eur(calc):'—')
         );
       })),
+      // ASUNTOS PROPIOS: solo horas (no es trabajo ni suma importe). Descuenta del
+      // cupo anual de horas de asuntos propios del Calendario (año completo).
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr auto',gap:'.4rem',alignItems:'end',marginBottom:'.5rem',paddingTop:'.3rem',borderTop:'1px dashed var(--brd)'}},
+        h('div',{class:'field',style:{margin:0}},
+          h('label',{style:{margin:0}},'ASUNTOS PROPIOS (horas)'),
+          h('input',{type:'text',inputmode:'decimal',id:'hmain-asuntos',value:(+fEntry.horasAsuntos>0?fEntry.horasAsuntos:''),placeholder:'0',
+            on:{
+              input:ev=>{ fEntry.horasAsuntos=parseFloat(ev.target.value.replace(',','.'))||0; },
+              blur:ev=>{ fEntry.horasAsuntos=Math.max(0,Math.min(24,parseFloat(ev.target.value.replace(',','.'))||0)); scheduleDraftSave(); rerender(); }
+            }}),
+          h('div',{style:{fontSize:'.68rem',color:'var(--ink3)',marginTop:'.15rem'}},'No suma a las horas trabajadas ni al importe; descuenta de tus '+AP_BASE_HORAS+' h de asuntos propios del año.')
+        ),
+        h('button',{class:'btn btn-gh btn-sm',title:'Jornada completa de asuntos propios',
+          on:{click:()=>{ fEntry.horasAsuntos=AP_JORNADA_H; scheduleDraftSave(); rerender(); }}},AP_JORNADA_H+' h (jornada)')
+      ),
       h('div',{class:'sep'}),
       h('div',{class:'grid-2'},
         h('div',{class:'field'},
@@ -2851,6 +2877,7 @@ function renderFichar(){
               }}
             },'✕ Borrar'):null
           ),
+          renderLocExtras(fEntry,key,'dia-'+tipo.toLowerCase()),
           // Vista previa del mapa si tiene coordenadas
           e[key]?h('div',{style:{marginTop:'.3rem'}},gpsDisplay(e[key])):null
         )
@@ -3047,6 +3074,16 @@ function tpFilaFichaje1(e){
     h('span',{style:{fontWeight:800,color:tono.text,fontSize:'.85rem',flexShrink:0}},'1.'),
     h('div',{style:{flex:1,minWidth:0}},
       h('div',{style:{fontWeight:700,color:tono.text}},(f0.entrada||'--')+' → '+(f0.salida||'--')),
+      (()=>{
+        const br=(f0.entrada&&f0.salida)?calcH(f0.entrada,f0.salida):0;
+        let th=(f0.horasNormales||0)+(f0.horasExtra||0)+(f0.horasNocturnas||0)+(f0.horasFestivas||0);
+        if(!th&&br>0) th=Math.max(0,br-(f0.descanso||0)/60);
+        if(!(br>0)&&!(th>0)) return null;
+        return h('div',{style:{display:'flex',gap:'.5rem',flexWrap:'wrap',marginTop:'.2rem',fontSize:'.7rem',color:tono.text2}},
+          br>0?h('span',{},'⏱ '+fmtH(br)+' en el fichaje'):null,
+          th>0?h('span',{style:{fontWeight:700,color:tono.text}},'🕐 '+fmtH(th)+' netas'+((f0.descanso||0)>0?' (-'+f0.descanso+'min)':'')):null
+        );
+      })(),
       tpBloqueTareas(tareas,tono.text2)
     )
   );
@@ -3075,9 +3112,80 @@ function tpTarjetaVinculo(idx){
 
 // Fila compacta y clicable para cada fichaje cuando el día tiene 2 o más.
 // Al pulsarla se abre la pantalla completa de detalle de ese fichaje.
+// ═══ UBICACIÓN: sitios predefinidos + buscador de lugares + guardar ═══
+// Se usa igual en el fichaje 1 (día) y en el detalle de cualquier otro
+// fichaje: un clic en un sitio guardado, o buscar un lugar concreto (por
+// nombre/dirección) y usarlo, y opcionalmente guardarlo en Sitios.
+const locBusq={};
+function locSitioAJson(s){
+  return (s.lat&&s.lng)
+    ? JSON.stringify({lat:s.lat,lng:s.lng,url:'https://www.google.com/maps?q='+s.lat+','+s.lng,label:s.nombre||s.direccion,acc:s.acc||0})
+    : textToLoc(s.direccion||s.nombre);
+}
+async function locBuscar(id){
+  const st=locBusq[id]||(locBusq[id]={});
+  const q=(st.q||'').trim();
+  if(!q){ showAlert('Escribe el lugar que quieres buscar','err'); return; }
+  st.loading=true; st.res=null; st.err=false; rerender();
+  try{
+    const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q)+'&limit=6&addressdetails=1');
+    st.res=await r.json();
+  }catch(ex){ st.res=[]; st.err=true; }
+  st.loading=false; rerender();
+}
+async function locAplicarResultado(obj,key,r,guardar,id){
+  const lat=parseFloat(r.lat).toFixed(6), lng=parseFloat(r.lon).toFixed(6);
+  const label=r.display_name.split(',').slice(0,2).join(',').trim();
+  obj[key]=JSON.stringify({lat,lng,url:'https://www.google.com/maps?q='+lat+','+lng,label,acc:0});
+  if(guardar){
+    const nombre=prompt('Nombre para guardar este sitio:',label);
+    if(nombre){
+      const nuevo={...defSite,nombre,direccion:label,lat,lng,acc:0,
+        ciudad:(r.address&&(r.address.city||r.address.town||r.address.village))||''};
+      const nid=await dbPut(ST.sites,nuevo);
+      S.sites.push({...nuevo,id:nid});
+      showAlert('Sitio "'+nombre+'" guardado ✓');
+    }
+  }
+  if(locBusq[id]){ locBusq[id].res=null; locBusq[id].abierto=false; }
+  scheduleDraftSave(); rerender();
+}
+function renderLocExtras(obj,key,id){
+  const st=locBusq[id]||(locBusq[id]={});
+  const sitios=(S.sites||[]).filter(s=>s.nombre||s.direccion);
+  return h('div',{style:{marginTop:'.4rem'}},
+    sitios.length?h('div',{style:{display:'flex',gap:'.3rem',flexWrap:'wrap',marginBottom:'.3rem'}},
+      h('span',{style:{fontSize:'.7rem',fontWeight:800,color:'var(--ink2)',alignSelf:'center'}},'Sitios guardados:'),
+      ...sitios.map(s=>h('button',{class:'btn btn-gh btn-sm',style:{fontSize:'.72rem',padding:'.2rem .5rem'},
+        title:s.direccion||'',
+        on:{click:()=>{ obj[key]=locSitioAJson(s); scheduleDraftSave(); rerender(); }}},'📍 '+(s.nombre||s.direccion)))
+    ):null,
+    h('button',{class:'btn btn-b btn-sm',style:{fontSize:'.72rem'},
+      on:{click:()=>{ st.abierto=!st.abierto; rerender(); }}},st.abierto?'✕ Cerrar buscador':'🔎 Buscar un lugar'),
+    st.abierto?h('div',{style:{marginTop:'.4rem'}},
+      h('div',{style:{display:'flex',gap:'.4rem'}},
+        h('input',{type:'text',id:'locq-'+id,placeholder:'Nombre o dirección del lugar…',value:st.q||'',style:{flex:1},
+          on:{input:ev=>{st.q=ev.target.value;},
+              keydown:ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); st.q=ev.target.value; locBuscar(id);} }}}),
+        h('button',{class:'btn btn-g btn-sm',on:{click:()=>{ const i=document.getElementById('locq-'+id); if(i)st.q=i.value; locBuscar(id); }}},'Buscar')
+      ),
+      st.loading?h('div',{style:{padding:'.4rem',fontSize:'.78rem',color:'var(--ink2)'}},'Buscando…'):null,
+      st.res&&!st.res.length?h('div',{style:{padding:'.4rem',fontSize:'.78rem',color:'var(--red)'}},st.err?'Error al buscar (¿sin conexión?)':'Sin resultados'):null,
+      ...((st.res||[]).map(r=>h('div',{style:{padding:'.4rem .5rem',borderBottom:'1px solid var(--brd)',background:'var(--surf2)',fontSize:'.78rem',color:'var(--ink)'}},
+        h('div',{},r.display_name),
+        h('div',{style:{display:'flex',gap:'.4rem',marginTop:'.3rem'}},
+          h('button',{class:'btn btn-g btn-sm',on:{click:()=>locAplicarResultado(obj,key,r,false,id)}},'✔ Usar'),
+          h('button',{class:'btn btn-b btn-sm',on:{click:()=>locAplicarResultado(obj,key,r,true,id)}},'💾 Usar y guardar en Sitios')
+        )
+      )))
+    ):null
+  );
+}
+
 function renderFichajeSummaryRow(fj,idx){
-  const totalH=(fj.horasNormales||0)+(fj.horasExtra||0)+(fj.horasNocturnas||0)+(fj.horasFestivas||0);
   const duracionBruta=(fj.entrada&&fj.salida)?calcH(fj.entrada,fj.salida):0;
+  let totalH=(fj.horasNormales||0)+(fj.horasExtra||0)+(fj.horasNocturnas||0)+(fj.horasFestivas||0);
+  if(!totalH && duracionBruta>0) totalH=Math.max(0,duracionBruta-(fj.descanso||0)/60);
   const tono=fichajeTone(idx);
   return h('div',{
     style:{display:'flex',alignItems:'center',gap:'.6rem',padding:'.7rem',marginBottom:'.4rem',
@@ -3458,7 +3566,7 @@ function renderFichajeDetailScreen(idx){
             h('input',{type:'text',inputmode:'decimal',id:'hdet-'+fj._fid+'-'+tipo.toLowerCase(),value:horas||'',placeholder:'0',
               on:{
                 input:ev=>{ const v=(ev.target.value||'').replace(',','.'); fj[hk]=parseFloat(v)||0; recomputeDayAggregates(); },
-                blur:ev=>{ const v=(ev.target.value||'').replace(',','.'); fj[hk]=parseFloat(v)||0; fj._horasManual=true; recomputeDayAggregates(); scheduleDraftSave(); pushHist(); rerender(); }
+                blur:ev=>{ const v=(ev.target.value||'').replace(',','.'); const nv=parseFloat(v)||0; if((parseFloat(fj[hk])||0)!==nv){ fj[hk]=nv; fj._horasManual=true; } recomputeDayAggregates(); scheduleDraftSave(); pushHist(); rerender(); }
               }})
           ),
           h('div',{style:{color:'var(--ink3)',fontSize:'1.2rem',marginTop:'1rem'}},'×'),
@@ -3697,6 +3805,7 @@ function renderFichajeDetailScreen(idx){
               }}
             },'✕ Borrar'):null
           ),
+          renderLocExtras(fj,key,'fj-'+fj._fid+'-'+tipo.toLowerCase()),
           fj[key]?h('div',{style:{marginTop:'.3rem'}},gpsDisplay(fj[key])):null
         );
       })
@@ -4540,6 +4649,7 @@ const ANIO_FILTROS = [
   {id:'festivo',    label:'Festivos',            bg:'#ef4444', fg:'#ffffff'},
   {id:'festivotrab',label:'Festivos trabajados', bg:'#f97316', fg:'#ffffff'},
   {id:'vacaciones', label:'Vacaciones',          bg:'#fde047', fg:'#713f12'},
+  {id:'asuntos',    label:'Asuntos propios',     bg:'#b45309', fg:'#ffffff'},
   {id:'pendiente',  label:'Pendientes',          bg:'#cbd5e1', fg:'#1e293b'},
   {id:'finde',      label:'Fines de semana',     bg:'#c4b5fd', fg:'#3b0764'},
   {id:'nocturno',   label:'Nocturnidades',       bg:'#4338ca', fg:'#ffffff'},
@@ -4564,6 +4674,7 @@ function anioCoincide(id,base,info){
     case 'festivo': return base==='holiday';
     case 'festivotrab': return base==='festivo-trabajado';
     case 'vacaciones': return base==='vacation';
+    case 'asuntos': return base==='asuntos';
     case 'pendiente': return base==='pending';
     case 'finde': return base==='weekend';
     default: return !!info[id];
@@ -4605,7 +4716,7 @@ function anioGenerarTexto(){
   t+=D.mostrarTodo?'Todos los días\n\n':'Filtros: '+D.activos.map(a=>a.label).join(', ')+'\n\n';
   if(D.mostrarTodo){
     t+='Resumen del año:\n';
-    ['trabajado','festivo','festivotrab','vacaciones','pendiente','finde'].forEach(id=>{
+    ['trabajado','festivo','festivotrab','vacaciones','asuntos','pendiente','finde'].forEach(id=>{
       const f=ANIO_FILTROS.find(x=>x.id===id); t+='• '+f.label+': '+D.cuentas[id]+'\n';
     });
     t+='\n';
@@ -4624,6 +4735,7 @@ function anioHtmlExport(){
     'festivo-trabajado':'background:#f97316;color:#fff;font-weight:900;border:1px solid #c2410c',
     holiday:'background:#ef4444;color:#fff;font-weight:900;border:1px solid #b91c1c',
     vacation:'background:rgba(234,179,8,.32);color:#431407;font-weight:800;border:1px solid rgba(161,98,7,.7)',
+    asuntos:'background:#b45309;color:#fff;font-weight:900;border:1px solid #7c2d12',
     pending:'background:rgba(148,163,184,.16);color:#0c0a09;font-weight:800;border:1px dashed rgba(100,116,139,.6)',
     weekend:'background:#c4b5fd;color:#2e1065;font-weight:800;border:1px solid #7c3aed'
   };
@@ -4734,6 +4846,40 @@ async function exportarAnioTexto(){
   catch(ex){ showAlert('No se pudo copiar el texto','err'); }
 }
 
+// Contador automático de vacaciones (30 días) y asuntos propios (20 h) del año.
+function renderContadorAnio(y,cuentas){
+  const vacCog=cuentas.vacaciones||0, vacQuedan=VAC_BASE_DIAS-vacCog;
+  const _set=new Set(Object.keys(dayTags).filter(ds=>ds.startsWith(y+'-')&&getDayTag(ds)==='asuntos'));
+  S.entries.forEach(e=>{ if(e.fecha&&e.fecha.startsWith(y+'-')&&(+e.horasAsuntos>0)&&!e._draft) _set.add(e.fecha); });
+  const dias=[..._set].sort();
+  const apCog=dias.reduce((a,ds)=>a+horasAsuntosDia(ds),0), apQuedan=AP_BASE_HORAS-apCog;
+  const fh=v=>(Math.round(v*100)/100).toString().replace('.',',');
+  const col=v=>v<0?'#dc2626':'var(--ink)';
+  const caja=(titulo,grande,detalle,neg)=>h('div',{style:{flex:'1 1 14rem',background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.6rem .8rem',border:'1px solid var(--brd)'}},
+    h('div',{style:{fontSize:'.72rem',fontWeight:800,color:'var(--ink2)',textTransform:'uppercase',letterSpacing:'.04em'}},titulo),
+    h('div',{style:{fontSize:'1.35rem',fontWeight:900,color:neg?'#dc2626':'var(--acc)',margin:'.15rem 0'}},grande),
+    h('div',{style:{fontSize:'.78rem',color:'var(--ink2)'}},detalle));
+  return h('div',{style:{margin:'.2rem 0 .7rem'}},
+    h('div',{style:{display:'flex',gap:'.6rem',flexWrap:'wrap'}},
+      caja('☀ Vacaciones '+y,vacQuedan>=0?'Quedan '+vacQuedan+' días':'Te pasas '+(-vacQuedan)+' días','Cogidos '+vacCog+' de '+VAC_BASE_DIAS+' días',vacQuedan<0),
+      caja('A · Asuntos propios '+y,apQuedan>=0?'Quedan '+fh(apQuedan)+' h':'Te pasas '+fh(-apQuedan)+' h','Cogidas '+fh(apCog)+' h de '+AP_BASE_HORAS+' h ('+dias.length+' día'+(dias.length===1?'':'s')+')',apQuedan<0)
+    ),
+    dias.length?h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.5rem',alignItems:'center'}},
+      h('span',{style:{fontSize:'.72rem',color:'var(--ink2)',fontWeight:700}},'Horas de cada día de asuntos propios:'),
+      ...dias.map(ds=>h('span',{style:{display:'inline-flex',alignItems:'center',gap:'.25rem',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'8px',padding:'.15rem .4rem',fontSize:'.75rem'}},
+        ds.slice(8)+'/'+ds.slice(5,7),
+        (function(){
+          const en=S.entries.find(e=>e.fecha===ds&&(+e.horasAsuntos>0)&&!e._draft);
+          if(en) return h('span',{style:{fontWeight:800},title:'Horas puestas en la jornada de ese día'},fh(+en.horasAsuntos));
+          return h('input',{type:'number',min:'0',max:'24',step:'0.5',value:String(horasAsuntosDia(ds)),
+            style:{width:'3.4rem',background:'var(--surf)',border:'1px solid var(--brd)',borderRadius:'6px',padding:'.1rem .25rem',color:'var(--ink)'},
+            on:{change:ev=>setHorasAsuntos(ds,ev.target.value)}});
+        })(),
+        'h'))
+    ):null
+  );
+}
+
 function renderAnioCalendario(){
   const y=anioVista;
   const porFecha={};
@@ -4797,6 +4943,7 @@ function renderAnioCalendario(){
     h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.5rem'}},
       mostrarTodo?'Se ven todos los días con sus colores normales. Pulsa uno o varios filtros para resaltar solo esos días.'
                  :'Solo se resaltan: '+activos.map(a=>a.label).join(', ')+'. El resto de días queda apagado.'),
+    renderContadorAnio(y,cuentas),
     h('div',{class:'ya-grid'},...Array.from({length:12},(_,m)=>mes(m))),
     h('div',{class:'btn-row',style:{marginTop:'.8rem'}},
       h('button',{class:'btn btn-gh btn-sm',on:{click:exportarAnioImagen}},'📷 Imagen'),
@@ -4868,6 +5015,7 @@ function renderCalendario(){
           else if(tag==='festivo') statusClass='holiday';
           else if(tag==='festivo_trabajado') statusClass='festivo-trabajado';
           else if(tag==='vacaciones') statusClass='vacation';
+          else if(tag==='asuntos') statusClass='asuntos';
           else if(tag==='pendiente') statusClass='pending';
           else if(isWorked && isHol) statusClass='festivo-trabajado';
           else if(isWorked) statusClass='worked';
@@ -4911,6 +5059,7 @@ function renderCalendario(){
       renderTagChip('festivo','★','#ef4444','#b91c1c','#fff'),
       renderTagChip('festivo_trabajado','★','#f97316','#c2410c','#fff'),
       renderTagChip('vacaciones','☀','rgba(234,179,8,.25)','rgba(234,179,8,.6)','#b45309'),
+      renderTagChip('asuntos','A','rgba(180,83,9,.35)','#b45309','#7c2d12'),
       renderTagChip('pendiente','?','rgba(148,163,184,.14)','rgba(148,163,184,.45)','var(--ink2)'),
       h('span',{style:{color:'var(--ink3)',marginLeft:'auto'}},paintMode?'Modo activo: '+TAG_LABELS[paintMode]:'Pulsa una opción para activar el marcado')
     ),
@@ -5138,6 +5287,21 @@ function snapTransporteF1(){
 function setTransporteF1(v){ Object.assign(getFichaje1Target(),v); }
 function recomputeDayAggregates(){
   if(!fEntry.fichajes || fEntry.fichajes.length===0) return; // sin fichajes: los datos siguen en fEntry directamente
+  // Con varios fichajes, uno con horario completo y TODAS sus horas a 0 nunca
+  // puede quedar sin contar: se le calculan sus horas netas (horario menos
+  // descanso) igual que a los demás, para que el total del día y la pantalla
+  // principal coincidan siempre con lo que se ve en el listado.
+  if(fEntry.fichajes.length>1){
+    fEntry.fichajes.forEach(fj=>{
+      if(!fj.entrada||!fj.salida) return;
+      if((+fj.horasNormales||0)+(+fj.horasExtra||0)+(+fj.horasNocturnas||0)+(+fj.horasFestivas||0)) return;
+      const mins=Math.max(0,calcH(fj.entrada,fj.salida)*60-(fj.descanso||0));
+      if(mins<=0) return;
+      const hn2=Math.round(mins*100/60)/100;
+      fj.horasNormales=Math.min(8,hn2);
+      fj.horasExtra=Math.round(Math.max(0,hn2-8)*100)/100;
+    });
+  }
   let hn=0,he=0,hnoc=0,hf=0,di=0,tr=0;
   // Normales/extra se acumulan por separado según el fichaje esté tocado a
   // mano o no: el tope de 8h normales por jornada se sigue aplicando SOLO al
@@ -6606,7 +6770,10 @@ function dayTypeOf(ds,isWorked){
   if(tag==='festivo') return 'holiday';
   if(tag==='festivo_trabajado') return 'festivo-trabajado';
   if(tag==='vacaciones') return 'vacation';
+  if(tag==='asuntos') return 'asuntos';
   if(tag==='pendiente') return 'pending';
+  if(!tag){ const en=S.entries.find(e=>e.fecha===ds&&!e._draft);
+    if(en&&(+en.horasAsuntos>0)&&((+en.horasNormales||0)+(+en.horasExtra||0)+(+en.horasNocturnas||0)+(+en.horasFestivas||0))===0) return 'asuntos'; }
   if(isWorked && isHolidayES(ds)) return 'festivo-trabajado';
   if(isWorked) return 'worked';
   if(isHolidayES(ds)) return 'holiday';
@@ -16848,7 +17015,20 @@ function getEasterDate(y){
   return new Date(y,month-1,day);
 }
 
-function getDayTag(dateStr){ return dayTags[dateStr]||null; }
+// La etiqueta puede llevar horas: 'asuntos' (=8 h) o 'asuntos:4' (4 h). getDayTag
+// devuelve siempre la etiqueta base para que el resto del código no cambie.
+function getDayTag(dateStr){ const t=dayTags[dateStr]; return t?String(t).split(':')[0]:null; }
+function horasAsuntosDia(dateStr){
+  const en=S.entries.find(e=>e.fecha===dateStr&&!e._draft);
+  if(en&&(+en.horasAsuntos>0)) return +en.horasAsuntos;
+  const t=dayTags[dateStr]; if(!t) return 0;
+  const [b,n]=String(t).split(':'); if(b!=='asuntos') return 0;
+  const v=parseFloat(n); return isNaN(v)?AP_JORNADA_H:v;
+}
+async function setHorasAsuntos(dateStr,h){
+  const v=Math.max(0,Math.min(24,parseFloat(h)||0));
+  await setDayTag(dateStr, v===AP_JORNADA_H?'asuntos':'asuntos:'+v);
+}
 function isVacacion(dateStr){ return dayTags[dateStr]==='vacaciones'; }
 
 async function loadVacaciones(){
