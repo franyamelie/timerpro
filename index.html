@@ -179,6 +179,8 @@ main{flex:1;overflow-y:auto;padding:1rem}
 .cal-day.vacation{background:rgba(234,179,8,.28)!important;color:#b45309!important;font-weight:700;border:1.5px solid rgba(234,179,8,.6)!important}
 .cal-day.asuntos{background:rgba(180,83,9,.30)!important;color:#7c2d12!important;font-weight:700;border:1.5px solid rgba(180,83,9,.7)!important}
 .cal-day.asuntos::before{content:''!important}
+.cal-day.con-asuntos{box-shadow:inset 0 0 0 3px #b45309}
+.cal-asu-badge{position:absolute;top:1px;left:2px;background:#b45309;color:#fff;font-size:.5rem;font-weight:900;border-radius:3px;padding:0 3px;line-height:1.3}
 .cal-day.asuntos::after{content:'A';position:absolute;bottom:1px;right:2px;font-size:.5rem;font-weight:900;color:#7c2d12;opacity:.9}
 .cal-day.vacation::before{content:''!important}
 .cal-day.vacation::after{content:'☀';position:absolute;bottom:1px;right:2px;font-size:.55rem;color:#b45309;opacity:.9}
@@ -1412,7 +1414,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final1'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final2'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -1877,14 +1879,19 @@ function renderDiasDelMes(mesKey,entries){
       nada:  osc?['#1e293b','#64748b','#cbd5e1']:['#f1f5f9','#94a3b8','#475569']
     };
     let k='nada',txt='Sin fichar';
-    if(en) { k=(tag==='festivo_trabajado')?'festT':'trab'; txt=''; }
+    if(en) { k=(tag==='festivo_trabajado')?'festT':'trab'; txt='';
+      if((+en.horasAsuntos>0)&&((+en.horasNormales||0)+(+en.horasExtra||0)+(+en.horasNocturnas||0)+(+en.horasFestivas||0))===0) k='asun'; }
     else if(tag==='vacaciones'){ k='vac'; txt='☀ Vacaciones'; }
     else if(tag==='asuntos'){ k='asun'; txt='A · Asuntos propios'; }
     else if(tag==='festivo'){ k='fest'; txt='★ Festivo'; }
     else if(tag==='festivo_trabajado'){ k='festT'; txt='★ Festivo trabajado'; }
     else if(finde){ k='finde'; txt='Fin de semana · sin fichar'; }
     const [bg,brd,fg]=C[k];
-    const caja=(contenido)=>h('div',{style:{background:bg,color:fg,borderLeft:'6px solid '+brd,borderRadius:'8px',marginBottom:'.3rem',overflow:'hidden'}},contenido);
+    const _trab=(fEntry&&fEntry.fecha===ds);
+    const caja=(contenido)=>h('div',{id:'hist-dia-'+ds,style:{background:bg,color:fg,borderLeft:'6px solid '+brd,borderRadius:'8px',marginBottom:'.3rem',overflow:'hidden',
+      outline:_trab?'3px solid var(--acc)':'none',outlineOffset:'-1px'}},
+      _trab?h('div',{style:{background:'var(--acc)',color:'#fff',fontSize:'.68rem',fontWeight:800,padding:'.1rem .5rem'}},'✏️ ESTÁS TRABAJANDO EN ESTE DÍA'):null,
+      contenido);
     if(en){
       const fila=renderHistorialRow(en);
       fila.style.background='transparent'; fila.style.color=fg;
@@ -1915,10 +1922,17 @@ function renderDiasDelMes(mesKey,entries){
   }
   return out;
 }
+function abrirCarpetaDelDia(ds){
+  if(!ds) return;
+  const mk=ds.slice(0,7), mesActual=today().slice(0,7);
+  if(mk<mesActual){ historialCarpetasAbiertas.add(mk); if(+ds.slice(0,4)<+mesActual.slice(0,4)) historialCarpetasAbiertas.add('anio-'+ds.slice(0,4)); }
+}
 function renderHistorialRow(en){
-  return h('div',{class:'sum-row',style:{cursor:'pointer',borderLeft:en.fecha===fEntry.fecha?'3px solid var(--acc)':'',background:en.fecha===fEntry.fecha?'var(--acc-lt)':''},on:{click:()=>loadHistorial(en),dblclick:()=>loadHistorial(en)}},
+  const _trabajo=en.fecha===fEntry.fecha;
+  return h('div',{id:'hist-dia-'+en.fecha,class:'sum-row',style:{cursor:'pointer',borderLeft:en.fecha===fEntry.fecha?'3px solid var(--acc)':'',background:en.fecha===fEntry.fecha?'var(--acc-lt)':''},on:{click:()=>loadHistorial(en),dblclick:()=>loadHistorial(en)}},
     h('div',{},
-      h('div',{style:{fontWeight:700,fontSize:'.85rem'}},`${cap(wday(en.fecha))}, ${dlbl(en.fecha)}`),
+      h('div',{style:{fontWeight:700,fontSize:'.85rem'}},`${cap(wday(en.fecha))}, ${dlbl(en.fecha)}`,
+        _trabajo?h('span',{style:{marginLeft:'.5rem',background:'var(--acc)',color:'#fff',borderRadius:'6px',padding:'.05rem .4rem',fontSize:'.66rem',fontWeight:800}},'✏️ TRABAJANDO AQUÍ'):null),
       h('div',{style:{fontSize:'.72rem',color:'var(--ink2)'}},
         `${fmtH((en.horasNormales||0)+(en.horasExtra||0)+(en.horasNocturnas||0)+(en.horasFestivas||0))} · ${(en.fichajes||[]).length} fichajes`
       )
@@ -2892,6 +2906,9 @@ function renderFichar(){
     h('div',{class:'card'},
       h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.8rem'}},
         h('div',{class:'sec-title',style:{margin:0,flex:1}},'Historial de Jornadas'),
+        (fEntry&&fEntry.fecha)?h('button',{class:'btn btn-b btn-sm',style:{fontSize:'.7rem'},title:'Ver este día en la lista',
+          on:{click:()=>{ abrirCarpetaDelDia(fEntry.fecha); rerender(); setTimeout(()=>{const el=document.getElementById('hist-dia-'+fEntry.fecha); if(el) el.scrollIntoView({behavior:'smooth',block:'center'});},60); }}},
+          '✏️ Trabajando: '+dlbl(fEntry.fecha)):null,
         h('input',{type:'search',placeholder:'Buscar (dd/mm/aaaa, mes, año...)',value:histSearch,
           style:{fontSize:'.78rem',padding:'.3rem .6rem',borderRadius:'var(--r2)',border:'1px solid var(--brd)',background:'var(--surf2)',color:'var(--ink)',width:'160px'},
           on:{input:ev=>{histSearch=ev.target.value;_renderHistorial();}}})
@@ -2954,7 +2971,8 @@ function renderFichar(){
                     rerender();
                   }}
                 },
-                  h('div',{},(abierta?'📂 ':'📁 ')+periodoFolderLabel(periodoKey)),
+                  h('div',{},(abierta?'📂 ':'📁 ')+periodoFolderLabel(periodoKey),
+                    (fEntry&&fEntry.fecha&&fEntry.fecha.slice(0,7)===periodoKey)?h('span',{style:{marginLeft:'.5rem',background:'var(--acc)',color:'#fff',borderRadius:'6px',padding:'.05rem .4rem',fontSize:'.66rem',fontWeight:800}},'✏️ TRABAJANDO AQUÍ'):null),
                   h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',fontWeight:400}},entries.length+' jornada'+(entries.length!==1?'s':''))
                 );
                 const hijos=abierta?[h('div',{style:{margin:'.3rem 0 .5rem 1rem',padding:'.4rem',borderRadius:'10px',background:S.dark?'#0b1220':'#ffffff',border:'1px solid var(--brd)'}},...renderDiasDelMes(periodoKey,entries))]:[];
@@ -2987,7 +3005,8 @@ function renderFichar(){
                       rerender();
                     }}
                   },
-                    h('div',{},(abierta?'📂 ':'📁 ')+'Año '+anio),
+                    h('div',{},(abierta?'📂 ':'📁 ')+'Año '+anio,
+                      (fEntry&&fEntry.fecha&&fEntry.fecha.slice(0,4)===anio)?h('span',{style:{marginLeft:'.5rem',background:'var(--acc)',color:'#fff',borderRadius:'6px',padding:'.05rem .4rem',fontSize:'.66rem',fontWeight:800}},'✏️ TRABAJANDO AQUÍ'):null),
                     h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',fontWeight:400}},meses.length+' mes'+(meses.length!==1?'es':'')+' · '+total+' jornada'+(total!==1?'s':''))
                   ),
                   ...(abierta?meses.map(c=>pintarCarpetaMes(c,true)):[])
@@ -4608,7 +4627,7 @@ function renderWeekView(){
     totH+=horas; totI+=imp;
     const extras=extrasCalendarioItems(ds);
     const av=revisarDiaFecha(ds);
-    const borde=tag==='vacaciones'?'#eab308':fest?'#ef4444':entry?'#22c55e':finde?'#8b5cf6':'rgba(148,163,184,.6)';
+    const borde=(tag==='asuntos'||(entry&&(+entry.horasAsuntos>0)&&!horas))?'#b45309':tag==='vacaciones'?'#eab308':fest?'#ef4444':entry?'#22c55e':finde?'#8b5cf6':'rgba(148,163,184,.6)';
     return h('div',{
       style:{display:'grid',gridTemplateColumns:'3.4rem 1fr auto',gap:'.5rem',alignItems:'center',
         background:isSel?'var(--acc-lt)':'var(--surf2)',borderRadius:'var(--r2)',padding:'.5rem .6rem',cursor:'pointer',
@@ -4620,7 +4639,7 @@ function renderWeekView(){
         h('div',{style:{fontSize:'1.15rem',fontWeight:900,color:fest?'#ef4444':'var(--ink)'}},parseInt(ds.slice(8)))
       ),
       h('div',{style:{minWidth:0}},
-        entry?h('div',{style:{fontSize:'.85rem',fontWeight:800}},fmtH(horas)+(av.length?' ⚠':'')):h('div',{style:{fontSize:'.76rem',color:'var(--ink3)'}},fest?'Festivo':finde?'Fin de semana':(tag==='vacaciones'?'Vacaciones':'Sin jornada')),
+        entry?h('div',{style:{fontSize:'.85rem',fontWeight:800}},fmtH(horas)+(av.length?' ⚠':'')):h('div',{style:{fontSize:'.76rem',color:'var(--ink3)'}},fest?'Festivo':finde?'Fin de semana':(tag==='vacaciones'?'Vacaciones':(tag==='asuntos'?'Asuntos propios':'Sin jornada'))),
         extras.length?h('div',{style:{fontSize:'.74rem',fontWeight:800,color:'var(--ink)',lineHeight:1.35,overflowWrap:'anywhere'}},extras.join(' + ')):null,
         tasks.length?h('div',{style:{fontSize:'.68rem',color:'var(--blu)'}},tasks.length+' tarea'+(tasks.length>1?'s':'')):null
       ),
@@ -4665,7 +4684,8 @@ function anioInfoDia(e){
     nocturno:(+e.horasNocturnas||0)>0||alguno('horasNocturnas'),
     extras:(+e.horasExtra||0)>0||(+e.horasFestivas||0)>0||alguno('horasExtra')||alguno('horasFestivas'),
     dieta:(+e.dieta||0)>0||(Array.isArray(e.dietasExtra)&&e.dietasExtra.length>0)||alguno('dieta'),
-    viajes:(+e.transporte||0)>0||alguno('transporte')
+    viajes:(+e.transporte||0)>0||alguno('transporte'),
+    asuntos:(+e.horasAsuntos||0)>0
   };
 }
 function anioCoincide(id,base,info){
@@ -4674,7 +4694,7 @@ function anioCoincide(id,base,info){
     case 'festivo': return base==='holiday';
     case 'festivotrab': return base==='festivo-trabajado';
     case 'vacaciones': return base==='vacation';
-    case 'asuntos': return base==='asuntos';
+    case 'asuntos': return base==='asuntos'||!!(info&&info.asuntos);
     case 'pendiente': return base==='pending';
     case 'finde': return base==='weekend';
     default: return !!info[id];
@@ -4908,7 +4928,7 @@ function renderAnioCalendario(){
       const ds=y+'-'+pad(m+1)+'-'+pad(d);
       const {base,info}=dias[ds];
       if(mostrarTodo){
-        const cls=base==='weekend'?'weekend-rest':base;
+        const cls=(base==='weekend'?'weekend-rest':base)+((info.asuntos&&base!=='asuntos')?' con-asuntos':'');
         celdas.push(h('div',{class:'cal-day '+cls,title:ds+' · pulsa para abrir este día',style:{cursor:'pointer'},on:{click:()=>goToDay(ds)}},d));
       } else {
         const f=activos.find(a=>anioCoincide(a.id,base,info));
@@ -4959,9 +4979,11 @@ function renderAnioCalendario(){
 function extrasCalendarioDia(ds){ return extrasCalendarioItems(ds).join(' + '); }
 function extrasCalendarioItems(ds){
   const e=S.entries.find(x=>x.fecha===ds);
-  if(!e) return [];
+  const _fh=v=>(Math.round(v*100)/100).toString().replace('.',',');
+  if(!e){ return (getDayTag(ds)==='asuntos')?[_fh(horasAsuntosDia(ds))+'h Asuntos']:[]; }
   let L; try{ L=computeLiquidacion([e],null); }catch(err){ return []; }
-  const p=[], fh=v=>(Math.round(v*100)/100).toString().replace('.',',');
+  const p=[], fh=_fh;
+  if((+e.horasAsuntos||0)>0) p.push(fh(+e.horasAsuntos)+'h Asuntos');
   const nDiet=L.nDietas+((e.dietasExtra||[]).length);
   if(nDiet>0) p.push(nDiet>1?nDiet+' Dietas':'Dieta');
   if(L.totHE>0) p.push(fh(L.totHE)+'h Extra');
@@ -5017,6 +5039,7 @@ function renderCalendario(){
           else if(tag==='vacaciones') statusClass='vacation';
           else if(tag==='asuntos') statusClass='asuntos';
           else if(tag==='pendiente') statusClass='pending';
+          else if(isWorked && (+(S.entries.find(e=>e.fecha===ds)||{}).horasAsuntos>0) && !(()=>{const en=S.entries.find(e=>e.fecha===ds);return ((+en.horasNormales||0)+(+en.horasExtra||0)+(+en.horasNocturnas||0)+(+en.horasFestivas||0))>0;})()) statusClass='asuntos';
           else if(isWorked && isHol) statusClass='festivo-trabajado';
           else if(isWorked) statusClass='worked';
           else if(isHol) statusClass='holiday';
@@ -5029,6 +5052,8 @@ function renderCalendario(){
           if(hasEntry||hasTasks) cls+=' has-e';
           const _itExtras=extrasCalendarioItems(ds);
           if(_itExtras.length) cls+=' con-extras';
+          const _enAsu=S.entries.find(e=>e.fecha===ds&&(+e.horasAsuntos>0));
+          if(_enAsu&&statusClass!=='asuntos') cls+=' con-asuntos';
           const _avDia=revisarDiaFecha(ds);
           if(_avDia.length) cls+=' con-aviso';
           return h('div',{class:cls,
@@ -5045,7 +5070,7 @@ function renderCalendario(){
               }
             },
             title:paintMode?('Click = marcar como '+TAG_LABELS[paintMode]+' · Clic derecho = quitar etiqueta'):(tag?('Etiqueta manual: '+TAG_LABELS[tag]+' — clic derecho para quitar'):'Elige una opción abajo y pulsa aquí para marcar · Clic derecho para quitar')
-          },h('span',{class:'cal-num'},cell.d),(_avDia.length?h('span',{class:'cal-aviso',title:'Revisar: '+_avDia.join(' · ')},'⚠'):null),(function(){return _itExtras.length?h('div',{class:'cal-extras'},..._itExtras.map(x=>h('div',{},x.replace(/ /g,'\u00a0')))):null;})());
+          },h('span',{class:'cal-num'},cell.d),((_enAsu&&statusClass!=='asuntos')?h('span',{class:'cal-asu-badge',title:'Asuntos propios'},'A'):null),(_avDia.length?h('span',{class:'cal-aviso',title:'Revisar: '+_avDia.join(' · ')},'⚠'):null),(function(){return _itExtras.length?h('div',{class:'cal-extras'},..._itExtras.map(x=>h('div',{},x.replace(/ /g,'\u00a0')))):null;})());
         })
       )
     ),
@@ -5376,6 +5401,7 @@ function recomputeDayAggregates(){
 }
 
 function goToDay(ds){
+  abrirCarpetaDelDia(ds);
   // Save current day before switching
   try{
     captureFormState();
@@ -12366,6 +12392,7 @@ function restoreTimerForDay(fecha){
 }
 
 function loadHistorial(entry){
+  abrirCarpetaDelDia(entry&&entry.fecha);
   // Save current day's notas before switching
   try{
     captureFormState();
