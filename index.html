@@ -813,6 +813,44 @@ function loadFTaskDraft(){
 // Correcciones de datos que se aplican UNA sola vez (se recuerda en este aparato):
 //  · Días de vacaciones: no llevan horas, dietas, transporte ni horario → a 0.
 //  · 16/09/2026: las 6 h extra del fichaje 1 eran un duplicado de las del fichaje 2.
+// ── PRECIOS DE HORAS ──────────────────────────────────────────
+// Una hora extra / nocturna / festiva con precio 0 € no puede existir salvo que
+// se haya puesto a 0 a propósito. Precio por defecto, por orden: tus tarifas
+// guardadas → los precios por defecto de Ajustes → el precio que más has usado
+// en tus propias jornadas. La hora NORMAL no se toca (la tuya va a 0 €).
+var _PREC_TIPOS=[['Extra','horasExtra','importeExtra'],['Nocturna','horasNocturnas','importeNocturnas'],['Festiva','horasFestivas','importeFestivas']];
+var _precFrecCache=null;
+function precioFrecuente(tipo){
+  try{
+    if(!_precFrecCache||_precFrecCache._n!==(S.entries||[]).length){
+      const c={Extra:{},Nocturna:{},Festiva:{}};
+      (S.entries||[]).forEach(e=>{ _PREC_TIPOS.forEach(([t,h])=>{ const p=+e['precioHora'+t]||0; if(p>0&&+e[h]>0) c[t][p]=(c[t][p]||0)+1; }); });
+      const r={_n:(S.entries||[]).length};
+      Object.keys(c).forEach(t=>{ let best=0,bn=0; Object.keys(c[t]).forEach(p=>{ if(c[t][p]>bn){bn=c[t][p];best=+p;} }); r[t]=best; });
+      _precFrecCache=r;
+    }
+    return _precFrecCache[tipo]||0;
+  }catch(e){ return 0; }
+}
+function precioPorDefectoHora(tipo){
+  const tar=getTarifas();
+  const k={Extra:'precioExtra',Nocturna:'precioNocturna',Festiva:'precioFestiva'}[tipo];
+  return +tar[k] || +S['precioHora'+tipo+'Default'] || precioFrecuente(tipo) || 0;
+}
+// Devuelve true si cambió algo
+function repararPreciosHoras(e){
+  let cambio=false;
+  try{
+    if(!e) return false;
+    _PREC_TIPOS.forEach(([t,hk,ik])=>{
+      if(+e[hk]>0 && !(+e['precioHora'+t]>0) && !e['_precio'+t+'Manual']){
+        const p=precioPorDefectoHora(t);
+        if(p>0){ e['precioHora'+t]=p; e[ik]=Math.round(e[hk]*p*100)/100; cambio=true; }
+      }
+    });
+  }catch(ex){}
+  return cambio;
+}
 async function migrarDatosUnaVez(){
   const KEY='mig_20261107_v1';
   try{ if(localStorage.getItem(KEY)) return; }catch(e){}
@@ -839,6 +877,27 @@ async function migrarDatosUnaVez(){
     localStorage.setItem(KEY,'1');
   }catch(ex){ console.warn('Migración:',ex); }
 }
+
+// Reparación única de precios a 0 (v2): guarda en la base de datos los días con
+// horas extra/nocturnas/festivas sin precio. Devuelve la lista para informar.
+async function migrarPreciosUnaVez(){
+  const KEY='mig_20261107_precios_v1';
+  try{ if(localStorage.getItem(KEY)) return; }catch(e){}
+  try{
+    const ahora=new Date().toISOString(); const lista=[];
+    for(const e of (S.entries||[])){
+      if(!e||!e.fecha||e._draft) continue;
+      const antes=importeTotalDia(e);
+      if(repararPreciosHoras(e)){
+        e._savedAt=ahora; await dbPut(ST.entries,{...e});
+        lista.push(e.fecha+': +'+(Math.round((importeTotalDia(e)-antes)*100)/100)+' €');
+      }
+    }
+    localStorage.setItem(KEY,'1');
+    if(lista.length) console.log('Precios reparados:',lista.join(' | '));
+    window._preciosReparados=lista;
+  }catch(ex){ console.warn('Reparación de precios:',ex); }
+}
 function notasEditorEl(){
   const el=document.getElementById('notas-editor');
   if(!el) return null;
@@ -851,6 +910,7 @@ function notasEditorEl(){
 function normalizarEntrada(e){
   try{
     if(!e) return e;
+    repararPreciosHoras(e);
     const he=e.horaEntrada, hs=e.horaSalida;
     if(!(he||hs)) return e;
     if(!Array.isArray(e.fichajes)) e.fichajes=[];
@@ -1489,7 +1549,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final7'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final8'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -5546,6 +5606,7 @@ function recomputeDayAggregates(){
   fEntry.horasFestivas=Math.round(hf*100)/100;
   fEntry.dieta=Math.round(di*100)/100;
   fEntry.transporte=Math.round(tr*100)/100;
+  repararPreciosHoras(fEntry);
   fEntry.importeNormales=Math.round(fEntry.horasNormales*(fEntry.precioHoraNormal||0)*100)/100;
   fEntry.importeExtra=Math.round(fEntry.horasExtra*(fEntry.precioHoraExtra||0)*100)/100;
   fEntry.importeNocturnas=Math.round(fEntry.horasNocturnas*(fEntry.precioHoraNocturna||0)*100)/100;
@@ -17558,6 +17619,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     if(savedCfg){ try{ fbConfig=JSON.parse(savedCfg); await initFirebase(); }catch(e){} }
     await loadVacaciones();
     await migrarDatosUnaVez();
+    await migrarPreciosUnaVez();
     // Migración: Groq → Gemini (la key de Gemini se configura en la pestaña IA)
     // Handle Google OAuth redirect
     if(gdriveHandleRedirect()){
