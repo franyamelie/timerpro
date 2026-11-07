@@ -1549,7 +1549,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final8'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final10'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -9594,6 +9594,8 @@ let compEmpresa={
   respuestas:{},    // respuestas del usuario a esas dudas, por id de pregunta
   resultado:null,   // {from,to,rows,resumenTP,resumenEmp,diffTotal} ya calculado
   mesKey:null,          // mes al que se asocia (para guardarlo junto con la nómina de ese mes)
+  omitidas:[],      // líneas del documento que quedaron fuera del ciclo (para avisar)
+  rango:null,       // {inicio,fin} del ciclo al que se sube el documento
   archivoOriginal:null  // {dataUrl,fileType,fileName} del documento subido, para poder guardarlo/descargarlo después
 };
 
@@ -9704,8 +9706,12 @@ async function procesarComparativaEmpresa(file, mesKey){
     const extracted=await leerComparativaEmpresaConIA(geminiKey, imagenes);
     compEmpresa.items=extracted.items;
     compEmpresa.procesando=false;
-    if(extracted.preguntas && extracted.preguntas.length){
-      compEmpresa.preguntas=extracted.preguntas;
+    compEmpresa.omitidas=[];
+    compEmpresa.rango=mesKey?periodoRangoDe(mesKey):null;
+    const _extraFC=compEmpresa.rango?preguntasFueraDeCiclo(compEmpresa.items,compEmpresa.rango,mesKey):[];
+    const _todas=_extraFC.some(q=>q.tipo==='docOtroCiclo')?_extraFC:(extracted.preguntas||[]).concat(_extraFC);
+    if(_todas.length){
+      compEmpresa.preguntas=_todas;
       compEmpresa.respuestas={};
       S.modal='compPreguntas';
       rerender();
@@ -9721,6 +9727,37 @@ async function procesarComparativaEmpresa(file, mesKey){
   }
 }
 
+
+// Todo va enfocado al ciclo 26→25 que se está calculando. Si en el documento
+// hay algo fuera de lugar (fechas ilegibles, líneas de otro ciclo, o un
+// documento que parece de otro ciclo entero), la app NO lo decide sola: pregunta.
+function preguntasFueraDeCiclo(items, rg, mesKey){
+  const out=[];
+  const ok=f=>/^\d{4}-\d{2}-\d{2}$/.test(f||'');
+  const dd=f=>ok(f)?f.slice(8)+'/'+f.slice(5,7)+'/'+f.slice(0,4):'(fecha ilegible)';
+  const fuera=[]; let validas=0;
+  items.forEach((it,idx)=>{ if(ok(it.fecha)){ validas++; if(it.fecha<rg.inicio||it.fecha>rg.fin) fuera.push(idx); } else fuera.push(idx); });
+  if(!fuera.length) return out;
+  const fechasF=items.filter(it=>ok(it.fecha)).map(it=>it.fecha).sort();
+  if(validas>=3 && fuera.filter(i=>ok(items[i].fecha)).length>=validas/2){
+    out.push({id:'fcDoc',tipo:'docOtroCiclo',
+      pregunta:'Este documento parece ser de otro ciclo: sus fechas van del '+dd(fechasF[0])+' al '+dd(fechasF[fechasF.length-1])+' y lo estás cargando en '+periodoLabel(mesKey)+'. ¿Qué hago?',
+      opciones:['Continuar: dejo fuera lo que no sea de este ciclo','Cancelar: no cargar este documento'],itemsAfectados:fuera});
+    return out;
+  }
+  const porFecha={};
+  fuera.forEach(i=>{ const k=ok(items[i].fecha)?items[i].fecha:'?'+i; (porFecha[k]=porFecha[k]||[]).push(i); });
+  let n=0;
+  Object.keys(porFecha).sort().forEach(k=>{
+    const idxs=porFecha[k];
+    const det=idxs.map(i=>{const it=items[i];return (it.concepto||it.tipo||'línea')+' '+(+it.importe||0).toFixed(2).replace('.',',')+' €';}).join(' · ');
+    out.push({id:'fc'+(n++),tipo:'fueraCiclo',
+      pregunta:(k[0]==='?'?'Una línea no tiene fecha legible':'Hay '+(idxs.length>1?idxs.length+' líneas':'una línea')+' con fecha '+dd(k)+', que no está dentro de '+periodoLabel(mesKey))+' ('+det+'). Puede ser un fallo al leerla o un fallo del documento. ¿Qué hago?',
+      opciones:[],itemsAfectados:idxs});
+  });
+  return out;
+}
+
 function resolverPreguntaComparativa(id, opcion){
   compEmpresa.respuestas[id]=opcion;
   rerender();
@@ -9730,14 +9767,31 @@ function resolverPreguntaComparativa(id, opcion){
 // los items afectados por índice) y genera ya la comparativa final.
 async function confirmarPreguntasComparativa(){
   const mapaTipo={'Hora extra':'horaExtra','Hora festiva':'horaFestiva','Hora nocturna':'horaNocturna','Dieta':'dieta','Viaje en coche':'viajeCoche','Viaje en camión':'viajeCamion','Otro':'otro'};
-  (compEmpresa.preguntas||[]).forEach(p=>{
+  const _quitar=new Set(); const _omit=[];
+  const _marcarFuera=i=>{ const it=compEmpresa.items[i]; if(it&&!_quitar.has(i)){ _quitar.add(i); _omit.push({fecha:it.fecha||'',tipo:it.tipo||'',concepto:it.concepto||'',importe:+it.importe||0}); } };
+  for(const p of (compEmpresa.preguntas||[])){
     const resp=compEmpresa.respuestas[p.id];
-    if(!resp) return;
+    if(!resp) continue;
+    if(p.tipo==='docOtroCiclo'){
+      if(/^Cancelar/.test(resp)){
+        S.modal=null; document.querySelectorAll('.modal-bg').forEach(e=>e.remove());
+        compEmpresa.items=null; compEmpresa.preguntas=null; compEmpresa.resultado=null; compEmpresa.omitidas=[];
+        showAlert('Documento no cargado. Súbelo en el ciclo que corresponde.'); rerender(); return;
+      }
+      (p.itemsAfectados||[]).forEach(_marcarFuera); continue;
+    }
+    if(p.tipo==='fueraCiclo'){
+      if(resp==='FUERA') (p.itemsAfectados||[]).forEach(_marcarFuera);
+      else if(/^FECHA:\d{4}-\d{2}-\d{2}$/.test(resp)) (p.itemsAfectados||[]).forEach(i=>{ if(compEmpresa.items[i]) compEmpresa.items[i].fecha=resp.slice(6); });
+      continue;
+    }
     const nuevoTipo=mapaTipo[resp]||resp;
     (p.itemsAfectados||[]).forEach(idx=>{
       if(compEmpresa.items[idx]){ compEmpresa.items[idx].tipo=nuevoTipo; compEmpresa.items[idx].dudoso=false; }
     });
-  });
+  }
+  compEmpresa.omitidas=_omit;
+  compEmpresa.items=compEmpresa.items.filter((_,i)=>!_quitar.has(i));
   S.modal=null;
   document.querySelectorAll('.modal-bg').forEach(e=>e.remove());
   await finalizarComparativaEmpresa();
@@ -9747,11 +9801,13 @@ async function confirmarPreguntasComparativa(){
 // Agrupa las líneas ya clasificadas por fecha, las compara día a día con lo
 // que TimerPro tiene calculado para ese mismo rango de fechas, y deja el
 // resultado listo en compEmpresa.resultado para pintar/exportar.
-async function finalizarComparativaEmpresa(){
-  const items=compEmpresa.items||[];
+function calcularResultadoComparativa(items, rango){
+  // Con "rango" ({inicio,fin}) solo cuenta ese ciclo (26→25), tanto en lo de la
+  // empresa como en lo de TimerPro; sin rango, el del propio documento.
+  if(rango) items=items.filter(i=>i.fecha>=rango.inicio && i.fecha<=rango.fin);
   const fechas=items.map(i=>i.fecha).filter(f=>/^\d{4}-\d{2}-\d{2}$/.test(f)).sort();
-  if(!fechas.length){ showAlert('No se ha podido extraer ningún dato con fecha válida del documento.','err'); return; }
-  const from=fechas[0], to=fechas[fechas.length-1];
+  if(!fechas.length && !rango) return null;
+  const from=rango?rango.inicio:fechas[0], to=rango?rango.fin:fechas[fechas.length-1];
 
   const porDia={};
   items.forEach(it=>{
@@ -9795,9 +9851,16 @@ async function finalizarComparativaEmpresa(){
   });
   const resumenTP=resumenDe('tp'), resumenEmp=resumenDe('emp');
 
-  compEmpresa.resultado={from,to,rows,resumenTP,resumenEmp,diffTotal:Math.round((resumenEmp.total-resumenTP.total)*100)/100};
+  return {from,to,rows,resumenTP,resumenEmp,diffTotal:Math.round((resumenEmp.total-resumenTP.total)*100)/100};
+}
+
+async function finalizarComparativaEmpresa(){
+  const items=compEmpresa.items||[];
+  const res=calcularResultadoComparativa(items, compEmpresa.mesKey?periodoRangoDe(compEmpresa.mesKey):null);
+  if(!res){ showAlert('No se ha podido extraer ningún dato con fecha válida del documento.','err'); return; }
+  compEmpresa.resultado=res;
   await guardarEmpresaDocEnDB();
-  showAlert('✅ Comparativa generada: '+rows.length+' día(s) con datos');
+  showAlert('✅ Comparativa generada: '+res.rows.length+' día(s) con datos');
 }
 
 // Guarda el documento de la empresa ya procesado (items + resultado + archivo
@@ -9810,7 +9873,7 @@ async function guardarEmpresaDocEnDB(){
   if(!mesKey) return; // comparativa suelta sin mes asociado (no debería pasar desde la UI de Nóminas)
   const archivo=compEmpresa.archivoOriginal||{};
   const doc={...defEmpresaDoc(mesKey), fileName:archivo.fileName||'documento-empresa', uploadedAt:new Date().toISOString(),
-    items:compEmpresa.items||[], resultado:compEmpresa.resultado||null, dataUrl:archivo.dataUrl||'', fileType:archivo.fileType||''};
+    items:compEmpresa.items||[], omitidas:compEmpresa.omitidas||[], resultado:compEmpresa.resultado||null, dataUrl:archivo.dataUrl||'', fileType:archivo.fileType||''};
   try{
     const id=await dbPut(ST.empresaDocs, doc);
     S.empresaDocs=S.empresaDocs||[];
@@ -11001,12 +11064,99 @@ function filaComparativaNomina(label, valorApp, valorEmp, esEuro){
   );
 }
 
+
+// ── Zonas de la pestaña Nóminas: azul = lo que calcula TimerPro, naranja = lo
+// que dice la empresa, verde = cuánto nos hemos acercado ──
+function zonaNomina(color, titulo, sub, hijos){
+  return h('div',{style:{border:'3px solid '+color,borderRadius:'18px',padding:'.6rem .6rem .2rem',margin:'1rem 0',background:'color-mix(in srgb, '+color+' 9%, transparent)'}},
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',flexWrap:'wrap',gap:'.3rem',margin:'.1rem .3rem .4rem'}},
+      h('div',{style:{fontWeight:900,fontSize:'1.02rem',color:color}},titulo),
+      h('div',{style:{fontSize:'.7rem',color:'var(--ink2)'}},sub)),
+    ...hijos.filter(Boolean));
+}
+
+// Comparación directa del ciclo: cada concepto de TimerPro frente a lo que
+// pone el documento de la empresa, para ver de un vistazo quién tiene la
+// diferencia. TimerPro se recalcula en el momento (con tus jornadas de ahora).
+function renderComparacionDirectaCard(mesKey, app, payslipsDelMes){
+  const docs=(S.empresaDocs||[]).filter(d=>d.mes===mesKey).sort((a,b)=>(b.uploadedAt||'').localeCompare(a.uploadedAt||''));
+  const doc=docs[0];
+  const titulo=h('div',{class:'sec-title'},'⚖️ Comparación directa del ciclo · TimerPro frente a empresa');
+  if(!doc) return h('div',{class:'card'},titulo,
+    h('div',{style:{fontSize:'.78rem',color:'var(--ink3)'}},'Sin documento de la empresa cargado para este ciclo. Súbelo en la zona naranja y aquí verás, concepto a concepto, qué cifras coinciden y cuáles no.'));
+  let r=null;
+  try{ r=(doc.items&&doc.items.length)?calcularResultadoComparativa(doc.items,periodoRangoDe(mesKey)):null; }catch(e){ r=null; }
+  if(!r) r=doc.resultado;
+  if(!r) return h('div',{class:'card'},titulo,h('div',{style:{fontSize:'.78rem',color:'var(--ink3)'}},'El documento cargado no tiene datos para comparar.'));
+  const R=r.resumenTP, E=r.resumenEmp;
+  const fh=v=>(v?String(Math.round(v*100)/100).replace('.',',')+' h':'');
+  const dfs=v=>Math.abs(v)<0.009?'✅':((v>0?'+':'−')+eur(Math.abs(v)));
+  const fila=(label,tpv,empv,tph,emph)=>{
+    if(!tpv&&!empv&&!tph&&!emph) return null;
+    const dif=Math.round(((empv||0)-(tpv||0))*100)/100, ok=Math.abs(dif)<0.009;
+    return h('div',{style:{display:'grid',gridTemplateColumns:'1.3fr 1fr 1fr .9fr',gap:'.3rem',alignItems:'center',padding:'.3rem 0',borderBottom:'1px solid var(--brd)',fontSize:'.8rem'}},
+      h('div',{style:{color:'var(--ink2)'}},label,(tph||emph)?h('div',{style:{fontSize:'.66rem',color:'var(--ink3)'}},(fh(tph)||'—')+' / '+(fh(emph)||'—')):null),
+      h('div',{style:{fontWeight:700,textAlign:'right'}},eur(tpv||0)),
+      h('div',{style:{fontWeight:700,textAlign:'right'}},eur(empv||0)),
+      h('div',{style:{textAlign:'right',fontWeight:800,color:ok?'var(--acc2)':'var(--red)'}},dfs(dif)));
+  };
+  const cab=h('div',{style:{display:'grid',gridTemplateColumns:'1.3fr 1fr 1fr .9fr',gap:'.3rem',fontSize:'.68rem',color:'var(--ink3)',fontWeight:700,padding:'.2rem 0',borderBottom:'2px solid var(--brd)'}},
+    h('div',{},'Concepto'),h('div',{style:{textAlign:'right'}},'TimerPro'),h('div',{style:{textAlign:'right'}},'Empresa'),h('div',{style:{textAlign:'right'}},'Diferencia'));
+  // días que no coinciden y de quién parece la diferencia
+  const conceptos=[['dieta','Dieta'],['impExtra','Horas extra'],['impFest','Horas festivas'],['impNoc','Horas nocturnas'],['vCamion','Viaje camión'],['vCoche','Viaje coche'],['otros','Otros']];
+  const dd=ds=>ds.slice(8)+'/'+ds.slice(5,7);
+  const dias=(r.rows||[]).filter(x=>Math.abs(x.diff)>=0.01).map(x=>{
+    const lin=[];
+    conceptos.forEach(([k,lb])=>{
+      const a=x.tp[k]||0,b=x.emp[k]||0;
+      if(Math.abs(a-b)<0.009) return;
+      const quien=(a>0&&b===0)?'solo en TimerPro (¿metido de más por mí, o la empresa no lo ha puesto?)':(b>0&&a===0)?'solo en la empresa (¿se me olvidó meterlo, o la empresa ha puesto de más?)':'importes distintos';
+      lin.push(lb+': TimerPro '+eur(a)+' · Empresa '+eur(b)+' → '+quien);
+    });
+    return {fecha:x.fecha,lin};
+  });
+  const _rg=periodoRangoDe(mesKey);
+  const _fuera=(doc.items||[]).filter(i=>!(i.fecha>=_rg.inicio&&i.fecha<=_rg.fin)).map(i=>({fecha:i.fecha,concepto:i.concepto||i.tipo,importe:+i.importe||0})).concat(doc.omitidas||[]);
+  const nodos=[titulo,
+    _fuera.length?h('div',{style:{background:'rgba(234,179,8,.18)',border:'1px solid var(--yel)',borderRadius:'var(--r2)',padding:'.4rem .6rem',fontSize:'.74rem',marginBottom:'.4rem'}},
+      '⚠️ '+_fuera.length+' línea(s) del documento quedan fuera de este ciclo y NO se cuentan: '+_fuera.map(x=>((/^\d{4}-/.test(x.fecha||'')?x.fecha.slice(8)+'/'+x.fecha.slice(5,7):'sin fecha')+' '+(x.concepto||'')+' '+eur(x.importe))).join(' · ')):null,
+    h('div',{style:{fontSize:'.7rem',color:'var(--ink3)',marginBottom:'.3rem'}},'Documento: '+(doc.fileName||'empresa')+' · ciclo del '+dd(r.from)+' al '+dd(r.to)+' (26→25)'),
+    cab,
+    fila('Horas extra',R.impExtra,E.impExtra,R.hExtra,E.hExtra),
+    fila('Horas festivas',R.impFest,E.impFest,R.hFest,E.hFest),
+    fila('Horas nocturnas',R.impNoc,E.impNoc,R.hNoc,E.hNoc),
+    fila('Dietas',R.dieta,E.dieta),
+    fila('Viaje camión',R.vCamion,E.vCamion),
+    fila('Viaje coche',R.vCoche,E.vCoche),
+    fila('Otros',R.otros,E.otros),
+    h('div',{style:{display:'grid',gridTemplateColumns:'1.3fr 1fr 1fr .9fr',gap:'.3rem',padding:'.4rem 0',fontWeight:900,fontSize:'.88rem'}},
+      h('div',{},'TOTAL'),h('div',{style:{textAlign:'right'}},eur(R.total)),h('div',{style:{textAlign:'right'}},eur(E.total)),
+      h('div',{style:{textAlign:'right',color:Math.abs(r.diffTotal)<0.009?'var(--acc2)':'var(--red)'}},dfs(r.diffTotal)))
+  ];
+  // Neto: simulación de TimerPro frente a la nómina real, si ya está subida
+  const ps=(payslipsDelMes||[])[0];
+  if(ps&&ps.extracted&&+ps.extracted.salarioNeto){
+    try{
+      const P=pctsRetencionCiclo(mesKey);
+      const sim=simularNomina(app,P.irpf,P.ss);
+      nodos.push(h('div',{style:{borderTop:'2px solid var(--brd)',marginTop:'.3rem',paddingTop:'.3rem'}},
+        filaComparativaNomina('Neto (líquido)',sim.liquido,+ps.extracted.salarioNeto)));
+    }catch(e){}
+  }
+  if(!dias.length) nodos.push(h('div',{style:{fontSize:'.78rem',color:'var(--acc2)',fontWeight:700,marginTop:'.3rem'}},'✅ Todos los días del documento coinciden con TimerPro.'));
+  else nodos.push(h('div',{style:{marginTop:'.5rem'}},
+    h('div',{style:{fontWeight:800,fontSize:'.8rem',marginBottom:'.2rem'}},'🔎 Días que no coinciden ('+dias.length+')'),
+    ...dias.map(d=>h('div',{style:{padding:'.3rem 0',borderBottom:'1px solid var(--brd)',fontSize:'.75rem'}},
+      h('b',{},dd(d.fecha)+' '+cap(wday(d.fecha))),...d.lin.map(l=>h('div',{style:{color:'var(--ink2)'}},l))))));
+  return h('div',{class:'card'},...nodos);
+}
+
 function renderComparativaNominasCard(mesKey, app, payslipsDelMes){
   if(!payslipsDelMes.length){
     return h('div',{class:'card'},
       h('div',{class:'sec-title'},'⚖️ Comparativa entre nóminas'),
       h('div',{style:{fontSize:'.78rem',color:'var(--ink2)'}},
-        'Sube primero la nómina real de este mes (más abajo) para poder comparar lado a lado lo que simula TimerPro con lo que realmente te está pagando la empresa — y comprobar si el pacto de 2100€ netos se respeta.')
+        'Sube primero la nómina real de este mes (en «Subir nómina», arriba en esta zona) para poder comparar lado a lado lo que simula TimerPro con lo que realmente te está pagando la empresa — y comprobar si el pacto de 2100€ netos se respeta.')
     );
   }
   const payslip=payslipsDelMes[0]; // la más reciente subida para este mes
@@ -11293,6 +11443,12 @@ function renderModalCompPreguntas(){
         'La IA tiene alguna duda al leer el documento. Resuélvela para que el informe salga correcto:'),
       ...preguntas.map(p=>h('div',{style:{marginBottom:'.8rem',background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.6rem .8rem',border:'1px solid var(--brd)'}},
         h('div',{style:{fontSize:'.82rem',fontWeight:700,marginBottom:'.4rem'}},p.pregunta),
+        p.tipo==='fueraCiclo'?h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',alignItems:'center'}},
+          h('button',{style:{background:compEmpresa.respuestas[p.id]==='FUERA'?'#2563eb':'var(--surf3)',color:compEmpresa.respuestas[p.id]==='FUERA'?'#fff':'var(--ink2)',border:'none',borderRadius:'8px',padding:'.35rem .7rem',cursor:'pointer',fontWeight:700,fontSize:'.74rem'},on:{click:()=>resolverPreguntaComparativa(p.id,'FUERA')}},'Dejar fuera (es de otro ciclo)'),
+          h('span',{style:{fontSize:'.72rem',color:'var(--ink2)'}},'o es de este ciclo, fecha correcta:'),
+          h('input',{type:'date',value:/^FECHA:/.test(compEmpresa.respuestas[p.id]||'')?compEmpresa.respuestas[p.id].slice(6):'',min:(compEmpresa.rango||{}).inicio,max:(compEmpresa.rango||{}).fin,
+            on:{change:ev=>{ if(ev.target.value) resolverPreguntaComparativa(p.id,'FECHA:'+ev.target.value); }}})
+        ):
         h('div',{style:{display:'flex',gap:'.3rem',flexWrap:'wrap'}},
           ...(p.opciones||[]).map(op=>h('button',{
             style:{
@@ -11636,6 +11792,7 @@ function renderNominas(){
       )
     ),
 
+    zonaNomina('#3b82f6','🖥️ LO QUE CALCULA TIMERPRO','con tus jornadas, según vas metiendo días · ciclo 26→25',[
     // Misma tarjeta sencilla de "Totales" que ya tenías y te gustaba —
     // solo se le han AÑADIDO dos campos editables (Sueldo Base y Guardia)
     // y una línea de Viajes/km, sin cambiar su forma.
@@ -11681,20 +11838,12 @@ function renderNominas(){
     // y un % de IRPF/Seg. Social aproximado (calculado solo a partir de las
     // nóminas reales que ya se han subido y analizado, o editable a mano).
     renderSimulacionNomina(mesKey, app),
-
     // Día a día del periodo (mismo formato que "Día a día" de Resumen) + mismas exportaciones que Resumen,
     // con previsualización en todos los formatos antes de guardar/compartir (vía el diálogo Abrir/Guardar/Compartir).
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'📅 Día a día de '+periodoLabel(mesKey)),
       diaADiaPeriodo || h('div',{style:{fontSize:'.78rem',color:'var(--ink3)'}},'Sin jornadas registradas en este periodo todavía.')
     ),
-
-    renderComparativaEmpresaCard(mesKey),
-    renderResumenEmpresaCard(mesKey),
-
-    renderComparativaNominasCard(mesKey, app, payslipsDelMes),
-    renderPrediccionModusOperandiCard(mesKey, app, payslipsDelMes),
-    renderComparativaNominas(),
 
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'Exportar '+periodoLabel(mesKey)),
@@ -11710,6 +11859,10 @@ function renderNominas(){
       )
     ),
 
+      renderResumenEmpresaCard(mesKey)
+    ]),
+
+    zonaNomina('#f97316','🏢 LO QUE DICE LA EMPRESA','aparece al cargar los documentos de este ciclo',[
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'Subir nómina de '+periodoLabel(mesKey)),
       h('div',{style:{fontSize:'.78rem',color:'var(--ink2)',marginBottom:'.5rem'}},
@@ -11740,6 +11893,16 @@ function renderNominas(){
             ))
           )
     ),
+
+      renderComparativaEmpresaCard(mesKey),
+      renderComparativaNominasCard(mesKey, app, payslipsDelMes)
+    ]),
+
+    zonaNomina('#16a34a','🎯 CUÁNTO NOS HEMOS ACERCADO','TimerPro frente a la empresa y a la nómina real',[
+      renderComparacionDirectaCard(mesKey, app, payslipsDelMes),
+      renderPrediccionModusOperandiCard(mesKey, app, payslipsDelMes),
+      renderComparativaNominas()
+    ]),
 
     h('div',{class:'card'},
       h('div',{class:'sec-title'},'💬 Chat de '+periodoLabel(mesKey)),
