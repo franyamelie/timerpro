@@ -925,6 +925,103 @@ function repararTipoTransporte(e){
     return true;
   }catch(ex){ return false; }
 }
+
+
+// ── PREGUNTAR A QUÉ FICHAJE PERTENECE UNA TAREA / O.T. ────────────
+// Si un día tiene 2 o más fichajes y la tarea guardada no está vinculada a
+// ninguno (ni a mano ni por el número de O.T. escrito en su nota), la app no
+// lo da por bueno: pregunta. Así un reparto dudoso lo decide el usuario.
+var _vinculoPreg=null;
+function tpDiaDeTarea(t){
+  if(!t||!t.fecha) return null;
+  if(fEntry&&fEntry.fecha===t.fecha&&(fEntry.fichajes||[]).length) return {e:fEntry,abierto:true};
+  const e=(S.entries||[]).find(x=>x.fecha===t.fecha);
+  return e?{e,abierto:false}:null;
+}
+function tpTareaNecesitaVinculo(t){
+  if(!t||!t.fecha||t._delDia) return false;
+  const d=tpDiaDeTarea(t); if(!d) return false;
+  const fj=d.e.fichajes||[]; if(fj.length<2) return false;
+  return !tpAsignacionTareas(d.e).usadas.has(String(t.id));
+}
+function tpPreguntarVinculoTarea(t){
+  try{
+    if(!tpTareaNecesitaVinculo(t)) return false;
+    _vinculoPreg={id:t.id}; S.modal='vinculoTarea'; return true;
+  }catch(e){ return false; }
+}
+async function tpElegirVinculoTarea(tid,idx){
+  const t=(S.tasks||[]).find(x=>String(x.id)===String(tid)); if(!t) return;
+  try{
+    if(idx==='dia'){
+      t._delDia=true; await dbPut(ST.tasks,{...t}); S.tasks=S.tasks.map(x=>String(x.id)===String(tid)?{...t}:x);
+      showAlert('Apuntada como «del día», sin fichaje concreto');
+    } else {
+      const d=tpDiaDeTarea(t); if(!d) return;
+      const fj=d.e.fichajes[idx]; if(!fj) return;
+      fj.taskId=t.id;
+      if(d.abierto){ persistEntry(); scheduleDraftSave(); }
+      else { d.e._savedAt=new Date().toISOString(); await dbPut(ST.entries,{...d.e}); }
+      showAlert('✅ Vinculada al fichaje '+(idx+1));
+    }
+  }catch(ex){ showAlert('No se pudo vincular: '+ex.message,'err'); }
+  _vinculoPreg=null; S.modal=null; rerender(); scheduleSync();
+}
+function renderModalVinculoTarea(){
+  const t=_vinculoPreg&&(S.tasks||[]).find(x=>String(x.id)===String(_vinculoPreg.id));
+  if(!t) return null;
+  const d=tpDiaDeTarea(t); const fj=(d&&d.e.fichajes)||[];
+  const plano=v=>String(v||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
+  const btn=(txt,fn,sub)=>h('button',{class:'btn btn-full',style:{display:'block',textAlign:'left',background:'var(--surf2)',border:'1px solid var(--brd)',color:'var(--ink)',marginBottom:'.4rem',padding:'.6rem .7rem'},on:{click:fn}},
+    h('div',{style:{fontWeight:800,fontSize:'.85rem'}},txt),sub?h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',fontWeight:400}},sub):null);
+  return h('div',{class:'modal-bg',style:{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:'1rem'}},
+    h('div',{style:{background:'var(--surf)',borderRadius:'var(--r2)',padding:'1.1rem',maxWidth:'460px',width:'100%',maxHeight:'88vh',overflowY:'auto'}},
+      h('div',{style:{fontWeight:800,fontSize:'1rem',marginBottom:'.4rem'}},'¿A qué fichaje pertenece esta tarea?'),
+      h('div',{style:{fontSize:'.8rem',color:'var(--ink2)',marginBottom:'.7rem',lineHeight:1.5}},
+        h('b',{},tpEtiquetaTarea(t)+' — '+tpTextoTarea(t)),h('br'),
+        'El día '+dlbl(t.fecha)+' tiene '+fj.length+' fichajes y esta tarea no está vinculada a ninguno. Dime a cuál va para que se vea igual en todas las pantallas.'),
+      ...fj.map((f,i)=>{
+        if(f.taskId&&String(f.taskId)!==String(t.id)) return null;
+        return btn('Fichaje '+(i+1)+' · '+(f.entrada||'--')+' → '+(f.salida||'--'),()=>tpElegirVinculoTarea(t.id,i),plano(f.titulo||f.nota).slice(0,90));
+      }).filter(Boolean),
+      btn('Es del día, sin fichaje concreto',()=>tpElegirVinculoTarea(t.id,'dia'),'Se queda como «del día»; no se vuelve a preguntar'),
+      h('button',{class:'btn btn-gh btn-sm',style:{marginTop:'.2rem'},on:{click:()=>{_vinculoPreg=null;S.modal=null;rerender();}}},'Decidir más tarde')
+    )
+  );
+}
+
+// Vínculos de O.T. que el usuario ha confirmado a mano (una sola vez). Cada cambio
+// solo se aplica si el dato sigue como se vio (no pisa nada que ya se haya corregido).
+async function migrarVinculosUnaVez(){
+  const KEY='mig_20261107_vinculos_v1';
+  try{ if(localStorage.getItem(KEY)) return; }catch(e){}
+  try{
+    const ahora=new Date().toISOString(); const log=[];
+    const tarea=id=>(S.tasks||[]).find(t=>String(t.id)===String(id));
+    const dia=f=>(S.entries||[]).find(e=>e.fecha===f);
+    const vincular=async(fecha,idxF,hIni,hFin,taskId,etq)=>{
+      const e=dia(fecha), t=tarea(taskId); if(!e||!t) return;
+      const fj=(e.fichajes||[])[idxF]; if(!fj||fj.taskId||fj.entrada!==hIni||fj.salida!==hFin) return;
+      fj.taskId=t.id; e._savedAt=ahora; await dbPut(ST.entries,{...e}); log.push(etq);
+    };
+    // 18/06/2026: la O.T. 7941523545 es del fichaje 1 (07:00→15:00)
+    await vincular('2026-06-18',0,'07:00','15:00',60,'18/06: fichaje 1 ← O.T. 7941523545');
+    // 15/09/2026: "1 viaje Tornero Andújar" es del fichaje 2 (10:30→12:00)
+    await vincular('2026-09-15',1,'10:30','12:00',98,'15/09: fichaje 2 ← 1 viaje Tornero Andújar');
+    // Tarea sin fecha "Desmontar rodete en molinos": es del 03/11/2026 y no tiene O.T.
+    // (la O.T. 7941668747 es la del rodete de parque de maderas, ya vinculada al fichaje 2).
+    const t140=tarea(140);
+    if(t140&&!t140.fecha&&/DESMONTAR RODETE EN MOLINOS/i.test(t140.titulo||'')){
+      t140.fecha='2026-11-03'; t140.otNumero=''; t140.usaOT=false;
+      await dbPut(ST.tasks,{...t140}); log.push('Tarea "Desmontar rodete en molinos": fecha 03/11 y sin O.T.');
+      const e3=dia('2026-11-03'); const f1=e3&&(e3.fichajes||[])[0];
+      if(f1&&!f1.taskId&&f1.entrada==='08:00'&&f1.salida==='15:00'){ f1.taskId=t140.id; e3._savedAt=ahora; await dbPut(ST.entries,{...e3}); log.push('03/11: fichaje 1 ← Desmontar rodete en molinos'); }
+    }
+    localStorage.setItem(KEY,'1');
+    if(log.length) console.log('Vínculos corregidos:',log.join(' | '));
+    window._vinculosCorregidos=log;
+  }catch(ex){ console.warn('Corrección de vínculos:',ex); }
+}
 async function migrarTransporteUnaVez(){
   const KEY='mig_20261107_transporte_v1';
   try{ if(localStorage.getItem(KEY)) return; }catch(e){}
@@ -1611,7 +1708,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final11'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final14'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -3269,11 +3366,26 @@ function tpChipTarea(t,grande){
         S.tab='tareas';rerender();}}},'✏️ Editar')
   );
 }
-/* Misma regla que el Resumen: lo vinculado al fichaje y, si el día solo tiene uno, las tareas del día. */
+/* Tareas de cada fichaje: 1) la vinculada a mano (taskId); 2) si no hay vínculo, la O.T. cuyo número
+   está escrito en la nota de ese fichaje (p.ej. "OT: 7941655388"); 3) si el día solo tiene un fichaje,
+   las tareas del día. Cada tarea se muestra en un solo fichaje. */
+function tpTareasPorNota(e,f,esF1){
+  const plano=(((f&&f.nota)||'')+' '+(esF1?(e.notas||''):'')).replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ');
+  return (S.tasks||[]).filter(t=>t.fecha===(e.fecha||today()) && t.otNumero && String(t.otNumero).replace(/\D/g,'').length>=4
+    && new RegExp('(^|\\D)'+String(t.otNumero).replace(/\D/g,'')+'(\\D|$)').test(plano));
+}
+function tpAsignacionTareas(e){
+  const lista=e.fichajes||[]; const res=lista.map(()=>[]); const usadas=new Set();
+  lista.forEach((f,i)=>{ if(f.taskId){ const t=(S.tasks||[]).find(x=>String(x.id)===String(f.taskId)); if(t){ res[i]=[t]; usadas.add(String(t.id)); } } });
+  lista.forEach((f,i)=>{ if(f.taskId) return; const m=tpTareasPorNota(e,f,i===0).filter(t=>!usadas.has(String(t.id))); m.forEach(t=>usadas.add(String(t.id))); res[i]=m; });
+  return {res,usadas};
+}
 function tpTareasDeFichaje(e,idx){
   const lista=e.fichajes||[], fj=lista[idx];
   if(!fj) return [];
-  if(fj.taskId){ const t=(S.tasks||[]).find(x=>String(x.id)===String(fj.taskId)); return t?[t]:[]; }
+  const A=tpAsignacionTareas(e);
+  if(A.res[idx]&&A.res[idx].length) return A.res[idx];
+  if(fj.taskId) return [];
   if(idx!==0||lista.length>1) return [];
   return (S.tasks||[]).filter(t=>t.fecha===(e.fecha||today()));
 }
@@ -3308,7 +3420,7 @@ function tpFilaFichaje1(e){
 function tpTareasSinAsignar(e){
   const lista=e.fichajes||[];
   if(lista.length<2) return null;
-  const usadas=new Set(lista.map(f=>String(f.taskId)).filter(Boolean));
+  const usadas=tpAsignacionTareas(e).usadas;
   const libres=(S.tasks||[]).filter(t=>t.fecha===(e.fecha||today())&&!usadas.has(String(t.id)));
   if(!libres.length) return null;
   return h('div',{style:{padding:'.6rem .7rem',marginBottom:'.4rem',background:'var(--surf2)',border:'1px dashed var(--brd)',borderRadius:'var(--r2)'}},
@@ -5240,6 +5352,12 @@ function auditarJornadas(){
     const ents=fj.filter(f=>f.entrada).map(f=>f.entrada);
     if(ents.some((x,i)=>i>0&&x<ents[i-1])) out.push({ds,txt:'Los fichajes no están en orden de hora'});
   });
+  // Tareas / O.T. con datos dudosos
+  (S.tasks||[]).forEach(t=>{
+    if(!t.fecha){ out.push({ds:'',txt:'Tarea sin fecha: «'+tpTextoTarea(t)+'»'+(t.otNumero?' (O.T. '+t.otNumero+')':'')}); return; }
+    if(tpTareaNecesitaVinculo(t)) out.push({ds:t.fecha,txt:'Tarea «'+tpTextoTarea(t)+'»'+(t.otNumero?' (O.T. '+t.otNumero+')':'')+' sin vincular a ningún fichaje (el día tiene varios)'});
+  });
+  out.sort((a,b)=>String(a.ds).localeCompare(String(b.ds)));
   return out;
 }
 function renderAuditoriaJornadas(){
@@ -5250,12 +5368,12 @@ function renderAuditoriaJornadas(){
       h('div',{class:'sec-title',style:{margin:0,flex:1}},'🔍 Revisión de jornadas'),
       h('button',{class:'btn btn-b btn-sm',on:{click:()=>{S._auditOpen=!S._auditOpen;rerender();}}},abierto?'Cerrar':'Revisar todas las jornadas')
     ),
-    h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginTop:'.3rem'}},'Solo avisa de cosas raras en las jornadas guardadas; no cambia nada por sí sola.'),
+    h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginTop:'.3rem'}},'Solo avisa de cosas raras en las jornadas y tareas guardadas; no cambia nada por sí sola.'),
     abierto?(lista.length
       ?h('div',{style:{marginTop:'.5rem'}},h('div',{style:{fontWeight:800,fontSize:'.8rem',marginBottom:'.3rem'}},lista.length+' aviso'+(lista.length>1?'s':'')),
         ...lista.map(a=>h('div',{style:{display:'flex',alignItems:'center',gap:'.5rem',padding:'.35rem .5rem',borderBottom:'1px solid var(--brd)',fontSize:'.78rem'}},
-          h('b',{style:{flexShrink:0}},dlbl(a.ds)),h('span',{style:{flex:1}},a.txt),
-          h('button',{class:'btn btn-g btn-sm',on:{click:()=>goToDay(a.ds)}},'Abrir'))))
+          h('b',{style:{flexShrink:0}},a.ds?dlbl(a.ds):'Sin fecha'),h('span',{style:{flex:1}},a.txt),
+          a.ds?h('button',{class:'btn btn-g btn-sm',on:{click:()=>goToDay(a.ds)}},'Abrir'):null)))
       :h('div',{style:{marginTop:'.5rem',fontSize:'.8rem',color:'var(--acc)',fontWeight:700}},'✔ Todo en orden: no se ha encontrado nada raro.')):null
   );
 }
@@ -12002,6 +12120,7 @@ function renderModal(){
     if(S.modal==='minicalendar') { S.modal=null; S.view='cal'; rerender(); return null; }
   if(S.modal==='resumendia') return renderModalResumenDia();
   if(S.modal==='compPreguntas') return renderModalCompPreguntas();
+  if(S.modal==='vinculoTarea') return renderModalVinculoTarea();
   if(S.modal==='export') return renderModalExport();
   if(S.modal==='customExport') return renderModalCustomExport();
   if(S.modal==='dl') return renderModalDl();
@@ -13080,6 +13199,7 @@ async function autoGuardarTareaPendiente(){
     const tit=String(fTask.titulo||'').replace(/<[^>]*>/g,'').trim();
     if(!tit && !fTask.otNumero && !desc) return;            // formulario vacío: nada que guardar
     if(!tit) fTask.titulo = fTask.otNumero ? (tipo+' '+fTask.otNumero) : desc.slice(0,40);
+    if(!fTask.fecha){ showAlert('La tarea no se ha guardado: falta la fecha','err'); return; }
     let savedId=fTask.id;
     if(fTask.id){
       await dbPut(ST.tasks,fTask);
@@ -13093,14 +13213,17 @@ async function autoGuardarTareaPendiente(){
       if(idx!=='f1' && fEntry.fichajes && fEntry.fichajes[idx]){ fEntry.fichajes[idx].taskId=savedId; scheduleDraftSave(); }
     }
     _pendingFichajeTaskLink=null;
+    const _tAuto=(S.tasks||[]).find(t=>String(t.id)===String(savedId));
     fTask=defTask(); editTaskId=null;
     try{localStorage.removeItem('fTaskDraft');}catch(e){}
     showAlert('✅ '+tipo+' guardada y asignada');
+    if(tpPreguntarVinculoTarea(_tAuto)) rerender();
   }catch(e){ console.error('autoGuardarTareaPendiente',e); }
 }
 
 async function saveTask(){
   if(!fTask.titulo.trim()){showAlert('El título es obligatorio','err');return;}
+  if(!fTask.fecha){showAlert('Pon la fecha de la tarea antes de guardarla','err');return;}
   try{
     let savedId=fTask.id;
     if(fTask.id){
@@ -13110,6 +13233,7 @@ async function saveTask(){
       savedId=await dbPut(ST.tasks,fTask);
       S.tasks.push({...fTask,id:savedId});
     }
+    const _tGuardada=(S.tasks||[]).find(t=>String(t.id)===String(savedId));
     fTask=defTask();
     editTaskId=null;
     localStorage.removeItem('fTaskDraft');
@@ -13124,10 +13248,12 @@ async function saveTask(){
       _pendingFichajeTaskLink=null;
       S.tab='fichar';
       showAlert(idx==='f1'?'Tarea creada ✓':'Tarea creada y vinculada a este fichaje ✓');
+      tpPreguntarVinculoTarea(_tGuardada);
       rerender();
       return;
     }
     showAlert('Tarea guardada ✓');
+    tpPreguntarVinculoTarea(_tGuardada);
     rerender();
     scheduleSync();
   }catch(e){showAlert(e.message,'err');}
@@ -17846,6 +17972,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     await migrarDatosUnaVez();
     await migrarPreciosUnaVez();
     await migrarTransporteUnaVez();
+    await migrarVinculosUnaVez();
     // Migración: Groq → Gemini (la key de Gemini se configura en la pestaña IA)
     // Handle Google OAuth redirect
     if(gdriveHandleRedirect()){
