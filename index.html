@@ -1708,7 +1708,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final15'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final16'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -11258,6 +11258,88 @@ function zonaNomina(color, titulo, sub, hijos){
 // Comparación directa del ciclo: cada concepto de TimerPro frente a lo que
 // pone el documento de la empresa, para ver de un vistazo quién tiene la
 // diferencia. TimerPro se recalcula en el momento (con tus jornadas de ahora).
+// ── Exportar la comparación directa (imagen / PDF / texto) ──
+// Se fotografía la propia tarjeta de la pantalla (sin los botones), así lo
+// exportado es EXACTAMENTE lo que se ve.
+async function capturarComparacionDirecta(){
+  const el=document.getElementById('cmp-directa-card');
+  if(!el) throw new Error('No se encuentra la comparación en pantalla');
+  if(typeof html2canvas!=='function') throw new Error('Falta la librería de imagen (¿sin conexión?)');
+  const clone=el.cloneNode(true);
+  clone.querySelectorAll('.noexp').forEach(n=>n.remove());
+  clone.querySelectorAll('div').forEach(d=>{ if(d.style&&d.style.overflowX==='auto') d.style.overflow='visible'; });
+  clone.style.width='1100px'; clone.style.borderRadius='0'; clone.style.boxShadow='none'; clone.style.margin='0'; clone.style.boxSizing='border-box';
+  const wrap=document.createElement('div');
+  wrap.style.cssText='position:fixed;top:0;left:0;z-index:-1;opacity:0.01;pointer-events:none;background:#fff;';
+  wrap.appendChild(clone); document.body.appendChild(wrap);
+  await new Promise(r=>setTimeout(r,200));
+  try{ return await html2canvas(clone,{scale:2,useCORS:true,allowTaint:true,backgroundColor:'#ffffff',logging:false}); }
+  finally{ document.body.removeChild(wrap); }
+}
+function nombreArchivoComparacion(mesKey,ext){ return 'comparativa_empresa_'+mesKey+'.'+ext; }
+async function exportarComparacionPDF(mesKey){
+  try{
+    if(!window.jspdf){ showAlert('Cargando librería PDF...','err'); return; }
+    showAlert('⏳ Generando PDF...');
+    const canvas=await capturarComparacionDirecta();
+    const {jsPDF}=window.jspdf;
+    const ap=canvas.width>canvas.height;
+    const doc=new jsPDF({orientation:ap?'landscape':'portrait',unit:'mm',format:'a4'});
+    const pw=ap?297:210, ph=ap?210:297, m=8;
+    const k=Math.min((pw-2*m)/canvas.width,(ph-2*m)/canvas.height);
+    const w=canvas.width*k, hh=canvas.height*k;
+    doc.addImage(canvas.toDataURL('image/jpeg',0.92),'JPEG',(pw-w)/2,m,w,hh,undefined,'FAST');
+    dlDialog={blob:doc.output('blob'), filename:nombreArchivoComparacion(mesKey,'pdf'), title:'Comparativa con la empresa '+periodoLabel(mesKey)};
+    S.modal='dl'; rerender();
+  }catch(err){ showAlert('Error: '+err.message,'err'); console.error(err); }
+}
+async function exportarComparacionImagen(mesKey){
+  try{
+    showAlert('⏳ Generando imagen...');
+    const canvas=await capturarComparacionDirecta();
+    const nombre=nombreArchivoComparacion(mesKey,'png');
+    canvas.toBlob(async(blob)=>{
+      const imgUrl=URL.createObjectURL(blob);
+      const imgFile=new File([blob],nombre,{type:'image/png'});
+      if(navigator.share && navigator.canShare && navigator.canShare({files:[imgFile]})){
+        try{ await navigator.share({files:[imgFile], title:'Comparativa con la empresa '+periodoLabel(mesKey)}); URL.revokeObjectURL(imgUrl); return; }
+        catch(ex){ if(ex.name==='AbortError'){ URL.revokeObjectURL(imgUrl); return; } }
+      }
+      const panel=document.createElement('div');
+      panel.id='panel-cmp-img';
+      panel.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
+      const bt=(id,bg,t)=>'<button id="'+id+'" style="background:'+bg+';color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">'+t+'</button>';
+      panel.innerHTML='<div style="background:#fff;border-radius:16px;padding:1.2rem;max-width:760px;width:100%;font-family:system-ui;max-height:92vh;overflow:auto">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem"><b style="font-size:1rem;color:#1e293b">Comparativa con la empresa</b><button id="ci-close" style="background:none;border:none;font-size:1.2rem;cursor:pointer">✕</button></div>'
+        +'<img src="'+imgUrl+'" style="width:100%;border-radius:10px;margin-bottom:1rem;box-shadow:0 2px 12px rgba(0,0,0,.15)">'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">'+bt('ci-wa','#25D366','📱 WhatsApp')+bt('ci-em','#2563eb','📧 Email')+bt('ci-cp','#7c3aed','📋 Copiar')+bt('ci-dl','#475569','⬇️ Descargar')+'</div></div>';
+      document.body.appendChild(panel);
+      const close=()=>{ if(panel.parentNode) document.body.removeChild(panel); URL.revokeObjectURL(imgUrl); };
+      const bajar=()=>{ const a=document.createElement('a'); a.href=imgUrl; a.download=nombre; document.body.appendChild(a); a.click(); document.body.removeChild(a); };
+      document.getElementById('ci-close').onclick=close;
+      panel.addEventListener('click',ev=>{ if(ev.target===panel) close(); });
+      document.getElementById('ci-wa').onclick=async()=>{
+        try{ await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); window.open('https://web.whatsapp.com','_blank'); showAlert('Imagen copiada — pégala en WhatsApp con Ctrl+V'); }
+        catch(ex){ bajar(); showAlert('Descargada — adjúntala en WhatsApp con el clip 📎'); }
+        close();
+      };
+      document.getElementById('ci-em').onclick=()=>{ bajar(); setTimeout(()=>{ window.location.href='mailto:?subject=Comparativa con la empresa '+periodoLabel(mesKey); },500); close(); };
+      document.getElementById('ci-cp').onclick=async()=>{
+        try{ await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); showAlert('✅ Imagen copiada — pega con Ctrl+V donde quieras'); }
+        catch(ex){ showAlert('No se pudo copiar','err'); }
+        close();
+      };
+      document.getElementById('ci-dl').onclick=()=>{ bajar(); showAlert('✅ Imagen descargada'); close(); };
+    },'image/png',0.95);
+  }catch(err){ showAlert('Error: '+err.message,'err'); console.error(err); }
+}
+async function compartirComparacionTexto(mesKey,texto){
+  try{ if(navigator.share){ await navigator.share({title:'Comparativa con la empresa '+periodoLabel(mesKey), text:texto}); return; } }
+  catch(e){ if(e&&e.name==='AbortError') return; }
+  try{ await navigator.clipboard.writeText(texto); showAlert('📋 Resumen copiado — pégalo donde quieras'); }
+  catch(e){ showAlert('No se pudo compartir ni copiar: '+e.message,'err'); }
+}
+
 function renderComparacionDirectaCard(mesKey, app, payslipsDelMes){
   const docs=(S.empresaDocs||[]).filter(d=>d.mes===mesKey).sort((a,b)=>(b.uploadedAt||'').localeCompare(a.uploadedAt||''));
   const doc=docs[0];
@@ -11388,7 +11470,19 @@ function renderComparacionDirectaCard(mesKey, app, payslipsDelMes){
   else nodos.push(h('div',{style:{marginTop:'.5rem',border:'2px solid #1e293b',borderRadius:'12px',padding:'.6rem .8rem',background:'#ffffff',color:TXT}},
     h('div',{style:{fontWeight:800,fontSize:'.82rem',color:'#b91c1c',marginBottom:'.3rem'}},'Diferencias (TimerPro suma '+eur(R.total)+'; la empresa, '+eur(E.total)+' → '+eur(Math.abs(r.diffTotal))+' de diferencia)'),
     h('ul',{style:{margin:0,paddingLeft:'1.2rem',fontSize:'.8rem',lineHeight:1.7}},...frasesLi)));
-  return h('div',{class:'card',style:{background:'#ffffff',color:'#1e293b','--ink':'#1e293b','--ink2':'#475569','--ink3':'#64748b','--brd':'#d5dbe5','--acc2':'#15803d','--red':'#b91c1c'}},...nodos);
+  // Texto para compartir/copiar (las mismas diferencias que el recuadro)
+  const _txt=['TimerPro frente a Empresa · ciclo '+dd(r.from)+' al '+dd(r.to),
+    'TimerPro suma '+eur(R.total)+'; la empresa, '+eur(E.total)+' → '+eur(Math.abs(r.diffTotal))+' de diferencia','',
+    ...frases.map(fr=>'• '+dd(fr.fecha)+' · '+fr.t.replace(/<\/?b>/g,'')),'',
+    'Horas extra: TimerPro '+eur(R.impExtra+R.impFest+R.impNoc)+' · Empresa '+eur(E.impExtra+E.impFest+E.impNoc),
+    'Dietas: TimerPro '+eur(R.dieta)+' · Empresa '+eur(E.dieta),
+    'Viajes: TimerPro '+eur(R.vCamion+R.vCoche+R.otros)+' · Empresa '+eur(E.vCamion+E.vCoche+E.otros),
+    'TOTAL: TimerPro '+eur(R.total)+' · Empresa '+eur(E.total)].join('\n');
+  nodos.push(h('div',{class:'noexp',style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'.4rem',marginTop:'.7rem'}},
+    h('button',{class:'btn btn-gh btn-sm',on:{click:()=>exportarComparacionImagen(mesKey)}},'📷 Imagen'),
+    h('button',{class:'btn btn-gh btn-sm',on:{click:()=>exportarComparacionPDF(mesKey)}},'📄 PDF'),
+    h('button',{class:'btn btn-gh btn-sm',on:{click:()=>compartirComparacionTexto(mesKey,_txt)}},'📤 Texto')));
+  return h('div',{id:'cmp-directa-card',class:'card',style:{background:'#ffffff',color:'#1e293b','--ink':'#1e293b','--ink2':'#475569','--ink3':'#64748b','--brd':'#d5dbe5','--acc2':'#15803d','--red':'#b91c1c'}},...nodos);
 }
 
 function renderComparativaNominasCard(mesKey, app, payslipsDelMes){
