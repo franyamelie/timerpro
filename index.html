@@ -948,6 +948,17 @@ const TAG_LABELS = {
 // Cupos anuales para el contador del Calendario (año completo)
 const VAC_BASE_DIAS=30;   // días de vacaciones al año
 const AP_BASE_HORAS=20;   // horas de asuntos propios al año
+// Topes editables por año (⚙️ en las tarjetas de Vacaciones y Asuntos propios).
+let cupos={}; try{ cupos=JSON.parse(localStorage.getItem('tp_cupos')||'{}')||{}; }catch(e){ cupos={}; }
+const cupoVac=y=>{ const v=cupos[y]&&cupos[y].vac; return (v!=null&&!isNaN(+v))?+v:VAC_BASE_DIAS; };
+const cupoAp=y=>{ const v=cupos[y]&&cupos[y].ap; return (v!=null&&!isNaN(+v))?+v:AP_BASE_HORAS; };
+async function guardarCupo(y,tipo,valor){
+  const v=Math.max(0,parseFloat(String(valor).replace(',','.'))||0);
+  cupos={...cupos,[y]:{...(cupos[y]||{}),[tipo]:v}};
+  try{ localStorage.setItem('tp_cupos',JSON.stringify(cupos)); }catch(e){}
+  try{ const st=(await dbAll(ST.settings))[0]||{}; await dbPut(ST.settings,{...st,id:1,cupos}); }catch(e){}
+  S._cupoOpen=null; rerender();
+}
 const AP_JORNADA_H=8;     // un día de asuntos propios = jornada completa (8 h) salvo que se indique otra cosa
 
 function renderTagChip(tag,icon,bg,border,color){
@@ -1478,7 +1489,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final6'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final7'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -2502,7 +2513,7 @@ function renderFichar(){
               input:ev=>{ fEntry.horasAsuntos=parseFloat(ev.target.value.replace(',','.'))||0; },
               blur:ev=>{ fEntry.horasAsuntos=Math.max(0,Math.min(24,parseFloat(ev.target.value.replace(',','.'))||0)); scheduleDraftSave(); rerender(); }
             }}),
-          h('div',{style:{fontSize:'.68rem',color:'var(--ink3)',marginTop:'.15rem'}},'No suma a las horas trabajadas ni al importe; descuenta de tus '+AP_BASE_HORAS+' h de asuntos propios del año.')
+          h('div',{style:{fontSize:'.68rem',color:'var(--ink3)',marginTop:'.15rem'}},'No suma a las horas trabajadas ni al importe; descuenta de tus '+cupoAp((fEntry.fecha||today()).slice(0,4))+' h de asuntos propios del año.')
         ),
         h('button',{class:'btn btn-gh btn-sm',title:'Jornada completa de asuntos propios',
           on:{click:()=>{ fEntry.horasAsuntos=AP_JORNADA_H; scheduleDraftSave(); rerender(); }}},AP_JORNADA_H+' h (jornada)')
@@ -4939,21 +4950,32 @@ function asuntosHorasAnio(y){
   return (Math.round(t*100)/100).toString().replace('.',',');
 }
 function renderContadorAnio(y,cuentas){
-  const vacCog=cuentas.vacaciones||0, vacQuedan=VAC_BASE_DIAS-vacCog;
+  const vacCog=cuentas.vacaciones||0, vacTope=cupoVac(y), apTope=cupoAp(y), vacQuedan=vacTope-vacCog;
   const _set=new Set(Object.keys(dayTags).filter(ds=>ds.startsWith(y+'-')&&getDayTag(ds)==='asuntos'));
   S.entries.forEach(e=>{ if(e.fecha&&e.fecha.startsWith(y+'-')&&(+e.horasAsuntos>0)&&!e._draft) _set.add(e.fecha); });
   const dias=[..._set].sort();
-  const apCog=dias.reduce((a,ds)=>a+horasAsuntosDia(ds),0), apQuedan=AP_BASE_HORAS-apCog;
+  const apCog=dias.reduce((a,ds)=>a+horasAsuntosDia(ds),0), apQuedan=apTope-apCog;
   const fh=v=>(Math.round(v*100)/100).toString().replace('.',',');
   const col=v=>v<0?'#dc2626':'var(--ink)';
-  const caja=(titulo,grande,detalle,neg)=>h('div',{style:{flex:'1 1 14rem',background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.6rem .8rem',border:'1px solid var(--brd)'}},
-    h('div',{style:{fontSize:'.72rem',fontWeight:800,color:'var(--ink2)',textTransform:'uppercase',letterSpacing:'.04em'}},titulo),
+  const caja=(titulo,grande,detalle,neg,tipo,tope,unidad)=>h('div',{style:{flex:'1 1 14rem',background:'var(--surf2)',borderRadius:'var(--r2)',padding:'.6rem .8rem',border:'1px solid var(--brd)'}},
+    h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'.4rem'}},
+      h('div',{style:{fontSize:'.72rem',fontWeight:800,color:'var(--ink2)',textTransform:'uppercase',letterSpacing:'.04em'}},titulo),
+      h('button',{class:'btn btn-gh btn-sm',title:'Ajustes: cambiar el tope de '+(tipo==='vac'?'días de vacaciones':'horas de asuntos propios')+' de '+y,
+        style:{padding:'.1rem .4rem',fontSize:'.95rem'},on:{click:()=>{ S._cupoOpen=(S._cupoOpen===tipo)?null:tipo; rerender(); }}},'⚙️')),
+    S._cupoOpen===tipo?h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',flexWrap:'wrap',margin:'.4rem 0',padding:'.4rem',background:'var(--surf)',borderRadius:'8px',border:'1px solid var(--brd)'}},
+      h('span',{style:{fontSize:'.76rem',fontWeight:700}},'Tope '+y+':'),
+      h('input',{type:'number',min:'0',step:tipo==='vac'?'1':'0.5',value:String(tope),id:'cupo-input-'+tipo,
+        style:{width:'5rem',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'6px',padding:'.2rem .4rem',color:'var(--ink)'}}),
+      h('span',{style:{fontSize:'.76rem'}},unidad),
+      h('button',{class:'btn btn-g btn-sm',on:{click:()=>{ const i=document.getElementById('cupo-input-'+tipo); guardarCupo(y,tipo,i?i.value:tope); }}},'Guardar'),
+      h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{ S._cupoOpen=null; rerender(); }}},'Cancelar')
+    ):null,
     h('div',{style:{fontSize:'1.35rem',fontWeight:900,color:neg?'#dc2626':'var(--acc)',margin:'.15rem 0'}},grande),
     h('div',{style:{fontSize:'.78rem',color:'var(--ink2)'}},detalle));
   return h('div',{style:{margin:'.2rem 0 .7rem'}},
     h('div',{style:{display:'flex',gap:'.6rem',flexWrap:'wrap'}},
-      caja('☀ Vacaciones '+y,vacQuedan>=0?'Quedan '+vacQuedan+' días':'Te pasas '+(-vacQuedan)+' días','Cogidos '+vacCog+' de '+VAC_BASE_DIAS+' días',vacQuedan<0),
-      caja('A · Asuntos propios '+y,apQuedan>=0?'Quedan '+fh(apQuedan)+' h':'Te pasas '+fh(-apQuedan)+' h','Cogidas '+fh(apCog)+' h de '+AP_BASE_HORAS+' h',apQuedan<0)
+      caja('☀ Vacaciones '+y,vacQuedan>=0?'Quedan '+vacQuedan+' días':'Te pasas '+(-vacQuedan)+' días','Cogidos '+vacCog+' de '+vacTope+' días',vacQuedan<0,'vac',vacTope,'días'),
+      caja('A · Asuntos propios '+y,apQuedan>=0?'Quedan '+fh(apQuedan)+' h':'Te pasas '+fh(-apQuedan)+' h','Cogidas '+fh(apCog)+' h de '+fh(apTope)+' h',apQuedan<0,'ap',apTope,'horas')
     ),
     dias.length?h('div',{style:{display:'flex',gap:'.4rem',flexWrap:'wrap',marginTop:'.5rem',alignItems:'center'}},
       h('span',{style:{fontSize:'.72rem',color:'var(--ink2)',fontWeight:700}},'Horas de cada día de asuntos propios:'),
@@ -9242,6 +9264,22 @@ function mensajeErrorGemini(e){
   if(e&&(e.name==='TypeError'||/Failed to fetch|NetworkError|Load failed/i.test(e.message||''))) return 'No hay conexión con Google. Revisa tu internet y vuelve a intentarlo.';
   return (e&&e.message)||'Error desconocido';
 }
+// Si el modelo principal está saturado (503/429), se prueban otros modelos
+// Gemini: no suelen estar saturados todos a la vez.
+const GEMINI_RESPALDOS=['gemini-flash-latest','gemini-2.5-flash','gemini-2.5-flash-lite','gemini-flash-lite-latest','gemini-2.0-flash'];
+async function llamarGeminiConRespaldo(modelo,apiKey,body,ms){
+  const urlDe=m=>'https://generativelanguage.googleapis.com/v1beta/models/'+m+':generateContent?key='+apiKey;
+  const una=m=>fetchConTiempo(urlDe(m),{method:'POST',headers:{'Content-Type':'application/json'},body},ms||25000);
+  let res=await conReintentoGemini(()=>una(modelo));
+  if(res.ok||!(res.status>=500||res.status===429)) return res;
+  for(const m2 of GEMINI_RESPALDOS){
+    if(m2===modelo) continue;
+    let r2; try{ r2=await una(m2); }catch(ex){ continue; }
+    if(r2.ok) return r2;
+    if(!(r2.status>=500||r2.status===429||r2.status===404)) return r2;
+  }
+  return res;
+}
 async function conReintentoGemini(fetchFn){
   let res=await fetchFn();
   const esperas=[1500,4000];
@@ -9299,9 +9337,19 @@ sendIAMsg._core = async function(userMsg){
         if(res.status>=500||res.status===429){
           // Saturación temporal de Google, no del modelo guardado: no lo
           // borramos (sigue siendo bueno), solo avisamos de que está saturado.
-          throw new Error('Los servidores de Google están saturados ahora mismo. Espera un minuto y vuelve a intentarlo.');
+          // Se prueban otros modelos Gemini antes de rendirse
+          let _ok=null;
+          for(const m2 of GEMINI_RESPALDOS){
+            if(m2===modelo) continue;
+            let r2; try{ r2=await probar(m2); }catch(ex){ continue; }
+            if(r2.ok){ _ok=r2; break; }
+            if(!(r2.status>=500||r2.status===429||r2.status===404)) break;
+          }
+          if(_ok) res=_ok;
+          else throw new Error('Los servidores de Google están saturados ahora mismo. Espera un minuto y vuelve a intentarlo.');
+        } else {
+          localStorage.removeItem('gemini_model');modelo='';res=null;
         }
-        localStorage.removeItem('gemini_model');modelo='';res=null;
       }
     }
     if(!modelo){
@@ -10078,6 +10126,19 @@ function modeloGeminiParaImagenes(){
 // opción de "pensamiento", así que si la rechaza con un error 400 concreto, se
 // reintenta automáticamente la misma petición sin esa opción.
 async function geminiGenerateJSON(geminiKey, modelo, contents, generationConfigBase){
+  let ultimo=null;
+  const lista=[modelo,...GEMINI_RESPALDOS.filter(m=>m!==modelo)];
+  for(const m of lista){
+    try{ return await _geminiGenerateJSON1(geminiKey,m,contents,generationConfigBase); }
+    catch(e){
+      ultimo=e;
+      // Solo se prueba otro modelo si el fallo es de saturación del servidor
+      if(!/saturados|Error Gemini (5\d\d|429|404)/.test(String(e&&e.message))) throw e;
+    }
+  }
+  throw ultimo;
+}
+async function _geminiGenerateJSON1(geminiKey, modelo, contents, generationConfigBase){
   async function llamar(conThinking){
     const generationConfig={...generationConfigBase, responseMimeType:'application/json'};
     if(conThinking) generationConfig.thinkingConfig={thinkingBudget:0};
@@ -11406,7 +11467,7 @@ async function enviarMensajeNomina(mesKey){
     const geminiContents=cleanMsgs.map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:m.content}]}));
     const body=JSON.stringify({systemInstruction:{parts:[{text:context}]},contents:geminiContents,generationConfig:{maxOutputTokens:1200,temperature:0.3}});
     const modelo=localStorage.getItem('gemini_model')||'gemini-flash-latest';
-    const res=await conReintentoGemini(()=>fetchConTiempo('https://generativelanguage.googleapis.com/v1beta/models/'+modelo+':generateContent?key='+geminiKey,{method:'POST',headers:{'Content-Type':'application/json'},body},25000));
+    const res=await llamarGeminiConRespaldo(modelo,geminiKey,body,25000);
     if(!res.ok){
       throw new Error(explicarErrorGemini(res.status,await res.text()));
     }
@@ -17206,6 +17267,7 @@ function isVacacion(dateStr){ return dayTags[dateStr]==='vacaciones'; }
 async function loadVacaciones(){
   const s=(await dbAll(ST.settings))[0]||{};
   dayTags = s.dayTags||{};
+  if(s.cupos&&typeof s.cupos==='object'){ cupos={...cupos,...s.cupos}; try{ localStorage.setItem('tp_cupos',JSON.stringify(cupos)); }catch(e){} }
   // Migración: sistema antiguo que solo guardaba un array de vacaciones
   if(Object.keys(dayTags).length===0 && s.vacaciones && s.vacaciones.length){
     s.vacaciones.forEach(ds=>{ dayTags[ds]='vacaciones'; });
