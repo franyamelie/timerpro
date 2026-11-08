@@ -1708,7 +1708,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261108-final17'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261108-final18'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -11299,6 +11299,48 @@ function zonaNomina(color, titulo, sub, hijos){
     ...hijos.filter(Boolean));
 }
 
+// ── Cómo reparte la empresa la nómina: cómo llega a los 2.100 € y dónde mete los extras ──
+// Usa solo datos reales ya guardados: líneas leídas de la nómina real y lo que calcula TimerPro.
+function renderRepartoEmpresaCard(mesKey, app, payslipsDelMes){
+  const T0='#1e293b';
+  const caja=(...hijos)=>{ const c=h('div',{class:'card',style:{background:'#ffffff',color:T0}},...hijos);
+    [['--ink','#1e293b'],['--ink2','#475569'],['--ink3','#64748b'],['--brd','#d5dbe5']].forEach(([k,v])=>c.style.setProperty(k,v)); return c; };
+  const titulo=h('div',{class:'sec-title'},'📋 Cómo reparte la empresa tu nómina · '+periodoLabel(mesKey));
+  let hist=null; try{ hist=historicoNominas().find(x=>x.mes===mesKey)||null; }catch(e){}
+  if(!hist) return caja(titulo,h('div',{style:{fontSize:'.78rem',color:'var(--ink3)'}},'Sube la nómina real de este ciclo (bloque ②) y aquí verás cómo llega la empresa a los 2.100 € y cómo reparte los extras.'));
+  const pact=(app.sueldoBase||0)+(app.guardia||0);
+  const fijos=hist.clasif.filter(c=>c.tipo==='fijo'), vars=hist.clasif.filter(c=>c.tipo!=='fijo');
+  const sumF=hist.sumaFija, sumV=hist.sumaVariable, ret=hist.retTotal, neto=hist.netoEmp;
+  const horasTP=(app.importeExtra||0)+(app.importeNocturnas||0)+(app.importeFestivas||0);
+  const dietasTP=app.dieta||0, viajesTP=(app.transporte||0)+(app.viajes||0), otrosTP=app.otrosConceptos||0;
+  const totTP=Math.round((horasTP+dietasTP+viajesTP+otrosTP)*100)/100;
+  const fmtP=v=>v==null?'—':(String(Math.round(v*10)/10).replace('.',',')+' %');
+  const fila=(a,b,fuerte,color)=>h('div',{style:{display:'flex',justifyContent:'space-between',gap:'.5rem',padding:'.22rem 0',borderBottom:'1px solid #e2e8f0',fontSize:fuerte?'.86rem':'.78rem',fontWeight:fuerte?800:500,color:color||T0}},h('span',{},a),h('span',{style:{whiteSpace:'nowrap',fontWeight:700}},b));
+  const bloque=(num,color,tit,...hijos)=>h('div',{style:{border:'2px solid '+color,borderRadius:'12px',padding:'.5rem .65rem',margin:'.5rem 0'}},
+    h('div',{style:{fontWeight:900,fontSize:'.82rem',color:color,marginBottom:'.25rem'}},num+' '+tit),...hijos);
+  const okFijo=pact>0 && sumF>=pact-1;
+  const netoSobrePacto=Math.round((neto-pact)*100)/100;
+  const A=bloque('①','#2563eb','Para llegar a los '+eur(pact)+' pactados (Sueldo Base + Guardia)',
+    ...(fijos.length?fijos.map(c=>fila(c.concepto||'(sin nombre)',eur(c.importe))):[h('div',{style:{fontSize:'.76rem',color:'var(--ink3)'}},'Ninguna línea de la nómina está marcada como fija todavía (puedes marcarlas en «Comparativa entre nóminas»).')]),
+    fila('Suma de las líneas fijas',eur(sumF),true),
+    fila('Pactado',eur(pact),false),
+    fila(okFijo?'✔ Las líneas fijas llegan a lo pactado':'⚠️ Las líneas fijas NO llegan a lo pactado',(sumF-pact>=0?'+':'−')+eur(Math.abs(sumF-pact)),true,okFijo?'#15803d':'#b91c1c'),
+    fila('Líquido real de la nómina',eur(neto)),
+    fila('Líquido real menos los 2.100 pactados',(netoSobrePacto>=0?'+':'−')+eur(Math.abs(netoSobrePacto)),true,netoSobrePacto>=0?'#15803d':'#b91c1c'));
+  const B=bloque('②','#f97316','Tus extras de este ciclo según TimerPro (lo que has fichado)',
+    fila('Horas extra / nocturnas / festivas',eur(horasTP)),fila('Dietas',eur(dietasTP)),fila('Viajes y transporte',eur(viajesTP)),
+    otrosTP?fila('Otros conceptos',eur(otrosTP)):null,fila('Total de extras',eur(totTP),true));
+  const pctRet=sumV>0?ret/sumV*100:null;
+  const C=bloque('③','#16a34a','Cómo los reparte la empresa en la nómina',
+    ...(vars.length?vars.map(c=>fila(c.concepto||'(sin nombre)',eur(c.importe))):[h('div',{style:{fontSize:'.76rem',color:'var(--ink3)'}},'No hay líneas variables en esta nómina.')]),
+    fila('Suma de las líneas variables',eur(sumV),true),
+    fila('Retenciones totales (IRPF + S.S.)',eur(ret)+(pctRet!=null?' · equivale a un '+fmtP(pctRet)+' si solo recayera sobre lo variable':'')),
+    fila('Líneas variables de la nómina menos tus extras de TimerPro',(sumV-totTP>=0?'+':'−')+eur(Math.abs(sumV-totTP)),false),
+    totTP>0?fila('De tus '+eur(totTP)+' de extras, si el fijo llega entero, te quedan netos',eur(Math.max(netoSobrePacto,0))+' ('+fmtP(Math.max(netoSobrePacto,0)/totTP*100)+')',true):null);
+  const nota=h('div',{style:{fontSize:'.68rem',color:'var(--ink3)',marginTop:'.2rem'}},'Las líneas y su tipo (fijo/variable) son los que la app leyó de tu nómina real; puedes cambiar el tipo de cada línea en «Comparativa entre nóminas».');
+  return caja(titulo,A,B,C,nota);
+}
+
 // Comparación directa del ciclo: cada concepto de TimerPro frente a lo que
 // pone el documento de la empresa, para ver de un vistazo quién tiene la
 // diferencia. TimerPro se recalcula en el momento (con tus jornadas de ahora).
@@ -12280,6 +12322,7 @@ function renderNominas(){
 
     zonaNomina('#16a34a','③ COMPARACIÓN','TimerPro frente a la empresa y a la nómina real',[
       renderComparacionDirectaCard(mesKey, app, payslipsDelMes),
+      acordeonNomina('reparto','📋 Cómo reparte la empresa tu nómina (2.100 € + extras)',renderRepartoEmpresaCard(mesKey, app, payslipsDelMes),true),
       acordeonNomina('compNom','⚖️ Comparativa entre nóminas (nómina real frente a TimerPro, pacto)',renderComparativaNominasCard(mesKey, app, payslipsDelMes),false),
       acordeonNomina('pred','🔮 Predicción y patrón de la empresa',renderPrediccionModusOperandiCard(mesKey, app, payslipsDelMes),false),
       acordeonNomina('hist','📈 Histórico de nóminas',renderComparativaNominas(),false)
