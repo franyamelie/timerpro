@@ -1708,7 +1708,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261108-final20'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261108-final21'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -11406,7 +11406,7 @@ function datosPrediccionVsReal(mesKey,app,payslipsDelMes){
   const irpfR=+ex.retencionIRPF||0, ssR=+ex.retencionSS||0;
   const filas=[
     {n:'Total devengado', tp:sim.brutoTotal, re:+ex.salarioBruto||0},
-    {n:'IRPF', tp:sim.dedIRPF, re:irpfR, tpx:' ('+P.irpf.toFixed(2).replace('.',',')+' %)', rex:(+ex.salarioBruto>0&&irpfR>0)?' ('+(irpfR/(+ex.salarioBruto)*100).toFixed(2).replace('.',',')+' %)':''},
+    {n:'IRPF', tp:sim.dedIRPF, re:irpfR, tpx:' ('+P.irpf.toFixed(2).replace('.',',')+' % de '+eur(sim.brutoSujetoRetencion)+')', rex:(+ex.salarioBruto>0&&irpfR>0)?' ('+(irpfR/(+ex.salarioBruto)*100).toFixed(2).replace('.',',')+' % de '+eur(+ex.salarioBruto)+')':''},
     {n:'Seg. Social', tp:sim.dedSS, re:ssR},
     {n:'Total deducciones', tp:sim.dedIRPF+sim.dedSS, re:irpfR+ssR},
     {n:'LÍQUIDO', tp:sim.liquido, re:+ex.salarioNeto, fuerte:true}
@@ -11436,7 +11436,7 @@ function renderPrediccionVsRealCard(mesKey,app,payslipsDelMes){
     'el líquido difiere un '+L.pct.toFixed(1).replace('.',',')+' % ('+eur(Math.abs(L.d))+'): hay que revisar qué falla';
   const caja2=h('div',{style:{border:'2px solid '+T0,borderRadius:'12px',padding:'.55rem .75rem',marginTop:'.6rem',fontSize:'.8rem',lineHeight:1.6}},
     h('div',{style:{fontWeight:900,color:col[L.nivel][1],fontSize:'.88rem'}},'Resultado: '+resumen),
-    h('div',{},'🟢 acertado (hasta 1 %) · 🟡 cerca (hasta 5 %) · 🔴 lejos. Bruto y retenciones pueden salir lejos aunque el líquido coincida: la empresa compone y retiene la nómina de otra forma.'));
+    h('div',{},'🟢 acertado (hasta 1 %) · 🟡 cerca (hasta 5 %) · 🔴 lejos. Ojo con el % de IRPF: TimerPro lo aplica solo sobre la parte variable (el pacto no retiene) y la empresa lo aplica sobre todo lo devengado, por eso no son comparables. Compara el líquido.'));
   const cuerpo=h('div',{style:{display:'grid',gridTemplateColumns:'1fr auto 1fr',gap:'.5rem',alignItems:'start'}},
     panel('TIMERPRO · simulación','#2563eb','#eff6ff','tp'),marcas,panel('NÓMINA REAL · '+(D.fileName||'tu nómina'),'#ea580c','#fff7ed','re'));
   const nodo=caja(titulo,h('div',{style:{overflowX:'auto'}},h('div',{style:{minWidth:'560px'}},cuerpo)),caja2);
