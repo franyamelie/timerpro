@@ -1708,7 +1708,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261108-final18'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261108-final19'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -11299,6 +11299,187 @@ function zonaNomina(color, titulo, sub, hijos){
     ...hijos.filter(Boolean));
 }
 
+// ═════ Exportar CUALQUIER tarjeta de Nóminas (imagen / PDF / texto) ═════
+// Fotografía la propia tarjeta de la pantalla (sin botones) con fondo blanco, así lo exportado
+// es exactamente lo que se ve. Se usa en todos los bloques visuales de la pestaña.
+function _estiloBlanco(el){
+  el.style.background='#ffffff'; el.style.color='#1e293b'; el.style.boxShadow='none'; el.style.margin='0'; el.style.boxSizing='border-box';
+  [['--ink','#1e293b'],['--ink2','#475569'],['--ink3','#64748b'],['--brd','#d5dbe5'],['--surf','#ffffff'],['--surf2','#f1f5f9'],['--acc2','#15803d'],['--red','#b91c1c']].forEach(([k,v])=>el.style.setProperty(k,v));
+}
+async function _capturarTarjeta(id,ancho){
+  const el=document.getElementById(id);
+  if(!el) throw new Error('No se encuentra el bloque en pantalla');
+  if(typeof html2canvas!=='function') throw new Error('Falta la librería de imagen (¿sin conexión?)');
+  const clone=el.cloneNode(true);
+  clone.removeAttribute('id');
+  clone.querySelectorAll('.noexp').forEach(n=>n.remove());
+  clone.querySelectorAll('details').forEach(d=>{ d.setAttribute('open',''); });
+  clone.querySelectorAll('div').forEach(d=>{ if(d.style&&(d.style.overflowX==='auto'||d.style.overflowY==='auto')){ d.style.overflow='visible'; d.style.maxHeight='none'; } });
+  _estiloBlanco(clone); clone.style.width=(ancho||1100)+'px'; clone.style.borderRadius='0'; clone.style.border='none';
+  const wrap=document.createElement('div');
+  wrap.style.cssText='position:fixed;top:0;left:0;z-index:-1;opacity:0.01;pointer-events:none;background:#fff;';
+  wrap.appendChild(clone); document.body.appendChild(wrap);
+  await new Promise(r=>setTimeout(r,200));
+  try{
+    const canvas=await html2canvas(clone,{scale:2,useCORS:true,allowTaint:true,backgroundColor:'#ffffff',logging:false});
+    return {canvas, texto:clone.innerText};
+  } finally { document.body.removeChild(wrap); }
+}
+function _bajarBlob(blob,nombre){ const u=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=u; a.download=nombre; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(()=>URL.revokeObjectURL(u),4000); }
+function _panelImagen(blob,nombre,titulo){
+  const imgUrl=URL.createObjectURL(blob);
+  const imgFile=new File([blob],nombre,{type:'image/png'});
+  const abrir=()=>{
+    const panel=document.createElement('div');
+    panel.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem';
+    const bt=(id,bg,t)=>'<button id="'+id+'" style="background:'+bg+';color:#fff;border:none;border-radius:10px;padding:.8rem;font-weight:700;font-size:.9rem;cursor:pointer">'+t+'</button>';
+    panel.innerHTML='<div style="background:#fff;border-radius:16px;padding:1.2rem;max-width:860px;width:100%;font-family:system-ui;max-height:92vh;overflow:auto">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem"><b style="font-size:1rem;color:#1e293b">'+titulo+'</b><button id="xi-close" style="background:none;border:none;font-size:1.2rem;cursor:pointer">✕</button></div>'
+      +'<img src="'+imgUrl+'" style="width:100%;border-radius:10px;margin-bottom:1rem;box-shadow:0 2px 12px rgba(0,0,0,.15)">'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">'+bt('xi-wa','#25D366','📱 WhatsApp')+bt('xi-em','#2563eb','📧 Email')+bt('xi-cp','#7c3aed','📋 Copiar')+bt('xi-dl','#475569','⬇️ Descargar')+'</div></div>';
+    document.body.appendChild(panel);
+    const close=()=>{ if(panel.parentNode) document.body.removeChild(panel); URL.revokeObjectURL(imgUrl); };
+    document.getElementById('xi-close').onclick=close;
+    panel.addEventListener('click',ev=>{ if(ev.target===panel) close(); });
+    document.getElementById('xi-wa').onclick=async()=>{
+      try{ await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); window.open('https://web.whatsapp.com','_blank'); showAlert('Imagen copiada — pégala en WhatsApp con Ctrl+V'); }
+      catch(ex){ _bajarBlob(blob,nombre); showAlert('Descargada — adjúntala en WhatsApp con el clip 📎'); }
+      close();
+    };
+    document.getElementById('xi-em').onclick=()=>{ _bajarBlob(blob,nombre); setTimeout(()=>{ window.location.href='mailto:?subject='+encodeURIComponent(titulo); },500); close(); };
+    document.getElementById('xi-cp').onclick=async()=>{
+      try{ await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); showAlert('✅ Imagen copiada — pega con Ctrl+V donde quieras'); }
+      catch(ex){ showAlert('No se pudo copiar','err'); }
+      close();
+    };
+    document.getElementById('xi-dl').onclick=()=>{ _bajarBlob(blob,nombre); showAlert('✅ Imagen descargada'); close(); };
+  };
+  return (async()=>{
+    if(navigator.share && navigator.canShare && navigator.canShare({files:[imgFile]})){
+      try{ await navigator.share({files:[imgFile], title:titulo}); URL.revokeObjectURL(imgUrl); return; }
+      catch(ex){ if(ex.name==='AbortError'){ URL.revokeObjectURL(imgUrl); return; } }
+    }
+    abrir();
+  })();
+}
+async function exportarTarjetaImagen(id,nombre,titulo,ancho){
+  try{ showAlert('⏳ Generando imagen...'); const r=await _capturarTarjeta(id,ancho); r.canvas.toBlob(b=>_panelImagen(b,nombre+'.png',titulo),'image/png',0.95); }
+  catch(err){ showAlert('Error: '+err.message,'err'); console.error(err); }
+}
+async function exportarTarjetaPDF(id,nombre,titulo,ancho){
+  try{
+    if(!window.jspdf){ showAlert('Cargando librería PDF...','err'); return; }
+    showAlert('⏳ Generando PDF...');
+    const r=await _capturarTarjeta(id,ancho); const canvas=r.canvas;
+    const {jsPDF}=window.jspdf; const ap=canvas.width>canvas.height;
+    const doc=new jsPDF({orientation:ap?'landscape':'portrait',unit:'mm',format:'a4'});
+    const pw=ap?297:210, ph=ap?210:297, m=8;
+    const k=Math.min((pw-2*m)/canvas.width,(ph-2*m)/canvas.height);
+    const w=canvas.width*k, hh=canvas.height*k;
+    doc.addImage(canvas.toDataURL('image/jpeg',0.92),'JPEG',(pw-w)/2,m,w,hh,undefined,'FAST');
+    dlDialog={blob:doc.output('blob'), filename:nombre+'.pdf', title:titulo};
+    S.modal='dl'; rerender();
+  }catch(err){ showAlert('Error: '+err.message,'err'); console.error(err); }
+}
+async function compartirTarjetaTexto(id,titulo,textoFijo){
+  try{
+    let texto=textoFijo; if(!texto){ const r=await _capturarTarjeta(id,1100); texto=titulo+'\n\n'+r.texto.replace(/\n{3,}/g,'\n\n'); }
+    try{ if(navigator.share){ await navigator.share({title:titulo,text:texto}); return; } }catch(e){ if(e&&e.name==='AbortError') return; }
+    await navigator.clipboard.writeText(texto); showAlert('📋 Texto copiado — pégalo donde quieras');
+  }catch(err){ showAlert('No se pudo compartir ni copiar: '+err.message,'err'); }
+}
+// Añade a una tarjeta (elemento) su fila de botones 📷 Imagen · 📄 PDF · 📤 Texto
+function conExportar(nodo,id,nombre,titulo,textoFijo){
+  if(!nodo) return nodo;
+  nodo.id=id;
+  nodo.appendChild(h('div',{class:'noexp',style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'.4rem',marginTop:'.7rem'}},
+    h('button',{class:'btn btn-gh btn-sm',on:{click:()=>exportarTarjetaImagen(id,nombre,titulo)}},'📷 Imagen'),
+    h('button',{class:'btn btn-gh btn-sm',on:{click:()=>exportarTarjetaPDF(id,nombre,titulo)}},'📄 PDF'),
+    h('button',{class:'btn btn-gh btn-sm',on:{click:()=>compartirTarjetaTexto(id,titulo,textoFijo)}},'📤 Texto')));
+  return nodo;
+}
+
+// ═════ TimerPro frente a la nómina real: dos columnas con marcas de acierto ═════
+function datosPrediccionVsReal(mesKey,app,payslipsDelMes){
+  const ps=(payslipsDelMes||[])[0]; if(!ps||!ps.extracted||!(+ps.extracted.salarioNeto)) return null;
+  const ex=ps.extracted, P=pctsRetencionCiclo(mesKey), sim=simularNomina(app,P.irpf,P.ss);
+  const irpfR=+ex.retencionIRPF||0, ssR=+ex.retencionSS||0;
+  const filas=[
+    {n:'Total devengado', tp:sim.brutoTotal, re:+ex.salarioBruto||0},
+    {n:'IRPF', tp:sim.dedIRPF, re:irpfR, tpx:' ('+P.irpf.toFixed(2).replace('.',',')+' %)', rex:(+ex.salarioBruto>0&&irpfR>0)?' ('+(irpfR/(+ex.salarioBruto)*100).toFixed(2).replace('.',',')+' %)':''},
+    {n:'Seg. Social', tp:sim.dedSS, re:ssR},
+    {n:'Total deducciones', tp:sim.dedIRPF+sim.dedSS, re:irpfR+ssR},
+    {n:'LÍQUIDO', tp:sim.liquido, re:+ex.salarioNeto, fuerte:true}
+  ];
+  filas.forEach(f=>{ f.d=Math.round((f.re-f.tp)*100)/100; f.pct=f.re>0?Math.abs(f.d)/f.re*100:0; f.nivel=f.pct<=1?'v':(f.pct<=5?'a':'r'); });
+  return {ps,filas,liq:filas[filas.length-1],fileName:ps.fileName};
+}
+function renderPrediccionVsRealCard(mesKey,app,payslipsDelMes){
+  const T0='#1e293b';
+  const caja=(...hijos)=>{ const c=h('div',{class:'card',style:{background:'#ffffff',color:T0}},...hijos); _estiloBlanco(c); return c; };
+  const titulo=h('div',{class:'sec-title'},'🎯 Lo que predijo TimerPro frente a la nómina real · '+periodoLabel(mesKey));
+  let D=null; try{ D=datosPrediccionVsReal(mesKey,app,payslipsDelMes); }catch(e){ D=null; }
+  if(!D) return conExportar(caja(titulo,h('div',{style:{fontSize:'.78rem',color:'var(--ink3)'}},'Sube la nómina real de este ciclo (bloque ②) y aquí verás, en una sola imagen, lo que predijo TimerPro y lo que dice la nómina, con marcas de acierto.')),'cmp-vsreal-card','prediccion_vs_nomina_'+mesKey,'Predicción frente a nómina real');
+  const col={v:['#bbf7d0','#166534','🟢'],a:['#fde68a','#92400e','🟡'],r:['#fecaca','#b91c1c','🔴']};
+  const sg=v=>(v>=0?'+':'−')+eur(Math.abs(v));
+  const celda=(txt,fuerte,bg)=>h('div',{style:{padding:'.32rem .5rem',borderBottom:'1px solid #e2e8f0',fontSize:fuerte?'.88rem':'.78rem',fontWeight:fuerte?900:600,background:bg||'transparent',display:'flex',justifyContent:'space-between',gap:'.4rem'}},...txt);
+  const panel=(tit,color,fondo,key)=>h('div',{style:{border:'2px solid '+T0,borderRadius:'12px',overflow:'hidden',background:'#fff'}},
+    h('div',{style:{background:color,color:'#fff',padding:'.4rem .6rem',fontWeight:800,fontSize:'.82rem'}},tit),
+    ...D.filas.map(f=>celda([h('span',{},f.n),h('span',{style:{whiteSpace:'nowrap'}},eur(key==='tp'?f.tp:f.re)+(key==='tp'?(f.tpx||''):(f.rex||'')))],f.fuerte,f.fuerte?fondo:null)));
+  const marcas=h('div',{style:{display:'flex',flexDirection:'column',justifyContent:'flex-end',gap:'.18rem',minWidth:'118px',paddingTop:'1.9rem'}},
+    h('div',{style:{fontSize:'.58rem',color:'#64748b',textAlign:'center',marginBottom:'.15rem'}},'diferencia: lo que tiene la nómina real de más (+) o de menos (−)'),
+    ...D.filas.map(f=>h('div',{style:{background:col[f.nivel][0],color:col[f.nivel][1],borderRadius:'8px',padding:f.fuerte?'.4rem .3rem':'.22rem .3rem',fontSize:f.fuerte?'.74rem':'.68rem',fontWeight:900,textAlign:'center'}},'real '+sg(f.d)+' '+col[f.nivel][2]+(f.fuerte?' · '+f.pct.toFixed(1).replace('.',',')+' %':''))));
+  const L=D.liq;
+  const acierto=Math.max(0,100-L.pct);
+  const resumen=L.nivel==='v'?'el líquido lo acertamos al '+acierto.toFixed(1).replace('.',',')+' % ('+eur(Math.abs(L.d))+' de diferencia)':
+    L.nivel==='a'?'nos hemos acercado: el líquido difiere un '+L.pct.toFixed(1).replace('.',',')+' % ('+eur(Math.abs(L.d))+')':
+    'el líquido difiere un '+L.pct.toFixed(1).replace('.',',')+' % ('+eur(Math.abs(L.d))+'): hay que revisar qué falla';
+  const caja2=h('div',{style:{border:'2px solid '+T0,borderRadius:'12px',padding:'.55rem .75rem',marginTop:'.6rem',fontSize:'.8rem',lineHeight:1.6}},
+    h('div',{style:{fontWeight:900,color:col[L.nivel][1],fontSize:'.88rem'}},'Resultado: '+resumen),
+    h('div',{},'🟢 acertado (hasta 1 %) · 🟡 cerca (hasta 5 %) · 🔴 lejos. Bruto y retenciones pueden salir lejos aunque el líquido coincida: la empresa compone y retiene la nómina de otra forma.'));
+  const cuerpo=h('div',{style:{display:'grid',gridTemplateColumns:'1fr auto 1fr',gap:'.5rem',alignItems:'start'}},
+    panel('TIMERPRO · simulación','#2563eb','#eff6ff','tp'),marcas,panel('NÓMINA REAL · '+(D.fileName||'tu nómina'),'#ea580c','#fff7ed','re'));
+  const nodo=caja(titulo,h('div',{style:{overflowX:'auto'}},h('div',{style:{minWidth:'560px'}},cuerpo)),caja2);
+  conExportar(nodo,'cmp-vsreal-card','prediccion_vs_nomina_'+mesKey,'Predicción frente a nómina real · '+periodoLabel(mesKey),
+    'Predicción de TimerPro frente a la nómina real · '+periodoLabel(mesKey)+'\n\n'+D.filas.map(f=>f.n+': TimerPro '+eur(f.tp)+' · Nómina real '+eur(f.re)+' · diferencia real '+sg(f.d)+' '+col[f.nivel][2]).join('\n')+'\n\nResultado: '+resumen);
+  // Las dos nóminas en la misma imagen
+  nodo.lastChild.appendChild(h('button',{class:'btn btn-pur btn-sm',style:{gridColumn:'1 / -1'},on:{click:()=>exportarDosNominasImagen(mesKey,app,payslipsDelMes)}},'🖼 Las dos nóminas en una sola imagen'));
+  return nodo;
+}
+// Imagen con la nómina simulada por TimerPro y la nómina real (foto/PDF) una al lado de la otra,
+// y debajo las marcas de acierto.
+async function exportarDosNominasImagen(mesKey,app,payslipsDelMes){
+  try{
+    if(typeof html2canvas!=='function') throw new Error('Falta la librería de imagen (¿sin conexión?)');
+    showAlert('⏳ Preparando las dos nóminas...');
+    const ps=(payslipsDelMes||[])[0];
+    let imgReal=null;
+    if(ps&&ps.dataUrl){
+      try{
+        if((ps.fileType||'').includes('pdf')||/^data:application\/pdf/.test(ps.dataUrl)){
+          const b=dataURLtoBlob(ps.dataUrl); imgReal=await _pdfPaginaAImagen(new File([b],'nomina.pdf',{type:'application/pdf'}));
+        } else imgReal=ps.dataUrl;
+      }catch(e){ imgReal=null; }
+    }
+    const tabla=await _capturarTarjeta('cmp-vsreal-card',1620);
+    const tablaUrl=tabla.canvas.toDataURL('image/png');
+    const wrap=document.createElement('div');
+    wrap.style.cssText='position:fixed;top:0;left:0;z-index:-1;opacity:0.01;pointer-events:none;background:#fff;';
+    wrap.innerHTML='<div style="width:1620px;background:#fff;font-family:Arial,sans-serif;color:#1e293b;padding:20px;box-sizing:border-box">'
+      +'<div style="font-size:22px;font-weight:900;margin-bottom:10px">Nómina de '+periodoLabel(mesKey)+' · lo que predijo TimerPro frente a la nómina real</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">'
+      +'<div><div style="background:#2563eb;color:#fff;font-weight:800;padding:6px 10px;border-radius:8px 8px 0 0">TIMERPRO · simulación</div><div style="border:2px solid #2563eb;overflow:hidden">'+buildNominaOficialHtml(mesKey,app).replace('width:780px;max-width:100%','width:100%')+'</div></div>'
+      +'<div><div style="background:#ea580c;color:#fff;font-weight:800;padding:6px 10px;border-radius:8px 8px 0 0">NÓMINA REAL</div><div style="border:2px solid #ea580c">'
+      +(imgReal?'<img src="'+imgReal+'" style="width:100%;display:block">':'<div style="padding:30px;font-size:15px;color:#64748b">La nómina original no está guardada en este dispositivo (solo sus datos).</div>')
+      +'</div></div></div>'
+      +'<img src="'+tablaUrl+'" style="width:100%;display:block;margin-top:16px;border:0"></div>';
+    document.body.appendChild(wrap);
+    await new Promise(r=>setTimeout(r,500));
+    let canvas; try{ canvas=await html2canvas(wrap.firstChild,{scale:1.5,useCORS:true,allowTaint:true,backgroundColor:'#ffffff',logging:false}); } finally{ document.body.removeChild(wrap); }
+    canvas.toBlob(b=>_panelImagen(b,'dos_nominas_'+mesKey+'.png','Las dos nóminas · '+periodoLabel(mesKey)),'image/png',0.92);
+  }catch(err){ showAlert('Error: '+err.message,'err'); console.error(err); }
+}
+
 // ── Cómo reparte la empresa la nómina: cómo llega a los 2.100 € y dónde mete los extras ──
 // Usa solo datos reales ya guardados: líneas leídas de la nómina real y lo que calcula TimerPro.
 function renderRepartoEmpresaCard(mesKey, app, payslipsDelMes){
@@ -11338,7 +11519,7 @@ function renderRepartoEmpresaCard(mesKey, app, payslipsDelMes){
     fila('Líneas variables de la nómina menos tus extras de TimerPro',(sumV-totTP>=0?'+':'−')+eur(Math.abs(sumV-totTP)),false),
     totTP>0?fila('De tus '+eur(totTP)+' de extras, si el fijo llega entero, te quedan netos',eur(Math.max(netoSobrePacto,0))+' ('+fmtP(Math.max(netoSobrePacto,0)/totTP*100)+')',true):null);
   const nota=h('div',{style:{fontSize:'.68rem',color:'var(--ink3)',marginTop:'.2rem'}},'Las líneas y su tipo (fijo/variable) son los que la app leyó de tu nómina real; puedes cambiar el tipo de cada línea en «Comparativa entre nóminas».');
-  return caja(titulo,A,B,C,nota);
+  return conExportar(caja(titulo,A,B,C,nota),'cmp-reparto-card','como_reparte_la_empresa_'+mesKey,'Cómo reparte la empresa tu nómina · '+periodoLabel(mesKey));
 }
 
 // Comparación directa del ciclo: cada concepto de TimerPro frente a lo que
@@ -12259,7 +12440,7 @@ function renderNominas(){
     // nómina real, usando lo registrado hasta hoy + Sueldo Base/Guardia fijos
     // y un % de IRPF/Seg. Social aproximado (calculado solo a partir de las
     // nóminas reales que ya se han subido y analizado, o editable a mano).
-    acordeonNomina('sim','🧮 Simulación de la nómina (IRPF, S.S., líquido)',renderSimulacionNomina(mesKey, app),false),
+    acordeonNomina('sim','🧮 Simulación de la nómina (IRPF, S.S., líquido)',conExportar(renderSimulacionNomina(mesKey, app),'cmp-simulacion-card','simulacion_nomina_'+mesKey,'Simulación de la nómina · '+periodoLabel(mesKey)),false),
     // Día a día del periodo (mismo formato que "Día a día" de Resumen) + mismas exportaciones que Resumen,
     // con previsualización en todos los formatos antes de guardar/compartir (vía el diálogo Abrir/Guardar/Compartir).
     acordeonNomina('dia','📅 Día a día del ciclo',h('div',{class:'card'},
@@ -12322,10 +12503,11 @@ function renderNominas(){
 
     zonaNomina('#16a34a','③ COMPARACIÓN','TimerPro frente a la empresa y a la nómina real',[
       renderComparacionDirectaCard(mesKey, app, payslipsDelMes),
+      acordeonNomina('vsreal','🎯 Lo que predijo TimerPro frente a la nómina real',renderPrediccionVsRealCard(mesKey, app, payslipsDelMes),true),
       acordeonNomina('reparto','📋 Cómo reparte la empresa tu nómina (2.100 € + extras)',renderRepartoEmpresaCard(mesKey, app, payslipsDelMes),true),
-      acordeonNomina('compNom','⚖️ Comparativa entre nóminas (nómina real frente a TimerPro, pacto)',renderComparativaNominasCard(mesKey, app, payslipsDelMes),false),
-      acordeonNomina('pred','🔮 Predicción y patrón de la empresa',renderPrediccionModusOperandiCard(mesKey, app, payslipsDelMes),false),
-      acordeonNomina('hist','📈 Histórico de nóminas',renderComparativaNominas(),false)
+      acordeonNomina('compNom','⚖️ Comparativa entre nóminas (nómina real frente a TimerPro, pacto)',conExportar(renderComparativaNominasCard(mesKey, app, payslipsDelMes),'cmp-entrenominas-card','comparativa_entre_nominas_'+mesKey,'Comparativa entre nóminas · '+periodoLabel(mesKey)),false),
+      acordeonNomina('pred','🔮 Predicción y patrón de la empresa',conExportar(renderPrediccionModusOperandiCard(mesKey, app, payslipsDelMes),'cmp-prediccion-card','prediccion_empresa_'+mesKey,'Predicción y patrón de la empresa · '+periodoLabel(mesKey)),false),
+      acordeonNomina('hist','📈 Histórico de nóminas',conExportar(renderComparativaNominas(),'cmp-historico-card','historico_nominas','Histórico de nóminas'),false)
     ]),
 
     acordeonNomina('chat','💬 Chat del ciclo',h('div',{class:'card'},
