@@ -1708,7 +1708,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261108-final19'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261108-final20'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -11501,25 +11501,63 @@ function renderRepartoEmpresaCard(mesKey, app, payslipsDelMes){
     h('div',{style:{fontWeight:900,fontSize:'.82rem',color:color,marginBottom:'.25rem'}},num+' '+tit),...hijos);
   const okFijo=pact>0 && sumF>=pact-1;
   const netoSobrePacto=Math.round((neto-pact)*100)/100;
+  // Línea "mezclada": la empresa mete parte del pacto dentro de una línea variable (p. ej. Gratificación)
+  const mezcla=!okFijo && vars.length>0;
+  const brutoE=hist.brutoEmp||0;
   const A=bloque('①','#2563eb','Para llegar a los '+eur(pact)+' pactados (Sueldo Base + Guardia)',
     ...(fijos.length?fijos.map(c=>fila(c.concepto||'(sin nombre)',eur(c.importe))):[h('div',{style:{fontSize:'.76rem',color:'var(--ink3)'}},'Ninguna línea de la nómina está marcada como fija todavía (puedes marcarlas en «Comparativa entre nóminas»).')]),
     fila('Suma de las líneas fijas',eur(sumF),true),
     fila('Pactado',eur(pact),false),
-    fila(okFijo?'✔ Las líneas fijas llegan a lo pactado':'⚠️ Las líneas fijas NO llegan a lo pactado',(sumF-pact>=0?'+':'−')+eur(Math.abs(sumF-pact)),true,okFijo?'#15803d':'#b91c1c'),
+    okFijo?fila('✔ Las líneas fijas llegan a lo pactado',(sumF-pact>=0?'+':'−')+eur(Math.abs(sumF-pact)),true,'#15803d')
+      :(mezcla?h('div',{style:{fontSize:'.78rem',lineHeight:1.5,background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:'8px',padding:'.4rem .55rem',margin:'.3rem 0',color:T0}},
+          'ℹ️ Esta nómina no separa los '+eur(pact)+' en líneas fijas: parte del pacto va mezclada dentro de «'+(vars.slice().sort((x,y)=>y.importe-x.importe)[0].concepto||'línea variable')+'». Con una sola nómina no se puede saber cuánto es pacto y cuánto es extra. Lo que sí se puede comprobar es el líquido (abajo) y, con varios meses, la tabla del bloque ④.')
+        :fila('⚠️ Las líneas fijas NO llegan a lo pactado',(sumF-pact>=0?'+':'−')+eur(Math.abs(sumF-pact)),true,'#b91c1c')),
     fila('Líquido real de la nómina',eur(neto)),
-    fila('Líquido real menos los 2.100 pactados',(netoSobrePacto>=0?'+':'−')+eur(Math.abs(netoSobrePacto)),true,netoSobrePacto>=0?'#15803d':'#b91c1c'));
+    fila('Líquido real menos los '+eur(pact)+' pactados',(netoSobrePacto>=0?'+':'−')+eur(Math.abs(netoSobrePacto)),true,netoSobrePacto>=0?'#15803d':'#b91c1c'));
   const B=bloque('②','#f97316','Tus extras de este ciclo según TimerPro (lo que has fichado)',
     fila('Horas extra / nocturnas / festivas',eur(horasTP)),fila('Dietas',eur(dietasTP)),fila('Viajes y transporte',eur(viajesTP)),
     otrosTP?fila('Otros conceptos',eur(otrosTP)):null,fila('Total de extras',eur(totTP),true));
-  const pctRet=sumV>0?ret/sumV*100:null;
-  const C=bloque('③','#16a34a','Cómo los reparte la empresa en la nómina',
+  const C=bloque('③','#16a34a','Cómo los paga la empresa en la nómina',
     ...(vars.length?vars.map(c=>fila(c.concepto||'(sin nombre)',eur(c.importe))):[h('div',{style:{fontSize:'.76rem',color:'var(--ink3)'}},'No hay líneas variables en esta nómina.')]),
     fila('Suma de las líneas variables',eur(sumV),true),
-    fila('Retenciones totales (IRPF + S.S.)',eur(ret)+(pctRet!=null?' · equivale a un '+fmtP(pctRet)+' si solo recayera sobre lo variable':'')),
-    fila('Líneas variables de la nómina menos tus extras de TimerPro',(sumV-totTP>=0?'+':'−')+eur(Math.abs(sumV-totTP)),false),
-    totTP>0?fila('De tus '+eur(totTP)+' de extras, si el fijo llega entero, te quedan netos',eur(Math.max(netoSobrePacto,0))+' ('+fmtP(Math.max(netoSobrePacto,0)/totTP*100)+')',true):null);
-  const nota=h('div',{style:{fontSize:'.68rem',color:'var(--ink3)',marginTop:'.2rem'}},'Las líneas y su tipo (fijo/variable) son los que la app leyó de tu nómina real; puedes cambiar el tipo de cada línea en «Comparativa entre nóminas».');
-  return conExportar(caja(titulo,A,B,C,nota),'cmp-reparto-card','como_reparte_la_empresa_'+mesKey,'Cómo reparte la empresa tu nómina · '+periodoLabel(mesKey));
+    h('div',{style:{fontSize:'.72rem',color:'var(--ink3)',margin:'.15rem 0'}},'Dietas, horas extra y viajes no aparecen como líneas sueltas en esta nómina'+(vars.length?': lo más probable es que vayan dentro de las líneas variables (confírmalo con la empresa).':'.')),
+    fila('Retenciones totales (IRPF + S.S.)',eur(ret)+(brutoE>0?' · '+fmtP(ret/brutoE*100)+' del total devengado':'')),
+    totTP>0?fila('Si los '+eur(pact)+' netos llegan íntegros, de tus '+eur(totTP)+' de extras te quedan netos',eur(Math.max(netoSobrePacto,0))+' ('+fmtP(Math.max(netoSobrePacto,0)/totTP*100)+')',true):null,
+    h('div',{style:{fontSize:'.68rem',color:'var(--ink3)',marginTop:'.15rem'}},'Es una cuenta de neto: no se puede comprobar con una sola nómina que los '+eur(pact)+' lleguen íntegros.'));
+  // ④ Mes a mes: qué hace la empresa con tus extras a lo largo de las nóminas subidas
+  let H=[]; try{ H=historicoNominas().filter(x=>x.netoEmp>0); }catch(e){ H=[]; }
+  const filasM=H.map(x=>{
+    const a=x.appMes||{}; const ex=(a.importeExtra||0)+(a.importeNocturnas||0)+(a.importeFestivas||0)+(a.dieta||0)+(a.transporte||0)+(a.viajes||0)+(a.otrosConceptos||0);
+    const pc=((a.sueldoBase||0)+(a.guardia||0))||pact; const sobre=Math.round((x.netoEmp-pc)*100)/100;
+    return {mes:x.mes,ex,pc,var:x.sumaVariable,neto:x.netoEmp,sobre,pct:ex>0?sobre/ex*100:null};
+  }).sort((p,q)=>p.mes.localeCompare(q.mes));
+  const celdaM=(t,al,neg)=>h('td',{style:{padding:'.22rem .3rem',fontSize:'.72rem',textAlign:al||'right',whiteSpace:'nowrap',borderBottom:'1px solid #e2e8f0',color:neg?'#b91c1c':T0}},t);
+  const cabM=t=>h('th',{style:{padding:'.25rem .3rem',fontSize:'.66rem',background:'#1e293b',color:'#fff',textAlign:'center',border:'1px solid #d5dbe5'}},t);
+  const hijosD=[];
+  if(filasM.length<2){
+    hijosD.push(h('div',{style:{fontSize:'.76rem',color:'var(--ink3)'}},'Con una sola nómina no se puede ver cómo reacciona la empresa a tus extras. Sube más nóminas de otros meses (en «Subir o ver la nómina real») y aquí aparecerá la comparación mes a mes.'));
+  } else {
+    hijosD.push(h('div',{style:{overflowX:'auto'}},h('table',{style:{borderCollapse:'collapse',width:'100%',minWidth:'520px'}},
+      h('thead',{},h('tr',{},cabM('Ciclo'),cabM('Tus extras (TimerPro)'),cabM('Líneas variables nómina'),cabM('Líquido real'),cabM('Líquido − pactado'),cabM('Te llega de tus extras'))),
+      h('tbody',{},...filasM.map(f=>h('tr',{style:{background:f.mes===mesKey?'#fef3c7':'transparent'}},celdaM(periodoLabel(f.mes),'left'),celdaM(eur(f.ex)),celdaM(eur(f.var)),celdaM(eur(f.neto)),celdaM((f.sobre>=0?'+':'−')+eur(Math.abs(f.sobre)),'right',f.sobre<0),celdaM(f.pct==null?'—':fmtP(f.pct)))))))); 
+    const pcts=filasM.filter(f=>f.pct!=null).map(f=>f.pct);
+    if(pcts.length){ const media=pcts.reduce((x,y)=>x+y,0)/pcts.length; hijosD.push(fila('Media de lo que te llega neto de tus extras ('+pcts.length+' ciclos)',fmtP(media)+' · de '+fmtP(Math.min(...pcts))+' a '+fmtP(Math.max(...pcts)),true)); }
+    // regresión sencilla: línea variable frente a tus extras (solo si hay ≥3 ciclos)
+    const pts=filasM.filter(f=>f.var>0);
+    if(pts.length>=3){
+      const n=pts.length, mx=pts.reduce((q,f)=>q+f.ex,0)/n, my=pts.reduce((q,f)=>q+f.var,0)/n;
+      let sxx=0,sxy=0,syy=0; pts.forEach(f=>{ sxx+=(f.ex-mx)**2; sxy+=(f.ex-mx)*(f.var-my); syy+=(f.var-my)**2; });
+      if(sxx>0&&syy>0){ const bb=sxy/sxx, aa=my-bb*mx, r2=(sxy*sxy)/(sxx*syy);
+        hijosD.push(h('div',{style:{fontSize:'.76rem',lineHeight:1.5,background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:'8px',padding:'.4rem .55rem',marginTop:'.3rem',color:T0}},
+          (r2>=0.5&&bb>0)
+            ? '📈 Con '+n+' ciclos, las líneas variables siguen a tus extras: por cada 100 € de extras suben unos '+Math.round(bb*100)+' € y, con 0 € de extras, quedarían en unos '+eur(Math.max(aa,0))+' (estimación, ajuste r² = '+r2.toFixed(2).replace('.',',')+').'
+            : '📈 Con '+n+' ciclos no se ve una relación clara entre tus extras y las líneas variables (r² = '+r2.toFixed(2).replace('.',',')+'): no se puede estimar qué parte es fija.'));
+      }
+    } else hijosD.push(h('div',{style:{fontSize:'.72rem',color:'var(--ink3)',marginTop:'.25rem'}},'Hacen falta al menos 3 ciclos con nómina para estimar qué parte de la línea variable es fija.'));
+  }
+  const D=bloque('④','#7c3aed','Mes a mes: qué hace la empresa con tus extras',...hijosD);
+  const nota=h('div',{style:{fontSize:'.68rem',color:'var(--ink3)',marginTop:'.2rem'}},'Las líneas y su tipo (fijo/variable) son las que la app leyó de tus nóminas reales; puedes cambiar el tipo de cada línea en «Comparativa entre nóminas».');
+  return conExportar(caja(titulo,A,B,C,D,nota),'cmp-reparto-card','como_reparte_la_empresa_'+mesKey,'Cómo reparte la empresa tu nómina · '+periodoLabel(mesKey));
 }
 
 // Comparación directa del ciclo: cada concepto de TimerPro frente a lo que
