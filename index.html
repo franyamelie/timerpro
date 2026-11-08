@@ -1708,7 +1708,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261107-final16'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261108-final17'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -11247,6 +11247,50 @@ function filaComparativaNomina(label, valorApp, valorEmp, esEuro){
 
 // ── Zonas de la pestaña Nóminas: azul = lo que calcula TimerPro, naranja = lo
 // que dice la empresa, verde = cuánto nos hemos acercado ──
+// ── Pestaña Nóminas simplificada: bloques plegables (no se pierde nada, solo se pliega) ──
+let nomAbiertos={};
+function acordeonNomina(key,titulo,hijo,abiertoPorDefecto){
+  if(!hijo) return null;
+  const abierto=(nomAbiertos[key]===undefined)?!!abiertoPorDefecto:!!nomAbiertos[key];
+  return h('details',Object.assign({style:{border:'1px solid var(--brd)',borderRadius:'var(--r2)',margin:'.4rem 0',background:'var(--surf)',overflow:'hidden'},
+      on:{toggle:ev=>{ nomAbiertos[key]=ev.target.open; }}},abierto?{open:true}:{}),
+    h('summary',{style:{cursor:'pointer',padding:'.55rem .7rem',fontWeight:700,fontSize:'.85rem',listStyle:'revert'}},titulo),
+    h('div',{style:{padding:'0 .3rem .3rem'}},hijo));
+}
+function chipNomina(txt,bg,col){ return h('span',{style:{display:'inline-block',background:bg,color:col,borderRadius:'10px',padding:'.1rem .55rem',fontSize:'.7rem',fontWeight:800,margin:'.1rem .2rem .1rem 0'}},txt); }
+function estadoCicloNomina(mesKey,payslipsDelMes){
+  const doc=(S.empresaDocs||[]).filter(d=>d.mes===mesKey).sort((a,b)=>(b.uploadedAt||'').localeCompare(a.uploadedAt||''))[0];
+  let nDif=null;
+  try{ if(doc&&doc.items&&doc.items.length){ const r=calcularResultadoComparativa(doc.items,periodoRangoDe(mesKey)); nDif=(r.rows||[]).filter(x=>Math.abs(x.diff)>=0.01).length; } }catch(e){}
+  const V=['#dcfce7','#15803d'], A=['#fef3c7','#92400e'], R=['#fee2e2','#b91c1c'];
+  const chips=[
+    chipNomina('✔ Datos TimerPro',...V),
+    doc?chipNomina('✔ Documento empresa',...V):chipNomina('⏳ Documento empresa',...A),
+    payslipsDelMes.length?chipNomina('✔ Nómina real',...V):chipNomina('⏳ Nómina real',...A)
+  ];
+  if(nDif!==null) chips.push(nDif?chipNomina(nDif+' diferencia'+(nDif>1?'s':'')+' con la empresa',...R):chipNomina('✔ Sin diferencias',...V));
+  return h('div',{style:{marginTop:'.5rem'}},h('span',{style:{fontSize:'.72rem',color:'var(--ink2)',marginRight:'.3rem'}},'Estado del ciclo:'),...chips);
+}
+function tilesNomina(app){
+  const imp=(app.importeExtra||0)+(app.importeNocturnas||0)+(app.importeFestivas||0);
+  const hrs=(app.horasExtra||0)+(app.horasNocturnas||0)+(app.horasFestivas||0);
+  const k=(v,l,sub)=>h('div',{style:{background:'var(--surf2)',borderRadius:'10px',padding:'.45rem .3rem',textAlign:'center'}},
+    h('div',{style:{fontWeight:900,fontSize:'.95rem'}},v),h('div',{style:{fontSize:'.64rem',color:'var(--ink2)'}},l),sub?h('div',{style:{fontSize:'.6rem',color:'var(--ink3)'}},sub):null);
+  return h('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'.35rem',margin:'.2rem .2rem .4rem'}},
+    k(eur(imp),'Horas extra',fmtH(hrs)),k(eur(app.dieta||0),'Dietas'),k(eur((app.transporte||0)+(app.viajes||0)),'Viajes'),k(eur(totalPeriodo(app)),'Total calculado',(app.dias||0)+' jornadas'));
+}
+function documentosCicloNomina(mesKey,payslipsDelMes){
+  const doc=(S.empresaDocs||[]).filter(d=>d.mes===mesKey).sort((a,b)=>(b.uploadedAt||'').localeCompare(a.uploadedAt||''))[0];
+  const ps=payslipsDelMes[0];
+  const fila=(ic,lab,nombre,ok)=>h('div',{style:{display:'flex',justifyContent:'space-between',gap:'.5rem',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.45rem .6rem',margin:'.25rem .2rem',fontSize:'.8rem',background:'var(--surf)'}},
+    h('span',{},ic+' '+lab+(nombre?' · ':''),nombre?h('b',{},nombre):null),
+    h('span',{style:{fontWeight:800,color:ok?'#15803d':'#92400e',whiteSpace:'nowrap'}},ok?'✔ subido':'⏳ pendiente'));
+  return h('div',{},
+    fila('📎','Documento de la empresa',doc&&(doc.fileName||'subido'),!!doc),
+    fila('🧾','Nómina real',ps&&(ps.fileName||'subida'),!!ps),
+    h('div',{style:{fontSize:'.68rem',color:'var(--ink3)',margin:'.2rem .3rem .3rem'}},'Si algún dato cae fuera del ciclo 26→25, la app te lo pregunta antes de contarlo.'));
+}
+
 function zonaNomina(color, titulo, sub, hijos){
   return h('div',{style:{border:'3px solid '+color,borderRadius:'18px',padding:'.6rem .6rem .2rem',margin:'1rem 0',background:'color-mix(in srgb, '+color+' 9%, transparent)'}},
     h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',flexWrap:'wrap',gap:'.3rem',margin:'.1rem .3rem .4rem'}},
@@ -11482,7 +11526,9 @@ function renderComparacionDirectaCard(mesKey, app, payslipsDelMes){
     h('button',{class:'btn btn-gh btn-sm',on:{click:()=>exportarComparacionImagen(mesKey)}},'📷 Imagen'),
     h('button',{class:'btn btn-gh btn-sm',on:{click:()=>exportarComparacionPDF(mesKey)}},'📄 PDF'),
     h('button',{class:'btn btn-gh btn-sm',on:{click:()=>compartirComparacionTexto(mesKey,_txt)}},'📤 Texto')));
-  return h('div',{id:'cmp-directa-card',class:'card',style:{background:'#ffffff',color:'#1e293b','--ink':'#1e293b','--ink2':'#475569','--ink3':'#64748b','--brd':'#d5dbe5','--acc2':'#15803d','--red':'#b91c1c'}},...nodos);
+  const _card=h('div',{id:'cmp-directa-card',class:'card',style:{background:'#ffffff',color:'#1e293b'}},...nodos);
+  [['--ink','#1e293b'],['--ink2','#475569'],['--ink3','#64748b'],['--brd','#d5dbe5'],['--acc2','#15803d'],['--red','#b91c1c']].forEach(([k,v])=>_card.style.setProperty(k,v));
+  return _card;
 }
 
 function renderComparativaNominasCard(mesKey, app, payslipsDelMes){
@@ -12120,10 +12166,13 @@ function renderNominas(){
         on:{change:ev=>{ nominaMesActual=ev.target.value; rerender(); }}
       },
         ...meses.map(m=>h('option',{value:m,selected:m===mesKey},periodoLabel(m)))
-      )
+      ),
+      estadoCicloNomina(mesKey,payslipsDelMes)
     ),
 
-    zonaNomina('#3b82f6','🖥️ LO QUE CALCULA TIMERPRO','con tus jornadas, según vas metiendo días · ciclo 26→25',[
+    zonaNomina('#3b82f6','① LO QUE CALCULA TIMERPRO','con tus jornadas, según vas metiendo días · ciclo 26→25',[
+    tilesNomina(app),
+    acordeonNomina('totales','📊 Totales, Sueldo Base y Guardia (editar)',
     // Misma tarjeta sencilla de "Totales" que ya tenías y te gustaba —
     // solo se le han AÑADIDO dos campos editables (Sueldo Base y Guardia)
     // y una línea de Viajes/km, sin cambiar su forma.
@@ -12161,22 +12210,22 @@ function renderNominas(){
         h('button',{class:'btn btn-gh btn-sm',on:{click:()=>exportarResumenNominaPDF(mesKey,app)}},'📄 PDF'),
         h('button',{class:'btn btn-gh btn-sm',on:{click:()=>compartirResumenNomina(mesKey, resumenTotalesTexto(mesKey,app))}},'📤 Texto')
       )
-    ),
+    ),false),
 
     // Simulación aproximada de cómo iría quedando la nómina del periodo,
     // con la misma estructura (devengos → deducciones → líquido) que una
     // nómina real, usando lo registrado hasta hoy + Sueldo Base/Guardia fijos
     // y un % de IRPF/Seg. Social aproximado (calculado solo a partir de las
     // nóminas reales que ya se han subido y analizado, o editable a mano).
-    renderSimulacionNomina(mesKey, app),
+    acordeonNomina('sim','🧮 Simulación de la nómina (IRPF, S.S., líquido)',renderSimulacionNomina(mesKey, app),false),
     // Día a día del periodo (mismo formato que "Día a día" de Resumen) + mismas exportaciones que Resumen,
     // con previsualización en todos los formatos antes de guardar/compartir (vía el diálogo Abrir/Guardar/Compartir).
-    h('div',{class:'card'},
+    acordeonNomina('dia','📅 Día a día del ciclo',h('div',{class:'card'},
       h('div',{class:'sec-title'},'📅 Día a día de '+periodoLabel(mesKey)),
       diaADiaPeriodo || h('div',{style:{fontSize:'.78rem',color:'var(--ink3)'}},'Sin jornadas registradas en este periodo todavía.')
-    ),
+    ),false),
 
-    h('div',{class:'card'},
+    acordeonNomina('exp','📤 Exportar el ciclo (PDF, Excel, plantilla)',h('div',{class:'card'},
       h('div',{class:'sec-title'},'Exportar '+periodoLabel(mesKey)),
       h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.5rem'}},
         'Mismos formatos que en Resumen. Al pulsar "Abrir" en el siguiente paso puedes previsualizar el resultado antes de guardarlo o compartirlo.'),
@@ -12188,13 +12237,14 @@ function renderNominas(){
         h('button',{class:'btn btn-pur btn-full',on:{click:()=>exportPlantilla(periodoInicio, periodoFin, etiquetaPeriodo, tagPeriodo)}},'📥 Descargar plantilla en blanco'),
         h('button',{class:'btn btn-full',style:{background:'var(--surf2)',border:'1px solid var(--acc)',color:'var(--acc)'},on:{click:()=>openCustomExportParaPeriodo(mesKey)}},'🎛️ Exportación personalizada')
       )
-    ),
+    ),false),
 
-      renderResumenEmpresaCard(mesKey)
+      acordeonNomina('resEmp','🏢 Resumen del ciclo para la empresa',renderResumenEmpresaCard(mesKey),false)
     ]),
 
-    zonaNomina('#f97316','🏢 LO QUE DICE LA EMPRESA','aparece al cargar los documentos de este ciclo',[
-    h('div',{class:'card'},
+    zonaNomina('#f97316','② DOCUMENTOS DEL CICLO','lo que necesitas subir para cerrarlo',[
+    documentosCicloNomina(mesKey,payslipsDelMes),
+    acordeonNomina('subirNom','🧾 Subir o ver la nómina real',h('div',{class:'card'},
       h('div',{class:'sec-title'},'Subir nómina de '+periodoLabel(mesKey)),
       h('div',{style:{fontSize:'.78rem',color:'var(--ink2)',marginBottom:'.5rem'}},
         'Foto o PDF de la nómina — la IA la lee, detecta el mes y la compara con lo que ya tienes calculado aquí.'),
@@ -12223,19 +12273,19 @@ function renderNominas(){
                 p.uploadedAt?new Date(p.uploadedAt).toLocaleString('es-ES'):'')
             ))
           )
-    ),
+    ),payslipsDelMes.length===0),
 
-      renderComparativaEmpresaCard(mesKey),
-      renderComparativaNominasCard(mesKey, app, payslipsDelMes)
+      acordeonNomina('subirEmp','📎 Subir o ver el documento de la empresa',renderComparativaEmpresaCard(mesKey),!(S.empresaDocs||[]).some(d=>d.mes===mesKey))
     ]),
 
-    zonaNomina('#16a34a','🎯 CUÁNTO NOS HEMOS ACERCADO','TimerPro frente a la empresa y a la nómina real',[
+    zonaNomina('#16a34a','③ COMPARACIÓN','TimerPro frente a la empresa y a la nómina real',[
       renderComparacionDirectaCard(mesKey, app, payslipsDelMes),
-      renderPrediccionModusOperandiCard(mesKey, app, payslipsDelMes),
-      renderComparativaNominas()
+      acordeonNomina('compNom','⚖️ Comparativa entre nóminas (nómina real frente a TimerPro, pacto)',renderComparativaNominasCard(mesKey, app, payslipsDelMes),false),
+      acordeonNomina('pred','🔮 Predicción y patrón de la empresa',renderPrediccionModusOperandiCard(mesKey, app, payslipsDelMes),false),
+      acordeonNomina('hist','📈 Histórico de nóminas',renderComparativaNominas(),false)
     ]),
 
-    h('div',{class:'card'},
+    acordeonNomina('chat','💬 Chat del ciclo',h('div',{class:'card'},
       h('div',{class:'sec-title'},'💬 Chat de '+periodoLabel(mesKey)),
       h('div',{style:{fontSize:'.72rem',color:'var(--ink2)',marginBottom:'.4rem'}},'Este chat es independiente para cada mes y queda guardado.'),
       h('div',{id:'nomina-chat-msgs',style:{display:'flex',flexDirection:'column',gap:'.5rem',maxHeight:'40vh',overflowY:'auto',padding:'.3rem 0'}},
@@ -12257,7 +12307,7 @@ function renderNominas(){
         }),
         h('button',{class:'btn btn-g',on:{click:()=>enviarMensajeNomina(mesKey)}},'Enviar')
       )
-    )
+    ),false)
   );
 }
 
