@@ -1708,7 +1708,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261108-final21'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261111-final22'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -6527,6 +6527,133 @@ function openExportModal(mode){
   S.modal='dl';rerender();
 }
 
+/* ── RESUMEN A4 (un folio): vista aparte con casillas y contador de páginas A4 en vivo ── */
+function openResumenA4(){
+  const entries=getResumenEntries();
+  if(!entries.length){showAlert(S.resMode==='days'?'No hay jornadas en los días seleccionados':'No hay jornadas en el rango','err');return;}
+  const worker=workers.find(w=>w.id===activeWorkerId)||{};
+  const company=companies.find(c=>c.id===activeCompanyId)||{};
+  const liq=computeLiquidacion(entries,[]);
+  const byF={}; entries.forEach(e=>{byF[e.fecha]=e;});
+  const txt=s=>String(s||'').replace(/<br\s*\/?>/gi,' ').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
+  const D=liq.dayRows.map(r=>{
+    const e=byF[r.fecha]||{};
+    const fj=(e.fichajes||[]).filter(f=>f.entrada||f.salida);
+    const tasks=[]; const ots=[];
+    try{
+      (e.fichajes||[]).forEach((f,i)=>{tpTareasDeFichaje(e,i).forEach(t=>{ if(!tasks.some(x=>x.id===t.id)){tasks.push({id:t.id,t:t.titulo||'Tarea'}); if(t.otNumero) ots.push(String(t.otNumero));} });});
+    }catch(_){}
+    let ub=''; try{const u=JSON.parse(e.ubicacionEntrada||'null'); ub=(u&&u.label)||'';}catch(_){}
+    return {f:r.fecha.split('-').reverse().join('.')+' '+wday(r.fecha).slice(0,3),
+      h:fj.map(f=>(f.entrada||'?')+'–'+(f.salida||'?')).join(' / '),
+      hn:r.hN,he:r.hE,hno:r.hNoc,hfe:r.hFes,di:r.dieta,co:r.vCoche,ca:r.vCamion,otr:r.otros,tot:r.total,
+      tareas:tasks.map(x=>x.t).join(' · '),ot:ots.join(', '),ubic:ub,notas:txt(e.notas).slice(0,160)};
+  });
+  const M={titulo:(company.nombre||'TimerPro')+' — Resumen',periodo:resumenPeriodoLabel(),trabajador:worker.nombre||'',
+    tag:resumenFileTag(),tot:liq.totTotal,totHN:liq.totHN,totHE:liq.totHE,totD:liq.totD,totCo:liq.totTranspCoche,totCa:liq.totTranspCamion,totO:liq.totO+liq.totViaj+liq.totTranspOtro,
+    dietas:Object.keys(liq.dietaPrecios).map(k=>liq.dietaPrecios[k]+' × '+(+k).toFixed(2).replace('.',',')+' €').join(' + ')};
+  const json=o=>JSON.stringify(o).replace(/</g,'\\u003c');
+  const html=`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Resumen A4 — TimerPro</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#e5e9f0;font-family:Arial,Helvetica,sans-serif;color:#1e293b}
+.panel{background:#fff;padding:12px 14px;border-bottom:1px solid #cbd5e1;position:sticky;top:0;z-index:5}
+.panel label{display:inline-block;margin:4px 12px 4px 0;font-size:14px;white-space:nowrap}
+.panel h4{margin:6px 0 2px;font-size:12px;color:#475569;text-transform:uppercase}
+.status{margin-top:8px;padding:8px 10px;border-radius:8px;font-size:14px}
+.status.ok{background:#dcfce7;color:#166534}.status.warn{background:#fef3c7;color:#92400e}
+.status b{font-size:16px;margin-right:8px}
+.btns{margin-top:8px}.btns button{padding:8px 12px;margin-right:6px;border:1px solid #1e293b;background:#1e293b;color:#fff;border-radius:8px;font-size:14px}.btns button.s{background:#fff;color:#1e293b}
+.stage{padding:12px;overflow:auto}
+.sheet{background:#fff;margin:0 auto;box-shadow:0 1px 6px rgba(0,0,0,.25);position:relative;transform-origin:top left}
+.page{width:var(--pw);padding:10mm;color:#1e293b}
+.d-head{display:flex;justify-content:space-between;border-bottom:2px solid #1e293b;padding-bottom:3px;margin-bottom:4px}
+.d-sub{font-size:.9em;color:#475569;margin-bottom:4px}
+table.r{border-collapse:collapse;width:100%}table.r th{background:#1e293b;color:#fff;text-align:left;padding:3px 4px;font-weight:600}
+table.r td{padding:2.5px 4px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-align:right;white-space:nowrap}.zero{color:#94a3b8}
+tr.tt td{font-weight:700;border-top:2px solid #1e293b;background:#f1f5f9}
+.sm{font-size:11px;color:#475569}
+@media print{body{background:#fff}.panel,.cut{display:none}.stage{padding:0;overflow:visible}.sheet{box-shadow:none;transform:none!important;margin:0}@page{size:A4 var(--or);margin:0}}
+</style></head><body>
+<div class="panel"><b>¿Qué quieres mostrar?</b><div id="chk"></div>
+<h4>Hoja y letra</h4>
+<label><input type="radio" name="o" value="v"> Vertical</label><label><input type="radio" name="o" value="h"> Horizontal</label>
+<label><input type="radio" name="s" value="s"> Letra pequeña</label><label><input type="radio" name="s" value="m"> Normal</label><label><input type="radio" name="s" value="l"> Grande</label>
+<div id="status" class="status"></div>
+<div class="btns"><button id="bp">🖨️ Imprimir / guardar PDF</button><button class="s" id="bf">Dejar en un folio</button></div></div>
+<div class="stage" id="stage"><div class="sheet" id="sheet"><div class="page" id="page"></div></div></div>
+<script>
+(function(){
+var D=${json(D)},M=${json(M)};
+var KEY='tp_resumenA4_opts2';
+var OPTS=[['horario','Horario'],['importes','Importes (€)'],['tareas','Tareas'],['ot','Nº de OT'],['ubic','Ubicación'],['notas','Notas']];
+var st={horario:true,importes:true,tareas:false,ot:true,ubic:false,notas:false,orient:'v',size:'m'};
+try{var sv=JSON.parse(localStorage.getItem(KEY)||'null');if(sv)for(var k in st)if(k in sv)st[k]=sv[k];}catch(e){}
+var $=function(i){return document.getElementById(i)};
+function eur(v){return (+v).toFixed(2).replace('.',',')+' €'}
+function num(v){return String(Math.round(v*100)/100).replace('.',',')}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+function z(v,t){return v?t:'<span class="zero">–</span>'}
+var chk=$('chk');OPTS.forEach(function(o){var l=document.createElement('label');l.innerHTML='<input type="checkbox" data-k="'+o[0]+'"> '+o[1];chk.appendChild(l);});
+function save(){try{localStorage.setItem(KEY,JSON.stringify(st))}catch(e){}}
+function sync(){chk.querySelectorAll('input').forEach(function(i){i.checked=!!st[i.dataset.k]});
+ document.querySelectorAll('input[name=o]').forEach(function(i){i.checked=i.value===st.orient});
+ document.querySelectorAll('input[name=s]').forEach(function(i){i.checked=i.value===st.size});}
+function build(){
+ var hayN=D.some(function(d){return d.hno}),hayF=D.some(function(d){return d.hfe}),hayO=D.some(function(d){return d.otr});
+ var T={hn:0,he:0,hno:0,hfe:0,di:0,co:0,ca:0,otr:0,tot:0};
+ var h='<div class="d-head"><b>'+esc(M.titulo)+'</b><span>'+esc(M.periodo)+' · '+D.length+' jornada'+(D.length===1?'':'s')+'</span></div>';
+ if(M.trabajador)h+='<div class="d-sub">'+esc(M.trabajador)+'</div>';
+ h+='<table class="r"><thead><tr><th>Día</th>'+(st.horario?'<th>Horario</th>':'')+'<th class="n">H.norm</th><th class="n">H.extra</th>'+(hayN?'<th class="n">H.noct</th>':'')+(hayF?'<th class="n">H.fest</th>':'')+'<th class="n">Dieta</th><th class="n">Coche</th><th class="n">Camión</th>'+(hayO?'<th class="n">Otros</th>':'')+(st.ot?'<th>OT</th>':'')+(st.importes?'<th class="n">Importe</th>':'')+'</tr></thead><tbody>';
+ D.forEach(function(d){
+  for(var k in T)T[k]+=d[k];
+  var extra='';
+  if(st.tareas&&d.tareas)extra+='<div class="sm">Tareas: '+esc(d.tareas)+'</div>';
+  if(st.ubic&&d.ubic)extra+='<div class="sm">📍 '+esc(d.ubic)+'</div>';
+  if(st.notas&&d.notas)extra+='<div class="sm">'+esc(d.notas)+'</div>';
+  var cols=2+(st.horario?1:0)+(hayN?1:0)+(hayF?1:0)+3+(hayO?1:0)+(st.ot?1:0)+(st.importes?1:0)-1;
+  h+='<tr><td><b>'+esc(d.f)+'</b></td>'+(st.horario?'<td>'+(d.h?esc(d.h):'<span class="zero">–</span>')+'</td>':'')+
+   '<td class="n">'+z(d.hn,num(d.hn))+'</td><td class="n">'+z(d.he,num(d.he))+'</td>'+(hayN?'<td class="n">'+z(d.hno,num(d.hno))+'</td>':'')+(hayF?'<td class="n">'+z(d.hfe,num(d.hfe))+'</td>':'')+
+   '<td class="n">'+z(d.di,eur(d.di))+'</td><td class="n">'+z(d.co,eur(d.co))+'</td><td class="n">'+z(d.ca,eur(d.ca))+'</td>'+(hayO?'<td class="n">'+z(d.otr,eur(d.otr))+'</td>':'')+
+   (st.ot?'<td>'+(d.ot?esc(d.ot):'<span class="zero">–</span>')+'</td>':'')+(st.importes?'<td class="n"><b>'+z(d.tot,eur(d.tot))+'</b></td>':'')+'</tr>';
+  if(extra)h+='<tr><td></td><td colspan="'+cols+'">'+extra+'</td></tr>';
+ });
+ h+='<tr class="tt"><td>TOTAL</td>'+(st.horario?'<td></td>':'')+'<td class="n">'+num(T.hn)+'</td><td class="n">'+num(T.he)+'</td>'+(hayN?'<td class="n">'+num(T.hno)+'</td>':'')+(hayF?'<td class="n">'+num(T.hfe)+'</td>':'')+
+  '<td class="n">'+eur(T.di)+'</td><td class="n">'+eur(T.co)+'</td><td class="n">'+eur(T.ca)+'</td>'+(hayO?'<td class="n">'+eur(T.otr)+'</td>':'')+(st.ot?'<td></td>':'')+(st.importes?'<td class="n">'+eur(T.tot)+'</td>':'')+'</tr></tbody></table>';
+ if(st.importes&&M.dietas)h+='<div class="sm" style="margin-top:6px">Dietas: '+esc(M.dietas)+'</div>';
+ return h;
+}
+var PX=3.7795; // px por mm
+function layout(){
+ var W=st.orient==='v'?210:297,H=st.orient==='v'?297:210;
+ var fs={s:9,m:11,l:13}[st.size];
+ var pg=$('page'),sh=$('sheet');
+ pg.style.setProperty('--pw',W+'mm');pg.style.fontSize=fs+'px';
+ document.documentElement.style.setProperty('--or',st.orient==='v'?'portrait':'landscape');
+ pg.innerHTML=build();
+ sh.style.transform='none';
+ var ch=pg.scrollHeight, usable=H*PX, pages=Math.max(1,Math.ceil(ch/usable-0.001));
+ var stg=$('stage'),avail=stg.clientWidth-24,sc=Math.min(1,avail/(W*PX));
+ sh.style.width=W+'mm';sh.style.transform='scale('+sc+')';sh.style.marginBottom=(-(ch*(1-sc)))+'px';
+ var s=$('status');
+ if(pages===1){s.className='status ok';s.innerHTML='<b>1 página A4</b>Cabe en un folio. Ocupa el '+Math.round(ch/usable*100)+' % de la hoja.';}
+ else{var sobra=Math.round((ch/usable-Math.floor(ch/usable))*100)||100;s.className='status warn';s.innerHTML='<b>'+pages+' páginas A4</b>No cabe en un folio. La última se llena al '+sobra+' %. Quita alguna casilla o reduce la letra.';}
+}
+function apply(){sync();save();layout()}
+chk.addEventListener('change',function(e){st[e.target.dataset.k]=e.target.checked;apply()});
+document.querySelectorAll('input[name=o]').forEach(function(i){i.addEventListener('change',function(){st.orient=i.value;apply()})});
+document.querySelectorAll('input[name=s]').forEach(function(i){i.addEventListener('change',function(){st.size=i.value;apply()})});
+$('bf').addEventListener('click',function(){st.horario=true;st.importes=true;st.tareas=false;st.ot=true;st.ubic=false;st.notas=false;st.orient='v';st.size='m';apply()});
+$('bp').addEventListener('click',function(){window.print()});
+window.addEventListener('resize',layout);apply();
+})();
+<\/script></body></html>`;
+  const w=window.open('','_blank');
+  if(w){w.document.write(html);w.document.close();return;}
+  const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+  dlDialog={blob,filename:'TimerPro_ResumenA4_'+resumenFileTag()+'.html',type:'html',title:'Guardar Resumen A4 en este dispositivo'};
+  S.modal='dl';rerender();
+}
+
 function exportXLSX(conPrecios){
   try{
     const ents=getResumenEntries();
@@ -7654,7 +7781,8 @@ function renderResumen(){
           h('button',{class:'btn btn-b btn-full',on:{click:()=>exportExcel(false,getResumenEntries(),resumenPeriodoLabel(),resumenFileTag())}},'📊 Excel con importes'),
           h('button',{class:'btn btn-gh btn-full',on:{click:()=>exportExcel(true,getResumenEntries(),resumenPeriodoLabel(),resumenFileTag())}},'📊 Excel sin importes'),
           h('button',{class:'btn btn-pur btn-full',on:{click:()=>exportPlantilla()}},'📥 Descargar plantilla en blanco'),
-          h('button',{class:'btn btn-full',style:{background:'var(--surf2)',border:'1px solid var(--acc)',color:'var(--acc)'},on:{click:()=>{if(!S.customFields)S.customFields=defaultCustomFields();openModal('customExport');}}},'🎛️ Exportación personalizada')
+          h('button',{class:'btn btn-full',style:{background:'var(--surf2)',border:'1px solid var(--acc)',color:'var(--acc)'},on:{click:()=>{if(!S.customFields)S.customFields=defaultCustomFields();openModal('customExport');}}},'🎛️ Exportación personalizada'),
+          h('button',{class:'btn btn-gh btn-full',on:{click:()=>openResumenA4()}},'📄 Resumen A4 (un folio)')
         )
       )
     )
