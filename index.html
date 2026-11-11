@@ -6615,7 +6615,7 @@ table.r tr.tot td{border-top:2px solid var(--ink);font-weight:700;background:#f0
 <label class="chip"><input type="radio" name="size" id="s-s" value="s"> Pequeña</label>
 <label class="chip"><input type="radio" name="size" id="s-m" value="m"> Normal</label>
 <label class="chip"><input type="radio" name="size" id="s-l" value="l"> Grande</label></div></div></div></div>
-<div class="btns"><button type="button" id="b-folio">Vista folio (lo esencial)</button><button type="button" id="b-todo" class="sec">Mostrar todo</button><button type="button" id="b-print" class="sec">🖨️ Imprimir / guardar PDF</button></div></section>
+<div class="btns"><button type="button" id="b-folio">Vista folio (lo esencial)</button><button type="button" id="b-todo" class="sec">Mostrar todo</button><button type="button" id="b-pdf">⬇️ Descargar PDF</button><button type="button" id="b-print" class="sec">🖨️ Imprimir</button><span id="pdfmsg" style="align-self:center;color:var(--muted);font-size:14px"></span></div></section>
 <div class="status" id="status" role="status"></div>
 <div class="stage" id="stage"><div class="scaler" id="scaler"><div class="sheet" id="sheet"><div class="inner" id="inner"></div></div></div></div>
 <p class="note">La línea roja discontinua marca dónde termina cada página. El recuento es aproximado: al imprimir puede variar un poco según la impresora.</p>
@@ -6695,6 +6695,28 @@ for(var k in FOLIO)(function(k){$(k).addEventListener("change",function(e){st[k]
 $("b-folio").addEventListener("click",function(){for(var k in FOLIO)st[k]=!!FOLIO[k];st.orient="v";st.size="m";syncInputs();save();render()});
 $("b-todo").addEventListener("click",function(){for(var k in FOLIO)st[k]=true;syncInputs();save();render()});
 $("b-print").addEventListener("click",function(){window.print()});
+$("b-pdf").addEventListener("click",async function(){
+ var msg=$("pdfmsg"),H2C=window.html2canvas||(window.opener&&window.opener.html2canvas),JP=(window.jspdf||(window.opener&&window.opener.jspdf));
+ if(!H2C||!JP){msg.textContent="No está disponible la librería de PDF (¿sin conexión?). Usa Imprimir.";return}
+ msg.textContent="Preparando PDF…";
+ try{
+  var land=st.orient==="h",MM=96/25.4,W=(land?297:210),Hh=(land?210:297),usablePx=(Hh-20)*MM;
+  var inner=$("inner"),sheet=$("sheet"),oldT=sheet.style.transform;
+  sheet.style.transform="none";
+  var canvas=await H2C(inner,{scale:2,backgroundColor:"#ffffff",logging:false,useCORS:true});
+  sheet.style.transform=oldT;
+  var pxPerCss=canvas.width/inner.offsetWidth,sliceH=Math.floor(usablePx*pxPerCss),pages=Math.max(1,Math.ceil((canvas.height-1)/sliceH));
+  var doc=new JP.jsPDF({orientation:land?"landscape":"portrait",unit:"mm",format:"a4",compress:true});
+  for(var i=0;i<pages;i++){
+   var sh=Math.min(sliceH,canvas.height-i*sliceH),c=document.createElement("canvas");c.width=canvas.width;c.height=sh;
+   var cx=c.getContext("2d");cx.fillStyle="#fff";cx.fillRect(0,0,c.width,c.height);cx.drawImage(canvas,0,i*sliceH,canvas.width,sh,0,0,canvas.width,sh);
+   if(i>0)doc.addPage();
+   doc.addImage(c.toDataURL("image/jpeg",0.92),"JPEG",10,10,W-20,(W-20)*sh/canvas.width);
+  }
+  doc.save("TimerPro_ResumenA4_"+M.tag+".pdf");
+  msg.textContent="PDF descargado ("+pages+" página"+(pages>1?"s":"")+")";
+ }catch(e){msg.textContent="No se pudo crear el PDF: "+e.message}
+});
 syncInputs();render();
 if(window.ResizeObserver)new ResizeObserver(layout).observe($("stage"));else window.addEventListener("resize",layout);
 })();
