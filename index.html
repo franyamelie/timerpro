@@ -6536,115 +6536,167 @@ function openResumenA4(){
   const liq=computeLiquidacion(entries,[]);
   const byF={}; entries.forEach(e=>{byF[e.fecha]=e;});
   const txt=s=>String(s||'').replace(/<br\s*\/?>/gi,' ').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
+  const priceMode=o=>{const k=Object.keys(o||{});return k.length===1?+k[0]:0;};
+  const uC=priceMode(liq.cochePrecio),uK=priceMode(liq.camionPrecio);
+  const lbl=x=>{try{const u=JSON.parse(x||'null');return (u&&u.label)||'';}catch(_){return '';}};
   const D=liq.dayRows.map(r=>{
     const e=byF[r.fecha]||{};
     const fj=(e.fichajes||[]).filter(f=>f.entrada||f.salida);
-    const tasks=[]; const ots=[];
-    try{
-      (e.fichajes||[]).forEach((f,i)=>{tpTareasDeFichaje(e,i).forEach(t=>{ if(!tasks.some(x=>x.id===t.id)){tasks.push({id:t.id,t:t.titulo||'Tarea'}); if(t.otNumero) ots.push(String(t.otNumero));} });});
-    }catch(_){}
-    let ub=''; try{const u=JSON.parse(e.ubicacionEntrada||'null'); ub=(u&&u.label)||'';}catch(_){}
-    return {f:r.fecha.split('-').reverse().join('.')+' '+wday(r.fecha).slice(0,3),
-      h:fj.map(f=>(f.entrada||'?')+'–'+(f.salida||'?')).join(' / '),
-      hn:r.hN,he:r.hE,hno:r.hNoc,hfe:r.hFes,di:r.dieta,co:r.vCoche,ca:r.vCamion,otr:r.otros,tot:r.total,
-      tareas:tasks.map(x=>x.t).join(' · '),ot:ots.join(', '),ubic:ub,notas:txt(e.notas).slice(0,160)};
+    const tareas=[]; const vistos=new Set();
+    try{(e.fichajes||[]).forEach((f,i)=>{tpTareasDeFichaje(e,i).forEach(t=>{ if(!vistos.has(String(t.id))){vistos.add(String(t.id)); tareas.push([t.titulo||'Tarea',t.otNumero?String(t.otNumero):'']);} });});}catch(_){}
+    const wd=wday(r.fecha).slice(0,3), p=r.fecha.split('-');
+    return {f:wd+' '+p[2]+'/'+p[1],h:fj.map(f=>(f.entrada||'?')+'→'+(f.salida||'?')).join(' | '),
+      hn:r.hN,he:r.hE,hno:r.hNoc,hfe:r.hFes,ie:+e.importeExtra||0,di:r.dieta,dn:((+e.dieta>0)?1:0)+((e.dietasExtra||[]).length),
+      co:r.vCoche>0?(uC?Math.round(r.vCoche/uC):1):0,ca:r.vCamion>0?(uK?Math.round(r.vCamion/uK):1):0,vco:r.vCoche,vca:r.vCamion,otr:r.otros,tot:r.total,
+      t:tareas,e:lbl(e.ubicacionEntrada),s:lbl(e.ubicacionSalida),n:txt(e.notas).slice(0,400)};
   });
-  const M={titulo:(company.nombre||'TimerPro')+' — Resumen',periodo:resumenPeriodoLabel(),trabajador:worker.nombre||'',
-    tag:resumenFileTag(),tot:liq.totTotal,totHN:liq.totHN,totHE:liq.totHE,totD:liq.totD,totCo:liq.totTranspCoche,totCa:liq.totTranspCamion,totO:liq.totO+liq.totViaj+liq.totTranspOtro,
-    dietas:Object.keys(liq.dietaPrecios).map(k=>liq.dietaPrecios[k]+' × '+(+k).toFixed(2).replace('.',',')+' €').join(' + ')};
+  const M={titulo:(company.nombre||'TimerPro')+' — Resumen del ciclo',periodo:resumenPeriodoLabel(),trabajador:worker.nombre||'',tag:resumenFileTag(),
+    dietas:Object.keys(liq.dietaPrecios).map(k=>[+k,liq.dietaPrecios[k]]),coche:Object.keys(liq.cochePrecio).map(k=>[+k,liq.cochePrecio[k]]),camion:Object.keys(liq.camionPrecio).map(k=>[+k,liq.camionPrecio[k]])};
   const json=o=>JSON.stringify(o).replace(/</g,'\\u003c');
   const html=`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Resumen A4 — TimerPro</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#e5e9f0;font-family:Arial,Helvetica,sans-serif;color:#1e293b}
-.panel{background:#fff;padding:12px 14px;border-bottom:1px solid #cbd5e1;position:sticky;top:0;z-index:5}
-.panel label{display:inline-block;margin:4px 12px 4px 0;font-size:14px;white-space:nowrap}
-.panel h4{margin:6px 0 2px;font-size:12px;color:#475569;text-transform:uppercase}
-.status{margin-top:8px;padding:8px 10px;border-radius:8px;font-size:14px}
-.status.ok{background:#dcfce7;color:#166534}.status.warn{background:#fef3c7;color:#92400e}
-.status b{font-size:16px;margin-right:8px}
-.btns{margin-top:8px}.btns button{padding:8px 12px;margin-right:6px;border:1px solid #1e293b;background:#1e293b;color:#fff;border-radius:8px;font-size:14px}.btns button.s{background:#fff;color:#1e293b}
-.stage{padding:12px;overflow:auto}
-.sheet{background:#fff;margin:0 auto;box-shadow:0 1px 6px rgba(0,0,0,.25);position:relative;transform-origin:top left}
-.page{width:var(--pw);padding:10mm;color:#1e293b}
-.d-head{display:flex;justify-content:space-between;border-bottom:2px solid #1e293b;padding-bottom:3px;margin-bottom:4px}
-.d-sub{font-size:.9em;color:#475569;margin-bottom:4px}
-table.r{border-collapse:collapse;width:100%}table.r th{background:#1e293b;color:#fff;text-align:left;padding:3px 4px;font-weight:600}
-table.r td{padding:2.5px 4px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-align:right;white-space:nowrap}.zero{color:#94a3b8}
-tr.tt td{font-weight:700;border-top:2px solid #1e293b;background:#f1f5f9}
-.sm{font-size:11px;color:#475569}
-@media print{body{background:#fff}.panel,.cut{display:none}.stage{padding:0;overflow:visible}.sheet{box-shadow:none;transform:none!important;margin:0}@page{size:A4 var(--or);margin:0}}
-</style></head><body>
-<div class="panel"><b>¿Qué quieres mostrar?</b><div id="chk"></div>
-<h4>Hoja y letra</h4>
-<label><input type="radio" name="o" value="v"> Vertical</label><label><input type="radio" name="o" value="h"> Horizontal</label>
-<label><input type="radio" name="s" value="s"> Letra pequeña</label><label><input type="radio" name="s" value="m"> Normal</label><label><input type="radio" name="s" value="l"> Grande</label>
-<div id="status" class="status"></div>
-<div class="btns"><button id="bp">🖨️ Imprimir / guardar PDF</button><button class="s" id="bf">Dejar en un folio</button></div></div>
-<div class="stage" id="stage"><div class="sheet" id="sheet"><div class="page" id="page"></div></div></div>
+:root{--bg:#eef1f5;--panel:#fff;--fg:#1e293b;--muted:#56637a;--line:#d5dbe5;--accent:#1e293b;--accent-fg:#fff;--stage:#cfd6e0;--ok:#166534;--ok-bg:#dcfce7;--warn:#92400e;--warn-bg:#fef3c7;--paper:#fff;--ink:#1e293b;--ink-soft:#475569;--rule:#e2e8f0;--cut:#dc2626;--ui:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;--doc:Arial,Helvetica,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--ui);font-size:15px;line-height:1.45}
+.wrap{max-width:1100px;margin:0 auto;padding:20px 16px 40px;display:flex;flex-direction:column;gap:16px}
+h1{font-size:22px;font-weight:700;margin:0}.sub{color:var(--muted);margin:4px 0 0;max-width:65ch}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:14px}
+.grp{display:flex;flex-direction:column;gap:8px}.grp-t{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer;font-weight:500;user-select:none;background:var(--bg)}
+.chip input{width:18px;height:18px;margin:0;accent-color:var(--accent)}.chip:has(input:checked){border-color:var(--accent)}
+.cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:20px 32px}.colL,.colR{display:flex;flex-direction:column;gap:18px}.cp{display:grid;grid-template-columns:1fr auto;align-items:center;column-gap:16px}.cp .hd{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:6px 0}.cp .pr{text-align:center;border-bottom:1px solid var(--line);padding:10px 14px}.cp .ck{border-bottom:1px solid var(--line)}.list{display:flex;flex-direction:column}.ck{display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer;font-size:16px;border-bottom:1px solid var(--line)}.ck input,.pr input{width:20px;height:20px;margin:0;accent-color:var(--accent)}.pr input:disabled{opacity:.35}@media(max-width:760px){.cols{grid-template-columns:1fr}}.liq{margin-top:.9em;border:1px solid var(--rule);border-radius:4px}.liq-t{background:var(--ink);color:#fff;font-weight:700;padding:.35em .6em}.liq-l{display:flex;justify-content:space-between;padding:.3em .6em;border-top:1px solid var(--rule)}.liq-g{font-weight:700;background:#f0fdf4;color:#166534}.liq-s{border-top:2px solid var(--ink)}.row{display:flex;flex-wrap:wrap;gap:16px 28px}.btns{display:flex;flex-wrap:wrap;gap:8px}
+button{font:inherit;font-weight:600;border-radius:8px;padding:9px 14px;cursor:pointer;border:1px solid var(--accent);background:var(--accent);color:var(--accent-fg)}
+button.sec{background:transparent;color:var(--fg);border-color:var(--line)}
+.status{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;border-radius:10px;padding:12px 14px;font-weight:600;border:1px solid var(--line)}
+.status.ok{background:var(--ok-bg);color:var(--ok)}.status.warn{background:var(--warn-bg);color:var(--warn)}
+.status .big{font-size:20px;font-weight:700}.status .det{font-weight:500}
+.stage{background:var(--stage);border-radius:10px;padding:12px;overflow:hidden}
+.scaler{position:relative;margin:0 auto}
+.sheet{position:absolute;left:0;top:0;transform-origin:0 0;background:var(--paper);color:var(--ink);font-family:var(--doc);box-shadow:0 2px 10px rgba(0,0,0,.25)}
+.inner{position:absolute;left:0;top:0}
+.cut{position:absolute;left:0;right:0;border-top:2px dashed var(--cut);pointer-events:none}
+.cut span{position:absolute;right:6px;top:2px;background:var(--cut);color:#fff;font:700 11px var(--doc);padding:2px 6px;border-radius:3px}
+.d-head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid var(--ink);padding-bottom:.5em;margin-bottom:.6em}
+.d-head b{font-size:1.45em}.d-head span{color:var(--ink-soft)}.d-sub{color:var(--ink-soft);margin:-.3em 0 .5em}
+table.r{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+table.r th{background:var(--ink);color:#fff;text-align:left;padding:.4em .5em;font-weight:700;white-space:nowrap}
+table.r td{padding:.32em .5em;border-top:1px solid var(--rule);vertical-align:top;white-space:nowrap}
+table.r .n{text-align:right}
+table.r tr.x td{border-top:0;padding-top:0;white-space:normal;color:var(--ink-soft);font-size:.92em;padding-left:1.4em}
+table.r tr.x i{font-style:italic}
+table.r tr.tot td{border-top:2px solid var(--ink);font-weight:700;background:#f0fdf4;color:#166534}
+.zero{color:#b6bfcc}.desg{margin-top:.7em;color:var(--ink-soft);line-height:1.5}.desg b{color:var(--ink)}
+.note{color:var(--muted);font-size:13px;margin:0}
+@media print{body{background:#fff}.wrap>header,.panel,.status,.note,.cut{display:none!important}.wrap{padding:0;max-width:none}.stage{background:#fff;padding:0;overflow:visible}.scaler{width:auto!important;height:auto!important}.sheet{position:static;transform:none!important;box-shadow:none;height:auto!important}.inner{position:static;width:auto!important;padding:10mm}@page{size:A4 var(--or);margin:0}}
+</style></head><body><div class="wrap">
+<header><h1>Resumen en un folio A4</h1><p class="sub">Quita o pon lo que quieras y mira al momento cuántas páginas ocupa.</p></header>
+<section class="panel"><div class="cols"><div class="colL">
+<div class="cp"><div class="hd">Concepto</div><div class="hd pr">Precio</div>
+<label class="ck" for="c-di"><input type="checkbox" id="c-di"> Dietas</label><div class="pr"><input type="checkbox" id="p-di" aria-label="Precio de dietas"></div>
+<label class="ck" for="c-he"><input type="checkbox" id="c-he"> H. extras normales</label><div class="pr"><input type="checkbox" id="p-he" aria-label="Precio de horas extras"></div>
+<label class="ck" for="c-ca"><input type="checkbox" id="c-ca"> Viajes camión</label><div class="pr"><input type="checkbox" id="p-ca" aria-label="Precio de viajes camión"></div>
+<label class="ck" for="c-co"><input type="checkbox" id="c-co"> Viajes coche</label><div class="pr"><input type="checkbox" id="p-co" aria-label="Precio de viajes coche"></div></div>
+<div class="grp"><div class="grp-t">Detalle propio de TimerPro</div><div class="list">
+<label class="ck" for="x-hn"><input type="checkbox" id="x-hn"> Horas normales</label>
+<label class="ck" for="x-horario"><input type="checkbox" id="x-horario"> Horario (fichajes)</label>
+<label class="ck" for="x-tareas"><input type="checkbox" id="x-tareas"> Tareas</label>
+<label class="ck" for="x-ot"><input type="checkbox" id="x-ot"> Nº de OT</label>
+<label class="ck" for="x-ubic"><input type="checkbox" id="x-ubic"> Ubicaciones</label>
+<label class="ck" for="x-notas"><input type="checkbox" id="x-notas"> Notas de jornada</label></div></div></div>
+<div class="colR"><div class="grp"><div class="grp-t">Totales</div><div class="list">
+<label class="ck" for="t-imp"><input type="checkbox" id="t-imp"> Importes por día en la tabla (se quitan solos si ocultas algún concepto o precio)</label>
+<label class="ck" for="t-liq"><input type="checkbox" id="t-liq"> Liquidación (desglose por concepto)</label>
+<label class="ck" for="t-tot"><input type="checkbox" id="t-tot"> Total extras y dietas</label></div></div>
+<div class="grp"><div class="grp-t">Hoja</div><div class="chips">
+<label class="chip"><input type="radio" name="orient" id="o-v" value="v"> Vertical</label>
+<label class="chip"><input type="radio" name="orient" id="o-h" value="h"> Horizontal</label></div></div>
+<div class="grp"><div class="grp-t">Tamaño de letra</div><div class="chips">
+<label class="chip"><input type="radio" name="size" id="s-s" value="s"> Pequeña</label>
+<label class="chip"><input type="radio" name="size" id="s-m" value="m"> Normal</label>
+<label class="chip"><input type="radio" name="size" id="s-l" value="l"> Grande</label></div></div></div></div>
+<div class="btns"><button type="button" id="b-folio">Vista folio (lo esencial)</button><button type="button" id="b-todo" class="sec">Mostrar todo</button><button type="button" id="b-print" class="sec">🖨️ Imprimir / guardar PDF</button></div></section>
+<div class="status" id="status" role="status"></div>
+<div class="stage" id="stage"><div class="scaler" id="scaler"><div class="sheet" id="sheet"><div class="inner" id="inner"></div></div></div></div>
+<p class="note">La línea roja discontinua marca dónde termina cada página. El recuento es aproximado: al imprimir puede variar un poco según la impresora.</p>
+</div>
 <script>
 (function(){
 var D=${json(D)},M=${json(M)};
-var KEY='tp_resumenA4_opts2';
-var OPTS=[['horario','Horario'],['importes','Importes (€)'],['tareas','Tareas'],['ot','Nº de OT'],['ubic','Ubicación'],['notas','Notas']];
-var st={horario:true,importes:true,tareas:false,ot:true,ubic:false,notas:false,orient:'v',size:'m'};
-try{var sv=JSON.parse(localStorage.getItem(KEY)||'null');if(sv)for(var k in st)if(k in sv)st[k]=sv[k];}catch(e){}
-var $=function(i){return document.getElementById(i)};
-function eur(v){return (+v).toFixed(2).replace('.',',')+' €'}
-function num(v){return String(Math.round(v*100)/100).replace('.',',')}
-function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')}
-function z(v,t){return v?t:'<span class="zero">–</span>'}
-var chk=$('chk');OPTS.forEach(function(o){var l=document.createElement('label');l.innerHTML='<input type="checkbox" data-k="'+o[0]+'"> '+o[1];chk.appendChild(l);});
+var KEY="tp_resumenA4_v4";
+var FOLIO={"c-di":1,"p-di":1,"c-he":1,"p-he":1,"c-ca":1,"p-ca":1,"c-co":1,"p-co":1,"t-imp":1,"t-liq":1,"t-tot":1,"x-hn":0,"x-horario":0,"x-tareas":0,"x-ot":0,"x-ubic":0,"x-notas":0};
+var st={orient:"v",size:"m"};for(var k in FOLIO)st[k]=!!FOLIO[k];
+try{var sv=JSON.parse(localStorage.getItem(KEY)||"null");if(sv)for(var k0 in st)if(k0 in sv)st[k0]=sv[k0];}catch(e){}
+var $=function(id){return document.getElementById(id)};
+function eur(v){return (+v).toFixed(2).replace(".",",")+" €"}
+function num(v){return String(Math.round(v*100)/100).replace(".",",")}
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;")}
+function syncInputs(){for(var k in FOLIO)$(k).checked=!!st[k];["di","he","ca","co"].forEach(function(c){$("p-"+c).disabled=!st["c-"+c]});$("o-"+st.orient).checked=true;$("s-"+st.size).checked=true}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(st))}catch(e){}}
-function sync(){chk.querySelectorAll('input').forEach(function(i){i.checked=!!st[i.dataset.k]});
- document.querySelectorAll('input[name=o]').forEach(function(i){i.checked=i.value===st.orient});
- document.querySelectorAll('input[name=s]').forEach(function(i){i.checked=i.value===st.size});}
-function build(){
- var hayN=D.some(function(d){return d.hno}),hayF=D.some(function(d){return d.hfe}),hayO=D.some(function(d){return d.otr});
- var T={hn:0,he:0,hno:0,hfe:0,di:0,co:0,ca:0,otr:0,tot:0};
+function render(){
+ var C=["di","he","ca","co"],HD={di:"Dieta",he:"H. extra",ca:"Camión",co:"Coche"};
+ var todo=C.every(function(c){return st["c-"+c]&&st["p-"+c]});
+ var showImp=st["t-imp"]&&todo;
+ var T={hn:0,he:0,ie:0,dn:0,di:0,co:0,ca:0,vco:0,vca:0,imp:0};
  var h='<div class="d-head"><b>'+esc(M.titulo)+'</b><span>'+esc(M.periodo)+' · '+D.length+' jornada'+(D.length===1?'':'s')+'</span></div>';
  if(M.trabajador)h+='<div class="d-sub">'+esc(M.trabajador)+'</div>';
- h+='<table class="r"><thead><tr><th>Día</th>'+(st.horario?'<th>Horario</th>':'')+'<th class="n">H.norm</th><th class="n">H.extra</th>'+(hayN?'<th class="n">H.noct</th>':'')+(hayF?'<th class="n">H.fest</th>':'')+'<th class="n">Dieta</th><th class="n">Coche</th><th class="n">Camión</th>'+(hayO?'<th class="n">Otros</th>':'')+(st.ot?'<th>OT</th>':'')+(st.importes?'<th class="n">Importe</th>':'')+'</tr></thead><tbody>';
+ h+='<table class="r"><thead><tr><th>Fecha</th>'+(st["x-horario"]?'<th>Horario</th>':'')+(st["x-hn"]?'<th class="n">H. norm.</th>':'');
+ C.forEach(function(c){if(st["c-"+c])h+='<th class="n">'+HD[c]+'</th>'});
+ h+=(showImp?'<th class="n">Importe</th>':'')+'</tr></thead><tbody>';
  D.forEach(function(d){
-  for(var k in T)T[k]+=d[k];
-  var extra='';
-  if(st.tareas&&d.tareas)extra+='<div class="sm">Tareas: '+esc(d.tareas)+'</div>';
-  if(st.ubic&&d.ubic)extra+='<div class="sm">📍 '+esc(d.ubic)+'</div>';
-  if(st.notas&&d.notas)extra+='<div class="sm">'+esc(d.notas)+'</div>';
-  var cols=2+(st.horario?1:0)+(hayN?1:0)+(hayF?1:0)+3+(hayO?1:0)+(st.ot?1:0)+(st.importes?1:0)-1;
-  h+='<tr><td><b>'+esc(d.f)+'</b></td>'+(st.horario?'<td>'+(d.h?esc(d.h):'<span class="zero">–</span>')+'</td>':'')+
-   '<td class="n">'+z(d.hn,num(d.hn))+'</td><td class="n">'+z(d.he,num(d.he))+'</td>'+(hayN?'<td class="n">'+z(d.hno,num(d.hno))+'</td>':'')+(hayF?'<td class="n">'+z(d.hfe,num(d.hfe))+'</td>':'')+
-   '<td class="n">'+z(d.di,eur(d.di))+'</td><td class="n">'+z(d.co,eur(d.co))+'</td><td class="n">'+z(d.ca,eur(d.ca))+'</td>'+(hayO?'<td class="n">'+z(d.otr,eur(d.otr))+'</td>':'')+
-   (st.ot?'<td>'+(d.ot?esc(d.ot):'<span class="zero">–</span>')+'</td>':'')+(st.importes?'<td class="n"><b>'+z(d.tot,eur(d.tot))+'</b></td>':'')+'</tr>';
-  if(extra)h+='<tr><td></td><td colspan="'+cols+'">'+extra+'</td></tr>';
+  T.hn+=d.hn;T.he+=d.he;T.ie+=d.ie;T.di+=d.di;T.dn+=d.dn;T.co+=d.co;T.ca+=d.ca;T.vco+=d.vco;T.vca+=d.vca;T.imp+=d.tot;
+  var v={di:d.dn?String(d.dn):"",he:d.he?num(d.he):"",ca:d.ca||"",co:d.co||""};
+  var p=d.f.split(" ");
+  h+='<tr><td><b>'+p[1]+'</b> <small>'+p[0]+'</small></td>'+(st["x-horario"]?'<td>'+esc(d.h||'')+'</td>':'')+(st["x-hn"]?'<td class="n">'+num(d.hn)+'</td>':'');
+  C.forEach(function(c){if(st["c-"+c])h+='<td class="n">'+v[c]+'</td>'});
+  h+=(showImp?'<td class="n">'+(d.tot?'<b>'+eur(d.tot)+'</b>':'')+'</td>':'')+'</tr>';
+  var x=[];
+  if((st["x-tareas"]||st["x-ot"])&&d.t.length){var l=d.t.map(function(t){if(st["x-tareas"]&&st["x-ot"])return esc(t[0])+(t[1]?' (OT '+esc(t[1])+')':'');return st["x-tareas"]?esc(t[0]):(t[1]?'OT '+esc(t[1]):'')}).filter(Boolean).join(' · ');if(l)x.push(l)}
+  if(st["x-ubic"]&&(d.e||d.s))x.push('Entrada: '+esc(d.e||'–')+' → Salida: '+esc(d.s||'–'));
+  if(st["x-notas"]&&d.n)x.push('<i>'+esc(d.n)+'</i>');
+  x.forEach(function(l){h+='<tr class="x"><td colspan="12">'+l+'</td></tr>'});
  });
- h+='<tr class="tt"><td>TOTAL</td>'+(st.horario?'<td></td>':'')+'<td class="n">'+num(T.hn)+'</td><td class="n">'+num(T.he)+'</td>'+(hayN?'<td class="n">'+num(T.hno)+'</td>':'')+(hayF?'<td class="n">'+num(T.hfe)+'</td>':'')+
-  '<td class="n">'+eur(T.di)+'</td><td class="n">'+eur(T.co)+'</td><td class="n">'+eur(T.ca)+'</td>'+(hayO?'<td class="n">'+eur(T.otr)+'</td>':'')+(st.ot?'<td></td>':'')+(st.importes?'<td class="n">'+eur(T.tot)+'</td>':'')+'</tr></tbody></table>';
- if(st.importes&&M.dietas)h+='<div class="sm" style="margin-top:6px">Dietas: '+esc(M.dietas)+'</div>';
- return h;
+ var tv={di:T.dn,he:num(T.he),ca:T.ca,co:T.co};
+ h+='<tr class="tot"><td>TOTAL</td>'+(st["x-horario"]?'<td></td>':'')+(st["x-hn"]?'<td class="n">'+num(T.hn)+'</td>':'');
+ C.forEach(function(c){if(st["c-"+c])h+='<td class="n">'+tv[c]+'</td>'});
+ h+=(showImp?'<td class="n">'+eur(T.imp)+'</td>':'')+'</tr></tbody></table>';
+ var L=[],sub=0,any=false;
+ function line(a,b){L.push('<div class="liq-l"><span>'+a+'</span><span>'+(b||'')+'</span></div>')}
+ function grupos(arr,sing,plu,tot){arr.slice().sort(function(a,b){return b[0]-a[0]}).forEach(function(g){line(g[1]+' '+(g[1]===1?sing:plu)+' × '+eur(g[0]),eur(g[1]*g[0]))});sub+=tot;any=true}
+ if(st["c-di"]){if(st["p-di"]&&M.dietas.length)grupos(M.dietas,'dieta','dietas',T.di);else line(T.dn+' dietas')}
+ if(st["c-he"]){if(st["p-he"]){line(num(T.he)+' h extras normales'+(T.he?' × '+eur(T.ie/T.he):''),eur(T.ie));sub+=T.ie;any=true}else line(num(T.he)+' h extras normales')}
+ if(st["c-ca"]){if(st["p-ca"]&&M.camion.length)grupos(M.camion,'viaje camión','viajes camión',T.vca);else line(T.ca+' viajes camión')}
+ if(st["c-co"]){if(st["p-co"]&&M.coche.length)grupos(M.coche,'viaje coche','viajes coche',T.vco);else line(T.co+' viajes coche')}
+ var liq='';
+ if(st["t-liq"]&&L.length)liq+='<div class="liq-t">LIQUIDACIÓN — '+esc(M.periodo)+'</div>'+L.join('');
+ if(st["t-tot"]&&any)liq+='<div class="liq-l liq-g'+(liq?' liq-s':'')+'"><span>TOTAL EXTRAS Y DIETAS</span><span>'+eur(sub)+'</span></div>';
+ if(liq)h+='<div class="liq">'+liq+'</div>';
+ $("inner").innerHTML=h;layout();
 }
-var PX=3.7795; // px por mm
 function layout(){
- var W=st.orient==='v'?210:297,H=st.orient==='v'?297:210;
- var fs={s:9,m:11,l:13}[st.size];
- var pg=$('page'),sh=$('sheet');
- pg.style.setProperty('--pw',W+'mm');pg.style.fontSize=fs+'px';
- document.documentElement.style.setProperty('--or',st.orient==='v'?'portrait':'landscape');
- pg.innerHTML=build();
- sh.style.transform='none';
- var ch=pg.scrollHeight, usable=H*PX, pages=Math.max(1,Math.ceil(ch/usable-0.001));
- var stg=$('stage'),avail=stg.clientWidth-24,sc=Math.min(1,avail/(W*PX));
- sh.style.width=W+'mm';sh.style.transform='scale('+sc+')';sh.style.marginBottom=(-(ch*(1-sc)))+'px';
- var s=$('status');
- if(pages===1){s.className='status ok';s.innerHTML='<b>1 página A4</b>Cabe en un folio. Ocupa el '+Math.round(ch/usable*100)+' % de la hoja.';}
- else{var sobra=Math.round((ch/usable-Math.floor(ch/usable))*100)||100;s.className='status warn';s.innerHTML='<b>'+pages+' páginas A4</b>No cabe en un folio. La última se llena al '+sobra+' %. Quita alguna casilla o reduce la letra.';}
+ var MM=96/25.4,land=st.orient==="h",W=(land?297:210)*MM,H=(land?210:297)*MM,Mg=10*MM,usable=H-2*Mg;
+ document.documentElement.style.setProperty("--or",land?"landscape":"portrait");
+ var sheet=$("sheet"),inner=$("inner");
+ sheet.style.fontSize={s:"9px",m:"10.5px",l:"12.5px"}[st.size];sheet.style.width=W+"px";
+ inner.style.left=Mg+"px";inner.style.top=Mg+"px";inner.style.width=(W-2*Mg)+"px";
+ var ch=inner.scrollHeight,pages=Math.max(1,Math.ceil((ch-1)/usable)),SH=pages*H;
+ sheet.style.height=SH+"px";
+ Array.prototype.slice.call(sheet.querySelectorAll(".cut")).forEach(function(c){c.remove()});
+ for(var i=1;i<pages;i++){var c=document.createElement("div");c.className="cut";c.style.top=(Mg+i*usable)+"px";c.innerHTML="<span>Fin de la página "+i+"</span>";sheet.appendChild(c)}
+ var sc=Math.min(1,($("stage").clientWidth-24)/W);sheet.style.transform="scale("+sc+")";
+ var sc2=$("scaler");sc2.style.width=(W*sc)+"px";sc2.style.height=(SH*sc)+"px";
+ var s=$("status");
+ if(pages===1){s.className="status ok";s.innerHTML='<span class="big">1 página A4</span><span class="det">Cabe en un folio. Ocupa el '+Math.round(ch/usable*100)+' % de la hoja.</span>'}
+ else{var so=Math.round((ch/usable-Math.floor(ch/usable))*100)||100;s.className="status warn";s.innerHTML='<span class="big">'+pages+' páginas A4</span><span class="det">No cabe en un folio. La última página se llena al '+so+' %. Quita alguna casilla o reduce la letra.</span>'}
 }
-function apply(){sync();save();layout()}
-chk.addEventListener('change',function(e){st[e.target.dataset.k]=e.target.checked;apply()});
-document.querySelectorAll('input[name=o]').forEach(function(i){i.addEventListener('change',function(){st.orient=i.value;apply()})});
-document.querySelectorAll('input[name=s]').forEach(function(i){i.addEventListener('change',function(){st.size=i.value;apply()})});
-$('bf').addEventListener('click',function(){st.horario=true;st.importes=true;st.tareas=false;st.ot=true;st.ubic=false;st.notas=false;st.orient='v';st.size='m';apply()});
-$('bp').addEventListener('click',function(){window.print()});
-window.addEventListener('resize',layout);apply();
+for(var k in FOLIO)(function(k){$(k).addEventListener("change",function(e){st[k]=e.target.checked;save();syncInputs();render()})})(k);
+["o-v","o-h"].forEach(function(id){$(id).addEventListener("change",function(e){st.orient=e.target.value;save();render()})});
+["s-s","s-m","s-l"].forEach(function(id){$(id).addEventListener("change",function(e){st.size=e.target.value;save();render()})});
+$("b-folio").addEventListener("click",function(){for(var k in FOLIO)st[k]=!!FOLIO[k];st.orient="v";st.size="m";syncInputs();save();render()});
+$("b-todo").addEventListener("click",function(){for(var k in FOLIO)st[k]=true;syncInputs();save();render()});
+$("b-print").addEventListener("click",function(){window.print()});
+syncInputs();render();
+if(window.ResizeObserver)new ResizeObserver(layout).observe($("stage"));else window.addEventListener("resize",layout);
 })();
 <\/script></body></html>`;
   const w=window.open('','_blank');
