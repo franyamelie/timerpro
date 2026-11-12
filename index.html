@@ -332,7 +332,7 @@ html.dd .card{box-shadow:0 8px 0 rgba(0,0,0,.10),0 14px 20px rgba(0,0,0,.12),ins
 html.dd .card .card{box-shadow:0 4px 0 rgba(0,0,0,.08),0 8px 12px rgba(0,0,0,.08),inset 0 2px 3px rgba(255,255,255,.5)}
 html.dd .btn,html.dd .badge,html.dd .chip,html.dd .nav-btn{box-shadow:0 5px 0 rgba(0,0,0,.2),0 9px 14px rgba(0,0,0,.16),inset 0 2px 2px rgba(255,255,255,.5)}
 html.dd .btn:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.2)}
-.tp-hbloque input,.tp-hbloque select{font-weight:800}.tp-hbloque input::placeholder{font-weight:400}
+.tp-hbloque input,.tp-hbloque select{font-weight:600}.tp-hbloque input::placeholder{font-weight:400}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -1709,7 +1709,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261112-final28'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261112-final29'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -2640,7 +2640,7 @@ function renderFichar(){
         return h('div',{class:'tp-hbloque',style:tpRepEstiloBloque(tipo)},h('div',{style:{display:'grid',gridTemplateColumns:'1fr auto 1fr auto',gap:'.4rem',alignItems:'center',marginBottom:'.3rem'}},
           h('div',{class:'field',style:{margin:0}},
             h('div',{style:{display:'flex',alignItems:'center',gap:'.3rem'}},
-              h('label',{style:{margin:0,fontWeight:800,color:TP_REP_COLOR[tipo]||'inherit'}},tipo.toUpperCase()),
+              h('label',{style:{margin:0,fontWeight:700,color:TP_REP_COLOR[tipo]||'inherit'}},tipo.toUpperCase()),
               h('button',{
                 title:'Precio por defecto',
                 style:{background:'none',border:'none',cursor:'pointer',fontSize:'.7rem',color:'var(--ink3)',padding:'0'},
@@ -3892,7 +3892,7 @@ function renderFichajeDetailScreen(idx){
                 precioHoraNormal:fEntry.precioHoraNormal,precioHoraExtra:fEntry.precioHoraExtra,precioHoraNocturna:fEntry.precioHoraNocturna,precioHoraFestiva:fEntry.precioHoraFestiva}),'f'+idx);
         return h('div',{class:'tp-hbloque',style:tpRepEstiloBloque(tipo)},h('div',{style:{display:'grid',gridTemplateColumns:'1fr auto 1fr auto',gap:'.4rem',alignItems:'center',marginBottom:'.3rem'}},
           h('div',{class:'field',style:{margin:0}},
-            h('label',{style:{margin:0,fontWeight:800,color:TP_REP_COLOR[tipo]||'inherit'}},tipo.toUpperCase()),
+            h('label',{style:{margin:0,fontWeight:700,color:TP_REP_COLOR[tipo]||'inherit'}},tipo.toUpperCase()),
             h('input',{type:'text',inputmode:'decimal',id:'hdet-'+fj._fid+'-'+tipo.toLowerCase(),value:horas||'',placeholder:'0',
               on:{
                 input:ev=>{ const v=(ev.target.value||'').replace(',','.'); fj[hk]=parseFloat(v)||0; recomputeDayAggregates(); },
@@ -8556,8 +8556,8 @@ function renderModalResumenDia(){
     display:'flex',justifyContent:'space-between',alignItems:'center',
     padding:'.35rem 0',borderBottom:'1px solid #f1f5f9'
   }},
-    h('span',{style:{fontSize:'.83rem',color:bold?'#0f172a':'#475569',fontWeight:bold?800:400}},label),
-    h('span',{style:{fontWeight:bold?800:600,fontSize:'.85rem',color:bold?'#0f172a':'#1e293b'}},val)
+    h('span',{style:{fontSize:'.83rem',color:bold?'#0f172a':'#475569',fontWeight:bold?700:400}},label),
+    h('span',{style:{fontWeight:bold?700:600,fontSize:'.85rem',color:bold?'#0f172a':'#1e293b'}},val)
   );
 
   return h('div',{
