@@ -436,6 +436,7 @@ function updateFichajeDetailLiveCalc(fj){
 function horasResumenDesglose(e){
   const fichajes=(e&&e.fichajes)||[];
   if(!fichajes.length){
+    if(e._horasEnResumen==='custom'){ const c=e._horasResumenCustom||{}; return {hn:(+c.hn||0),he:(+c.he||0),hnoc:(+c.hnoc||0),hf:(+c.hf||0)}; }
     return {hn:(e.horasNormales||0), he:(e.horasExtra||0), hnoc:(e.horasNocturnas||0), hf:(e.horasFestivas||0)};
   }
   let hn=0,he=0,hnoc=0,hf=0;
@@ -443,6 +444,7 @@ function horasResumenDesglose(e){
     const modo=f._horasEnResumen||'todas';
     const fhn=(+f.horasNormales||0), fhe=(+f.horasExtra||0), fhnoc=(+f.horasNocturnas||0), fhf=(+f.horasFestivas||0);
     if(modo==='ninguna') return;
+    if(modo==='custom'){ const c=f._horasResumenCustom||{}; hn+=(+c.hn||0); he+=(+c.he||0); hnoc+=(+c.hnoc||0); hf+=(+c.hf||0); return; }
     if(modo==='extra'){ he+=fhe; return; }
     if(modo==='normales'){ hn+=fhn; return; }
     if(modo==='nocturnas'){ hnoc+=fhnoc; return; }
@@ -1709,7 +1711,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261112-final29'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261115-final30'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -3601,7 +3603,8 @@ function renderVisibilidadFichajeCard(fj){
           ['extra','Solo extra'],
           ['nocturnas','Solo nocturnas'],
           ['festivas','Solo festivas'],
-          ['ninguna','Ninguna']
+          ['ninguna','Ninguna'],
+          ['custom','✍️ Especificar…']
         ].map(([val,lbl])=>{
           const activo=(fj._horasEnResumen||'todas')===val;
           return h('button',{
@@ -3614,7 +3617,23 @@ function renderVisibilidadFichajeCard(fj){
             on:{click:()=>{ fj._horasEnResumen=val; scheduleDraftSave(); rerender(); }}
           },lbl);
         })
-      )
+      ),
+      (fj._horasEnResumen==='custom')?(()=>{
+        const C=()=>{ if(!fj._horasResumenCustom) fj._horasResumenCustom={}; return fj._horasResumenCustom; };
+        const campos=[['hn','Normales','horasNormales','Normales'],['he','Extra','horasExtra','Extra'],['hnoc','Nocturnas','horasNocturnas','Nocturnas'],['hf','Festivas','horasFestivas','Festivas']];
+        return h('div',{style:{marginTop:'.6rem',paddingTop:'.55rem',borderTop:'1px dashed var(--brd)'}},
+          h('div',{style:{fontSize:'.78rem',color:'var(--ink2)',marginBottom:'.4rem',fontWeight:700}},'Escribe exactamente las horas que quieres que se vean en el Resumen de este fichaje:'),
+          h('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:'.5rem'}},
+            ...campos.map(([k,lbl,real,tp])=>h('div',{class:'tp-hbloque',style:tpRepEstiloBloque(tp)},
+              h('div',{style:{fontSize:'.72rem',fontWeight:700,color:TP_REP_COLOR[tp],marginBottom:'.25rem'}},lbl.toUpperCase()),
+              h('input',{type:'text',inputmode:'decimal',autocomplete:'off',value:(fj._horasResumenCustom&&fj._horasResumenCustom[k]!==undefined&&fj._horasResumenCustom[k]!=='')?String(fj._horasResumenCustom[k]).replace('.',','):'',placeholder:'0',
+                style:{width:'100%',background:'var(--surf)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.45rem',color:'var(--ink)',textAlign:'right'},
+                on:{input:ev=>{ const t=String(ev.target.value).replace(',','.'); C()[k]=t===''?'':(parseFloat(t)||0); },
+                    blur:()=>{ scheduleDraftSave(); rerender(); }}}),
+              h('div',{style:{fontSize:'.68rem',color:'var(--ink3)',marginTop:'.25rem'}},'Real: '+tpRepFmt(+fj[real]||0)+' h')))
+          ),
+          h('div',{style:{fontSize:'.7rem',color:'var(--ink3)',marginTop:'.4rem'}},'Solo cambia lo que se ve en el Resumen (sin precios). Las horas reales, los importes y la nómina no cambian.'));
+      })():null
     ),
     h('div',{style:{fontSize:'.72rem',color:'var(--ink3)',marginTop:'.2rem',fontStyle:'italic'}},
       'Todo lo de este fichaje (horas, dietas, transporte) siempre se sigue contando en el total del día y de la nómina, se muestre o no aquí y sea lo que sea lo que se vea en el Resumen.')
