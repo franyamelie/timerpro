@@ -1711,7 +1711,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261115-final30'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261120-final31'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -5644,57 +5644,92 @@ function tpRepEstiloBloque(tipo){
   return {border:'1px solid '+c+'55',borderLeft:'6px solid '+c,background:c+'14',borderRadius:'var(--r2)',padding:'.55rem .65rem .45rem',marginBottom:'.85rem'};
 }
 const tpRepFmt=n=>String(Math.round(n*100)/100).replace('.',',');
-function tpRepNombre(r){
-  if(r.taskId){ const t=(S.tasks||[]).find(x=>String(x.id)===String(r.taskId)); if(t) return String(t.titulo||'Tarea').replace(/<[^>]*>/g,'').trim()+(t.otNumero?' (OT '+t.otNumero+')':''); }
-  return (r.texto||'').trim()||'Trabajo sin nombre';
+function tpRepTarea(id){ return id?(S.tasks||[]).find(x=>String(x.id)===String(id)):null; }
+function tpRepPre(t){ if(!t) return ''; const num=String(t.otNumero||'').trim(); return (t.tipoTarea==='estral'?'ESTRAL':'O.T.')+(num?' '+num:''); }
+function tpRepLimpia(x){ return String(x||'').replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim(); }
+// devuelve {pre, tit}: pre = "O.T. 794…" / "ESTRAL 1848" si está asociado a una tarea; tit = título o texto escrito a mano
+function tpRepNombreP(r){
+  const t=tpRepTarea(r.taskId);
+  if(t) return {pre:tpRepPre(t),tit:tpRepLimpia(t.titulo)};
+  return {pre:'',tit:tpRepLimpia(r.texto)||'Trabajo sin nombre'};
 }
+function tpRepNombre(r){ const n=tpRepNombreP(r); return n.pre?(n.pre+' — '+n.tit):n.tit; }
 function tpRepartoDia(e){
   const out={Normales:[],Extra:[],Nocturnas:[],Festivas:[]};
   [e].concat((e&&e.fichajes)||[]).forEach(src=>{
     const R=src&&src.repartoHoras; if(!R) return;
     TP_REP_TIPOS.forEach(tp=>{ (R[tp]||[]).forEach(r=>{
-      const hh=+r.h||0; if(hh<=0) return; const n=tpRepNombre(r); const x=out[tp].find(y=>y.n===n);
-      if(x) x.h=Math.round((x.h+hh)*100)/100; else out[tp].push({n,h:hh});
+      const hh=+r.h||0; if(hh<=0) return; const nn=tpRepNombreP(r); const n=nn.pre?(nn.pre+' — '+nn.tit):nn.tit; const x=out[tp].find(y=>y.n===n);
+      if(x) x.h=Math.round((x.h+hh)*100)/100; else out[tp].push({n,pre:nn.pre,tit:nn.tit,h:hh});
     }); });
   });
   return out;
 }
 function tpRepartoLista(e,tipo,total){ if(!(total>0)) return []; return tpRepartoDia(e)[tipo]||[]; }
 function tpRepartoFilasDOM(e,tipo,total){
-  return tpRepartoLista(e,tipo,total).map(r=>h('div',{style:{fontSize:'.76rem',color:'#64748b',padding:'0 0 .3rem 1rem',borderBottom:'1px solid #f1f5f9'}},'↳ ',h('b',{style:{color:'#0f172a'}},'('+tpRepFmt(r.h)+' h)'),' · '+r.n));
+  return tpRepartoLista(e,tipo,total).map(r=>h('div',{style:{fontSize:'.76rem',color:'#64748b',padding:'0 0 .3rem 1rem',borderBottom:'1px solid #f1f5f9'}},
+    '↳ ',h('b',{style:{color:'#0f172a'}},'('+tpRepFmt(r.h)+' h)'),' · ',r.pre?h('b',{style:{color:'#0f172a'}},r.pre+' — '):null,r.tit));
 }
 function tpRepartoFilasHtml(e,tipo,total){
   const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
-  return tpRepartoLista(e,tipo,total).map(r=>'<div style="font-size:11px;color:#64748b;padding:1px 0 3px 14px;border-bottom:1px solid #f1f5f9">↳ <b style="color:#0f172a">('+tpRepFmt(r.h)+' h)</b> · '+esc(r.n)+'</div>').join('');
+  return tpRepartoLista(e,tipo,total).map(r=>'<div style="font-size:11px;color:#64748b;padding:1px 0 3px 14px;border-bottom:1px solid #f1f5f9">↳ <b style="color:#0f172a">('+tpRepFmt(r.h)+' h)</b> · '+(r.pre?'<b style="color:#0f172a">'+esc(r.pre)+' — </b>':'')+esc(r.tit)+'</div>').join('');
 }
 function tpRepartoFilasTxt(e,tipo,total){ return tpRepartoLista(e,tipo,total).map(r=>'      ↳ ('+tpRepFmt(r.h)+' h) · '+r.n); }
 
-// Reparto de UNA categoría (Normales/Extra/Nocturnas/Festivas): se pone justo debajo de su fila en "Horas e Importes"
+// Reparto de UNA categoría (Normales/Extra/Nocturnas/Festivas): se pone justo debajo de su fila en "Horas e Importes".
+// Es SOLO un reparto informativo (en qué trabajo / O.T. / ESTRAL se emplearon las horas): no valida, no avisa y no toca horas ni importes.
+let tpRepNuevo={}; // formulario inline "crear O.T./ESTRAL nueva" abierto, por categoría+fila
+function tpRepOpcionesTareas(r){
+  const dia=fEntry.fecha||today();
+  const ok=t=>t&&(t.tipoTarea==='ot'||t.tipoTarea==='estral');
+  const lab=(t,conFecha)=>tpRepPre(t)+' — '+tpRepLimpia(t.titulo).slice(0,55)+(conFecha&&t.fecha?'  ('+String(t.fecha).split('-').reverse().join('/')+')':'');
+  const delDia=(S.tasks||[]).filter(t=>ok(t)&&t.fecha===dia);
+  const otras=(S.tasks||[]).filter(t=>ok(t)&&t.fecha!==dia).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))).slice(0,80);
+  const sel=r.taskId;
+  const opt=(t,f)=>h('option',{value:t.id,selected:String(t.id)===String(sel)},lab(t,f));
+  const res=[h('option',{value:'',selected:!sel},'— Sin asociar (escribir abajo) —')];
+  if(delDia.length) res.push(h('optgroup',{label:'De este día'},...delDia.map(t=>opt(t,false))));
+  if(otras.length) res.push(h('optgroup',{label:'Otras O.T. / ESTRAL ya creadas'},...otras.map(t=>opt(t,true))));
+  res.push(h('option',{value:'__nueva'},'➕ Crear una O.T. / ESTRAL nueva…'));
+  return res;
+}
 function tpRepartoTipo(target,tp){
   const R=()=>{ if(!target.repartoHoras) target.repartoHoras={}; return target.repartoHoras; };
-  const tareasDia=(S.tasks||[]).filter(t=>t.fecha===(fEntry.fecha||today()));
-  const total=parseFloat(target['horas'+tp])||0;
   const filas=(target.repartoHoras||{})[tp]||[];
-  const suma=()=>Math.round((((target.repartoHoras||{})[tp]||[]).reduce((a,r)=>a+(+r.h||0),0))*100)/100;
   const wrap=h('div',{style:{margin:'-.2rem 0 .6rem 0'}});
-  const estado=h('div',{style:{fontSize:'.72rem',fontWeight:700,margin:'0 0 .3rem 0'}});
-  const pintaEstado=()=>{ const s=suma(); const dif=Math.round((total-s)*100)/100;
-    estado.textContent=dif===0?('✓ '+tpRepFmt(s)+' de '+tpRepFmt(total)+' h repartidas'):(dif>0?('Repartidas '+tpRepFmt(s)+' de '+tpRepFmt(total)+' h — faltan '+tpRepFmt(dif)+' h'):('⚠ Repartidas '+tpRepFmt(s)+' h, pero hay '+tpRepFmt(total)+' h ('+tpRepFmt(-dif)+' h de más)'));
-    estado.style.color=dif===0?'#15803d':(dif>0?'#92400e':'#b91c1c'); };
-  if(filas.length){ pintaEstado(); wrap.appendChild(estado); }
   filas.forEach((r,i)=>{
     const esOtro=!r.taskId;
+    const kn=tp+'-'+i;
     const sel=h('select',{autocomplete:'off',style:{flex:'1 1 55%',minWidth:'0',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
-      on:{change:ev=>{ const v=ev.target.value; r.taskId=v; if(v) r.texto=''; scheduleDraftSave(); rerender(); }}},
-      h('option',{value:'',selected:!r.taskId},'— Elegir tarea del día (o escribir abajo) —'),
-      ...tareasDia.map(t=>h('option',{value:t.id,selected:String(t.id)===String(r.taskId)},String(t.titulo||'Tarea').replace(/<[^>]*>/g,'').trim().slice(0,60)+(t.otNumero?' (OT '+t.otNumero+')':''))));
+      on:{change:ev=>{ const v=ev.target.value; if(v==='__nueva'){ tpRepNuevo[kn]={tipo:'ot',num:'',tit:''}; r.taskId=''; }
+                       else { r.taskId=v; if(v){ r.texto=''; delete tpRepNuevo[kn]; } }
+                       scheduleDraftSave(); rerender(); }}},
+      ...tpRepOpcionesTareas(r));
     const hrs=h('input',{type:'text',inputmode:'decimal',autocomplete:'off',value:r.h||'',placeholder:'h',style:{width:'64px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)',textAlign:'right'},
-      on:{input:ev=>{ r.h=parseFloat(String(ev.target.value).replace(',','.'))||0; pintaEstado(); },
-          blur:()=>{ scheduleDraftSave(); rerender(); }}});
+      on:{input:ev=>{ r.h=parseFloat(String(ev.target.value).replace(',','.'))||0; },
+          blur:()=>{ scheduleDraftSave(); }}});
     wrap.appendChild(h('div',{style:{display:'flex',gap:'.35rem',alignItems:'center',marginBottom:'.3rem',flexWrap:'wrap'}},
       h('span',{style:{fontSize:'.8rem',color:'var(--ink3)'}},'↳'),sel,hrs,h('span',{style:{fontSize:'.75rem',color:'var(--ink3)'}},'h'),
-      h('button',{class:'btn btn-gh btn-sm',title:'Quitar',on:{click:()=>{ R()[tp].splice(i,1); scheduleDraftSave(); rerender(); }}},'✕')));
-    if(esOtro) wrap.appendChild(h('input',{type:'text',autocomplete:'off',autocorrect:'off',spellcheck:'false',name:'rep-'+tp+'-'+i+'-'+Date.now(),value:r.texto||'',placeholder:'Escribe aquí el trabajo (p. ej. Taller, Montar barandilla…)',style:{width:'100%',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)',marginBottom:'.35rem'},
+      h('button',{class:'btn btn-gh btn-sm',title:'Quitar',on:{click:()=>{ R()[tp].splice(i,1); delete tpRepNuevo[kn]; scheduleDraftSave(); rerender(); }}},'✕')));
+    const nv=tpRepNuevo[kn];
+    if(nv){
+      const campo=(css)=>Object.assign({background:'var(--surf)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},css||{});
+      wrap.appendChild(h('div',{style:{border:'1px dashed var(--brd)',borderRadius:'var(--r2)',padding:'.5rem',marginBottom:'.4rem'}},
+        h('div',{style:{fontSize:'.72rem',fontWeight:700,marginBottom:'.3rem'}},'Nueva tarea para el '+String(fEntry.fecha||today()).split('-').reverse().join('/')),
+        h('div',{style:{display:'flex',gap:'.35rem',flexWrap:'wrap',marginBottom:'.3rem'}},
+          h('select',{autocomplete:'off',style:campo({flex:'0 0 auto'}),on:{change:ev=>{ nv.tipo=ev.target.value; }}},
+            h('option',{value:'ot',selected:nv.tipo==='ot'},'O.T.'),h('option',{value:'estral',selected:nv.tipo==='estral'},'ESTRAL')),
+          h('input',{type:'text',autocomplete:'off',placeholder:'Número',value:nv.num,style:campo({flex:'1 1 120px',minWidth:'0'}),on:{input:ev=>{ nv.num=ev.target.value; }}})),
+        h('input',{type:'text',autocomplete:'off',placeholder:'Título del trabajo',value:nv.tit,style:campo({width:'100%',marginBottom:'.3rem'}),on:{input:ev=>{ nv.tit=ev.target.value; }}}),
+        h('div',{style:{display:'flex',gap:'.35rem'}},
+          h('button',{class:'btn btn-g btn-sm',on:{click:async()=>{
+            if(!String(nv.tit).trim()){ showAlert('Escribe el título del trabajo','err'); return; }
+            const tarea={fecha:fEntry.fecha||today(),titulo:String(nv.tit).trim(),horaInicio:'',horaFin:'',descripcion:'',siteId:'',workOrderId:'',otNumero:String(nv.num||'').trim(),usaOT:nv.tipo==='ot',tipoTarea:nv.tipo,fotos:[],journeys:[]};
+            try{ const id=await dbPut(ST.tasks,tarea); S.tasks.push({...tarea,id}); r.taskId=id; r.texto=''; delete tpRepNuevo[kn]; scheduleDraftSave(); rerender(); showAlert('✅ '+(nv.tipo==='estral'?'ESTRAL':'O.T.')+' creada y asociada'); }
+            catch(ex){ showAlert('No se pudo crear la tarea','err'); }
+          }}},'Crear y asociar'),
+          h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{ delete tpRepNuevo[kn]; rerender(); }}},'Cancelar'))));
+    } else if(esOtro) wrap.appendChild(h('input',{type:'text',autocomplete:'off',autocorrect:'off',spellcheck:'false',name:'rep-'+tp+'-'+i+'-'+Date.now(),value:r.texto||'',placeholder:'Escribe aquí el trabajo (p. ej. Taller, Montar barandilla…)',style:{width:'100%',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)',marginBottom:'.35rem'},
       on:{input:ev=>{ r.texto=ev.target.value; }, blur:()=>{ scheduleDraftSave(); }}}));
   });
   wrap.appendChild(h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{
