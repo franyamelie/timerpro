@@ -1711,7 +1711,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261120-final31'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261120-final32'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -5700,7 +5700,7 @@ function tpRepartoTipo(target,tp){
   filas.forEach((r,i)=>{
     const esOtro=!r.taskId;
     const kn=tp+'-'+i;
-    const sel=h('select',{autocomplete:'off',style:{flex:'1 1 55%',minWidth:'0',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},
+    const sel=h('select',{autocomplete:'off',style:{width:'100%',minWidth:'0',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.45rem',color:'var(--ink)',marginBottom:'.4rem'},
       on:{change:ev=>{ const v=ev.target.value; if(v==='__nueva'){ tpRepNuevo[kn]={tipo:'ot',num:'',tit:''}; r.taskId=''; }
                        else { r.taskId=v; if(v){ r.texto=''; delete tpRepNuevo[kn]; } }
                        scheduleDraftSave(); rerender(); }}},
@@ -5708,13 +5708,23 @@ function tpRepartoTipo(target,tp){
     const hrs=h('input',{type:'text',inputmode:'decimal',autocomplete:'off',value:r.h||'',placeholder:'h',style:{width:'64px',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)',textAlign:'right'},
       on:{input:ev=>{ r.h=parseFloat(String(ev.target.value).replace(',','.'))||0; },
           blur:()=>{ scheduleDraftSave(); }}});
-    wrap.appendChild(h('div',{style:{display:'flex',gap:'.35rem',alignItems:'center',marginBottom:'.3rem',flexWrap:'wrap'}},
-      h('span',{style:{fontSize:'.8rem',color:'var(--ink3)'}},'↳'),sel,hrs,h('span',{style:{fontSize:'.75rem',color:'var(--ink3)'}},'h'),
-      h('button',{class:'btn btn-gh btn-sm',title:'Quitar',on:{click:()=>{ R()[tp].splice(i,1); delete tpRepNuevo[kn]; scheduleDraftSave(); rerender(); }}},'✕')));
+    const tk=tpRepTarea(r.taskId); const col=TP_REP_COLOR[tp]||'#64748b';
+    const esE=tk&&tk.tipoTarea==='estral';
+    const chip=tk?h('div',{style:{display:'flex',alignItems:'flex-start',gap:'.4rem',margin:'0 0 .45rem',padding:'.35rem .45rem',borderRadius:'var(--r2)',background:esE?'#f3e8ff':'#fef9c3',border:'1px solid '+(esE?'#a855f7':'#eab308')}},
+        h('span',{style:{fontSize:'.7rem',fontWeight:800,whiteSpace:'nowrap',padding:'.1rem .4rem',borderRadius:'6px',background:esE?'#7c3aed':'#d97706',color:'#fff'}},tpRepPre(tk)),
+        h('span',{style:{fontSize:'.82rem',fontWeight:700,color:'#0f172a',lineHeight:1.25}},tpRepLimpia(tk.titulo))):null;
+    const card=h('div',{style:{background:'var(--surf)',border:'1px solid '+col+'66',borderLeft:'4px solid '+col,borderRadius:'var(--r2)',padding:'.5rem .55rem .45rem',marginBottom:'.65rem',boxShadow:'0 1px 3px rgba(0,0,0,.08)'}},
+      h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'.4rem',paddingBottom:'.3rem',borderBottom:'1px dashed '+col+'66'}},
+        h('span',{style:{fontSize:'.74rem',fontWeight:800,letterSpacing:'.06em',color:col}},'TAREA '+(i+1)),
+        h('button',{class:'btn btn-gh btn-sm',title:'Quitar esta tarea',on:{click:()=>{ R()[tp].splice(i,1); delete tpRepNuevo[kn]; scheduleDraftSave(); rerender(); }}},'✕')),
+      sel,
+      chip,
+      h('div',{style:{display:'flex',alignItems:'center',gap:'.4rem',marginBottom:'.1rem'}},
+        h('span',{style:{fontSize:'.74rem',fontWeight:700,color:'var(--ink3)'}},'Horas de esta tarea:'),hrs,h('span',{style:{fontSize:'.75rem',color:'var(--ink3)'}},'h')));
     const nv=tpRepNuevo[kn];
     if(nv){
       const campo=(css)=>Object.assign({background:'var(--surf)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)'},css||{});
-      wrap.appendChild(h('div',{style:{border:'1px dashed var(--brd)',borderRadius:'var(--r2)',padding:'.5rem',marginBottom:'.4rem'}},
+      card.appendChild(h('div',{style:{border:'1px dashed var(--brd)',borderRadius:'var(--r2)',padding:'.5rem',marginBottom:'.4rem'}},
         h('div',{style:{fontSize:'.72rem',fontWeight:700,marginBottom:'.3rem'}},'Nueva tarea para el '+String(fEntry.fecha||today()).split('-').reverse().join('/')),
         h('div',{style:{display:'flex',gap:'.35rem',flexWrap:'wrap',marginBottom:'.3rem'}},
           h('select',{autocomplete:'off',style:campo({flex:'0 0 auto'}),on:{change:ev=>{ nv.tipo=ev.target.value; }}},
@@ -5729,8 +5739,9 @@ function tpRepartoTipo(target,tp){
             catch(ex){ showAlert('No se pudo crear la tarea','err'); }
           }}},'Crear y asociar'),
           h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{ delete tpRepNuevo[kn]; rerender(); }}},'Cancelar'))));
-    } else if(esOtro) wrap.appendChild(h('input',{type:'text',autocomplete:'off',autocorrect:'off',spellcheck:'false',name:'rep-'+tp+'-'+i+'-'+Date.now(),value:r.texto||'',placeholder:'Escribe aquí el trabajo (p. ej. Taller, Montar barandilla…)',style:{width:'100%',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)',marginBottom:'.35rem'},
+    } else if(esOtro) card.appendChild(h('input',{type:'text',autocomplete:'off',autocorrect:'off',spellcheck:'false',name:'rep-'+tp+'-'+i+'-'+Date.now(),value:r.texto||'',placeholder:'Escribe aquí el trabajo (p. ej. Taller, Montar barandilla…)',style:{width:'100%',background:'var(--surf2)',border:'1px solid var(--brd)',borderRadius:'var(--r2)',padding:'.4rem',color:'var(--ink)',marginBottom:'.35rem'},
       on:{input:ev=>{ r.texto=ev.target.value; }, blur:()=>{ scheduleDraftSave(); }}}));
+    wrap.appendChild(card);
   });
   wrap.appendChild(h('button',{class:'btn btn-gh btn-sm',on:{click:()=>{
     const lst=(R()[tp]=R()[tp]||[]);
