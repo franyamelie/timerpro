@@ -1711,7 +1711,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261120-final33'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261123-final35'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -2642,7 +2642,7 @@ function renderFichar(){
         return h('div',{class:'tp-hbloque',style:tpRepEstiloBloque(tipo)},h('div',{style:{display:'grid',gridTemplateColumns:'1fr auto 1fr auto',gap:'.4rem',alignItems:'center',marginBottom:'.3rem'}},
           h('div',{class:'field',style:{margin:0}},
             h('div',{style:{display:'flex',alignItems:'center',gap:'.3rem'}},
-              h('label',{style:{margin:0,fontWeight:700,color:TP_REP_COLOR[tipo]||'inherit'}},tipo.toUpperCase()),
+              h('label',{style:{margin:0,fontWeight:700,color:TP_REP_COLOR[tipo]||'inherit'}},tipo==='Normales'?'JORNADA':tipo.toUpperCase()),
               h('button',{
                 title:'Precio por defecto',
                 style:{background:'none',border:'none',cursor:'pointer',fontSize:'.7rem',color:'var(--ink3)',padding:'0'},
@@ -3911,10 +3911,10 @@ function renderFichajeDetailScreen(idx){
                 precioHoraNormal:fEntry.precioHoraNormal,precioHoraExtra:fEntry.precioHoraExtra,precioHoraNocturna:fEntry.precioHoraNocturna,precioHoraFestiva:fEntry.precioHoraFestiva}),'f'+idx);
         return h('div',{class:'tp-hbloque',style:tpRepEstiloBloque(tipo)},h('div',{style:{display:'grid',gridTemplateColumns:'1fr auto 1fr auto',gap:'.4rem',alignItems:'center',marginBottom:'.3rem'}},
           h('div',{class:'field',style:{margin:0}},
-            h('label',{style:{margin:0,fontWeight:700,color:TP_REP_COLOR[tipo]||'inherit'}},tipo.toUpperCase()),
+            h('label',{style:{margin:0,fontWeight:700,color:TP_REP_COLOR[tipo]||'inherit'}},tipo==='Normales'?'JORNADA':tipo.toUpperCase()),
             h('input',{type:'text',inputmode:'decimal',id:'hdet-'+fj._fid+'-'+tipo.toLowerCase(),value:horas||'',placeholder:'0',
               on:{
-                input:ev=>{ const v=(ev.target.value||'').replace(',','.'); fj[hk]=parseFloat(v)||0; recomputeDayAggregates(); },
+                input:ev=>{ const v=(ev.target.value||'').replace(',','.'); fj[hk]=parseFloat(v)||0; fj._horasManual=true; recomputeDayAggregates(); },
                 blur:ev=>{ const v=(ev.target.value||'').replace(',','.'); const nv=parseFloat(v)||0; if((parseFloat(fj[hk])||0)!==nv){ fj[hk]=nv; fj._horasManual=true; } recomputeDayAggregates(); scheduleDraftSave(); pushHist(); rerender(); }
               }})
           ),
@@ -8835,13 +8835,13 @@ function renderModalResumenDia(){
         // que nunca contradiga al KPI "HORAS TRABAJADAS" de arriba.
         ((S._shareConPrecios!==true||S._showDesglose!==false) && (totalHDisplay>0 || (dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0 || (S._shareConPrecios===true&&resumenExtrasFilas(e).length>0))) ? h('div',{},
           sec('🕐',(dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0?'Horas e Importes':'Importes'),
-          dHoras.hn>0?row('Normales',dHoras.hn+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraNormal||0)+' = '+eur(dHoras.hn*(e.precioHoraNormal||0)):''),true):null,
-          ...tpRepartoFilasDOM(e,'Normales',dHoras.hn),
+          dHoras.hn>0?row('Jornada',dHoras.hn+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraNormal||0)+' = '+eur(dHoras.hn*(e.precioHoraNormal||0)):''),true):null,
           dHoras.he>0?row('Extra',dHoras.he+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraExtra||0)+' = '+eur(dHoras.he*(e.precioHoraExtra||0)):''),true):null,
-          ...tpRepartoFilasDOM(e,'Extra',dHoras.he),
           dHoras.hnoc>0?row('Nocturnas',dHoras.hnoc+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraNocturna||0)+' = '+eur(dHoras.hnoc*(e.precioHoraNocturna||0)):''),true):null,
-          ...tpRepartoFilasDOM(e,'Nocturnas',dHoras.hnoc),
           dHoras.hf>0?row('Festivas',dHoras.hf+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraFestiva||0)+' = '+eur(dHoras.hf*(e.precioHoraFestiva||0)):''),true):null,
+          ...tpRepartoFilasDOM(e,'Normales',dHoras.hn),
+          ...tpRepartoFilasDOM(e,'Extra',dHoras.he),
+          ...tpRepartoFilasDOM(e,'Nocturnas',dHoras.hnoc),
           ...tpRepartoFilasDOM(e,'Festivas',dHoras.hf),
           ...(S._shareConPrecios===true?resumenExtrasFilas(e).map(x=>row(x[0],eur(x[1]))):[]),
           totalI>0&&S._shareConPrecios===true?h('div',{style:{display:'flex',justifyContent:'space-between',padding:'.4rem .6rem',background:'#f0fdf4',borderRadius:'6px',marginTop:'.3rem'}},
@@ -9102,13 +9102,13 @@ function shareResumen(method, conPrecios){
     lines.push('─────────────────────────');
     const _iniDesglose=lines.length;
     if(totalH>0) lines.push('🕐 HORAS: '+fmtH(totalH));
-    if(dHoras.hn>0) lines.push('  • Normales '+dHoras.hn+'h × '+eur(e.precioHoraNormal||0)+' = '+eur(dHoras.hn*(e.precioHoraNormal||0)));
-    tpRepartoFilasTxt(e,'Normales',dHoras.hn).forEach(l=>lines.push(l));
+    if(dHoras.hn>0) lines.push('  • Jornada '+dHoras.hn+'h × '+eur(e.precioHoraNormal||0)+' = '+eur(dHoras.hn*(e.precioHoraNormal||0)));
     if(dHoras.he>0)    lines.push('  • Extra '+dHoras.he+'h × '+eur(e.precioHoraExtra||0)+' = '+eur(dHoras.he*(e.precioHoraExtra||0)));
-    tpRepartoFilasTxt(e,'Extra',dHoras.he).forEach(l=>lines.push(l));
     if(dHoras.hnoc>0)lines.push('  • Nocturnas '+dHoras.hnoc+'h × '+eur(e.precioHoraNocturna||0)+' = '+eur(dHoras.hnoc*(e.precioHoraNocturna||0)));
-    tpRepartoFilasTxt(e,'Nocturnas',dHoras.hnoc).forEach(l=>lines.push(l));
     if(dHoras.hf>0) lines.push('  • Festivas '+dHoras.hf+'h × '+eur(e.precioHoraFestiva||0)+' = '+eur(dHoras.hf*(e.precioHoraFestiva||0)));
+    tpRepartoFilasTxt(e,'Normales',dHoras.hn).forEach(l=>lines.push(l));
+    tpRepartoFilasTxt(e,'Extra',dHoras.he).forEach(l=>lines.push(l));
+    tpRepartoFilasTxt(e,'Nocturnas',dHoras.hnoc).forEach(l=>lines.push(l));
     tpRepartoFilasTxt(e,'Festivas',dHoras.hf).forEach(l=>lines.push(l));
     if((e.dieta||0)>0) lines.push('  • Dieta: '+eur(e.dieta));
     if((e.transporte||0)>0){
@@ -9304,13 +9304,13 @@ function generarPDFResumen(conPrecios){
   let htmlHoras = '';
   if(!(conPrecios===true&&S._showDesglose===false) && (totalHDisplay>0 || (dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0 || (conPrecios&&resumenExtrasFilas(e).length>0))){
     let rows = '';
-    if(dHoras.hn>0) rows += fila('<b>Horas normales</b>', '<b>'+(dHoras.hn+'h' + (cp?' × '+eur(e.precioHoraNormal||0)+' = <b>'+eur(dHoras.hn*(e.precioHoraNormal||0))+'</b>':''))+'</b>');
-    rows += tpRepartoFilasHtml(e,'Normales',dHoras.hn);
+    if(dHoras.hn>0) rows += fila('<b>Jornada</b>', '<b>'+(dHoras.hn+'h' + (cp?' × '+eur(e.precioHoraNormal||0)+' = <b>'+eur(dHoras.hn*(e.precioHoraNormal||0))+'</b>':''))+'</b>');
     if(dHoras.he>0)    rows += fila('<b>Horas extra</b>', '<b>'+(dHoras.he+'h' + (cp?' × '+eur(e.precioHoraExtra||0)+' = <b>'+eur(dHoras.he*(e.precioHoraExtra||0))+'</b>':''))+'</b>');
-    rows += tpRepartoFilasHtml(e,'Extra',dHoras.he);
     if(dHoras.hnoc>0)rows += fila('<b>Horas nocturnas</b>', '<b>'+(dHoras.hnoc+'h' + (cp?' × '+eur(e.precioHoraNocturna||0)+' = <b>'+eur(dHoras.hnoc*(e.precioHoraNocturna||0))+'</b>':''))+'</b>');
-    rows += tpRepartoFilasHtml(e,'Nocturnas',dHoras.hnoc);
     if(dHoras.hf>0) rows += fila('<b>Horas festivas</b>', '<b>'+(dHoras.hf+'h' + (cp?' × '+eur(e.precioHoraFestiva||0)+' = <b>'+eur(dHoras.hf*(e.precioHoraFestiva||0))+'</b>':''))+'</b>');
+    rows += tpRepartoFilasHtml(e,'Normales',dHoras.hn);
+    rows += tpRepartoFilasHtml(e,'Extra',dHoras.he);
+    rows += tpRepartoFilasHtml(e,'Nocturnas',dHoras.hnoc);
     rows += tpRepartoFilasHtml(e,'Festivas',dHoras.hf);
     if(conPrecios){ resumenExtrasFilas(e).forEach(x=>{ rows += fila(x[0], '<b>'+eur(x[1])+'</b>'); }); rows += `<div class="fila subtotal"><span class="flabel">Suma total (horas + extras)</span><span class="fval">${eur(totalI)}</span></div>`; }
     htmlHoras = seccion((dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0?'🕐 HORAS E IMPORTES':'💶 IMPORTES', rows);
@@ -9598,13 +9598,13 @@ async function compartirComoImagen(conPrecios){
     // Horas
     if(!(cp&&S._showDesglose===false) && (totalHDisplay>0 || (dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0 || (cp&&resumenExtrasFilas(e).length>0))){
       html += sec('🕐',(dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0?'HORAS E IMPORTES':'IMPORTES');
-      if(dHoras.hn>0) html += row('<b>Normales</b>', '<b>'+(dHoras.hn+'h'+(cp?' × '+eur(e.precioHoraNormal||0)+' = '+eur(dHoras.hn*(e.precioHoraNormal||0)):''))+'</b>');
-      html += tpRepartoFilasHtml(e,'Normales',dHoras.hn);
+      if(dHoras.hn>0) html += row('<b>Jornada</b>', '<b>'+(dHoras.hn+'h'+(cp?' × '+eur(e.precioHoraNormal||0)+' = '+eur(dHoras.hn*(e.precioHoraNormal||0)):''))+'</b>');
       if(dHoras.he>0)    html += row('<b>Extra</b>', '<b>'+(dHoras.he+'h'+(cp?' × '+eur(e.precioHoraExtra||0)+' = '+eur(dHoras.he*(e.precioHoraExtra||0)):''))+'</b>');
-      html += tpRepartoFilasHtml(e,'Extra',dHoras.he);
       if(dHoras.hnoc>0)html += row('<b>Nocturnas</b>', '<b>'+(dHoras.hnoc+'h'+(cp?' × '+eur(e.precioHoraNocturna||0)+' = '+eur(dHoras.hnoc*(e.precioHoraNocturna||0)):''))+'</b>');
-      html += tpRepartoFilasHtml(e,'Nocturnas',dHoras.hnoc);
       if(dHoras.hf>0) html += row('<b>Festivas</b>', '<b>'+(dHoras.hf+'h'+(cp?' × '+eur(e.precioHoraFestiva||0)+' = '+eur(dHoras.hf*(e.precioHoraFestiva||0)):''))+'</b>');
+      html += tpRepartoFilasHtml(e,'Normales',dHoras.hn);
+      html += tpRepartoFilasHtml(e,'Extra',dHoras.he);
+      html += tpRepartoFilasHtml(e,'Nocturnas',dHoras.hnoc);
       html += tpRepartoFilasHtml(e,'Festivas',dHoras.hf);
       if(cp){
         resumenExtrasFilas(e).forEach(function(x){ html += row(x[0], eur(x[1])); });
