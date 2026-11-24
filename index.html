@@ -1711,7 +1711,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261124-final37'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261124-final38'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -8834,7 +8834,7 @@ function renderModalResumenDia(){
         // respeta "qué horas computar en el Resumen" de cada fichaje, para
         // que nunca contradiga al KPI "HORAS TRABAJADAS" de arriba.
         ((S._shareConPrecios!==true||S._showDesglose!==false) && (totalHDisplay>0 || (dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0 || (S._shareConPrecios===true&&resumenExtrasFilas(e).length>0))) ? h('div',{},
-          sec('🕐',(dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0?'Horas e Importes':'Importes'),
+          sec('🕐',(dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0?'Horas e Importes ( Desglose )':'Importes'),
           dHoras.hn>0?row('Jornada',dHoras.hn+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraNormal||0)+' = '+eur(dHoras.hn*(e.precioHoraNormal||0)):''),true):null,
           dHoras.he>0?row('Extra',dHoras.he+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraExtra||0)+' = '+eur(dHoras.he*(e.precioHoraExtra||0)):''),true):null,
           dHoras.hnoc>0?row('Nocturnas',dHoras.hnoc+'h'+(S._shareConPrecios===true?' × '+eur(e.precioHoraNocturna||0)+' = '+eur(dHoras.hnoc*(e.precioHoraNocturna||0)):''),true):null,
@@ -9313,7 +9313,7 @@ function generarPDFResumen(conPrecios){
     rows += tpRepartoFilasHtml(e,'Nocturnas',dHoras.hnoc);
     rows += tpRepartoFilasHtml(e,'Festivas',dHoras.hf);
     if(conPrecios){ resumenExtrasFilas(e).forEach(x=>{ rows += fila(x[0], '<b>'+eur(x[1])+'</b>'); }); rows += `<div class="fila subtotal"><span class="flabel">Suma total (horas + extras)</span><span class="fval">${eur(totalI)}</span></div>`; }
-    htmlHoras = seccion((dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0?'🕐 HORAS E IMPORTES':'💶 IMPORTES', rows);
+    htmlHoras = seccion((dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0?'🕐 HORAS E IMPORTES ( DESGLOSE )':'💶 IMPORTES', rows);
   }
 
   // Dietas (independiente del transporte/viajes). El total agregado del día
@@ -9597,7 +9597,7 @@ async function compartirComoImagen(conPrecios){
 
     // Horas
     if(!(cp&&S._showDesglose===false) && (totalHDisplay>0 || (dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0 || (cp&&resumenExtrasFilas(e).length>0))){
-      html += sec('🕐',(dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0?'HORAS E IMPORTES':'IMPORTES');
+      html += sec('🕐',(dHoras.hn+dHoras.he+dHoras.hnoc+dHoras.hf)>0?'HORAS E IMPORTES ( DESGLOSE )':'IMPORTES');
       if(dHoras.hn>0) html += row('<b>Jornada</b>', '<b>'+(dHoras.hn+'h'+(cp?' × '+eur(e.precioHoraNormal||0)+' = '+eur(dHoras.hn*(e.precioHoraNormal||0)):''))+'</b>');
       if(dHoras.he>0)    html += row('<b>Extra</b>', '<b>'+(dHoras.he+'h'+(cp?' × '+eur(e.precioHoraExtra||0)+' = '+eur(dHoras.he*(e.precioHoraExtra||0)):''))+'</b>');
       if(dHoras.hnoc>0)html += row('<b>Nocturnas</b>', '<b>'+(dHoras.hnoc+'h'+(cp?' × '+eur(e.precioHoraNocturna||0)+' = '+eur(dHoras.hnoc*(e.precioHoraNocturna||0)):''))+'</b>');
