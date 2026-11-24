@@ -1711,7 +1711,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261124-final38'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261124-final39'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -16824,6 +16824,8 @@ function tpConf(){return tpLee('tp_sb_conf',null);}
 function tpSesion(){return tpLee('tp_sb_sesion',null);}
 function tpNubeConectada(){return !!(tpConf()&&tpSesion());}
 function tpNubeActiva(){return tpNubeConectada()&&!tpLee('tp_sb_pausa',false);}
+/* Supabase tiene prioridad: si este aparato se unió a Supabase (y no está en modo Drive), Drive NUNCA se lanza solo, aunque la sesión se haya cerrado. Solo con botón manual. */
+function tpSbPrioridad(){return tpNubeActiva()||!!(tpConf()&&tpLee('tp_sb_unido',false)&&!tpLee('tp_sb_pausa',false));}
 function tpDispositivo(){var d=tpLee('tp_sb_disp','');if(!d){d='d'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);tpPon('tp_sb_disp',d);}return d;}
 function tpError(m,tipo){var e=new Error(m);e.humano=true;e.tipo=tipo||'';return e;}
 /* Ids únicos entre dispositivos: el autonumérico de cada aparato podía repetirse. */
@@ -18078,7 +18080,7 @@ localStorage.setItem('appVersion', '1779004086714');
 
 // ── CHECK DRIVE FOR NEW DATA ─────────────────────────────
 function checkDriveForNewData(){
-  if(tpNubeActiva()) return;
+  if(tpSbPrioridad()) return;
   // Only run if user has been idle for at least 10 seconds
   if(Date.now() - lastActivity < 10000) return;
   if(!driveUrl) return;
@@ -18144,7 +18146,7 @@ function handleOnline(){
   showAlert('Conexion restaurada');
   rerender();
   // Auto-sync if there are pending changes
-  if(driveUrl && S.entries.length > 0 && !tpNubeActiva()){
+  if(driveUrl && S.entries.length > 0 && !tpSbPrioridad()){
     setTimeout(warmupDriveScript, 1000); // warm up script on startup
     setTimeout(()=>{
       checkDriveForNewData();
@@ -18653,7 +18655,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
     pinCode=localStorage.getItem('pinCode')||'';
     if(pinCode){pinLocked=true;pinEntered='';}
     // Auto-load from Drive on startup silently
-    if(driveUrl&&!tpNubeActiva()){
+    if(driveUrl&&!tpSbPrioridad()){
       syncStatus='syncing'; rerender();
       try{
         await new Promise((res)=>{
@@ -18910,14 +18912,14 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
       clearTimeout(_idleCheckTimer);
       // Schedule auto-sync after 30s idle
       _idleSyncTimer = setTimeout(()=>{
-        if(!_syncInProgress && isOnline && driveUrl && !tpNubeActiva()){
+        if(!_syncInProgress && isOnline && driveUrl && !tpSbPrioridad()){
           console.log('Auto-sync: 90s idle');
           driveSync();
         }
       }, IDLE_MS);
       // Schedule drive check after 35s idle
       _idleCheckTimer = setTimeout(()=>{
-        if(!tpNubeActiva())checkDriveForNewData();
+        if(!tpSbPrioridad())checkDriveForNewData();
       }, IDLE_MS + 5000);
     }
 
@@ -19295,7 +19297,7 @@ const _saveEntry_orig = saveEntry;
 window.saveEntry = async function(){
   await _saveEntry_orig();
   if(isOnline && driveUrl && !_syncInProgress){
-    setTimeout(()=>{ if(!_syncInProgress&&!tpNubeActiva()) driveSync(); }, 3000);
+    setTimeout(()=>{ if(!_syncInProgress&&!tpSbPrioridad()) driveSync(); }, 3000);
   }
 }
 
