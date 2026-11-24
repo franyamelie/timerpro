@@ -1711,7 +1711,7 @@ function renderNav(){
   const syncDot=syncStatus==='syncing'?'syncing':syncStatus==='err'?'err':'ok';
   return h('nav',{},
     h('div',{class:'nav-brand'},h('span',{},'Timer'),h('em',{},'Pro')),
-    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261123-final35'),
+    h('div',{style:{fontSize:'.55rem',color:'var(--ink)',fontWeight:700,alignSelf:'flex-end',marginBottom:'.2rem'}},'build-20261124-final37'),
     tpNubeActiva()?h('div',{style:{alignSelf:'flex-end',marginBottom:'.2rem',cursor:'pointer',fontSize:'.6rem',fontWeight:700,lineHeight:1.2},on:{click:tpNubeAbrir}},h('div',{id:'tp-nube-estado',style:{color:_tpColor||'var(--ink)'}},_tpTexto||'⚡ Supabase'),h('div',{id:'tp-nube-pct',style:{color:tpColorPct()}},tpTextoPct()?'Almacén '+tpTextoPct():'')):null,
     h('div',{class:'nav-clock'},S.clock),
     !isOnline?h('div',{style:{background:'var(--red)',color:'#fff',fontSize:'.65rem',fontWeight:700,padding:'.15rem .5rem',borderRadius:'20px',flexShrink:0}},'Sin conexion'):null,
@@ -16902,15 +16902,41 @@ function tpEstado(txt,color){
   tpPintaNav();
 }
 function tpGuardaSesion(j){tpPon('tp_sb_sesion',{access:j.access_token,refresh:j.refresh_token,exp:Date.now()+(j.expires_in||3600)*1000});}
+var _tpRefrescando=null;
+async function tpRefrescaCon(refresh){
+  var c=tpConf();
+  return fetch(c.url+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:c.key,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:refresh})});
+}
 async function tpToken(){
   var s=tpSesion(),c=tpConf();
   if(!s)throw tpError('Hay que volver a entrar con la contraseña.','sesion');
   if(Date.now()<s.exp-60000)return s.access;
-  var r=await fetch(c.url+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:c.key,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:s.refresh})});
-  if(r.status===400||r.status===401){localStorage.removeItem('tp_sb_sesion');throw tpError('La sesión ha caducado. Vuelve a entrar con la contraseña.','sesion');}
-  if(!r.ok)throw tpError('Supabase no responde (error '+r.status+').','caido');
-  tpGuardaSesion(await r.json());
-  return tpSesion().access;
+  /* Una sola renovación a la vez: dos a la vez con la misma clave hacen que Supabase cierre la sesión. */
+  if(_tpRefrescando)return _tpRefrescando;
+  _tpRefrescando=(async function(){
+    try{
+      var usado=s.refresh;
+      var r=await tpRefrescaCon(usado);
+      if(r.status===400||r.status===401){
+        /* Otra pestaña puede haber renovado ya: se usa su sesión antes de darla por perdida. */
+        await new Promise(function(ok){setTimeout(ok,1500);});
+        var n=tpSesion();
+        if(n&&n.refresh!==usado){
+          if(Date.now()<n.exp-60000)return n.access;
+          r=await tpRefrescaCon(n.refresh);
+        }
+        if(r.status===400||r.status===401){
+          localStorage.removeItem('tp_sb_sesion');
+          try{tpPintaAviso();}catch(e){}
+          throw tpError('La sesión ha caducado. Vuelve a entrar con la contraseña.','sesion');
+        }
+      }
+      if(!r.ok)throw tpError('Supabase no responde (error '+r.status+').','caido');
+      tpGuardaSesion(await r.json());
+      return tpSesion().access;
+    }finally{_tpRefrescando=null;}
+  })();
+  return _tpRefrescando;
 }
 async function tpApi(ruta,op){
   op=op||{};
@@ -17033,6 +17059,11 @@ async function tpSube(lista,esp,cola){
   }
   await envia();
 }
+function tpPesoDia(d){
+  d=d||{};
+  var h=(+d.horasNormales||0)+(+d.horasExtra||0)+(+d.horasNocturnas||0)+(+d.horasFestivas||0);
+  return ((d.fichajes||[]).length)*10+(h>0?1:0);
+}
 function tpEscribiendo(){
   var a=document.activeElement;
   return !!(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.isContentEditable));
@@ -17052,7 +17083,7 @@ async function tpNubeSync(manual){
   try{
     var est=await tpLeeEstado(),esp=tpLee('tp_sb_espejo',{}),cola=tpLee('tp_sb_cola',{});
     tpMarcaCambios(est,esp,cola);tpPon('tp_sb_cola',cola);
-    var cursor=tpLee('tp_sb_cursor',null),filas=await tpTrae(cursor),dev=tpDispositivo(),apl=[];
+    var cursor=tpLee('tp_sb_cursor',null),filas=await tpTrae(cursor),dev=tpDispositivo(),apl=[],choques=[],forzar=tpLee('tp_sb_forzar',{})||{};
     filas.forEach(function(r){
       var L=est[r.id],m=esp[r.id],cambiado=(L?L.h:null)!==(m||null),propia=r.dispositivo===dev;
       if(propia&&L)return;
@@ -17062,7 +17093,19 @@ async function tpNubeSync(manual){
         return;
       }
       if(L&&L.h===tpHash(r.id,r.datos)){esp[r.id]=L.h;delete cola[r.id];return;}
-      if(!cambiado||!cola[r.id]||new Date(r.actualizado)>new Date(cola[r.id]))apl.push(r);
+      if(!cambiado||!cola[r.id]){apl.push(r);return;}
+      /* Los dos aparatos han cambiado el mismo día: gana el que tiene más datos; si empatan, el más reciente. */
+      if(r.id.indexOf('e:')===0&&L){
+        if(forzar[r.id])return;
+        var pr=tpPesoDia(r.datos),pl=tpPesoDia(L.datos);
+        if(pr!==pl){
+          var fq=r.id.slice(2).split('-').reverse().slice(0,2).join('/');
+          if(pr>pl){apl.push(r);choques.push('⚠️ Día '+fq+': se ha mantenido la versión con más fichajes, que venía de otro aparato. Este aparato tenía menos datos.');}
+          else choques.push('⚠️ Día '+fq+': se ha mantenido la versión de este aparato porque tenía más fichajes que la nube.');
+          return;
+        }
+      }
+      if(new Date(r.actualizado)>new Date(cola[r.id]))apl.push(r);
     });
     if(apl.length&&!manual&&tpEscribiendo()&&_tpEsperas<6){
       _tpEsperas++;
@@ -17071,6 +17114,15 @@ async function tpNubeSync(manual){
       return;
     }
     _tpEsperas=0;
+    /* Antes de que un cambio de otro aparato sustituya un día de aquí, se guarda un punto de restauración (como mucho uno cada 20 min). */
+    try{
+      if(apl.some(function(r){return r.id.indexOf('e:')===0&&est[r.id]&&est[r.id].h!==tpHash(r.id,r.datos);})&&Date.now()-(+tpLee('tp_snap_antes',0)||0)>1200000){
+        tpPon('tp_snap_antes',Date.now());
+        await createSnapshot('Antes de recibir cambios - '+new Date().toLocaleString('es-ES'));
+        var viejos=(await dbAll(ST.snapshots)).filter(function(x){return String(x.label).indexOf('Antes de recibir cambios')===0;}).sort(function(a,b){return new Date(b.createdAt)-new Date(a.createdAt);});
+        for(var vi=8;vi<viejos.length;vi++)await dbDel(ST.snapshots,viejos[vi].id);
+      }
+    }catch(e){}
     await tpAplica(apl);
     if(apl.length){
       est=await tpLeeEstado();
@@ -17095,12 +17147,13 @@ async function tpNubeSync(manual){
     var lista=Object.keys(est).filter(function(id){return est[id].h!==esp[id];}).map(function(id){return {id:id,datos:est[id].datos,h:est[id].h};});
     borrar.forEach(function(id){lista.push({id:id,borrado:true});});
     if(lista.length)await tpSube(lista,esp,cola);
-    tpPon('tp_sb_fallos',0);tpPon('tp_sb_lleno',false);
+    tpPon('tp_sb_fallos',0);tpPon('tp_sb_lleno',false);tpPon('tp_sb_forzar',{});
     try{_lsSave();}catch(e){}
     try{_lsSet('bk_nube',String(Date.now()));}catch(e){}
     tpEstado('⚡ '+new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}),'#15803d');
     tpMideUso(!!manual);
-    if(manual&&apl.length&&typeof showAlert==='function')showAlert('✅ Actualizado desde Supabase');
+    if(choques.length&&typeof showAlert==='function')showAlert(choques.slice(0,3).join('\n'),'err');
+    else if(manual&&apl.length&&typeof showAlert==='function')showAlert('✅ Actualizado desde Supabase');
   }catch(e){
     _tpAplicando=false;
     if(e&&e.tipo==='lleno'){tpPon('tp_sb_lleno',true);tpEstado('⚠️ Supabase lleno','var(--red)');}
@@ -17145,6 +17198,14 @@ function tpEsc(t){return String(t==null?'':t).replace(/[&<>"]/g,function(c){retu
 function tpPintaAviso(){
   var el=document.getElementById('tp-nube-aviso');
   if(el)el.remove();
+  if(tpConf()&&!tpSesion()&&tpLee('tp_sb_unido',false)&&!tpLee('tp_sb_pausa',false)){
+    el=document.createElement('div');el.id='tp-nube-aviso';
+    el.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9998;padding:.9rem 1rem;font-size:1.05rem;font-weight:700;line-height:1.35;color:#fff;background:#b91c1c';
+    el.innerHTML='<div style="margin-bottom:.6rem">⚠️ Este aparato NO se está sincronizando: la sesión de Supabase se ha cerrado. Entra de nuevo para no perder cambios.</div><button id="tp-aviso-entrar" style="font:inherit;padding:.5rem .9rem;border-radius:8px;border:0;background:#fff;color:#111">Entrar ahora</button>';
+    document.body.appendChild(el);
+    document.getElementById('tp-aviso-entrar').onclick=tpNubeAbrir;
+    return;
+  }
   if(!tpNubeConectada()||tpLee('tp_sb_pausa',false))return;
   var pct=Math.round(tpPct()),lleno=tpLee('tp_sb_lleno',false),fallos=tpLee('tp_sb_fallos',0)||0,txt='',rojo=false,ocultable=false;
   if(lleno){txt='Supabase no ha aceptado el último guardado. Tus datos siguen en este dispositivo. Pulsa Seguir con Drive.';rojo=true;}
@@ -18231,9 +18292,10 @@ async function renderSnapshotsList(){
             new Date(snap.createdAt).toLocaleTimeString('es-ES')+' · '+snap.entriesCount+' jornadas'
           )
         ),
+        h('button',{class:'btn btn-g btn-sm',title:'Recuperar solo un día de este punto',on:{click:()=>recuperarDiaDePunto(snap)}},'Un día…'),
         h('button',{class:'btn btn-b btn-sm',on:{click:()=>{
           ask('Restaurar al punto: '+snap.label+'?',()=>restoreSnapshot(snap));
-        }}},'Restaurar'),
+        }}},'Restaurar todo'),
         h('button',{class:'btn btn-r btn-sm',on:{click:async()=>{
           await dbDel(ST.snapshots,snap.id);
           showAlert('Punto eliminado');
@@ -18281,6 +18343,30 @@ async function createSnapshot(label=''){
     }
     return true;
   }catch(e){ console.error('Snapshot failed:',e); return false; }
+}
+
+async function recuperarDiaDePunto(snap){
+  const f=prompt('¿Qué día quieres recuperar de este punto? Escríbelo como AAAA-MM-DD, por ejemplo 2026-11-23');
+  if(!f) return;
+  const fecha=f.trim();
+  let d; try{ d=JSON.parse(snap.data); }catch(e){ showAlert('No se puede leer este punto','err'); return; }
+  const bueno=(d.entries||[]).find(x=>x.fecha===fecha);
+  if(!bueno){ showAlert('Ese punto no tiene el día '+fecha,'err'); return; }
+  ask('Recuperar el día '+fecha+' de "'+snap.label+'" ('+((bueno.fichajes||[]).length)+' fichaje(s), '+(bueno.horasNormales||0)+' h + '+(bueno.horasExtra||0)+' extra). Solo cambia ese día; el resto no se toca. ¿Seguro?',async()=>{
+    try{
+      await createSnapshot('Antes de recuperar el día '+fecha+' - '+new Date().toLocaleString('es-ES'));
+      const act=(await dbAll(ST.entries)).filter(x=>x.fecha===fecha);
+      for(const a of act){ if(a.id!==bueno.id) await dbDel(ST.entries,a.id); }
+      await dbPut(ST.entries,Object.assign({},bueno,{_savedAt:new Date().toISOString()}));
+      try{ localStorage.removeItem('_fEntry'); }catch(e){}
+      try{ const fz=tpLee('tp_sb_forzar',{})||{}; fz['e:'+fecha]=Date.now(); tpPon('tp_sb_forzar',fz); }catch(e){}
+      await loadData();
+      fEntry=defEntry(); editingEntry=false;
+      showAlert('Día '+fecha+' recuperado');
+      rerender();
+      try{ tpNubeCambio(); }catch(e){}
+    }catch(e){ showAlert('No se ha podido recuperar el día: '+e.message,'err'); }
+  });
 }
 
 async function restoreSnapshot(snap){
